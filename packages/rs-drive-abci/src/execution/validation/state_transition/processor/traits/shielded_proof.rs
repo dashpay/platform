@@ -17,6 +17,8 @@ use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlr
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
@@ -162,11 +164,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 
     fn shielded_proof_action_count(&self) -> usize {
         match self {
-            StateTransition::Shield(st) => match st {
-                dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
-                    v0.actions.len()
-                }
-            },
+            StateTransition::Shield(st) => st.actions().len(),
             StateTransition::ShieldFromIdentity(st) => match st {
                 ShieldFromIdentityTransition::V0(v0) => v0.actions.len(),
             },
@@ -744,19 +742,16 @@ fn validate_shielded_proof_v0(
     }
 
     let result = match state_transition {
-        StateTransition::Shield(st) => match st {
-            dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
-                reconstruct_and_verify_bundle(
-                    &v0.actions,
-                    FLAGS_OUTPUTS_ONLY,
-                    -(v0.amount as i64),
-                    &v0.anchor,
-                    v0.proof.as_slice(),
-                    &v0.binding_signature,
-                    &[], // No transparent fields for shield
-                )
-            }
-        },
+        // The accessors project the same V0 fields; its historical empty preimage is unchanged.
+        StateTransition::Shield(st) => reconstruct_and_verify_bundle(
+            st.actions(),
+            FLAGS_OUTPUTS_ONLY,
+            -(st.amount() as i64),
+            &st.anchor(),
+            st.proof(),
+            &st.binding_signature(),
+            &[],
+        ),
         StateTransition::ShieldFromIdentity(st) => match st {
             ShieldFromIdentityTransition::V0(v0) => reconstruct_and_verify_bundle(
                 &v0.actions,
@@ -1233,20 +1228,18 @@ fn validate_shielded_proof_v1(
                     // The credit pool's outputs-only bundles carry no anchor, so the proved
                     // bytes verify wherever they land. Their preimage binds the kind and the
                     // funder, which a copy re-wrapped under someone else's funding cannot match.
-                    StateTransition::Shield(st) => match st {
-                        dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
-                            let extra_sighash_data =
-                                shield_extra_sighash_data(&v0.inputs, platform_version)?;
-                            reconstruct_and_verify_bundle(
-                                &v0.actions,
-                                FLAGS_OUTPUTS_ONLY,
-                                -(v0.amount as i64),
-                                &v0.anchor,
-                                v0.proof.as_slice(),
-                                &v0.binding_signature,
-                                &extra_sighash_data,
-                            )
-                        }
+                    StateTransition::Shield(st) => {
+                        let extra_sighash_data =
+                            shield_extra_sighash_data(st.inputs(), platform_version)?;
+                        reconstruct_and_verify_bundle(
+                            st.actions(),
+                            FLAGS_OUTPUTS_ONLY,
+                            -(st.amount() as i64),
+                            &st.anchor(),
+                            st.proof(),
+                            &st.binding_signature(),
+                            &extra_sighash_data,
+                        )
                     },
                     // CheckTx's admission check. Block processing verifies the same bundle in
                     // `ShieldFromIdentity`'s transform, which must rebuild the same preimage.

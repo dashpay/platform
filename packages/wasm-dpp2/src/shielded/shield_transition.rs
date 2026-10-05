@@ -7,13 +7,18 @@ use crate::platform_address::{
 use crate::shielded::address_witness::{AddressWitnessWasm, input_witnesses_from_js_options};
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::try_vec_to_fixed_bytes;
-use crate::utils::{try_from_options_optional_with, try_to_u16};
+use crate::utils::{try_from_options_optional, try_from_options_optional_with, try_to_u16};
+use crate::version::PlatformVersionWasm;
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
 use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+use dpp::state_transition::shield_transition::v1::ShieldTransitionV1;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionWitnessSigned};
+use dpp::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -33,6 +38,7 @@ export interface ShieldTransitionOptions {
     feeStrategy?: FeeStrategyStep[];
     userFeeIncrease?: number;
     inputWitnesses: AddressWitness[];
+    platformVersion?: PlatformVersion;
 }
 
 /**
@@ -127,6 +133,11 @@ impl ShieldTransitionWasm {
             })?
             .unwrap_or(0);
 
+        let platform_version: PlatformVersion =
+            try_from_options_optional::<PlatformVersionWasm>(js_opts, "platformVersion")?
+                .map(Into::into)
+                .unwrap_or_else(|| PlatformVersionWasm::default().into());
+
         // Extract simple fields via serde (consumes options)
         let fields: ShieldTransitionSimpleFields =
             serde_wasm_bindgen::from_value(options.into())
@@ -139,112 +150,118 @@ impl ShieldTransitionWasm {
         let inputs_map = crate::platform_address::inputs_to_btree_map(inputs)?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
-        Ok(ShieldTransitionWasm(ShieldTransition::V0(
-            ShieldTransitionV0 {
+        let actions = actions.into_iter().map(Into::into).collect();
+        let input_witnesses = input_witnesses.into_iter().map(Into::into).collect();
+        let transition = match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .shield_state_transition
+            .default_current_version
+        {
+            0 => ShieldTransition::V0(ShieldTransitionV0 {
                 inputs: inputs_map,
-                actions: actions.into_iter().map(Into::into).collect(),
+                actions,
                 amount: fields.amount,
                 anchor,
                 proof: fields.proof,
                 binding_signature,
                 fee_strategy,
                 user_fee_increase,
-                input_witnesses: input_witnesses.into_iter().map(Into::into).collect(),
-            },
-        )))
+                input_witnesses,
+            }),
+            1 => ShieldTransition::V1(ShieldTransitionV1 {
+                inputs: inputs_map,
+                actions,
+                amount: fields.amount,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+                fee_strategy,
+                user_fee_increase,
+                input_witnesses,
+            }),
+            version => {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "unknown ShieldTransition version {version}"
+                )));
+            }
+        };
+        Ok(ShieldTransitionWasm(transition))
     }
 
     /// Returns the input addresses funding the shield (with their nonces and amounts).
     #[wasm_bindgen(getter = "inputs")]
     pub fn inputs(&self) -> Vec<PlatformAddressInputWasm> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0
-                .inputs
-                .iter()
-                .map(|(address, (nonce, amount))| {
-                    PlatformAddressInputWasm::new(*address, *nonce, *amount)
-                })
-                .collect(),
-        }
+        self.0
+            .inputs()
+            .iter()
+            .map(|(address, (nonce, amount))| {
+                PlatformAddressInputWasm::new(*address, *nonce, *amount)
+            })
+            .collect()
     }
 
     /// Returns the serialized Orchard actions.
     #[wasm_bindgen(getter = "actions")]
     pub fn actions(&self) -> Vec<SerializedOrchardActionWasm> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0
-                .actions
-                .iter()
-                .cloned()
-                .map(SerializedOrchardActionWasm::from)
-                .collect(),
-        }
+        self.0
+            .actions()
+            .iter()
+            .cloned()
+            .map(SerializedOrchardActionWasm::from)
+            .collect()
     }
 
     /// Returns the shield amount (credits entering the pool).
     #[wasm_bindgen(getter = "amount")]
     pub fn amount(&self) -> u64 {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0.amount,
-        }
+        self.0.amount()
     }
 
     /// Returns the anchor (32-byte Merkle root).
     #[wasm_bindgen(getter = "anchor")]
     pub fn anchor(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0.anchor.to_vec(),
-        }
+        self.0.anchor().to_vec()
     }
 
     /// Returns the Halo2 proof bytes.
     #[wasm_bindgen(getter = "proof")]
     pub fn proof(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0.proof.clone(),
-        }
+        self.0.proof().to_vec()
     }
 
     /// Returns the RedPallas binding signature (64 bytes).
     #[wasm_bindgen(getter = "bindingSignature")]
     pub fn binding_signature(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0.binding_signature.to_vec(),
-        }
+        self.0.binding_signature().to_vec()
     }
 
     /// Returns the fee strategy steps.
     #[wasm_bindgen(getter = "feeStrategy")]
     pub fn fee_strategy(&self) -> Vec<FeeStrategyStepWasm> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0
-                .fee_strategy
-                .iter()
-                .cloned()
-                .map(FeeStrategyStepWasm::from)
-                .collect(),
-        }
+        self.0
+            .fee_strategy()
+            .iter()
+            .cloned()
+            .map(FeeStrategyStepWasm::from)
+            .collect()
     }
 
     /// Returns the user fee increase multiplier.
     #[wasm_bindgen(getter = "userFeeIncrease")]
     pub fn user_fee_increase(&self) -> u16 {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0.user_fee_increase,
-        }
+        self.0.user_fee_increase()
     }
 
     /// Returns the input witnesses (signatures authorising each input).
     #[wasm_bindgen(getter = "inputWitnesses")]
     pub fn input_witnesses(&self) -> Vec<AddressWitnessWasm> {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0
-                .input_witnesses
-                .iter()
-                .cloned()
-                .map(AddressWitnessWasm::from)
-                .collect(),
-        }
+        self.0
+            .witnesses()
+            .iter()
+            .cloned()
+            .map(AddressWitnessWasm::from)
+            .collect()
     }
 
     #[wasm_bindgen(js_name = getModifiedDataIds)]

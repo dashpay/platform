@@ -10,7 +10,7 @@ mod tests {
     use dpp::identity::signer::Signer;
     use dpp::serialization::Signable;
     use dpp::shielded::SerializedAction;
-    use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+    use dpp::state_transition::shield_transition::v1::ShieldTransitionV1;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
@@ -77,7 +77,7 @@ mod tests {
             .fetch_balance_and_nonce(&address, None, pv)
             .expect("funded address balance")
             .expect("persisted funded address");
-        let mut transition = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+        let mut transition = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
             inputs: BTreeMap::from([(address, (nonce + 1, balance))]),
             actions: vec![SerializedAction {
                 nullifier: [1; 32],
@@ -102,7 +102,7 @@ mod tests {
             .sign_create_witness(&address, &transition.signable_bytes().expect("signable"))
             .await
             .expect("witness");
-        let StateTransition::Shield(ShieldTransition::V0(ref mut shield)) = transition else {
+        let StateTransition::Shield(ShieldTransition::V1(ref mut shield)) = transition else {
             unreachable!();
         };
         shield.input_witnesses = vec![witness];

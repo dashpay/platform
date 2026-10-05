@@ -40,6 +40,7 @@ use drive_proof_verifier::types::ShieldedEncryptedNote;
 use grovedb_commitment_tree::ExtractedNoteCommitment;
 
 use crate::wallet::shielded::keys::OrchardKeySet;
+use crate::wallet::shielded::operations::shielded_actions;
 use crate::wallet::shielded::prover::CachedOrchardProver;
 use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
@@ -108,7 +109,7 @@ async fn shield_built_note_ovk_recovers_and_persists_as_outgoing() {
     .await
     .expect("shield transition build should succeed");
 
-    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+    let StateTransition::Shield(ShieldTransition::V1(v0)) = st else {
         panic!("expected a Shield state transition");
     };
 
@@ -233,12 +234,14 @@ async fn live_recorder_builds_entry_from_real_shield_bundle() {
     .await
     .expect("shield transition build should succeed");
 
-    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
-        panic!("expected a Shield state transition");
-    };
+    assert!(matches!(
+        &st,
+        StateTransition::Shield(ShieldTransition::V1(_))
+    ));
+    let actions = shielded_actions(&st);
 
     let views = keys.viewing_keys();
-    let cmxs = visible_output_cmxs(&v0.actions, &views);
+    let cmxs = visible_output_cmxs(actions, &views);
     assert!(
         !cmxs.is_empty(),
         "recorder must recover the wallet-visible output cmx from a real bundle"
@@ -253,7 +256,7 @@ async fn live_recorder_builds_entry_from_real_shield_bundle() {
             fee: None,
             counterparty: None,
             memo: None,
-            actions: &v0.actions,
+            actions,
             spent_notes: &[],
         },
     );

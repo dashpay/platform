@@ -16,7 +16,7 @@ describe('ShieldTransition', () => {
     0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
   ]);
 
-  function createTransition() {
+  function createTransition(protocolVersion?: number) {
     const inputAddr = wasm.PlatformAddress.fromBytes(addrBytes);
     const input = new wasm.PlatformAddressInput(inputAddr, 0, BigInt(100_000));
     const witness = wasm.AddressWitness.p2pkh(new Uint8Array(65));
@@ -29,10 +29,29 @@ describe('ShieldTransition', () => {
       proof: ZERO_PROOF,
       bindingSignature: ZERO_BINDING_SIG,
       inputWitnesses: [witness],
+      ...(protocolVersion === undefined ? {} : {
+        platformVersion: new wasm.PlatformVersion(protocolVersion),
+      }),
     });
   }
 
   describe('constructor()', () => {
+    it('should select the signed format for explicit historical and current protocols', () => {
+      for (const [protocolVersion, formatVersion] of [[13, '0'], [14, '1']] as const) {
+        const transition = createTransition(protocolVersion);
+        expect(transition.toJSON().$formatVersion).to.equal(formatVersion);
+        const bytes = transition.toBytes();
+        expect(Buffer.from(wasm.ShieldTransition.fromBytes(bytes).toBytes()))
+          .to.deep.equal(Buffer.from(bytes));
+        expect(transition.toObject().inputWitnesses[0].signature)
+          .to.deep.equal(new Uint8Array(65));
+      }
+    });
+
+    it('should default to the current platform format', () => {
+      expect(createTransition().toJSON().$formatVersion).to.equal('1');
+    });
+
     it('should construct with required fields', () => {
       const t = createTransition();
       expect(t).to.be.an.instanceof(wasm.ShieldTransition);

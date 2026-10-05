@@ -4,13 +4,17 @@ mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod state_transition_validation;
 pub mod v0;
+pub mod v1;
 mod version;
 
 use crate::state_transition::shield_transition::v0::ShieldTransitionV0;
 use crate::state_transition::shield_transition::v0::ShieldTransitionV0Signable;
+use crate::state_transition::shield_transition::v1::{
+    ShieldTransitionV1, ShieldTransitionV1Signable,
+};
 use crate::state_transition::StateTransitionFieldTypes;
 
-pub type ShieldTransitionLatest = ShieldTransitionV0;
+pub type ShieldTransitionLatest = ShieldTransitionV1;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 #[cfg(feature = "json-conversion")]
@@ -58,6 +62,9 @@ use serde::{Deserialize, Serialize};
 pub enum ShieldTransition {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(ShieldTransitionV0),
+    /// Binds the bundle to its kind and funding addresses. Admitted only from protocol version 14.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(ShieldTransitionV1),
 }
 
 impl OptionallyAssetLockProved for ShieldTransition {}
@@ -85,9 +92,16 @@ impl StateTransitionFieldTypes for ShieldTransition {
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+    use crate::dashcore::hashes::{sha256, Hash};
+    use crate::serialization::{
+        JsonConvertible, PlatformDeserializableUntrusted, PlatformSerializable, Signable,
+        ValueConvertible,
+    };
     use crate::shielded::SerializedAction;
     use crate::state_transition::shield_transition::v0::ShieldTransitionV0;
+    use crate::state_transition::StateTransition;
     use platform_value::{platform_value, BinaryData, Bytes32};
+    use platform_version::version::PlatformVersion;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -118,6 +132,118 @@ pub(crate) mod json_convertible_tests {
                 signature: BinaryData::new(vec![0xaa; 65]),
             }],
         })
+    }
+
+    fn bound_fixture() -> ShieldTransition {
+        let ShieldTransition::V0(v0) = fixture() else {
+            panic!("historical fixture");
+        };
+        ShieldTransition::V1(ShieldTransitionV1 {
+            inputs: v0.inputs,
+            actions: v0.actions,
+            amount: v0.amount,
+            anchor: v0.anchor,
+            proof: v0.proof,
+            binding_signature: v0.binding_signature,
+            fee_strategy: v0.fee_strategy,
+            user_fee_increase: v0.user_fee_increase,
+            input_witnesses: v0.input_witnesses,
+        })
+    }
+
+    #[test]
+    fn should_separate_shield_formats_at_protocol_activation() {
+        for (pv, format) in [
+            (PlatformVersion::get(12).expect("PV12"), 0),
+            (PlatformVersion::get(13).expect("PV13"), 0),
+            (PlatformVersion::latest(), 1),
+        ] {
+            let bounds = &pv
+                .dpp
+                .state_transition_serialization_versions
+                .shield_state_transition;
+            assert_eq!(
+                (
+                    bounds.min_version,
+                    bounds.max_version,
+                    bounds.default_current_version
+                ),
+                (format, format, format)
+            );
+            for shield in [fixture(), bound_fixture()] {
+                let supported = shield.feature_version() == format;
+                let transition = StateTransition::Shield(shield);
+                let bytes = transition.serialize_to_bytes().expect("wire bytes");
+                assert_eq!(
+                    StateTransition::deserialize_from_bytes_untrusted(&bytes)
+                        .expect("generic decoding"),
+                    transition
+                );
+                assert_eq!(
+                    StateTransition::deserialize_from_bytes_untrusted_exact_in_version(&bytes, pv)
+                        .is_ok(),
+                    supported
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_include_the_shield_format_in_address_signing_bytes() {
+        let legacy = StateTransition::Shield(fixture());
+        let bound = StateTransition::Shield(bound_fixture());
+        for (before, after) in [
+            (
+                legacy.serialize_to_bytes().expect("legacy"),
+                bound.serialize_to_bytes().expect("bound"),
+            ),
+            (
+                legacy.signable_bytes().expect("legacy signing bytes"),
+                bound.signable_bytes().expect("bound signing bytes"),
+            ),
+        ] {
+            assert_eq!(before.len(), after.len());
+            assert_eq!(
+                before.iter().zip(&after).filter(|(a, b)| a != b).count(),
+                1,
+                "identical fields must differ only in the signed format discriminant"
+            );
+        }
+    }
+
+    #[test]
+    fn should_round_trip_bound_shields_without_losing_the_format() {
+        let original = bound_fixture();
+        let json = original.to_json().expect("JSON");
+        assert_eq!(json["$formatVersion"], "1");
+        assert_eq!(
+            ShieldTransition::from_json(json).expect("JSON round trip"),
+            original
+        );
+        let value = original.to_object().expect("Value");
+        assert_eq!(
+            ShieldTransition::from_object(value).expect("Value round trip"),
+            original
+        );
+    }
+
+    #[test]
+    fn should_preserve_historical_shield_wire_and_signable_bytes() {
+        let transition = StateTransition::Shield(fixture());
+        let wire = transition
+            .serialize_to_bytes()
+            .expect("historical wire bytes");
+        let signable = transition
+            .signable_bytes()
+            .expect("historical signing bytes");
+        assert_eq!(
+            sha256::Hash::hash(&wire).to_string(),
+            "cb3bd0211bf65d650f543cd26c41e8ea8a3f65966a7d724da0dbb84c6d954171"
+        );
+        assert_eq!(
+            sha256::Hash::hash(&signable).to_string(),
+            "e4d9d6efea0f33c18b114c9250322c190af2eec35d1478ebadb59db243a6b45a"
+        );
     }
 
     #[test]

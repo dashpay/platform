@@ -169,9 +169,9 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         shield_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+            min_version: 1,
+            max_version: 1,
+            default_current_version: 1,
         },
         shielded_transfer_state_transition: FeatureVersionBounds {
             min_version: 0,

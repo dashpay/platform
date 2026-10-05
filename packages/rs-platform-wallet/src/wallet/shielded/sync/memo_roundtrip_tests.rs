@@ -203,7 +203,7 @@ async fn shield_memo_round_trips_through_ivk_decryption() {
     .await
     .expect("shield transition build should succeed");
 
-    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+    let StateTransition::Shield(ShieldTransition::V1(v0)) = st else {
         panic!("expected a Shield state transition");
     };
 

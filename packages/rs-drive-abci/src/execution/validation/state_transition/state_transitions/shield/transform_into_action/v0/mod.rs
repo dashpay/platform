@@ -2,12 +2,13 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
-use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
+use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
-use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
 use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -20,6 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// shielded pool), instead of the sum of every input's `requested` value.
 ///
 /// # Why this is needed
+///
+/// The input map and fee strategy are passed directly, independently of the wire
+/// format. Historical V0 callers supply the same fields and keep the same allocation.
 ///
 /// Each `ShieldTransitionV0::inputs` entry maps an address to `(nonce, requested)`,
 /// where `requested` is a **max contribution**, not an exact debit (see the field
@@ -75,13 +79,11 @@ use std::collections::{BTreeMap, BTreeSet};
 /// invariant — it would otherwise mint credits (pool credited `shield_amount`, addresses debited
 /// less).
 pub(super) fn reallocate_inputs_for_shield_amount(
-    transition: &ShieldTransitionV0,
+    requested_inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    fee_strategy: &AddressFundsFeeStrategy,
     inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     shield_amount: Credits,
 ) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
-    let requested_inputs = &transition.inputs;
-    let fee_strategy = &transition.fee_strategy;
-
     // Identify which input addresses the fee strategy deducts the fee from. A
     // `DeductFromInput(index)` step refers to the address at that position in the
     // input set's `BTreeMap` (address) order — the SAME order the fee machinery
@@ -201,8 +203,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let ShieldTransition::V0(transition_v0) = self;
-        let shield_amount: Credits = transition_v0.amount;
+        let shield_amount: Credits = self.amount();
 
         // The shared address-balance validation debits the FULL per-input `requested`
         // (a max contribution), but the shielded pool only receives `shield_amount`.
@@ -210,7 +211,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         // leaving the excess in the source addresses. This keeps credits conserved
         // (addresses lose `shield_amount` + fee, pool gains `shield_amount`).
         let inputs_with_remaining_balance = reallocate_inputs_for_shield_amount(
-            transition_v0,
+            self.inputs(),
+            self.fee_strategy(),
             inputs_with_remaining_balance,
             shield_amount,
         )?;
@@ -241,7 +243,9 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
 mod tests {
     use super::*;
     use dpp::address_funds::PlatformAddress;
+    use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+    use dpp::state_transition::StateTransitionWitnessSigned;
     use std::collections::BTreeMap;
 
     /// Builds a minimal `ShieldTransitionV0` whose `inputs` map carries the per-input
@@ -282,8 +286,13 @@ mod tests {
         let mut remaining = BTreeMap::new();
         remaining.insert(addr, (1u32, actual - requested));
 
-        let adjusted =
-            reallocate_inputs_for_shield_amount(&transition, remaining, shield_amount).unwrap();
+        let adjusted = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining,
+            shield_amount,
+        )
+        .unwrap();
 
         let (nonce, new_remaining) = adjusted.get(&addr).copied().unwrap();
         assert_eq!(nonce, 1u32, "nonce must be preserved");
@@ -352,8 +361,13 @@ mod tests {
         remaining.insert(addr_a, (1u32, actual_a - req_a)); // 0
         remaining.insert(addr_b, (1u32, actual_b - req_b)); // 500_000
 
-        let adjusted =
-            reallocate_inputs_for_shield_amount(&transition, remaining, shield_amount).unwrap();
+        let adjusted = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining,
+            shield_amount,
+        )
+        .unwrap();
 
         let (_n_a, adj_a) = adjusted.get(&addr_a).copied().unwrap();
         let (_n_b, adj_b) = adjusted.get(&addr_b).copied().unwrap();
@@ -407,9 +421,13 @@ mod tests {
         remaining.insert(addr_b, (1u32, rem_b));
         remaining.insert(addr_c, (1u32, rem_c));
 
-        let adjusted =
-            reallocate_inputs_for_shield_amount(&transition, remaining.clone(), shield_amount)
-                .unwrap();
+        let adjusted = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining.clone(),
+            shield_amount,
+        )
+        .unwrap();
 
         // The SUM of (actual - adjusted) across inputs == shield_amount exactly.
         let actuals = [(addr_a, actual_a), (addr_b, actual_b), (addr_c, actual_c)];
@@ -473,8 +491,13 @@ mod tests {
         remaining.insert(addr_a, (1u32, actual_a - req_a));
         remaining.insert(addr_b, (1u32, actual_b - req_b));
 
-        let adjusted =
-            reallocate_inputs_for_shield_amount(&transition, remaining, shield_amount).unwrap();
+        let adjusted = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining,
+            shield_amount,
+        )
+        .unwrap();
 
         let (_n_a, adj_a) = adjusted.get(&addr_a).copied().unwrap();
         let (_n_b, adj_b) = adjusted.get(&addr_b).copied().unwrap();
@@ -497,7 +520,12 @@ mod tests {
         let mut remaining = BTreeMap::new();
         remaining.insert(addr, (1u32, 5000));
 
-        let result = reallocate_inputs_for_shield_amount(&transition, remaining, 1000);
+        let result = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining,
+            1000,
+        );
         assert!(result.is_err(), "missing transition input must error");
     }
 
@@ -519,8 +547,13 @@ mod tests {
         let mut remaining = BTreeMap::new();
         remaining.insert(addr, (1u32, 0)); // actual - requested
 
-        let err = reallocate_inputs_for_shield_amount(&transition, remaining, shield_amount)
-            .expect_err("shield_amount > Σrequested must be rejected, not minted");
+        let err = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining,
+            shield_amount,
+        )
+        .expect_err("shield_amount > Σrequested must be rejected, not minted");
         match err {
             Error::Execution(ExecutionError::CorruptedCodeExecution(msg)) => assert!(
                 msg.contains("exceeds the sum of input contributions"),
@@ -546,6 +579,11 @@ mod tests {
         let mut remaining = BTreeMap::new();
         remaining.insert(addr, (2u32, 0)); // remaining-balance nonce = 2 (diverges)
 
-        let _ = reallocate_inputs_for_shield_amount(&transition, remaining, 500);
+        let _ = reallocate_inputs_for_shield_amount(
+            &transition.inputs,
+            &transition.fee_strategy,
+            remaining,
+            500,
+        );
     }
 }

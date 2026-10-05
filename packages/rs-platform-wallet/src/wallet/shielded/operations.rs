@@ -264,12 +264,10 @@ pub(super) async fn queue_shielded_activity<S: ShieldedStore>(
 /// Returns `&[]` for any non-shielded variant (none reach the recorder).
 /// Each shielded variant's `actions()` comes from its own accessor /
 /// methods trait, so the relevant traits are imported locally.
-fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] {
-    // `actions()` is on each type's accessor trait; Shield exposes `actions`
-    // only as a public field on its V0 struct, so match down to that
-    // variant for it.
+pub(super) fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] {
+    // Each accessor retains the actions across the supported wire formats.
     use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
-    use dpp::state_transition::shield_transition::ShieldTransition;
+    use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
     use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
     use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
     use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
@@ -278,7 +276,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
 
     match st {
-        StateTransition::Shield(ShieldTransition::V0(v0)) => &v0.actions,
+        StateTransition::Shield(t) => t.actions(),
         StateTransition::ShieldedTransfer(t) => t.actions(),
         StateTransition::Unshield(t) => t.actions(),
         StateTransition::ShieldFromAssetLock(t) => t.actions(),

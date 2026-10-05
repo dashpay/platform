@@ -2717,7 +2717,7 @@ mod tests {
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
-            let StateTransition::Shield(ShieldTransition::V0(proven)) = &shield else {
+            let StateTransition::Shield(ShieldTransition::V1(proven)) = &shield else {
                 panic!("expected a shield transition");
             };
             let mut rng = StdRng::seed_from_u64(42);

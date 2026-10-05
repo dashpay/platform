@@ -6,6 +6,7 @@ impl FeatureVersioned for ShieldTransition {
     fn feature_version(&self) -> FeatureVersion {
         match self {
             ShieldTransition::V0(v0) => v0.feature_version(),
+            ShieldTransition::V1(v1) => v1.feature_version(),
         }
     }
 }

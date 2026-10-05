@@ -23,7 +23,8 @@ mod tests {
     use dpp::prelude::AddressNonce;
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::shielded::{shield_extra_sighash_data, SerializedAction};
-    use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+    use dpp::state_transition::shield_transition::methods::ShieldTransitionMethodsV0;
+    use dpp::state_transition::shield_transition::v1::ShieldTransitionV1;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
     use grovedb_commitment_tree::{
@@ -38,7 +39,7 @@ mod tests {
     // Helper Functions (transition-specific)
     // ==========================================
 
-    /// Builds a raw `ShieldTransitionV0` with dummy witnesses. Used for structure validation tests
+    /// Builds a raw `ShieldTransitionV1` with dummy witnesses. Used for structure validation tests
     /// that don't need valid signatures (the structure error is caught before or alongside witness
     /// validation, or inputs are empty so witness validation is vacuously true).
     fn create_raw_shield_transition(
@@ -52,7 +53,7 @@ mod tests {
     ) -> StateTransition {
         let witnesses: Vec<AddressWitness> =
             (0..witness_count).map(|_| create_dummy_witness()).collect();
-        StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+        StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
             inputs,
             actions,
             amount,
@@ -65,7 +66,7 @@ mod tests {
         }))
     }
 
-    /// Builds a `ShieldTransitionV0` and signs it with the provided signer.
+    /// Builds a `ShieldTransitionV1` and signs it with the provided signer.
     /// The transition will have valid witnesses for all inputs.
     async fn create_signed_shield_transition(
         signer: &TestAddressSigner,
@@ -77,7 +78,7 @@ mod tests {
         fee_strategy: AddressFundsFeeStrategy,
     ) -> StateTransition {
         // First create with empty witnesses to compute signable bytes
-        let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+        let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
             inputs: inputs.clone(),
             actions,
             amount,
@@ -103,7 +104,7 @@ mod tests {
         }
 
         // Inject witnesses
-        if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+        if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
             v0.input_witnesses = witnesses;
         }
         st
@@ -240,7 +241,7 @@ mod tests {
             .await;
 
             // Add an extra dummy witness to cause mismatch (1 input, 2 witnesses)
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = transition {
                 v0.input_witnesses.push(create_dummy_witness());
             }
 
@@ -306,7 +307,7 @@ mod tests {
             let actions: Vec<SerializedAction> =
                 (0..17).map(|_| create_dummy_serialized_action()).collect();
 
-            let transition = ShieldTransitionV0 {
+            let transition = ShieldTransitionV1 {
                 inputs: BTreeMap::new(),
                 actions,
                 amount: 1000,
@@ -571,7 +572,7 @@ mod tests {
             .await;
 
             // Tamper the witness signature
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = transition {
                 if let Some(AddressWitness::P2pkh { ref mut signature }) =
                     v0.input_witnesses.first_mut()
                 {
@@ -634,7 +635,7 @@ mod tests {
                 .await
                 .expect("should sign");
 
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = transition {
                 v0.input_witnesses = vec![wrong_witness];
             }
 
@@ -844,7 +845,7 @@ mod tests {
                 (1 as AddressNonce, shield_amount + dash_to_credits!(0.01)),
             );
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+            let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                 inputs: inputs.clone(),
                 actions,
                 amount: shield_amount,
@@ -868,7 +869,7 @@ mod tests {
                 witnesses.push(witness);
             }
 
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
             }
 
@@ -961,7 +962,7 @@ mod tests {
                 (1 as AddressNonce, dash_to_credits!(0.5)),
             );
 
-            let transition = ShieldTransitionV0 {
+            let transition = ShieldTransitionV1 {
                 inputs,
                 actions: vec![create_dummy_serialized_action()],
                 amount: 1000,
@@ -1047,7 +1048,7 @@ mod tests {
                 ),
             );
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+            let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                 inputs: inputs.clone(),
                 actions,
                 amount: mutated_amount, // MUTATED
@@ -1071,7 +1072,7 @@ mod tests {
                 witnesses.push(witness);
             }
 
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
             }
 
@@ -1155,7 +1156,7 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, requested_input_amount));
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+            let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                 inputs: inputs.clone(),
                 actions,
                 amount: forged_shield_amount,
@@ -1179,7 +1180,7 @@ mod tests {
                 witnesses.push(witness);
             }
 
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
             }
 
@@ -1271,7 +1272,7 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, input_amount));
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+            let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                 inputs: inputs.clone(),
                 actions,
                 amount: shield_amount,
@@ -1295,7 +1296,7 @@ mod tests {
                 witnesses.push(witness);
             }
 
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
             }
 
@@ -1421,6 +1422,7 @@ mod tests {
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
         use dpp::block::block_info::BlockInfo;
+        use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
         use dpp::validation::ConsensusValidationResult;
         use dpp::version::DefaultForPlatformVersion;
         use drive::state_transition_action::StateTransitionAction;
@@ -1463,37 +1465,25 @@ mod tests {
             address: PlatformAddress,
             nonce: AddressNonce,
             bundle: &OutputsOnlyBundle,
+            platform_version: &PlatformVersion,
         ) -> StateTransition {
             let mut inputs = BTreeMap::new();
             inputs.insert(address, (nonce, bundle.amount + dash_to_credits!(0.01)));
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
-                inputs: inputs.clone(),
-                actions: bundle.actions.clone(),
-                amount: bundle.amount,
-                anchor: bundle.anchor,
-                proof: bundle.proof.clone(),
-                binding_signature: bundle.binding_signature,
-                fee_strategy: AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
-                user_fee_increase: 0,
-                input_witnesses: vec![],
-            }));
-            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
-            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-            for input in inputs.keys() {
-                witnesses.push(
-                    signer
-                        .sign_create_witness(input, &signable_bytes)
-                        .await
-                        .expect("should sign"),
-                );
-            }
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
-                v0.input_witnesses = witnesses;
-            }
-            st
+            ShieldTransition::try_from_bundle_with_signer(
+                inputs,
+                bundle.actions.clone(),
+                bundle.amount,
+                bundle.anchor,
+                bundle.proof.clone(),
+                bundle.binding_signature,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                signer,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("signed Shield in the active wire format")
         }
 
         /// A funded address on `platform` and the signer for it.
@@ -1519,7 +1509,7 @@ mod tests {
             let requested = dash_to_credits!(0.1);
             let mut inputs = BTreeMap::new();
             inputs.insert(address, (1 as AddressNonce, requested));
-            let transition = ShieldTransition::V0(ShieldTransitionV0 {
+            let fields = ShieldTransitionV0 {
                 inputs,
                 actions: nullifiers
                     .iter()
@@ -1537,7 +1527,27 @@ mod tests {
                 ]),
                 user_fee_increase: 0,
                 input_witnesses: vec![],
-            });
+            };
+            let transition = match platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .shield_state_transition
+                .default_current_version
+            {
+                0 => ShieldTransition::V0(fields),
+                1 => ShieldTransition::V1(ShieldTransitionV1 {
+                    inputs: fields.inputs,
+                    actions: fields.actions,
+                    amount: fields.amount,
+                    anchor: fields.anchor,
+                    proof: fields.proof,
+                    binding_signature: fields.binding_signature,
+                    fee_strategy: fields.fee_strategy,
+                    user_fee_increase: fields.user_fee_increase,
+                    input_witnesses: fields.input_witnesses,
+                }),
+                version => panic!("unsupported Shield format {version}"),
+            };
             // The address held exactly `requested`, all of it debited by the balance check.
             let mut remaining = BTreeMap::new();
             remaining.insert(address, (1 as AddressNonce, 0));
@@ -1571,7 +1581,7 @@ mod tests {
             let (signer, address) = funded_address(&mut platform);
 
             let bundle = bound_bundle(address, platform_version);
-            let st = signed_shield(&signer, address, 1, &bundle).await;
+            let st = signed_shield(&signer, address, 1, &bundle, PlatformVersion::latest()).await;
             let result = process_transition_and_commit(&platform, st, platform_version);
 
             assert_matches!(
@@ -1593,7 +1603,8 @@ mod tests {
             let (signer, address) = funded_address(&mut platform);
 
             let bundle = bound_bundle(address, platform_version);
-            let first = signed_shield(&signer, address, 1, &bundle).await;
+            let first =
+                signed_shield(&signer, address, 1, &bundle, PlatformVersion::latest()).await;
             let result = process_transition_and_commit(&platform, first, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1604,7 +1615,8 @@ mod tests {
             // nullifiers. The binding does not stop this — it covers the funding addresses, not
             // the transition carrying them — so the repeat travels the whole block path and the
             // recorded nullifier is what refuses it.
-            let repeat = signed_shield(&signer, address, 2, &bundle).await;
+            let repeat =
+                signed_shield(&signer, address, 2, &bundle, PlatformVersion::latest()).await;
             let result = process_transition_and_commit(&platform, repeat, platform_version);
 
             let first_nullifier = bundle.nullifiers()[0];
@@ -1639,8 +1651,10 @@ mod tests {
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
             let bundle = bound_bundle(address, pv);
-            let first = signed_shield(&signer, address, 1, &bundle).await;
-            let repeat = signed_shield(&signer, address, 2, &bundle).await;
+            let first =
+                signed_shield(&signer, address, 1, &bundle, PlatformVersion::latest()).await;
+            let repeat =
+                signed_shield(&signer, address, 2, &bundle, PlatformVersion::latest()).await;
             let state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
             let result = platform
@@ -1694,7 +1708,7 @@ mod tests {
             let (signer, address) = funded_address(&mut platform);
 
             let bundle = bound_bundle(address, platform_version);
-            let st = signed_shield(&signer, address, 1, &bundle).await;
+            let st = signed_shield(&signer, address, 1, &bundle, PlatformVersion::latest()).await;
             let result = process_transition_and_commit(&platform, st, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1720,7 +1734,7 @@ mod tests {
             let (signer, address) = funded_address(&mut platform);
             let bundle = unbound_bundle();
 
-            let first = signed_shield(&signer, address, 1, bundle).await;
+            let first = signed_shield(&signer, address, 1, bundle, platform_version).await;
             let result = process_transition_and_commit(&platform, first, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1733,7 +1747,7 @@ mod tests {
                 );
             }
 
-            let repeat = signed_shield(&signer, address, 2, bundle).await;
+            let repeat = signed_shield(&signer, address, 2, bundle, platform_version).await;
             let result = process_transition_and_commit(&platform, repeat, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1874,7 +1888,7 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, requested));
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+            let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                 inputs: inputs.clone(),
                 actions,
                 amount: shield_amount,
@@ -1898,7 +1912,7 @@ mod tests {
                 witnesses.push(witness);
             }
 
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
             }
 
@@ -2053,7 +2067,7 @@ mod tests {
             inputs.insert(addr_a, (1 as AddressNonce, requested));
             inputs.insert(addr_b, (1 as AddressNonce, requested));
 
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+            let mut st = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                 inputs: inputs.clone(),
                 actions,
                 amount: shield_amount,
@@ -2076,7 +2090,7 @@ mod tests {
                     .expect("should sign");
                 witnesses.push(witness);
             }
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = st {
                 v0.input_witnesses = witnesses;
             }
 
@@ -2124,6 +2138,7 @@ mod tests {
     mod mainnet_halt_repro {
         use super::*;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::setup_platform_at_protocol_version;
         use dpp::block::block_info::BlockInfo;
 
         /// Note count on mainnet's shielded commitment tree around the halt.
@@ -2197,43 +2212,28 @@ mod tests {
             signer: &TestAddressSigner,
             addr: PlatformAddress,
             declared_input: u64,
+            pv: &PlatformVersion,
         ) -> StateTransition {
-            let mut inputs = BTreeMap::new();
-            inputs.insert(addr, (1 as AddressNonce, declared_input));
-
-            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
-                inputs: inputs.clone(),
-                actions: b.actions.clone(),
-                amount: b.shield_amount,
-                anchor: b.anchor,
-                proof: b.proof.clone(),
-                binding_signature: b.binding_sig,
-                fee_strategy: AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
-                user_fee_increase: 0,
-                input_witnesses: vec![],
-            }));
-            let signable = st.signable_bytes().expect("should compute signable bytes");
-            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-            for a in inputs.keys() {
-                witnesses.push(
-                    signer
-                        .sign_create_witness(a, &signable)
-                        .await
-                        .expect("sign"),
-                );
-            }
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
-                v0.input_witnesses = witnesses;
-            }
-            st
+            ShieldTransition::try_from_bundle_with_signer(
+                BTreeMap::from([(addr, (1, declared_input))]),
+                b.actions.clone(),
+                b.shield_amount,
+                b.anchor,
+                b.proof.clone(),
+                b.binding_sig,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                signer,
+                0,
+                pv,
+            )
+            .await
+            .expect("signed Shield")
         }
 
         /// Run the shield on a fresh platform whose input address holds exactly
         /// `shield_amount + headroom`, i.e. `headroom` credits are available to pay the fee.
         async fn run_at(headroom: u64, b: &Bundle, pv: &PlatformVersion) -> (Outcome, String) {
-            let mut platform = setup_platform();
+            let mut platform = setup_platform_at_protocol_version(pv.protocol_version);
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
 
             let mut signer = TestAddressSigner::new();
@@ -2242,7 +2242,7 @@ mod tests {
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
-            let st = build_signed(b, &signer, addr, declared_input).await;
+            let st = build_signed(b, &signer, addr, declared_input, pv).await;
             let result = process_transition(&platform, st, pv);
             match result.execution_results().first() {
                 Some(StateTransitionExecutionResult::SuccessfulExecution { .. }) => {
@@ -2361,10 +2361,7 @@ mod tests {
         #[tokio::test]
         async fn dropped_shield_must_not_mutate_state() {
             let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
-            // `setup_platform` starts at the latest protocol version, and
-            // `process_state_transition` validates at the platform state's version, not at `pv`,
-            // so the bundle is bound the way the latest version's proof check rebuilds it.
-            let b = build_bundle(PlatformVersion::latest());
+            let b = build_bundle(pv);
 
             // Least headroom validation lets through to execution.
             const CEILING: u64 = 5_000_000_000;
@@ -2413,7 +2410,7 @@ mod tests {
             // Mid-band: accepted by validation, rejected by execution.
             let headroom = accepted + (executes - accepted) / 2;
 
-            let mut platform = setup_platform();
+            let mut platform = setup_platform_at_protocol_version(pv.protocol_version);
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
             let mut signer = TestAddressSigner::new();
             let addr = signer.add_p2pkh([1u8; 32]);
@@ -2436,7 +2433,7 @@ mod tests {
                 .unwrap()
                 .expect("root hash");
 
-            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let st = build_signed(&b, &signer, addr, declared_input, pv).await;
             let bytes = st.serialize_to_bytes().expect("serialize");
             let state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2529,7 +2526,7 @@ mod tests {
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
-            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let st = build_signed(&b, &signer, addr, declared_input, pv).await;
             let bytes = st.serialize_to_bytes().expect("serialize");
             let state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2704,7 +2701,7 @@ mod tests {
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
-            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let st = build_signed(&b, &signer, addr, declared_input, pv).await;
             let bytes = st.serialize_to_bytes().expect("serialize");
             let state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2909,7 +2906,7 @@ mod tests {
             binding_signature: [u8; 64],
         ) -> StateTransition {
             let mut transition =
-                StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
                     inputs: inputs.clone(),
                     actions,
                     amount,
@@ -2932,7 +2929,7 @@ mod tests {
                         .expect("should sign"),
                 );
             }
-            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
+            if let StateTransition::Shield(ShieldTransition::V1(ref mut v0)) = transition {
                 v0.input_witnesses = witnesses;
             }
             transition
@@ -3001,7 +2998,7 @@ mod tests {
             // Positive control: the builder's bundle is what both CheckTx and the block accept.
             assert_admitted_and_executed(&platform, &shield, platform_version);
 
-            let StateTransition::Shield(ShieldTransition::V0(proven)) = &shield else {
+            let StateTransition::Shield(ShieldTransition::V1(proven)) = &shield else {
                 panic!("expected a shield transition");
             };
             let copy = wrap(
@@ -3098,11 +3095,249 @@ mod tests {
                 let shield = builder_made_shield(inputs.clone(), &signer, platform_version).await;
                 assert_admitted_and_executed(&platform, &shield, platform_version);
 
-                let bound = builder_made_shield(inputs, &signer, PlatformVersion::latest()).await;
-                assert_refused_for_its_proof(&platform, &bound, platform_version);
+                let bound =
+                    builder_made_shield(inputs.clone(), &signer, PlatformVersion::latest()).await;
+                let StateTransition::Shield(ShieldTransition::V1(bound)) = bound else {
+                    panic!("bound Shield");
+                };
+                let historical_wrapper = ShieldTransition::try_from_bundle_with_signer(
+                    inputs,
+                    bound.actions,
+                    bound.amount,
+                    bound.anchor,
+                    bound.proof,
+                    bound.binding_signature,
+                    vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                    &signer,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("historical-format wrapper signed over the bound bundle");
+                assert_refused_for_its_proof(&platform, &historical_wrapper, platform_version);
             }
         }
     }
+    mod legacy_format_activation {
+        use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::validation::state_transition::processor::process_state_transition;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            has_recorded_nullifier, setup_platform_at_protocol_version, test_orchard_recipient,
+            TestOrchardProver,
+        };
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::shielded::builder::build_shield_transition;
+        use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
+
+        fn process_bytes_and_commit(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            bytes: &[u8],
+            pv: &PlatformVersion,
+        ) -> Vec<StateTransitionExecutionResult> {
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes.to_vec()],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    false,
+                    None,
+                )
+                .expect("process exact signed bytes");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("commit");
+            result.execution_results().to_vec()
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_pending_legacy_shield_without_charging_after_activation() {
+            let balance = dash_to_credits!(1.0);
+            let amount = 5_000;
+            for protocol_version in [13, 12] {
+                let historical =
+                    PlatformVersion::get(protocol_version).expect("historical version");
+                let mut signer = TestAddressSigner::new();
+                let address = signer.add_p2pkh([114; 32]);
+                let transition = build_shield_transition(
+                    &test_orchard_recipient(),
+                    amount,
+                    BTreeMap::from([(address, (1, balance))]),
+                    vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                    &signer,
+                    0,
+                    &TestOrchardProver,
+                    [0; 36],
+                    None,
+                    historical,
+                )
+                .await
+                .expect("historical client-built Shield");
+                let StateTransition::Shield(shield) = &transition else {
+                    panic!("Shield");
+                };
+                let nullifiers: Vec<[u8; 32]> = shield.nullifiers();
+                let bytes = transition.serialize_to_bytes().expect("serialize once");
+
+                let mut old_platform = setup_platform_at_protocol_version(protocol_version);
+                setup_address_with_balance(&mut old_platform, address, 0, balance);
+                assert_matches!(
+                    process_bytes_and_commit(&old_platform, &bytes, historical).as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                    "the unchanged transaction must be valid before activation"
+                );
+                assert_eq!(
+                    old_platform
+                        .drive
+                        .read_shielded_pool_total_balance(None, &mut vec![], historical)
+                        .expect("historical pool"),
+                    amount
+                );
+
+                let pv = PlatformVersion::latest();
+                let mut platform = setup_platform();
+                setup_address_with_balance(&mut platform, address, 0, balance);
+                {
+                    let state = platform.state.load();
+                    let platform_ref = PlatformRef {
+                        drive: &platform.drive,
+                        state: &state,
+                        config: &platform.config,
+                        core_rpc: &platform.core_rpc,
+                    };
+                    for level in [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck] {
+                        let admission = platform
+                            .check_tx(&bytes, level, &platform_ref, pv)
+                            .expect("inactive format is a coded refusal");
+                        assert_matches!(
+                            admission.errors.as_slice(),
+                            [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                                if error.state_transition_type() == "Shield"
+                                    && error.current_protocol_version() == pv.protocol_version
+                                    && error.required_protocol_version() == 13,
+                            "raw CheckTx and Recheck must evict the legacy format unpaid"
+                        );
+                        assert!(admission
+                            .data
+                            .expect("admission result")
+                            .fee_result
+                            .is_none());
+                    }
+
+                    let mut decoded = transition.clone();
+                    let StateTransition::Shield(ShieldTransition::V0(v0)) = &mut decoded else {
+                        panic!("historical format");
+                    };
+                    v0.input_witnesses.clear();
+                    let direct = process_state_transition(
+                        &platform_ref,
+                        &BlockInfo::default(),
+                        decoded,
+                        None,
+                    )
+                    .expect("already-decoded legacy format is refused");
+                    assert!(direct.data.is_none(), "no fee-paying action is constructed");
+                    assert_matches!(
+                        direct.errors.as_slice(),
+                        [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                            if error.required_protocol_version() == 13,
+                        "format refusal precedes authentication even for direct callers"
+                    );
+                }
+                let results = process_bytes_and_commit(&platform, &bytes, pv);
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_balance_and_nonce(&address, None, pv)
+                        .expect("address"),
+                    Some((0, balance)),
+                    "a pending historical Shield must not be charged after activation"
+                );
+                assert_matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))
+                    )] if error.required_protocol_version() == 13
+                );
+
+                let StateTransition::Shield(ShieldTransition::V0(v0)) = transition.clone() else {
+                    panic!("historical format");
+                };
+                let retagged = StateTransition::Shield(ShieldTransition::V1(ShieldTransitionV1 {
+                    inputs: v0.inputs,
+                    actions: v0.actions,
+                    amount: v0.amount,
+                    anchor: v0.anchor,
+                    proof: v0.proof,
+                    binding_signature: v0.binding_signature,
+                    fee_strategy: v0.fee_strategy,
+                    user_fee_increase: v0.user_fee_increase,
+                    input_witnesses: v0.input_witnesses,
+                }));
+                let retagged_bytes = retagged
+                    .serialize_to_bytes()
+                    .expect("retag without resigning");
+                assert_eq!(retagged_bytes.len(), bytes.len());
+                assert_eq!(
+                    retagged_bytes
+                        .iter()
+                        .zip(&bytes)
+                        .filter(|(a, b)| a != b)
+                        .count(),
+                    1,
+                    "only the signed format tag was changed"
+                );
+                assert_matches!(
+                    process_bytes_and_commit(&platform, &retagged_bytes, pv).as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(_)
+                    )],
+                    "a version tag cannot upgrade old address authorization"
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_balance_and_nonce(&address, None, pv)
+                        .expect("address"),
+                    Some((0, balance)),
+                    "invalid witnesses cannot authorize a fee or consume a nonce"
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .read_shielded_pool_total_balance(None, &mut vec![], pv)
+                        .expect("pool"),
+                    0
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .shielded_pool_notes_count(None, &mut vec![], pv)
+                        .expect("notes"),
+                    0
+                );
+                for nullifier in nullifiers {
+                    assert!(!has_recorded_nullifier(&platform, &nullifier));
+                }
+                assert_eq!(
+                    transition.serialize_to_bytes().expect("unchanged bytes"),
+                    bytes
+                );
+            }
+        }
+    }
+
     mod paid_proof_failures {
         use super::*;
         use crate::execution::check_tx::CheckTxLevel;
@@ -3218,7 +3453,7 @@ mod tests {
             signer: &TestAddressSigner,
             increase: u16,
         ) {
-            let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+            let StateTransition::Shield(ShieldTransition::V1(v0)) = st else {
                 panic!("shield");
             };
             v0.user_fee_increase = increase;
@@ -3233,7 +3468,7 @@ mod tests {
                         .expect("witness"),
                 );
             }
-            let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+            let StateTransition::Shield(ShieldTransition::V1(v0)) = st else {
                 panic!("shield");
             };
             v0.input_witnesses = witnesses;
@@ -3552,8 +3787,20 @@ mod tests {
                 let address = signer.add_p2pkh([93; 32]);
                 let balance = dash_to_credits!(1.0);
                 setup_address_with_balance(&mut platform, address, 0, balance);
-                let st =
-                    create_default_signed_shield_transition(&signer, address, 1, balance).await;
+                let st = ShieldTransition::try_from_bundle_with_signer(
+                    BTreeMap::from([(address, (1, balance))]),
+                    vec![create_dummy_serialized_action()],
+                    1000,
+                    [42; 32],
+                    vec![0; 100],
+                    [0; 64],
+                    vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                    &signer,
+                    0,
+                    pv,
+                )
+                .await
+                .expect("historical signed Shield");
                 let result = process_transition_and_commit(&platform, st, pv);
                 assert_matches!(
                     result.execution_results().as_slice(),

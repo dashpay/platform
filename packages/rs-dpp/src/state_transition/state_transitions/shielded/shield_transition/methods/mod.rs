@@ -16,7 +16,10 @@ use crate::state_transition::shield_transition::ShieldTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     prelude::{AddressNonce, UserFeeIncrease},
-    state_transition::{shield_transition::v0::ShieldTransitionV0, StateTransition},
+    state_transition::{
+        shield_transition::{v0::ShieldTransitionV0, v1::ShieldTransitionV1},
+        StateTransition,
+    },
     ProtocolError,
 };
 #[cfg(feature = "state-transition-signing")]
@@ -57,9 +60,24 @@ impl ShieldTransitionMethodsV0 for ShieldTransition {
                 )
                 .await
             }
+            1 => {
+                ShieldTransitionV1::try_from_bundle_with_signer(
+                    inputs,
+                    actions,
+                    amount,
+                    anchor,
+                    proof,
+                    binding_signature,
+                    fee_strategy,
+                    signer,
+                    user_fee_increase,
+                    platform_version,
+                )
+                .await
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ShieldTransition::try_from_bundle_with_signer".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

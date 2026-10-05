@@ -13,24 +13,28 @@ impl StateTransitionLike for ShieldTransition {
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
             ShieldTransition::V0(transition) => transition.modified_data_ids(),
+            ShieldTransition::V1(transition) => transition.modified_data_ids(),
         }
     }
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         match self {
             ShieldTransition::V0(_) => 0,
+            ShieldTransition::V1(_) => 1,
         }
     }
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             ShieldTransition::V0(transition) => transition.state_transition_type(),
+            ShieldTransition::V1(transition) => transition.state_transition_type(),
         }
     }
 
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             ShieldTransition::V0(transition) => transition.unique_identifiers(),
+            ShieldTransition::V1(transition) => transition.unique_identifiers(),
         }
     }
 }
@@ -40,12 +44,14 @@ impl StateTransitionHasUserFeeIncrease for ShieldTransition {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             ShieldTransition::V0(transition) => transition.user_fee_increase(),
+            ShieldTransition::V1(transition) => transition.user_fee_increase(),
         }
     }
     /// set a fee multiplier
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             ShieldTransition::V0(transition) => transition.set_user_fee_increase(user_fee_increase),
+            ShieldTransition::V1(transition) => transition.set_user_fee_increase(user_fee_increase),
         }
     }
 }
@@ -59,6 +65,7 @@ impl StateTransitionWitnessSigned for ShieldTransition {
     > {
         match self {
             ShieldTransition::V0(transition) => transition.inputs(),
+            ShieldTransition::V1(transition) => transition.inputs(),
         }
     }
 
@@ -70,6 +77,7 @@ impl StateTransitionWitnessSigned for ShieldTransition {
     > {
         match self {
             ShieldTransition::V0(transition) => transition.inputs_mut(),
+            ShieldTransition::V1(transition) => transition.inputs_mut(),
         }
     }
 
@@ -82,18 +90,21 @@ impl StateTransitionWitnessSigned for ShieldTransition {
     ) {
         match self {
             ShieldTransition::V0(transition) => transition.set_inputs(inputs),
+            ShieldTransition::V1(transition) => transition.set_inputs(inputs),
         }
     }
 
     fn witnesses(&self) -> &Vec<AddressWitness> {
         match self {
             ShieldTransition::V0(transition) => transition.witnesses(),
+            ShieldTransition::V1(transition) => transition.witnesses(),
         }
     }
 
     fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
         match self {
             ShieldTransition::V0(transition) => transition.set_witnesses(witnesses),
+            ShieldTransition::V1(transition) => transition.set_witnesses(witnesses),
         }
     }
 }

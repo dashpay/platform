@@ -24,7 +24,7 @@ use dpp::state_transition::identity_create_from_shielded_pool_transition::Identi
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
-use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
@@ -118,7 +118,7 @@ pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
         return 0;
     };
     match state_transition {
-        StateTransition::Shield(ShieldTransition::V0(v0)) => v0.actions.len(),
+        StateTransition::Shield(shield) => shield.actions().len(),
         StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(v0)) => v0.actions.len(),
         StateTransition::Unshield(UnshieldTransition::V0(v0)) => v0.actions.len(),
         StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => {
@@ -327,6 +327,9 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
+    use dpp::state_transition::shield_transition::{
+        ShieldTransition, v0::ShieldTransitionV0, v1::ShieldTransitionV1,
+    };
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use std::net::Ipv6Addr;
 
@@ -584,5 +587,60 @@ mod tests {
         let bytes = transfer.serialize_to_bytes().unwrap();
         assert_eq!(orchard_action_count(&bytes), 3);
         assert_eq!(orchard_action_count(&[0xff, 0x00]), 0);
+    }
+
+    #[test]
+    fn should_meter_failed_shield_broadcasts_in_both_wire_formats() {
+        let actions = vec![
+            SerializedAction {
+                nullifier: [1; 32],
+                rk: [2; 32],
+                cmx: [3; 32],
+                encrypted_note: vec![4; 216],
+                cv_net: [5; 32],
+                spend_auth_sig: [6; 64],
+            };
+            3
+        ];
+        let legacy = ShieldTransitionV0 {
+            inputs: Default::default(),
+            actions,
+            amount: 1,
+            anchor: [7; 32],
+            proof: vec![0; 100],
+            binding_signature: [0; 64],
+            fee_strategy: Default::default(),
+            user_fee_increase: 0,
+            input_witnesses: vec![],
+        };
+        let bound = ShieldTransitionV1 {
+            inputs: legacy.inputs.clone(),
+            actions: legacy.actions.clone(),
+            amount: legacy.amount,
+            anchor: legacy.anchor,
+            proof: legacy.proof.clone(),
+            binding_signature: legacy.binding_signature,
+            fee_strategy: legacy.fee_strategy.clone(),
+            user_fee_increase: legacy.user_fee_increase,
+            input_witnesses: legacy.input_witnesses.clone(),
+        };
+        for shield in [ShieldTransition::V0(legacy), ShieldTransition::V1(bound)] {
+            let bytes = StateTransition::Shield(shield)
+                .serialize_to_bytes()
+                .unwrap();
+            let count = orchard_action_count(&bytes);
+            assert_eq!(
+                count, 3,
+                "both formats reserve their proof work before verification"
+            );
+            let budget = budget();
+            let now = Instant::now();
+            broadcast(&budget, SOURCE, count, true, now).unwrap();
+            assert_eq!(
+                broadcast(&budget, SOURCE, count, true, now),
+                Err(ACTION_DRAIN_INTERVAL * 2),
+                "a new wire format cannot bypass the source's failed-proof budget"
+            );
+        }
     }
 }

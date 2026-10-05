@@ -1,5 +1,6 @@
 use crate::state_transition_action::shielded::shield::v0::ShieldTransitionActionV0;
 use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
@@ -24,6 +25,17 @@ impl ShieldTransitionAction {
                 );
                 result.map(|action| action.into())
             }
+            ShieldTransition::V1(v1) => ConsensusValidationResult::new_with_data(
+                ShieldTransitionActionV0 {
+                    inputs_with_remaining_balance,
+                    shield_amount,
+                    notes: v1.actions.iter().map(ShieldedActionNote::from).collect(),
+                    fee_strategy: v1.fee_strategy.clone(),
+                    user_fee_increase: v1.user_fee_increase,
+                    current_total_balance,
+                }
+                .into(),
+            ),
         }
     }
 }

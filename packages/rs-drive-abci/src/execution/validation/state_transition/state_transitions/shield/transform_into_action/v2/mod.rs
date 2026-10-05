@@ -12,6 +12,7 @@ use crate::execution::validation::state_transition::ValidationMode;
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
@@ -19,6 +20,7 @@ use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::shielded::shield_extra_sighash_data;
 use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -69,7 +71,17 @@ impl ShieldStateTransitionTransformIntoActionValidationV2 for ShieldTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let ShieldTransition::V0(transition) = self;
+        let ShieldTransition::V1(transition) = self else {
+            let legacy = StateTransition::Shield(self.clone());
+            return Ok(ConsensusValidationResult::new_with_error(
+                StateTransitionNotActiveError::new(
+                    legacy.name(),
+                    platform_version.protocol_version,
+                    *legacy.active_version_range().end(),
+                )
+                .into(),
+            ));
+        };
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
@@ -173,7 +185,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV2 for ShieldTransition {
         }
 
         let remaining = reallocate_inputs_for_shield_amount(
-            transition,
+            &transition.inputs,
+            &transition.fee_strategy,
             inputs_with_remaining_balance,
             transition.amount,
         )?;

@@ -461,6 +461,14 @@ the refusal is unpaid and consumes no nonce. Duplicate-nullifier refusals remain
 unpaid. CheckTx rejects bad proofs before mempool admission; a directly proposed
 funded bad proof is a paid failure that validators can accept.
 
+This policy requires Shield wire format 1, whose format tag is covered by the
+address witnesses. Format 0 is accepted only at protocol versions 12 and 13;
+after activation it is refused before authentication or proof verification,
+without charging fees or consuming input nonces. A pending legacy Shield must
+be rebuilt and re-signed against the active version. Changing its format tag
+alone invalidates its address witnesses. Historical blocks retain their original
+wire format and unpaid proof-failure behavior.
+
 ## Cryptographic Binding
 
 The fee is not just a field that the platform trusts. It is cryptographically bound

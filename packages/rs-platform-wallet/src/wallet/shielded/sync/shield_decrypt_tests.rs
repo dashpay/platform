@@ -110,7 +110,7 @@ async fn shield_built_note_is_trial_decryptable_by_own_ivk() {
     .await
     .expect("shield transition build should succeed");
 
-    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+    let StateTransition::Shield(ShieldTransition::V1(v0)) = st else {
         panic!("expected a Shield state transition");
     };
 
@@ -198,7 +198,7 @@ async fn shield_to_external_recipient_decrypts_for_recipient_and_recovers_for_se
     .await
     .expect("shield transition build should succeed");
 
-    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+    let StateTransition::Shield(ShieldTransition::V1(v0)) = st else {
         panic!("expected a Shield state transition");
     };
     let wires: Vec<ShieldedEncryptedNote> = v0

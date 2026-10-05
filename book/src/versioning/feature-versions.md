@@ -51,6 +51,15 @@ This is used when a field can accept a *range* of versions -- for example, a
 data contract serialization format where the system can read versions 0 through
 2 but writes version 2 by default.
 
+A state transition can also retire an older signed format. Shield uses format 0
+at protocol versions 12 and 13, and format 1 from version 14: the serialization
+bounds select the client format before signing, while
+`StateTransition::active_version_range` enforces acceptance at untrusted
+decoding. The format tag is part of the address signing bytes. Legacy Shield
+bytes therefore cannot authorize the bound proof domain and paid proof-failure
+policy after activation; pending transactions must be rebuilt and re-signed.
+The historical format and validation generations remain available for replay.
+
 ## Version Structs: The Middle of the Tree
 
 Between the top-level `PlatformVersion` and the leaf-level `FeatureVersion`

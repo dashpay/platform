@@ -1214,8 +1214,11 @@ impl StateTransition {
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_) => 11..=LATEST_VERSION,
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
+            StateTransition::Shield(st) => match st {
+                ShieldTransition::V0(_) => 12..=13,
+                ShieldTransition::V1(_) => 14..=LATEST_VERSION,
+            },
+            StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
             // From protocol version 14 the bundle must bind its kind and its asset lock, which

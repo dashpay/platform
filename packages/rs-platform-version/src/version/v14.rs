@@ -2017,6 +2017,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     by the signed fee strategy's funds after reserving the estimated base fee. A failure
 ///     unable to cover the base fee stays unpaid. CheckTx still refuses invalid proofs
 ///     under its local proof permit; shipped protocol versions keep their unpaid refusal.
+///     Shield wire format 1 signs the new authorization boundary. Format 0 remains valid
+///     only at versions 12 and 13; after activation it is refused before authentication,
+///     unpaid and without consuming input nonces, including when evicted by Recheck.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -2111,7 +2114,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; Shield and ShieldFromAssetLock move to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
         state_transitions: STATE_TRANSITION_VERSIONS_V4,

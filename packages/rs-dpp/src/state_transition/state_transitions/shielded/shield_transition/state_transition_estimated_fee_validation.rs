@@ -1,5 +1,6 @@
 use crate::fee::Credits;
 use crate::shielded::compute_shielded_verification_fee;
+use crate::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
 use crate::state_transition::shield_transition::ShieldTransition;
 use crate::state_transition::StateTransitionEstimatedFeeValidation;
 use crate::ProtocolError;
@@ -29,7 +30,6 @@ impl StateTransitionEstimatedFeeValidation for ShieldTransition {
     ) -> Result<Credits, ProtocolError> {
         // The on-wire Orchard `actions` count is what the compute fee is priced against (matching
         // the consensus structure-validation floor and the execution-event compute charge).
-        let ShieldTransition::V0(v0) = self;
-        compute_shielded_verification_fee(v0.actions.len(), platform_version)
+        compute_shielded_verification_fee(self.actions().len(), platform_version)
     }
 }

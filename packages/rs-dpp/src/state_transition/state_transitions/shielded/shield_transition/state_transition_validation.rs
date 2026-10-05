@@ -12,6 +12,7 @@ impl StateTransitionStructureValidation for ShieldTransition {
     ) -> SimpleConsensusValidationResult {
         match self {
             ShieldTransition::V0(v0) => v0.validate_structure(platform_version),
+            ShieldTransition::V1(v1) => v1.validate_structure(platform_version),
         }
     }
 }

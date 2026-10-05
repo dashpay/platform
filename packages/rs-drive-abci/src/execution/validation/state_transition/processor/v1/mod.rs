@@ -27,7 +27,9 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use dpp::ProtocolError;
@@ -36,8 +38,8 @@ use drive::grovedb::TransactionArg;
 /// Version 0's validation pipeline, with Shield proof verification deferred to its
 /// action transformer after authentication and input balance/nonce checks. This
 /// lets a funded proof failure produce a fee-paying nonce-bump action instead of
-/// returning an unpaid refusal in the shared proof step. Other transitions keep
-/// their existing proof-validation path.
+/// returning an unpaid refusal in the shared proof step. Legacy Shield formats are
+/// refused before authentication; other transitions keep their existing validation path.
 pub(super) fn process_state_transition_v1<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
@@ -45,6 +47,22 @@ pub(super) fn process_state_transition_v1<'a, C: CoreRPCLike>(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+    // A legacy signature did not authorize the bound proof domain or its failure fee.
+    // Refuse before authentication so direct, already-decoded callers cannot charge it.
+    if matches!(
+        &state_transition,
+        StateTransition::Shield(ShieldTransition::V0(_))
+    ) {
+        return Ok(ConsensusValidationResult::new_with_error(
+            StateTransitionNotActiveError::new(
+                state_transition.name(),
+                platform_version.protocol_version,
+                *state_transition.active_version_range().end(),
+            )
+            .into(),
+        ));
+    }
+
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 

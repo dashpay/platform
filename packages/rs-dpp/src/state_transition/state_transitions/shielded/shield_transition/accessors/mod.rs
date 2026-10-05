@@ -10,72 +10,84 @@ impl ShieldTransitionAccessorsV0 for ShieldTransition {
     fn actions(&self) -> &[SerializedAction] {
         match self {
             ShieldTransition::V0(v0) => &v0.actions,
+            ShieldTransition::V1(v1) => &v1.actions,
         }
     }
 
     fn set_actions(&mut self, actions: Vec<SerializedAction>) {
         match self {
             ShieldTransition::V0(v0) => v0.actions = actions,
+            ShieldTransition::V1(v1) => v1.actions = actions,
         }
     }
 
     fn amount(&self) -> u64 {
         match self {
             ShieldTransition::V0(v0) => v0.amount,
+            ShieldTransition::V1(v1) => v1.amount,
         }
     }
 
     fn set_amount(&mut self, amount: u64) {
         match self {
             ShieldTransition::V0(v0) => v0.amount = amount,
+            ShieldTransition::V1(v1) => v1.amount = amount,
         }
     }
 
     fn anchor(&self) -> [u8; 32] {
         match self {
             ShieldTransition::V0(v0) => v0.anchor,
+            ShieldTransition::V1(v1) => v1.anchor,
         }
     }
 
     fn set_anchor(&mut self, anchor: [u8; 32]) {
         match self {
             ShieldTransition::V0(v0) => v0.anchor = anchor,
+            ShieldTransition::V1(v1) => v1.anchor = anchor,
         }
     }
 
     fn proof(&self) -> &[u8] {
         match self {
             ShieldTransition::V0(v0) => &v0.proof,
+            ShieldTransition::V1(v1) => &v1.proof,
         }
     }
 
     fn set_proof(&mut self, proof: Vec<u8>) {
         match self {
             ShieldTransition::V0(v0) => v0.proof = proof,
+            ShieldTransition::V1(v1) => v1.proof = proof,
         }
     }
 
     fn binding_signature(&self) -> [u8; 64] {
         match self {
             ShieldTransition::V0(v0) => v0.binding_signature,
+            ShieldTransition::V1(v1) => v1.binding_signature,
         }
     }
 
     fn set_binding_signature(&mut self, binding_signature: [u8; 64]) {
         match self {
             ShieldTransition::V0(v0) => v0.binding_signature = binding_signature,
+            ShieldTransition::V1(v1) => v1.binding_signature = binding_signature,
         }
     }
 
     fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
         match self {
             ShieldTransition::V0(v0) => &v0.fee_strategy,
+            ShieldTransition::V1(v1) => &v1.fee_strategy,
         }
     }
 
     fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
         match self {
             ShieldTransition::V0(v0) => v0.fee_strategy = fee_strategy,
+            ShieldTransition::V1(v1) => v1.fee_strategy = fee_strategy,
         }
     }
 }

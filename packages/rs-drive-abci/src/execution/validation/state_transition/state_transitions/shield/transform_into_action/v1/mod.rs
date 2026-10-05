@@ -8,7 +8,9 @@ use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
+use dpp::state_transition::shield_transition::accessors::ShieldTransitionAccessorsV0;
 use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -48,8 +50,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV1 for ShieldTransition {
         _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let ShieldTransition::V0(transition_v0) = self;
-        let shield_amount: Credits = transition_v0.amount;
+        let shield_amount: Credits = self.amount();
 
         // The shared address-balance validation debits the FULL per-input `requested`
         // (a max contribution), but the shielded pool only receives `shield_amount`.
@@ -57,7 +58,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV1 for ShieldTransition {
         // leaving the excess in the source addresses. This keeps credits conserved
         // (addresses lose `shield_amount` + fee, pool gains `shield_amount`).
         let inputs_with_remaining_balance = reallocate_inputs_for_shield_amount(
-            transition_v0,
+            self.inputs(),
+            self.fee_strategy(),
             inputs_with_remaining_balance,
             shield_amount,
         )?;
@@ -75,8 +77,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV1 for ShieldTransition {
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
         // Validate nullifiers: intra-bundle duplicates + already recorded in state
-        let nullifiers: Vec<[u8; 32]> = transition_v0
-            .actions
+        let nullifiers: Vec<[u8; 32]> = self
+            .actions()
             .iter()
             .map(|action| action.nullifier)
             .collect();
