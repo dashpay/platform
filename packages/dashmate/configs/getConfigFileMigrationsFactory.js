@@ -1777,6 +1777,31 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.1.0': (configFile) => {
+        // Keyed at the release this ships in: a config stamped by any earlier
+        // release (5.0.x included) must pass through it.
+        // State sync options are required by the schema now. Pulled from the
+        // default config matching each config's name or group, so the local
+        // preset gets its disables while everything else gets the base
+        // defaults (consume and serve snapshots).
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const drive = options.platform?.drive;
+            // Nothing to add to a config without a Drive section to add it to.
+            if (!drive?.tenderdash || !drive?.abci) {
+              return;
+            }
+
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            drive.tenderdash.stateSync = defaultConfig
+              .getStored('platform.drive.tenderdash.stateSync');
+            drive.abci.stateSync = defaultConfig
+              .getStored('platform.drive.abci.stateSync');
+          });
+
+        return configFile;
+      },
     };
   }
 

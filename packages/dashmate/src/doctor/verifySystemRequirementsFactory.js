@@ -15,6 +15,7 @@ export default function verifySystemRequirementsFactory() {
    * @param {boolean} isHP
    * @param {Object} [overrideRequirements]
    * @param {Number} [overrideRequirements.diskSpace]
+   * @param {boolean} [overrideRequirements.stateSyncSnapshotsEnabled]
    * @returns {Problem[]}
    */
   function verifySystemRequirements(
@@ -30,7 +31,12 @@ export default function verifySystemRequirementsFactory() {
     const MINIMUM_CPU_CORES = isHP ? 4 : 2;
     const MINIMUM_CPU_FREQUENCY = 2.4; // GHz
     const MINIMUM_RAM = isHP ? 7.3 : 3.6; // GB
-    const MINIMUM_DISK_SPACE = overrideRequirements.diskSpace ?? (isHP ? 200 : 100); // GB
+
+    // State sync snapshots are GroveDB checkpoints stored next to the database.
+    // They share unchanged data with it, so a small fixed headroom is enough.
+    const SNAPSHOTS_DISK_HEADROOM = overrideRequirements.stateSyncSnapshotsEnabled ? 10 : 0; // GB
+    const BASE_MINIMUM_DISK_SPACE = overrideRequirements.diskSpace ?? (isHP ? 200 : 100); // GB
+    const MINIMUM_DISK_SPACE = BASE_MINIMUM_DISK_SPACE + SNAPSHOTS_DISK_HEADROOM; // GB
 
     const problems = [];
 
@@ -112,11 +118,17 @@ for required network services and avoid Proof-of-Service bans`,
       const availableDiskSpace = diskSpace.available / (1024 ** 3); // Convert to GB
 
       if (availableDiskSpace < MINIMUM_DISK_SPACE) {
+        const headroomNote = SNAPSHOTS_DISK_HEADROOM > 0
+          ? ` (including ${SNAPSHOTS_DISK_HEADROOM}GB headroom for state sync snapshots)`
+          : '';
+
         const problem = new Problem(
-          `${availableDiskSpace.toFixed(2)}GB of available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required`,
+          `${availableDiskSpace.toFixed(2)}GB of available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required${headroomNote}`,
           `Consider increasing disk space to make sure the node can provide timely responses
 for required network services and avoid Proof-of-Service bans`,
-          MINIMUM_DISK_SPACE - availableDiskSpace < 5 ? SEVERITY.HIGH : SEVERITY.MEDIUM,
+          // Judged against the base minimum so that enabling snapshots can
+          // widen when a problem is raised but never downgrade its severity
+          BASE_MINIMUM_DISK_SPACE - availableDiskSpace < 5 ? SEVERITY.HIGH : SEVERITY.MEDIUM,
         );
 
         problems.push(problem);
