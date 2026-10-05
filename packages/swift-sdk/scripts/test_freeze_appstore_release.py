@@ -342,6 +342,7 @@ p.write_text(json.dumps(r))
     def test_push_then_retry_reuses_draft_pr_and_commit(self):
         self.prepare()
         self.assertTrue(self.api.request.call_args.args[2]["draft"])
+        self.assertEqual(self.api.request.call_args.args[2]["base"], BASE)
         branch = "codex/freeze-swift-schema-v2.0.0"
         before = git(self.remote, "rev-parse", branch)
         self.api.pull_requests.return_value = [{"state": "open", "html_url": "https://example.invalid/pr"}]
