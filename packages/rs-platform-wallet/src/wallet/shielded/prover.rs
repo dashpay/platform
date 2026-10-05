@@ -28,6 +28,7 @@
 //! dedicated user-initiated-QoS rayon pool (see `on_proving_threads`);
 //! elsewhere it runs on the blocking thread.
 
+use std::future::Future;
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
@@ -390,6 +391,35 @@ where
     }
 }
 
+/// Run a network `fetch` concurrently with `prove` (proof generation) and
+/// return both results.
+///
+/// Error precedence matches the sequential fetch-then-prove order this
+/// replaces: a `fetch` error is returned as soon as it is known, without
+/// waiting for the proof (an in-flight blocking proof then finishes in the
+/// background and is discarded); a `prove` error is returned only once
+/// `fetch` has succeeded, so a fetch failure is never masked by a proof
+/// failure.
+pub(crate) async fn fetch_while_proving<N, B, E, FF, PF>(fetch: FF, prove: PF) -> Result<(N, B), E>
+where
+    FF: Future<Output = Result<N, E>>,
+    PF: Future<Output = Result<B, E>>,
+{
+    tokio::pin!(fetch);
+    tokio::pin!(prove);
+    tokio::select! {
+        biased;
+        fetched = &mut fetch => {
+            let fetched = fetched?;
+            Ok((fetched, prove.await?))
+        }
+        proved = &mut prove => {
+            let fetched = fetch.await?;
+            Ok((fetched, proved?))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -704,6 +734,173 @@ mod tests {
         let ready = CachedOrchardProver.ready().await.unwrap();
         let _ = ready.proving_key();
         eprintln!("real proving key prepared in {built:?} (8 concurrent callers)");
+    }
+
+    async fn timed<T>(ms: u64, out: Result<T, &'static str>) -> Result<T, &'static str> {
+        tokio::time::sleep(Duration::from_millis(ms)).await;
+        out
+    }
+
+    // The clock is paused, so `elapsed()` is exact: it shows both that the
+    // two futures overlap and whether the proof was awaited.
+
+    #[tokio::test(start_paused = true)]
+    async fn fetch_while_proving_overlaps_and_returns_both() {
+        let start = tokio::time::Instant::now();
+        let both = fetch_while_proving(timed(200, Ok(1u32)), timed(1000, Ok("proof"))).await;
+        assert_eq!(both.unwrap(), (1, "proof"));
+        // Concurrent: total = max(200, 1000), not the sum.
+        assert_eq!(start.elapsed(), Duration::from_millis(1000));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fetch_while_proving_fetch_error_returns_without_waiting_for_proof() {
+        let start = tokio::time::Instant::now();
+        let err = fetch_while_proving(
+            timed::<u32>(200, Err("not enough funds")),
+            timed(1000, Ok("proof")),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, "not enough funds");
+        assert_eq!(start.elapsed(), Duration::from_millis(200));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fetch_while_proving_fetch_error_wins_over_earlier_proof_error() {
+        let err = fetch_while_proving(
+            timed::<u32>(500, Err("nonce fetch failed")),
+            timed::<u32>(100, Err("proof failed")),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, "nonce fetch failed");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fetch_while_proving_proof_error_after_fetch_succeeds() {
+        let start = tokio::time::Instant::now();
+        let err = fetch_while_proving(timed(500, Ok(1u32)), timed::<u32>(100, Err("proof failed")))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "proof failed");
+        assert_eq!(start.elapsed(), Duration::from_millis(500));
+    }
+
+    /// With a real off-runtime proof: the fetch only completes once the
+    /// proof has started, so this finishes only if the two genuinely
+    /// overlap (sequential execution would hit the timeout). Deterministic:
+    /// no wall-clock thresholds, so it can't flake when the proving pool is
+    /// busy with another test's real key build.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn fetch_while_proving_with_blocking_proof_is_concurrent() {
+        test_cell!(CELL, BUILDS, 0);
+        let prover = CountingProver(&CELL);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel::<()>();
+        let overlapped = tokio::time::timeout(
+            HANG_GUARD,
+            fetch_while_proving(
+                async move {
+                    // The proof must already be running for the fetch to finish...
+                    started_rx.await.expect("proof started");
+                    // ...and is still running: let it finish only now.
+                    finish_tx.send(()).unwrap();
+                    Ok::<_, PlatformWalletError>("nonces")
+                },
+                prove_on_blocking_thread(&prover, move |_| {
+                    started_tx.send(()).unwrap();
+                    finish_rx.recv().expect("fetch finished first");
+                    "proof"
+                }),
+            ),
+        )
+        .await
+        .expect("fetch and proof did not overlap");
+        assert_eq!(overlapped.unwrap(), ("nonces", "proof"));
+    }
+
+    /// Run `fut` while a 10 ms heartbeat ticks on the same runtime, and
+    /// return the largest observed gap between heartbeats (measurement
+    /// helper for the ignored real-proof test).
+    async fn heartbeat_max_gap_during<F: std::future::Future>(fut: F) -> Duration {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_hb = stop.clone();
+        let heartbeat = tokio::spawn(async move {
+            let mut last = Instant::now();
+            let mut max_gap = Duration::ZERO;
+            while !stop_hb.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                let now = Instant::now();
+                max_gap = max_gap.max(now - last);
+                last = now;
+            }
+            max_gap
+        });
+        // Let the heartbeat start before the work does.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        fut.await;
+        // Let one more tick observe the end of any blocking stretch.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        stop.store(true, Ordering::SeqCst);
+        heartbeat.await.unwrap()
+    }
+
+    /// Real proof, real key: heartbeat starvation of a current-thread
+    /// runtime while a Shield bundle is proved inline (the pre-change
+    /// behavior) versus through `prove_on_blocking_thread`. Ignored by
+    /// default (builds the real key); run in release for meaningful numbers:
+    /// `cargo test -p platform-wallet --features shielded --release --lib -- --ignored real_proof --nocapture`
+    #[tokio::test(flavor = "current_thread")]
+    #[ignore = "builds the real Halo 2 proving key and proves a bundle"]
+    async fn real_proof_heartbeat_inline_vs_blocking_pool() {
+        use dpp::address_funds::{OrchardAddress, PlatformAddress};
+        use dpp::shielded::builder::prove_shield_bundle;
+        use dpp::version::PlatformVersion;
+        use grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+
+        let start = Instant::now();
+        CachedOrchardProver::prepare().await.unwrap();
+        eprintln!("real proving key prepared in {:?}", start.elapsed());
+
+        let sk = SpendingKey::from_bytes([42u8; 32]).unwrap();
+        let recipient = OrchardAddress::from_raw_bytes(
+            &FullViewingKey::from(&sk)
+                .address_at(0u32, Scope::External)
+                .to_raw_address_bytes(),
+        )
+        .unwrap();
+        let prove = move |prover: &ReadyOrchardProver| {
+            prove_shield_bundle(
+                &recipient,
+                50_000,
+                [PlatformAddress::P2pkh([1u8; 20])].into_iter().collect(),
+                prover,
+                [0u8; 36],
+                None,
+                PlatformVersion::latest(),
+            )
+            .map(|_| ())
+        };
+        let ready = CachedOrchardProver.ready().await.unwrap();
+
+        let t = Instant::now();
+        let inline_gap = heartbeat_max_gap_during(async { prove(&ready).unwrap() }).await;
+        let inline_total = t.elapsed();
+        let t = Instant::now();
+        let offloaded_gap = heartbeat_max_gap_during(async {
+            prove_on_blocking_thread(&CachedOrchardProver, prove)
+                .await
+                .unwrap()
+                .unwrap()
+        })
+        .await;
+        let offloaded_total = t.elapsed();
+        eprintln!(
+            "real Shield proof: inline heartbeat max gap {inline_gap:?} (window {inline_total:?}); \
+             blocking pool heartbeat max gap {offloaded_gap:?} (window {offloaded_total:?})"
+        );
+        assert!(offloaded_gap < inline_gap);
     }
 
     /// Darwin QoS: even when the build is requested from a
