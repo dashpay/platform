@@ -587,27 +587,30 @@ fn near_tip(height: u32, tip: u32) -> bool {
 }
 
 /// A forced request (a report's, or a no-answer retry's) waits for the
-/// wallet's run: the run gives way, keeping
-/// only its own forced roots — the scheduled ones it has not sent stay due
-/// and come round at the next pass — so the forced pass starts after the
-/// probe in flight, not after a queue of scheduled roots.
+/// wallet's run: the run gives way, keeping only its own forced roots, so the
+/// forced pass starts after the probe in flight, not after a queue of
+/// scheduled roots. A report's pass takes the scheduled roots the run had not
+/// sent after its own; a retry's does not (no node answers, so they would
+/// fail too) — they stay due at the next height. A run gives way at most
+/// once per height: reports that keep coming cannot drop the scheduled roots
+/// again and again.
 fn yield_to_forced(entry: &mut WalletEntry) {
     let Some(run) = entry.run.as_mut() else {
         return;
     };
     // Only for a request the run does not already carry (a repeated report
     // of a send it forces itself changes nothing).
-    let new = entry.pending.as_ref().is_some_and(|pending| {
-        pending
-            .forced
-            .iter()
-            .chain(&pending.retried)
-            .any(|txid| !run.forced.contains(txid) && !run.retried.contains(txid))
-    });
-    if !new {
+    let Some(pending) = entry.pending.as_ref() else {
+        return;
+    };
+    let carried = |txid: &Txid| run.forced.contains(txid) || run.retried.contains(txid);
+    let report = pending.forced.iter().any(|txid| !carried(txid));
+    let retry = pending.retried.iter().any(|txid| !carried(txid));
+    if !(report || retry) || (entry.yielded_at.is_some() && entry.yielded_at == entry.height) {
         return;
     }
-    let anchor = run.anchor_at;
+    entry.yielded_at = entry.height;
+    let anchor = run.anchor_at.filter(|_| report);
     if let Some(probing) = run.probing.as_mut() {
         probing.due.retain(|root| root.forced);
     }
@@ -1218,6 +1221,9 @@ struct WalletEntry {
     /// completion at that height (after every block) adds no second walk
     /// over the records.
     followed_pass_at: Option<u32>,
+    /// The height at which a run last gave way to a forced request (see
+    /// [`yield_to_forced`]).
+    yielded_at: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1538,21 +1544,7 @@ impl Actor {
                 // A new report restarts the window, from the next followed
                 // block.
                 self.uncertain.insert(txid, None);
-                let report = self.next_report_token;
-                self.next_report_token += 1;
-                self.report_lookups.insert(txid, report);
-                // Routed to the registered wallets holding it, including ones
-                // no height step has reached yet.
-                let source = Arc::clone(&self.source);
-                self.jobs.spawn(async move {
-                    let Holders { wallets, own } = source.holders(txid).await;
-                    JobDone::Listed {
-                        txid,
-                        report,
-                        wallets,
-                        own,
-                    }
-                });
+                self.look_up_report(txid);
             }
             Command::Echoed(txid) => {
                 // Every healthy send is echoed: only one that was `Uncertain`
@@ -1640,6 +1632,24 @@ impl Actor {
 
     /// Drop the wallet's entry, stop its pass and forget its state, the host
     /// told to clear what it showed (logged with `trigger`).
+    /// Route a report to the registered wallets holding it, including ones
+    /// no height step has reached yet; only the latest lookup per txid counts.
+    fn look_up_report(&mut self, txid: Txid) {
+        let report = self.next_report_token;
+        self.next_report_token += 1;
+        self.report_lookups.insert(txid, report);
+        let source = Arc::clone(&self.source);
+        self.jobs.spawn(async move {
+            let Holders { wallets, own } = source.holders(txid).await;
+            JobDone::Listed {
+                txid,
+                report,
+                wallets,
+                own,
+            }
+        });
+    }
+
     fn drop_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) {
         if let Some(run) = self.wallets.remove(wallet_id).and_then(|entry| entry.run) {
             run.abort.abort();
@@ -1647,7 +1657,12 @@ impl Actor {
         // Which wallet an echo's lookup will name is not known yet: withdraw
         // them all — at worst an acceptance waits for the next probe.
         self.echo_lookups.clear();
-        self.report_lookups.clear();
+        // A report's lookup may name the wallet gone: look again, so the
+        // other holders still get their forced probe and priority.
+        let reports: Vec<Txid> = self.report_lookups.drain().map(|(txid, _)| txid).collect();
+        for txid in reports {
+            self.look_up_report(txid);
+        }
         self.reported.retain(|_, holders| {
             holders.remove(wallet_id);
             !holders.is_empty()
@@ -1737,7 +1752,8 @@ impl Actor {
                     self.uncertain.remove(&txid);
                     self.reported.remove(&txid);
                 } else {
-                    self.reported.entry(txid).or_default().extend(own);
+                    let known = own.into_iter().filter(|id| self.wallets.contains_key(id));
+                    self.reported.entry(txid).or_default().extend(known);
                 }
                 for wallet_id in wallets {
                     // Only a wallet the actor was told about (see
@@ -1815,6 +1831,10 @@ impl Actor {
                         // Idle, not re-read every block: a same-id wallet's
                         // events or an Uncertain wake it.
                         entry.wait_until = Some(u32::MAX);
+                        self.reported.retain(|_, holders| {
+                            holders.remove(&wallet_id);
+                            !holders.is_empty()
+                        });
                         let events = self.state.forget_wallet(&wallet_id, "gone");
                         deliver(&self.sink, events);
                         self.end_run(wallet_id);
@@ -4781,6 +4801,91 @@ mod tests {
         assert!(
             due + 1 >= planned,
             "kept its scheduled roots: {due} of {planned}"
+        );
+    }
+
+    /// A run gives way once per height: a further report at that height
+    /// waits behind it, so reports that keep coming cannot drop the
+    /// scheduled roots again and again.
+    #[tokio::test]
+    async fn should_give_way_once_per_height() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 100,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("read");
+        rig.actor.joined(read);
+        let entry = rig.actor.wallets.get_mut(&wallet()).expect("entry");
+        entry.yielded_at = Some(101); // gave way at this height already
+        let planned = entry
+            .run
+            .as_ref()
+            .and_then(|run| run.probing.as_ref())
+            .map(|p| p.due.len())
+            .expect("probing");
+
+        rig.handle(Command::Uncertain(txid(200)));
+        loop {
+            let job = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+            let listed = matches!(&job, Ok((_, JobDone::Listed { .. })));
+            rig.actor.joined(job);
+            if listed {
+                break;
+            }
+        }
+
+        let due = rig.actor.wallets[&wallet()]
+            .run
+            .as_ref()
+            .and_then(|run| run.probing.as_ref())
+            .map(|p| p.due.len())
+            .expect("probing");
+        assert!(
+            due + 1 >= planned,
+            "kept its scheduled roots: {due} of {planned}"
+        );
+        assert!(
+            rig.actor.wallets[&wallet()]
+                .pending
+                .as_ref()
+                .is_some_and(|pending| pending.forced.contains(&txid(200))),
+            "the report waits for the run"
+        );
+    }
+
+    /// A wallet added while a report's holder lookup is out does not cost
+    /// the other holders the report: the lookup is made again.
+    #[tokio::test]
+    async fn should_keep_a_report_when_a_wallet_is_added_during_its_lookup() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(200, &[outpoint(250, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let before = probe.probed().len();
+
+        rig.handle(Command::Uncertain(txid(200)));
+        rig.handle(Command::WalletAdded([9u8; 32]));
+        rig.settle().await;
+
+        assert!(
+            rig.actor
+                .reported
+                .get(&txid(200))
+                .is_some_and(|holders| holders.contains(&wallet())),
+            "still a priority of its wallet"
+        );
+        assert!(
+            probe.probed()[before..].contains(&txid(200)),
+            "forced probe went out"
         );
     }
 
