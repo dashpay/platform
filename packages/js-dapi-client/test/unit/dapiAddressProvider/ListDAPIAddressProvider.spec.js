@@ -125,6 +125,31 @@ describe('ListDAPIAddressProvider', () => {
       expect(liveAddress.allowSelfSignedCertificate).to.be.true();
     });
 
+    it('should rewrite a loopback masternode-list node to the self-signed local gateway', async () => {
+      options = {
+        network: 'local',
+      };
+
+      // A loopback host from the masternode list still needs the local
+      // gateway's self-signed TLS, so provenance alone decides the rewrite.
+      const discoveredAddress = new DAPIAddress({
+        host: '127.0.0.1',
+        port: 20001,
+        proRegTxHash: 'b'.repeat(64),
+      });
+
+      listDAPIAddressProvider = new ListDAPIAddressProvider(
+        [discoveredAddress],
+        options,
+      );
+
+      const liveAddress = await listDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.host).to.equal('127.0.0.1');
+      expect(liveAddress.port).to.equal(2443);
+      expect(liveAddress.allowSelfSignedCertificate).to.be.true();
+    });
+
     it('should not modify a caller-supplied non-loopback address', async () => {
       options = {
         network: 'local',
