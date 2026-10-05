@@ -15838,6 +15838,506 @@ export namespace GetShieldedNullifiersResponse {
   }
 }
 
+export class SubscribeToStateTransitionsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0 | undefined;
+  setV0(value?: SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0): void;
+
+  getVersionCase(): SubscribeToStateTransitionsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): SubscribeToStateTransitionsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: SubscribeToStateTransitionsRequest): SubscribeToStateTransitionsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: SubscribeToStateTransitionsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): SubscribeToStateTransitionsRequest;
+  static deserializeBinaryFromReader(message: SubscribeToStateTransitionsRequest, reader: jspb.BinaryReader): SubscribeToStateTransitionsRequest;
+}
+
+export namespace SubscribeToStateTransitionsRequest {
+  export type AsObject = {
+    v0?: SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.AsObject,
+  }
+
+  export class DocumentFilter extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    hasDocumentTypeName(): boolean;
+    clearDocumentTypeName(): void;
+    getDocumentTypeName(): string;
+    setDocumentTypeName(value: string): void;
+
+    clearActionsList(): void;
+    getActionsList(): Array<SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch>;
+    setActionsList(value: Array<SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch>): void;
+    addActions(value?: SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch, index?: number): SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch;
+
+    hasBatchOwnerId(): boolean;
+    clearBatchOwnerId(): void;
+    getBatchOwnerId(): Uint8Array | string;
+    getBatchOwnerId_asU8(): Uint8Array;
+    getBatchOwnerId_asB64(): string;
+    setBatchOwnerId(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DocumentFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: DocumentFilter): DocumentFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DocumentFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DocumentFilter;
+    static deserializeBinaryFromReader(message: DocumentFilter, reader: jspb.BinaryReader): DocumentFilter;
+  }
+
+  export namespace DocumentFilter {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentTypeName: string,
+      actionsList: Array<SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.AsObject>,
+      batchOwnerId: Uint8Array | string,
+    }
+
+    export class PriceClause extends jspb.Message {
+      getOperator(): GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap];
+      setOperator(value: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap]): void;
+
+      hasValue(): boolean;
+      clearValue(): void;
+      getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
+      setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): PriceClause.AsObject;
+      static toObject(includeInstance: boolean, msg: PriceClause): PriceClause.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: PriceClause, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): PriceClause;
+      static deserializeBinaryFromReader(message: PriceClause, reader: jspb.BinaryReader): PriceClause;
+    }
+
+    export namespace PriceClause {
+      export type AsObject = {
+        operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
+        value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+      }
+    }
+
+    export class ActionMatch extends jspb.Message {
+      getAction(): SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap[keyof SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap];
+      setAction(value: SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap[keyof SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap]): void;
+
+      clearNewDocumentWhereList(): void;
+      getNewDocumentWhereList(): Array<GetDocumentsRequest.WhereClause>;
+      setNewDocumentWhereList(value: Array<GetDocumentsRequest.WhereClause>): void;
+      addNewDocumentWhere(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
+
+      clearOriginalDocumentWhereList(): void;
+      getOriginalDocumentWhereList(): Array<GetDocumentsRequest.WhereClause>;
+      setOriginalDocumentWhereList(value: Array<GetDocumentsRequest.WhereClause>): void;
+      addOriginalDocumentWhere(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
+
+      clearOwnerIdsList(): void;
+      getOwnerIdsList(): Array<Uint8Array | string>;
+      getOwnerIdsList_asU8(): Array<Uint8Array>;
+      getOwnerIdsList_asB64(): Array<string>;
+      setOwnerIdsList(value: Array<Uint8Array | string>): void;
+      addOwnerIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+      hasPrice(): boolean;
+      clearPrice(): void;
+      getPrice(): SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause | undefined;
+      setPrice(value?: SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ActionMatch.AsObject;
+      static toObject(includeInstance: boolean, msg: ActionMatch): ActionMatch.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ActionMatch, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ActionMatch;
+      static deserializeBinaryFromReader(message: ActionMatch, reader: jspb.BinaryReader): ActionMatch;
+    }
+
+    export namespace ActionMatch {
+      export type AsObject = {
+        action: SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap[keyof SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap],
+        newDocumentWhereList: Array<GetDocumentsRequest.WhereClause.AsObject>,
+        originalDocumentWhereList: Array<GetDocumentsRequest.WhereClause.AsObject>,
+        ownerIdsList: Array<Uint8Array | string>,
+        price?: SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.AsObject,
+      }
+    }
+
+    export interface ActionMap {
+      CREATE: 0;
+      REPLACE: 1;
+      DELETE: 2;
+      TRANSFER: 3;
+      UPDATE_PRICE: 4;
+      PURCHASE: 5;
+    }
+
+    export const Action: ActionMap;
+  }
+
+  export class AddressFilter extends jspb.Message {
+    clearAddressesList(): void;
+    getAddressesList(): Array<Uint8Array | string>;
+    getAddressesList_asU8(): Array<Uint8Array>;
+    getAddressesList_asB64(): Array<string>;
+    setAddressesList(value: Array<Uint8Array | string>): void;
+    addAddresses(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getRole(): SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap];
+    setRole(value: SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap]): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): AddressFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: AddressFilter): AddressFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: AddressFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): AddressFilter;
+    static deserializeBinaryFromReader(message: AddressFilter, reader: jspb.BinaryReader): AddressFilter;
+  }
+
+  export namespace AddressFilter {
+    export type AsObject = {
+      addressesList: Array<Uint8Array | string>,
+      role: SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap],
+    }
+  }
+
+  export class IdentityFilter extends jspb.Message {
+    clearIdentityIdsList(): void;
+    getIdentityIdsList(): Array<Uint8Array | string>;
+    getIdentityIdsList_asU8(): Array<Uint8Array>;
+    getIdentityIdsList_asB64(): Array<string>;
+    setIdentityIdsList(value: Array<Uint8Array | string>): void;
+    addIdentityIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getRole(): SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap];
+    setRole(value: SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap]): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): IdentityFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: IdentityFilter): IdentityFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: IdentityFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): IdentityFilter;
+    static deserializeBinaryFromReader(message: IdentityFilter, reader: jspb.BinaryReader): IdentityFilter;
+  }
+
+  export namespace IdentityFilter {
+    export type AsObject = {
+      identityIdsList: Array<Uint8Array | string>,
+      role: SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap],
+    }
+  }
+
+  export class TokenFilter extends jspb.Message {
+    clearTokenIdsList(): void;
+    getTokenIdsList(): Array<Uint8Array | string>;
+    getTokenIdsList_asU8(): Array<Uint8Array>;
+    getTokenIdsList_asB64(): Array<string>;
+    setTokenIdsList(value: Array<Uint8Array | string>): void;
+    addTokenIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    clearIdentityIdsList(): void;
+    getIdentityIdsList(): Array<Uint8Array | string>;
+    getIdentityIdsList_asU8(): Array<Uint8Array>;
+    getIdentityIdsList_asB64(): Array<string>;
+    setIdentityIdsList(value: Array<Uint8Array | string>): void;
+    addIdentityIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getRole(): SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap];
+    setRole(value: SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap]): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): TokenFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: TokenFilter): TokenFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: TokenFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): TokenFilter;
+    static deserializeBinaryFromReader(message: TokenFilter, reader: jspb.BinaryReader): TokenFilter;
+  }
+
+  export namespace TokenFilter {
+    export type AsObject = {
+      tokenIdsList: Array<Uint8Array | string>,
+      identityIdsList: Array<Uint8Array | string>,
+      role: SubscribeToStateTransitionsRequest.RoleMap[keyof SubscribeToStateTransitionsRequest.RoleMap],
+    }
+  }
+
+  export class DataContractFilter extends jspb.Message {
+    clearDataContractIdsList(): void;
+    getDataContractIdsList(): Array<Uint8Array | string>;
+    getDataContractIdsList_asU8(): Array<Uint8Array>;
+    getDataContractIdsList_asB64(): Array<string>;
+    setDataContractIdsList(value: Array<Uint8Array | string>): void;
+    addDataContractIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DataContractFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: DataContractFilter): DataContractFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DataContractFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DataContractFilter;
+    static deserializeBinaryFromReader(message: DataContractFilter, reader: jspb.BinaryReader): DataContractFilter;
+  }
+
+  export namespace DataContractFilter {
+    export type AsObject = {
+      dataContractIdsList: Array<Uint8Array | string>,
+    }
+  }
+
+  export class StateTransitionFilter extends jspb.Message {
+    hasDocuments(): boolean;
+    clearDocuments(): void;
+    getDocuments(): SubscribeToStateTransitionsRequest.DocumentFilter | undefined;
+    setDocuments(value?: SubscribeToStateTransitionsRequest.DocumentFilter): void;
+
+    hasAddresses(): boolean;
+    clearAddresses(): void;
+    getAddresses(): SubscribeToStateTransitionsRequest.AddressFilter | undefined;
+    setAddresses(value?: SubscribeToStateTransitionsRequest.AddressFilter): void;
+
+    hasIdentities(): boolean;
+    clearIdentities(): void;
+    getIdentities(): SubscribeToStateTransitionsRequest.IdentityFilter | undefined;
+    setIdentities(value?: SubscribeToStateTransitionsRequest.IdentityFilter): void;
+
+    hasTokens(): boolean;
+    clearTokens(): void;
+    getTokens(): SubscribeToStateTransitionsRequest.TokenFilter | undefined;
+    setTokens(value?: SubscribeToStateTransitionsRequest.TokenFilter): void;
+
+    hasDataContracts(): boolean;
+    clearDataContracts(): void;
+    getDataContracts(): SubscribeToStateTransitionsRequest.DataContractFilter | undefined;
+    setDataContracts(value?: SubscribeToStateTransitionsRequest.DataContractFilter): void;
+
+    getFilterCase(): StateTransitionFilter.FilterCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): StateTransitionFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: StateTransitionFilter): StateTransitionFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: StateTransitionFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): StateTransitionFilter;
+    static deserializeBinaryFromReader(message: StateTransitionFilter, reader: jspb.BinaryReader): StateTransitionFilter;
+  }
+
+  export namespace StateTransitionFilter {
+    export type AsObject = {
+      documents?: SubscribeToStateTransitionsRequest.DocumentFilter.AsObject,
+      addresses?: SubscribeToStateTransitionsRequest.AddressFilter.AsObject,
+      identities?: SubscribeToStateTransitionsRequest.IdentityFilter.AsObject,
+      tokens?: SubscribeToStateTransitionsRequest.TokenFilter.AsObject,
+      dataContracts?: SubscribeToStateTransitionsRequest.DataContractFilter.AsObject,
+    }
+
+    export enum FilterCase {
+      FILTER_NOT_SET = 0,
+      DOCUMENTS = 1,
+      ADDRESSES = 2,
+      IDENTITIES = 3,
+      TOKENS = 4,
+      DATA_CONTRACTS = 5,
+    }
+  }
+
+  export class SubscribeToStateTransitionsRequestV0 extends jspb.Message {
+    clearFiltersList(): void;
+    getFiltersList(): Array<SubscribeToStateTransitionsRequest.StateTransitionFilter>;
+    setFiltersList(value: Array<SubscribeToStateTransitionsRequest.StateTransitionFilter>): void;
+    addFilters(value?: SubscribeToStateTransitionsRequest.StateTransitionFilter, index?: number): SubscribeToStateTransitionsRequest.StateTransitionFilter;
+
+    hasFromBlockHeight(): boolean;
+    clearFromBlockHeight(): void;
+    getFromBlockHeight(): string;
+    setFromBlockHeight(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): SubscribeToStateTransitionsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: SubscribeToStateTransitionsRequestV0): SubscribeToStateTransitionsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: SubscribeToStateTransitionsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): SubscribeToStateTransitionsRequestV0;
+    static deserializeBinaryFromReader(message: SubscribeToStateTransitionsRequestV0, reader: jspb.BinaryReader): SubscribeToStateTransitionsRequestV0;
+  }
+
+  export namespace SubscribeToStateTransitionsRequestV0 {
+    export type AsObject = {
+      filtersList: Array<SubscribeToStateTransitionsRequest.StateTransitionFilter.AsObject>,
+      fromBlockHeight: string,
+    }
+  }
+
+  export interface RoleMap {
+    ANY: 0;
+    SENDER: 1;
+    RECIPIENT: 2;
+  }
+
+  export const Role: RoleMap;
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class SubscribeToStateTransitionsResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0 | undefined;
+  setV0(value?: SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0): void;
+
+  getVersionCase(): SubscribeToStateTransitionsResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): SubscribeToStateTransitionsResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: SubscribeToStateTransitionsResponse): SubscribeToStateTransitionsResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: SubscribeToStateTransitionsResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): SubscribeToStateTransitionsResponse;
+  static deserializeBinaryFromReader(message: SubscribeToStateTransitionsResponse, reader: jspb.BinaryReader): SubscribeToStateTransitionsResponse;
+}
+
+export namespace SubscribeToStateTransitionsResponse {
+  export type AsObject = {
+    v0?: SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.AsObject,
+  }
+
+  export class SubscribeToStateTransitionsResponseV0 extends jspb.Message {
+    hasStateTransition(): boolean;
+    clearStateTransition(): void;
+    getStateTransition(): SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch | undefined;
+    setStateTransition(value?: SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch): void;
+
+    hasCheckpoint(): boolean;
+    clearCheckpoint(): void;
+    getCheckpoint(): SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint | undefined;
+    setCheckpoint(value?: SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint): void;
+
+    getResponsesCase(): SubscribeToStateTransitionsResponseV0.ResponsesCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): SubscribeToStateTransitionsResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: SubscribeToStateTransitionsResponseV0): SubscribeToStateTransitionsResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: SubscribeToStateTransitionsResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): SubscribeToStateTransitionsResponseV0;
+    static deserializeBinaryFromReader(message: SubscribeToStateTransitionsResponseV0, reader: jspb.BinaryReader): SubscribeToStateTransitionsResponseV0;
+  }
+
+  export namespace SubscribeToStateTransitionsResponseV0 {
+    export type AsObject = {
+      stateTransition?: SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.AsObject,
+      checkpoint?: SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.AsObject,
+    }
+
+    export class StateTransitionMatch extends jspb.Message {
+      getBlockHeight(): string;
+      setBlockHeight(value: string): void;
+
+      getBlockTimeMs(): string;
+      setBlockTimeMs(value: string): void;
+
+      getProtocolVersion(): number;
+      setProtocolVersion(value: number): void;
+
+      getIndexInBlock(): number;
+      setIndexInBlock(value: number): void;
+
+      getStateTransitionHash(): Uint8Array | string;
+      getStateTransitionHash_asU8(): Uint8Array;
+      getStateTransitionHash_asB64(): string;
+      setStateTransitionHash(value: Uint8Array | string): void;
+
+      getStateTransition(): Uint8Array | string;
+      getStateTransition_asU8(): Uint8Array;
+      getStateTransition_asB64(): string;
+      setStateTransition(value: Uint8Array | string): void;
+
+      clearMatchedFiltersList(): void;
+      getMatchedFiltersList(): Array<number>;
+      setMatchedFiltersList(value: Array<number>): void;
+      addMatchedFilters(value: number, index?: number): number;
+
+      clearMatchedBatchPositionsList(): void;
+      getMatchedBatchPositionsList(): Array<number>;
+      setMatchedBatchPositionsList(value: Array<number>): void;
+      addMatchedBatchPositions(value: number, index?: number): number;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): StateTransitionMatch.AsObject;
+      static toObject(includeInstance: boolean, msg: StateTransitionMatch): StateTransitionMatch.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: StateTransitionMatch, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): StateTransitionMatch;
+      static deserializeBinaryFromReader(message: StateTransitionMatch, reader: jspb.BinaryReader): StateTransitionMatch;
+    }
+
+    export namespace StateTransitionMatch {
+      export type AsObject = {
+        blockHeight: string,
+        blockTimeMs: string,
+        protocolVersion: number,
+        indexInBlock: number,
+        stateTransitionHash: Uint8Array | string,
+        stateTransition: Uint8Array | string,
+        matchedFiltersList: Array<number>,
+        matchedBatchPositionsList: Array<number>,
+      }
+    }
+
+    export class Checkpoint extends jspb.Message {
+      getBlockHeight(): string;
+      setBlockHeight(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Checkpoint.AsObject;
+      static toObject(includeInstance: boolean, msg: Checkpoint): Checkpoint.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Checkpoint, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Checkpoint;
+      static deserializeBinaryFromReader(message: Checkpoint, reader: jspb.BinaryReader): Checkpoint;
+    }
+
+    export namespace Checkpoint {
+      export type AsObject = {
+        blockHeight: string,
+      }
+    }
+
+    export enum ResponsesCase {
+      RESPONSES_NOT_SET = 0,
+      STATE_TRANSITION = 1,
+      CHECKPOINT = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;

@@ -2495,6 +2495,39 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#subscribeToStateTransitions}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef subscribeToStateTransitionsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse} [response] SubscribeToStateTransitionsResponse
+                         */
+
+                        /**
+                         * Calls subscribeToStateTransitions.
+                         * @function subscribeToStateTransitions
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsRequest} request SubscribeToStateTransitionsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.subscribeToStateTransitionsCallback} callback Node-style callback called with the error, if any, and SubscribeToStateTransitionsResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.subscribeToStateTransitions = function subscribeToStateTransitions(request, callback) {
+                            return this.rpcCall(subscribeToStateTransitions, $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest, $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse, request, callback);
+                        }, "name", { value: "subscribeToStateTransitions" });
+
+                        /**
+                         * Calls subscribeToStateTransitions.
+                         * @function subscribeToStateTransitions
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsRequest} request SubscribeToStateTransitionsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -122629,6 +122662,3885 @@ $root.org = (function() {
                         })();
 
                         return GetShieldedNullifiersResponse;
+                    })();
+
+                    v0.SubscribeToStateTransitionsRequest = (function() {
+
+                        /**
+                         * Properties of a SubscribeToStateTransitionsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ISubscribeToStateTransitionsRequest
+                         * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ISubscribeToStateTransitionsRequestV0|null} [v0] SubscribeToStateTransitionsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new SubscribeToStateTransitionsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a SubscribeToStateTransitionsRequest.
+                         * @implements ISubscribeToStateTransitionsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsRequest=} [properties] Properties to set
+                         */
+                        function SubscribeToStateTransitionsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * SubscribeToStateTransitionsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ISubscribeToStateTransitionsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @instance
+                         */
+                        SubscribeToStateTransitionsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * SubscribeToStateTransitionsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(SubscribeToStateTransitionsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new SubscribeToStateTransitionsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest} SubscribeToStateTransitionsRequest instance
+                         */
+                        SubscribeToStateTransitionsRequest.create = function create(properties) {
+                            return new SubscribeToStateTransitionsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified SubscribeToStateTransitionsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsRequest} message SubscribeToStateTransitionsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        SubscribeToStateTransitionsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified SubscribeToStateTransitionsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsRequest} message SubscribeToStateTransitionsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        SubscribeToStateTransitionsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a SubscribeToStateTransitionsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest} SubscribeToStateTransitionsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        SubscribeToStateTransitionsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a SubscribeToStateTransitionsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest} SubscribeToStateTransitionsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        SubscribeToStateTransitionsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a SubscribeToStateTransitionsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        SubscribeToStateTransitionsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a SubscribeToStateTransitionsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest} SubscribeToStateTransitionsRequest
+                         */
+                        SubscribeToStateTransitionsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a SubscribeToStateTransitionsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest} message SubscribeToStateTransitionsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        SubscribeToStateTransitionsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this SubscribeToStateTransitionsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        SubscribeToStateTransitionsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        /**
+                         * Role enum.
+                         * @name org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role
+                         * @enum {number}
+                         * @property {number} ANY=0 ANY value
+                         * @property {number} SENDER=1 SENDER value
+                         * @property {number} RECIPIENT=2 RECIPIENT value
+                         */
+                        SubscribeToStateTransitionsRequest.Role = (function() {
+                            var valuesById = {}, values = Object.create(valuesById);
+                            values[valuesById[0] = "ANY"] = 0;
+                            values[valuesById[1] = "SENDER"] = 1;
+                            values[valuesById[2] = "RECIPIENT"] = 2;
+                            return values;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.DocumentFilter = (function() {
+
+                            /**
+                             * Properties of a DocumentFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface IDocumentFilter
+                             * @property {Uint8Array|null} [dataContractId] DocumentFilter dataContractId
+                             * @property {string|null} [documentTypeName] DocumentFilter documentTypeName
+                             * @property {Array.<org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IActionMatch>|null} [actions] DocumentFilter actions
+                             * @property {Uint8Array|null} [batchOwnerId] DocumentFilter batchOwnerId
+                             */
+
+                            /**
+                             * Constructs a new DocumentFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents a DocumentFilter.
+                             * @implements IDocumentFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDocumentFilter=} [properties] Properties to set
+                             */
+                            function DocumentFilter(properties) {
+                                this.actions = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DocumentFilter dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @instance
+                             */
+                            DocumentFilter.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * DocumentFilter documentTypeName.
+                             * @member {string} documentTypeName
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @instance
+                             */
+                            DocumentFilter.prototype.documentTypeName = "";
+
+                            /**
+                             * DocumentFilter actions.
+                             * @member {Array.<org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IActionMatch>} actions
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @instance
+                             */
+                            DocumentFilter.prototype.actions = $util.emptyArray;
+
+                            /**
+                             * DocumentFilter batchOwnerId.
+                             * @member {Uint8Array} batchOwnerId
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @instance
+                             */
+                            DocumentFilter.prototype.batchOwnerId = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new DocumentFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDocumentFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter} DocumentFilter instance
+                             */
+                            DocumentFilter.create = function create(properties) {
+                                return new DocumentFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DocumentFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDocumentFilter} message DocumentFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentTypeName);
+                                if (message.actions != null && message.actions.length)
+                                    for (var i = 0; i < message.actions.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.encode(message.actions[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.batchOwnerId != null && Object.hasOwnProperty.call(message, "batchOwnerId"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.batchOwnerId);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DocumentFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDocumentFilter} message DocumentFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DocumentFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter} DocumentFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentTypeName = reader.string();
+                                        break;
+                                    case 3:
+                                        if (!(message.actions && message.actions.length))
+                                            message.actions = [];
+                                        message.actions.push($root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.decode(reader, reader.uint32()));
+                                        break;
+                                    case 4:
+                                        message.batchOwnerId = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DocumentFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter} DocumentFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DocumentFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DocumentFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    if (!$util.isString(message.documentTypeName))
+                                        return "documentTypeName: string expected";
+                                if (message.actions != null && message.hasOwnProperty("actions")) {
+                                    if (!Array.isArray(message.actions))
+                                        return "actions: array expected";
+                                    for (var i = 0; i < message.actions.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.verify(message.actions[i]);
+                                        if (error)
+                                            return "actions." + error;
+                                    }
+                                }
+                                if (message.batchOwnerId != null && message.hasOwnProperty("batchOwnerId"))
+                                    if (!(message.batchOwnerId && typeof message.batchOwnerId.length === "number" || $util.isString(message.batchOwnerId)))
+                                        return "batchOwnerId: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DocumentFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter} DocumentFilter
+                             */
+                            DocumentFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.documentTypeName != null)
+                                    message.documentTypeName = String(object.documentTypeName);
+                                if (object.actions) {
+                                    if (!Array.isArray(object.actions))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.actions: array expected");
+                                    message.actions = [];
+                                    for (var i = 0; i < object.actions.length; ++i) {
+                                        if (typeof object.actions[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.actions: object expected");
+                                        message.actions[i] = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.fromObject(object.actions[i]);
+                                    }
+                                }
+                                if (object.batchOwnerId != null)
+                                    if (typeof object.batchOwnerId === "string")
+                                        $util.base64.decode(object.batchOwnerId, message.batchOwnerId = $util.newBuffer($util.base64.length(object.batchOwnerId)), 0);
+                                    else if (object.batchOwnerId.length >= 0)
+                                        message.batchOwnerId = object.batchOwnerId;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DocumentFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter} message DocumentFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DocumentFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.actions = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.documentTypeName = "";
+                                    if (options.bytes === String)
+                                        object.batchOwnerId = "";
+                                    else {
+                                        object.batchOwnerId = [];
+                                        if (options.bytes !== Array)
+                                            object.batchOwnerId = $util.newBuffer(object.batchOwnerId);
+                                    }
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    object.documentTypeName = message.documentTypeName;
+                                if (message.actions && message.actions.length) {
+                                    object.actions = [];
+                                    for (var j = 0; j < message.actions.length; ++j)
+                                        object.actions[j] = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.toObject(message.actions[j], options);
+                                }
+                                if (message.batchOwnerId != null && message.hasOwnProperty("batchOwnerId"))
+                                    object.batchOwnerId = options.bytes === String ? $util.base64.encode(message.batchOwnerId, 0, message.batchOwnerId.length) : options.bytes === Array ? Array.prototype.slice.call(message.batchOwnerId) : message.batchOwnerId;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DocumentFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DocumentFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            /**
+                             * Action enum.
+                             * @name org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.Action
+                             * @enum {number}
+                             * @property {number} CREATE=0 CREATE value
+                             * @property {number} REPLACE=1 REPLACE value
+                             * @property {number} DELETE=2 DELETE value
+                             * @property {number} TRANSFER=3 TRANSFER value
+                             * @property {number} UPDATE_PRICE=4 UPDATE_PRICE value
+                             * @property {number} PURCHASE=5 PURCHASE value
+                             */
+                            DocumentFilter.Action = (function() {
+                                var valuesById = {}, values = Object.create(valuesById);
+                                values[valuesById[0] = "CREATE"] = 0;
+                                values[valuesById[1] = "REPLACE"] = 1;
+                                values[valuesById[2] = "DELETE"] = 2;
+                                values[valuesById[3] = "TRANSFER"] = 3;
+                                values[valuesById[4] = "UPDATE_PRICE"] = 4;
+                                values[valuesById[5] = "PURCHASE"] = 5;
+                                return values;
+                            })();
+
+                            DocumentFilter.PriceClause = (function() {
+
+                                /**
+                                 * Properties of a PriceClause.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                                 * @interface IPriceClause
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator|null} [operator] PriceClause operator
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null} [value] PriceClause value
+                                 */
+
+                                /**
+                                 * Constructs a new PriceClause.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                                 * @classdesc Represents a PriceClause.
+                                 * @implements IPriceClause
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IPriceClause=} [properties] Properties to set
+                                 */
+                                function PriceClause(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * PriceClause operator.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator} operator
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @instance
+                                 */
+                                PriceClause.prototype.operator = 0;
+
+                                /**
+                                 * PriceClause value.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null|undefined} value
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @instance
+                                 */
+                                PriceClause.prototype.value = null;
+
+                                /**
+                                 * Creates a new PriceClause instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IPriceClause=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause} PriceClause instance
+                                 */
+                                PriceClause.create = function create(properties) {
+                                    return new PriceClause(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified PriceClause message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IPriceClause} message PriceClause message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PriceClause.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.operator != null && Object.hasOwnProperty.call(message, "operator"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.operator);
+                                    if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.value, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified PriceClause message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IPriceClause} message PriceClause message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PriceClause.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a PriceClause message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause} PriceClause
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PriceClause.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.operator = reader.int32();
+                                            break;
+                                        case 2:
+                                            message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a PriceClause message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause} PriceClause
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PriceClause.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a PriceClause message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                PriceClause.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.operator != null && message.hasOwnProperty("operator"))
+                                        switch (message.operator) {
+                                        default:
+                                            return "operator: enum value expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                        case 3:
+                                        case 4:
+                                        case 5:
+                                        case 6:
+                                        case 7:
+                                        case 8:
+                                        case 9:
+                                        case 10:
+                                        case 11:
+                                        case 12:
+                                            break;
+                                        }
+                                    if (message.value != null && message.hasOwnProperty("value")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify(message.value);
+                                        if (error)
+                                            return "value." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a PriceClause message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause} PriceClause
+                                 */
+                                PriceClause.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause();
+                                    switch (object.operator) {
+                                    case "EQUAL":
+                                    case 0:
+                                        message.operator = 0;
+                                        break;
+                                    case "GREATER_THAN":
+                                    case 1:
+                                        message.operator = 1;
+                                        break;
+                                    case "GREATER_THAN_OR_EQUALS":
+                                    case 2:
+                                        message.operator = 2;
+                                        break;
+                                    case "LESS_THAN":
+                                    case 3:
+                                        message.operator = 3;
+                                        break;
+                                    case "LESS_THAN_OR_EQUALS":
+                                    case 4:
+                                        message.operator = 4;
+                                        break;
+                                    case "BETWEEN":
+                                    case 5:
+                                        message.operator = 5;
+                                        break;
+                                    case "BETWEEN_EXCLUDE_BOUNDS":
+                                    case 6:
+                                        message.operator = 6;
+                                        break;
+                                    case "BETWEEN_EXCLUDE_LEFT":
+                                    case 7:
+                                        message.operator = 7;
+                                        break;
+                                    case "BETWEEN_EXCLUDE_RIGHT":
+                                    case 8:
+                                        message.operator = 8;
+                                        break;
+                                    case "IN":
+                                    case 9:
+                                        message.operator = 9;
+                                        break;
+                                    case "STARTS_WITH":
+                                    case 10:
+                                        message.operator = 10;
+                                        break;
+                                    case "IN_TIME_RANGE":
+                                    case 11:
+                                        message.operator = 11;
+                                        break;
+                                    case "IN_INTEGER_RANGE":
+                                    case 12:
+                                        message.operator = 12;
+                                        break;
+                                    }
+                                    if (object.value != null) {
+                                        if (typeof object.value !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.value: object expected");
+                                        message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.fromObject(object.value);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a PriceClause message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause} message PriceClause
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                PriceClause.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.operator = options.enums === String ? "EQUAL" : 0;
+                                        object.value = null;
+                                    }
+                                    if (message.operator != null && message.hasOwnProperty("operator"))
+                                        object.operator = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator[message.operator] : message.operator;
+                                    if (message.value != null && message.hasOwnProperty("value"))
+                                        object.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.value, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this PriceClause to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                PriceClause.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return PriceClause;
+                            })();
+
+                            DocumentFilter.ActionMatch = (function() {
+
+                                /**
+                                 * Properties of an ActionMatch.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                                 * @interface IActionMatch
+                                 * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.Action|null} [action] ActionMatch action
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>|null} [newDocumentWhere] ActionMatch newDocumentWhere
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>|null} [originalDocumentWhere] ActionMatch originalDocumentWhere
+                                 * @property {Array.<Uint8Array>|null} [ownerIds] ActionMatch ownerIds
+                                 * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IPriceClause|null} [price] ActionMatch price
+                                 */
+
+                                /**
+                                 * Constructs a new ActionMatch.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter
+                                 * @classdesc Represents an ActionMatch.
+                                 * @implements IActionMatch
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IActionMatch=} [properties] Properties to set
+                                 */
+                                function ActionMatch(properties) {
+                                    this.newDocumentWhere = [];
+                                    this.originalDocumentWhere = [];
+                                    this.ownerIds = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ActionMatch action.
+                                 * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.Action} action
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @instance
+                                 */
+                                ActionMatch.prototype.action = 0;
+
+                                /**
+                                 * ActionMatch newDocumentWhere.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>} newDocumentWhere
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @instance
+                                 */
+                                ActionMatch.prototype.newDocumentWhere = $util.emptyArray;
+
+                                /**
+                                 * ActionMatch originalDocumentWhere.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>} originalDocumentWhere
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @instance
+                                 */
+                                ActionMatch.prototype.originalDocumentWhere = $util.emptyArray;
+
+                                /**
+                                 * ActionMatch ownerIds.
+                                 * @member {Array.<Uint8Array>} ownerIds
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @instance
+                                 */
+                                ActionMatch.prototype.ownerIds = $util.emptyArray;
+
+                                /**
+                                 * ActionMatch price.
+                                 * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IPriceClause|null|undefined} price
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @instance
+                                 */
+                                ActionMatch.prototype.price = null;
+
+                                /**
+                                 * Creates a new ActionMatch instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IActionMatch=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} ActionMatch instance
+                                 */
+                                ActionMatch.create = function create(properties) {
+                                    return new ActionMatch(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ActionMatch message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IActionMatch} message ActionMatch message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ActionMatch.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.action != null && Object.hasOwnProperty.call(message, "action"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.action);
+                                    if (message.newDocumentWhere != null && message.newDocumentWhere.length)
+                                        for (var i = 0; i < message.newDocumentWhere.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.encode(message.newDocumentWhere[i], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    if (message.originalDocumentWhere != null && message.originalDocumentWhere.length)
+                                        for (var i = 0; i < message.originalDocumentWhere.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.encode(message.originalDocumentWhere[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                    if (message.ownerIds != null && message.ownerIds.length)
+                                        for (var i = 0; i < message.ownerIds.length; ++i)
+                                            writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.ownerIds[i]);
+                                    if (message.price != null && Object.hasOwnProperty.call(message, "price"))
+                                        $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.encode(message.price, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ActionMatch message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.IActionMatch} message ActionMatch message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ActionMatch.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an ActionMatch message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} ActionMatch
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ActionMatch.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.action = reader.int32();
+                                            break;
+                                        case 2:
+                                            if (!(message.newDocumentWhere && message.newDocumentWhere.length))
+                                                message.newDocumentWhere = [];
+                                            message.newDocumentWhere.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.decode(reader, reader.uint32()));
+                                            break;
+                                        case 3:
+                                            if (!(message.originalDocumentWhere && message.originalDocumentWhere.length))
+                                                message.originalDocumentWhere = [];
+                                            message.originalDocumentWhere.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.decode(reader, reader.uint32()));
+                                            break;
+                                        case 4:
+                                            if (!(message.ownerIds && message.ownerIds.length))
+                                                message.ownerIds = [];
+                                            message.ownerIds.push(reader.bytes());
+                                            break;
+                                        case 5:
+                                            message.price = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an ActionMatch message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} ActionMatch
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ActionMatch.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an ActionMatch message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ActionMatch.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.action != null && message.hasOwnProperty("action"))
+                                        switch (message.action) {
+                                        default:
+                                            return "action: enum value expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                        case 3:
+                                        case 4:
+                                        case 5:
+                                            break;
+                                        }
+                                    if (message.newDocumentWhere != null && message.hasOwnProperty("newDocumentWhere")) {
+                                        if (!Array.isArray(message.newDocumentWhere))
+                                            return "newDocumentWhere: array expected";
+                                        for (var i = 0; i < message.newDocumentWhere.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify(message.newDocumentWhere[i]);
+                                            if (error)
+                                                return "newDocumentWhere." + error;
+                                        }
+                                    }
+                                    if (message.originalDocumentWhere != null && message.hasOwnProperty("originalDocumentWhere")) {
+                                        if (!Array.isArray(message.originalDocumentWhere))
+                                            return "originalDocumentWhere: array expected";
+                                        for (var i = 0; i < message.originalDocumentWhere.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify(message.originalDocumentWhere[i]);
+                                            if (error)
+                                                return "originalDocumentWhere." + error;
+                                        }
+                                    }
+                                    if (message.ownerIds != null && message.hasOwnProperty("ownerIds")) {
+                                        if (!Array.isArray(message.ownerIds))
+                                            return "ownerIds: array expected";
+                                        for (var i = 0; i < message.ownerIds.length; ++i)
+                                            if (!(message.ownerIds[i] && typeof message.ownerIds[i].length === "number" || $util.isString(message.ownerIds[i])))
+                                                return "ownerIds: buffer[] expected";
+                                    }
+                                    if (message.price != null && message.hasOwnProperty("price")) {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.verify(message.price);
+                                        if (error)
+                                            return "price." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an ActionMatch message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} ActionMatch
+                                 */
+                                ActionMatch.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch();
+                                    switch (object.action) {
+                                    case "CREATE":
+                                    case 0:
+                                        message.action = 0;
+                                        break;
+                                    case "REPLACE":
+                                    case 1:
+                                        message.action = 1;
+                                        break;
+                                    case "DELETE":
+                                    case 2:
+                                        message.action = 2;
+                                        break;
+                                    case "TRANSFER":
+                                    case 3:
+                                        message.action = 3;
+                                        break;
+                                    case "UPDATE_PRICE":
+                                    case 4:
+                                        message.action = 4;
+                                        break;
+                                    case "PURCHASE":
+                                    case 5:
+                                        message.action = 5;
+                                        break;
+                                    }
+                                    if (object.newDocumentWhere) {
+                                        if (!Array.isArray(object.newDocumentWhere))
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.newDocumentWhere: array expected");
+                                        message.newDocumentWhere = [];
+                                        for (var i = 0; i < object.newDocumentWhere.length; ++i) {
+                                            if (typeof object.newDocumentWhere[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.newDocumentWhere: object expected");
+                                            message.newDocumentWhere[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.fromObject(object.newDocumentWhere[i]);
+                                        }
+                                    }
+                                    if (object.originalDocumentWhere) {
+                                        if (!Array.isArray(object.originalDocumentWhere))
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.originalDocumentWhere: array expected");
+                                        message.originalDocumentWhere = [];
+                                        for (var i = 0; i < object.originalDocumentWhere.length; ++i) {
+                                            if (typeof object.originalDocumentWhere[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.originalDocumentWhere: object expected");
+                                            message.originalDocumentWhere[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.fromObject(object.originalDocumentWhere[i]);
+                                        }
+                                    }
+                                    if (object.ownerIds) {
+                                        if (!Array.isArray(object.ownerIds))
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.ownerIds: array expected");
+                                        message.ownerIds = [];
+                                        for (var i = 0; i < object.ownerIds.length; ++i)
+                                            if (typeof object.ownerIds[i] === "string")
+                                                $util.base64.decode(object.ownerIds[i], message.ownerIds[i] = $util.newBuffer($util.base64.length(object.ownerIds[i])), 0);
+                                            else if (object.ownerIds[i].length >= 0)
+                                                message.ownerIds[i] = object.ownerIds[i];
+                                    }
+                                    if (object.price != null) {
+                                        if (typeof object.price !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.price: object expected");
+                                        message.price = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.fromObject(object.price);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an ActionMatch message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} message ActionMatch
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ActionMatch.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults) {
+                                        object.newDocumentWhere = [];
+                                        object.originalDocumentWhere = [];
+                                        object.ownerIds = [];
+                                    }
+                                    if (options.defaults) {
+                                        object.action = options.enums === String ? "CREATE" : 0;
+                                        object.price = null;
+                                    }
+                                    if (message.action != null && message.hasOwnProperty("action"))
+                                        object.action = options.enums === String ? $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.Action[message.action] : message.action;
+                                    if (message.newDocumentWhere && message.newDocumentWhere.length) {
+                                        object.newDocumentWhere = [];
+                                        for (var j = 0; j < message.newDocumentWhere.length; ++j)
+                                            object.newDocumentWhere[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.toObject(message.newDocumentWhere[j], options);
+                                    }
+                                    if (message.originalDocumentWhere && message.originalDocumentWhere.length) {
+                                        object.originalDocumentWhere = [];
+                                        for (var j = 0; j < message.originalDocumentWhere.length; ++j)
+                                            object.originalDocumentWhere[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.toObject(message.originalDocumentWhere[j], options);
+                                    }
+                                    if (message.ownerIds && message.ownerIds.length) {
+                                        object.ownerIds = [];
+                                        for (var j = 0; j < message.ownerIds.length; ++j)
+                                            object.ownerIds[j] = options.bytes === String ? $util.base64.encode(message.ownerIds[j], 0, message.ownerIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ownerIds[j]) : message.ownerIds[j];
+                                    }
+                                    if (message.price != null && message.hasOwnProperty("price"))
+                                        object.price = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.PriceClause.toObject(message.price, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ActionMatch to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ActionMatch.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ActionMatch;
+                            })();
+
+                            return DocumentFilter;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.AddressFilter = (function() {
+
+                            /**
+                             * Properties of an AddressFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface IAddressFilter
+                             * @property {Array.<Uint8Array>|null} [addresses] AddressFilter addresses
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role|null} [role] AddressFilter role
+                             */
+
+                            /**
+                             * Constructs a new AddressFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents an AddressFilter.
+                             * @implements IAddressFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IAddressFilter=} [properties] Properties to set
+                             */
+                            function AddressFilter(properties) {
+                                this.addresses = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * AddressFilter addresses.
+                             * @member {Array.<Uint8Array>} addresses
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @instance
+                             */
+                            AddressFilter.prototype.addresses = $util.emptyArray;
+
+                            /**
+                             * AddressFilter role.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role} role
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @instance
+                             */
+                            AddressFilter.prototype.role = 0;
+
+                            /**
+                             * Creates a new AddressFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IAddressFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter} AddressFilter instance
+                             */
+                            AddressFilter.create = function create(properties) {
+                                return new AddressFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified AddressFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IAddressFilter} message AddressFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            AddressFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.addresses != null && message.addresses.length)
+                                    for (var i = 0; i < message.addresses.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.addresses[i]);
+                                if (message.role != null && Object.hasOwnProperty.call(message, "role"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.role);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified AddressFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IAddressFilter} message AddressFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            AddressFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an AddressFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter} AddressFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            AddressFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.addresses && message.addresses.length))
+                                            message.addresses = [];
+                                        message.addresses.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.role = reader.int32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an AddressFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter} AddressFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            AddressFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an AddressFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            AddressFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.addresses != null && message.hasOwnProperty("addresses")) {
+                                    if (!Array.isArray(message.addresses))
+                                        return "addresses: array expected";
+                                    for (var i = 0; i < message.addresses.length; ++i)
+                                        if (!(message.addresses[i] && typeof message.addresses[i].length === "number" || $util.isString(message.addresses[i])))
+                                            return "addresses: buffer[] expected";
+                                }
+                                if (message.role != null && message.hasOwnProperty("role"))
+                                    switch (message.role) {
+                                    default:
+                                        return "role: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                        break;
+                                    }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an AddressFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter} AddressFilter
+                             */
+                            AddressFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter();
+                                if (object.addresses) {
+                                    if (!Array.isArray(object.addresses))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.addresses: array expected");
+                                    message.addresses = [];
+                                    for (var i = 0; i < object.addresses.length; ++i)
+                                        if (typeof object.addresses[i] === "string")
+                                            $util.base64.decode(object.addresses[i], message.addresses[i] = $util.newBuffer($util.base64.length(object.addresses[i])), 0);
+                                        else if (object.addresses[i].length >= 0)
+                                            message.addresses[i] = object.addresses[i];
+                                }
+                                switch (object.role) {
+                                case "ANY":
+                                case 0:
+                                    message.role = 0;
+                                    break;
+                                case "SENDER":
+                                case 1:
+                                    message.role = 1;
+                                    break;
+                                case "RECIPIENT":
+                                case 2:
+                                    message.role = 2;
+                                    break;
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an AddressFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter} message AddressFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            AddressFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.addresses = [];
+                                if (options.defaults)
+                                    object.role = options.enums === String ? "ANY" : 0;
+                                if (message.addresses && message.addresses.length) {
+                                    object.addresses = [];
+                                    for (var j = 0; j < message.addresses.length; ++j)
+                                        object.addresses[j] = options.bytes === String ? $util.base64.encode(message.addresses[j], 0, message.addresses[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.addresses[j]) : message.addresses[j];
+                                }
+                                if (message.role != null && message.hasOwnProperty("role"))
+                                    object.role = options.enums === String ? $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role[message.role] : message.role;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this AddressFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            AddressFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return AddressFilter;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.IdentityFilter = (function() {
+
+                            /**
+                             * Properties of an IdentityFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface IIdentityFilter
+                             * @property {Array.<Uint8Array>|null} [identityIds] IdentityFilter identityIds
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role|null} [role] IdentityFilter role
+                             */
+
+                            /**
+                             * Constructs a new IdentityFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents an IdentityFilter.
+                             * @implements IIdentityFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IIdentityFilter=} [properties] Properties to set
+                             */
+                            function IdentityFilter(properties) {
+                                this.identityIds = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * IdentityFilter identityIds.
+                             * @member {Array.<Uint8Array>} identityIds
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @instance
+                             */
+                            IdentityFilter.prototype.identityIds = $util.emptyArray;
+
+                            /**
+                             * IdentityFilter role.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role} role
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @instance
+                             */
+                            IdentityFilter.prototype.role = 0;
+
+                            /**
+                             * Creates a new IdentityFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IIdentityFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter} IdentityFilter instance
+                             */
+                            IdentityFilter.create = function create(properties) {
+                                return new IdentityFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified IdentityFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IIdentityFilter} message IdentityFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityIds != null && message.identityIds.length)
+                                    for (var i = 0; i < message.identityIds.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityIds[i]);
+                                if (message.role != null && Object.hasOwnProperty.call(message, "role"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.role);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified IdentityFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IIdentityFilter} message IdentityFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an IdentityFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter} IdentityFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.identityIds && message.identityIds.length))
+                                            message.identityIds = [];
+                                        message.identityIds.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.role = reader.int32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an IdentityFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter} IdentityFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an IdentityFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            IdentityFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identityIds != null && message.hasOwnProperty("identityIds")) {
+                                    if (!Array.isArray(message.identityIds))
+                                        return "identityIds: array expected";
+                                    for (var i = 0; i < message.identityIds.length; ++i)
+                                        if (!(message.identityIds[i] && typeof message.identityIds[i].length === "number" || $util.isString(message.identityIds[i])))
+                                            return "identityIds: buffer[] expected";
+                                }
+                                if (message.role != null && message.hasOwnProperty("role"))
+                                    switch (message.role) {
+                                    default:
+                                        return "role: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                        break;
+                                    }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an IdentityFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter} IdentityFilter
+                             */
+                            IdentityFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter();
+                                if (object.identityIds) {
+                                    if (!Array.isArray(object.identityIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.identityIds: array expected");
+                                    message.identityIds = [];
+                                    for (var i = 0; i < object.identityIds.length; ++i)
+                                        if (typeof object.identityIds[i] === "string")
+                                            $util.base64.decode(object.identityIds[i], message.identityIds[i] = $util.newBuffer($util.base64.length(object.identityIds[i])), 0);
+                                        else if (object.identityIds[i].length >= 0)
+                                            message.identityIds[i] = object.identityIds[i];
+                                }
+                                switch (object.role) {
+                                case "ANY":
+                                case 0:
+                                    message.role = 0;
+                                    break;
+                                case "SENDER":
+                                case 1:
+                                    message.role = 1;
+                                    break;
+                                case "RECIPIENT":
+                                case 2:
+                                    message.role = 2;
+                                    break;
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an IdentityFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter} message IdentityFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            IdentityFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.identityIds = [];
+                                if (options.defaults)
+                                    object.role = options.enums === String ? "ANY" : 0;
+                                if (message.identityIds && message.identityIds.length) {
+                                    object.identityIds = [];
+                                    for (var j = 0; j < message.identityIds.length; ++j)
+                                        object.identityIds[j] = options.bytes === String ? $util.base64.encode(message.identityIds[j], 0, message.identityIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identityIds[j]) : message.identityIds[j];
+                                }
+                                if (message.role != null && message.hasOwnProperty("role"))
+                                    object.role = options.enums === String ? $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role[message.role] : message.role;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this IdentityFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            IdentityFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return IdentityFilter;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.TokenFilter = (function() {
+
+                            /**
+                             * Properties of a TokenFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface ITokenFilter
+                             * @property {Array.<Uint8Array>|null} [tokenIds] TokenFilter tokenIds
+                             * @property {Array.<Uint8Array>|null} [identityIds] TokenFilter identityIds
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role|null} [role] TokenFilter role
+                             */
+
+                            /**
+                             * Constructs a new TokenFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents a TokenFilter.
+                             * @implements ITokenFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ITokenFilter=} [properties] Properties to set
+                             */
+                            function TokenFilter(properties) {
+                                this.tokenIds = [];
+                                this.identityIds = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * TokenFilter tokenIds.
+                             * @member {Array.<Uint8Array>} tokenIds
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @instance
+                             */
+                            TokenFilter.prototype.tokenIds = $util.emptyArray;
+
+                            /**
+                             * TokenFilter identityIds.
+                             * @member {Array.<Uint8Array>} identityIds
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @instance
+                             */
+                            TokenFilter.prototype.identityIds = $util.emptyArray;
+
+                            /**
+                             * TokenFilter role.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role} role
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @instance
+                             */
+                            TokenFilter.prototype.role = 0;
+
+                            /**
+                             * Creates a new TokenFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ITokenFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter} TokenFilter instance
+                             */
+                            TokenFilter.create = function create(properties) {
+                                return new TokenFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified TokenFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ITokenFilter} message TokenFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            TokenFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.tokenIds != null && message.tokenIds.length)
+                                    for (var i = 0; i < message.tokenIds.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.tokenIds[i]);
+                                if (message.identityIds != null && message.identityIds.length)
+                                    for (var i = 0; i < message.identityIds.length; ++i)
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.identityIds[i]);
+                                if (message.role != null && Object.hasOwnProperty.call(message, "role"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).int32(message.role);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified TokenFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ITokenFilter} message TokenFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            TokenFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a TokenFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter} TokenFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            TokenFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.tokenIds && message.tokenIds.length))
+                                            message.tokenIds = [];
+                                        message.tokenIds.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        if (!(message.identityIds && message.identityIds.length))
+                                            message.identityIds = [];
+                                        message.identityIds.push(reader.bytes());
+                                        break;
+                                    case 3:
+                                        message.role = reader.int32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a TokenFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter} TokenFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            TokenFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a TokenFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            TokenFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.tokenIds != null && message.hasOwnProperty("tokenIds")) {
+                                    if (!Array.isArray(message.tokenIds))
+                                        return "tokenIds: array expected";
+                                    for (var i = 0; i < message.tokenIds.length; ++i)
+                                        if (!(message.tokenIds[i] && typeof message.tokenIds[i].length === "number" || $util.isString(message.tokenIds[i])))
+                                            return "tokenIds: buffer[] expected";
+                                }
+                                if (message.identityIds != null && message.hasOwnProperty("identityIds")) {
+                                    if (!Array.isArray(message.identityIds))
+                                        return "identityIds: array expected";
+                                    for (var i = 0; i < message.identityIds.length; ++i)
+                                        if (!(message.identityIds[i] && typeof message.identityIds[i].length === "number" || $util.isString(message.identityIds[i])))
+                                            return "identityIds: buffer[] expected";
+                                }
+                                if (message.role != null && message.hasOwnProperty("role"))
+                                    switch (message.role) {
+                                    default:
+                                        return "role: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                        break;
+                                    }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a TokenFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter} TokenFilter
+                             */
+                            TokenFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter();
+                                if (object.tokenIds) {
+                                    if (!Array.isArray(object.tokenIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.tokenIds: array expected");
+                                    message.tokenIds = [];
+                                    for (var i = 0; i < object.tokenIds.length; ++i)
+                                        if (typeof object.tokenIds[i] === "string")
+                                            $util.base64.decode(object.tokenIds[i], message.tokenIds[i] = $util.newBuffer($util.base64.length(object.tokenIds[i])), 0);
+                                        else if (object.tokenIds[i].length >= 0)
+                                            message.tokenIds[i] = object.tokenIds[i];
+                                }
+                                if (object.identityIds) {
+                                    if (!Array.isArray(object.identityIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.identityIds: array expected");
+                                    message.identityIds = [];
+                                    for (var i = 0; i < object.identityIds.length; ++i)
+                                        if (typeof object.identityIds[i] === "string")
+                                            $util.base64.decode(object.identityIds[i], message.identityIds[i] = $util.newBuffer($util.base64.length(object.identityIds[i])), 0);
+                                        else if (object.identityIds[i].length >= 0)
+                                            message.identityIds[i] = object.identityIds[i];
+                                }
+                                switch (object.role) {
+                                case "ANY":
+                                case 0:
+                                    message.role = 0;
+                                    break;
+                                case "SENDER":
+                                case 1:
+                                    message.role = 1;
+                                    break;
+                                case "RECIPIENT":
+                                case 2:
+                                    message.role = 2;
+                                    break;
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a TokenFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter} message TokenFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            TokenFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults) {
+                                    object.tokenIds = [];
+                                    object.identityIds = [];
+                                }
+                                if (options.defaults)
+                                    object.role = options.enums === String ? "ANY" : 0;
+                                if (message.tokenIds && message.tokenIds.length) {
+                                    object.tokenIds = [];
+                                    for (var j = 0; j < message.tokenIds.length; ++j)
+                                        object.tokenIds[j] = options.bytes === String ? $util.base64.encode(message.tokenIds[j], 0, message.tokenIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.tokenIds[j]) : message.tokenIds[j];
+                                }
+                                if (message.identityIds && message.identityIds.length) {
+                                    object.identityIds = [];
+                                    for (var j = 0; j < message.identityIds.length; ++j)
+                                        object.identityIds[j] = options.bytes === String ? $util.base64.encode(message.identityIds[j], 0, message.identityIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identityIds[j]) : message.identityIds[j];
+                                }
+                                if (message.role != null && message.hasOwnProperty("role"))
+                                    object.role = options.enums === String ? $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.Role[message.role] : message.role;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this TokenFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            TokenFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return TokenFilter;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.DataContractFilter = (function() {
+
+                            /**
+                             * Properties of a DataContractFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface IDataContractFilter
+                             * @property {Array.<Uint8Array>|null} [dataContractIds] DataContractFilter dataContractIds
+                             */
+
+                            /**
+                             * Constructs a new DataContractFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents a DataContractFilter.
+                             * @implements IDataContractFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDataContractFilter=} [properties] Properties to set
+                             */
+                            function DataContractFilter(properties) {
+                                this.dataContractIds = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DataContractFilter dataContractIds.
+                             * @member {Array.<Uint8Array>} dataContractIds
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @instance
+                             */
+                            DataContractFilter.prototype.dataContractIds = $util.emptyArray;
+
+                            /**
+                             * Creates a new DataContractFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDataContractFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter} DataContractFilter instance
+                             */
+                            DataContractFilter.create = function create(properties) {
+                                return new DataContractFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DataContractFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDataContractFilter} message DataContractFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractIds != null && message.dataContractIds.length)
+                                    for (var i = 0; i < message.dataContractIds.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractIds[i]);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DataContractFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDataContractFilter} message DataContractFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DataContractFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter} DataContractFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.dataContractIds && message.dataContractIds.length))
+                                            message.dataContractIds = [];
+                                        message.dataContractIds.push(reader.bytes());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DataContractFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter} DataContractFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DataContractFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DataContractFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractIds != null && message.hasOwnProperty("dataContractIds")) {
+                                    if (!Array.isArray(message.dataContractIds))
+                                        return "dataContractIds: array expected";
+                                    for (var i = 0; i < message.dataContractIds.length; ++i)
+                                        if (!(message.dataContractIds[i] && typeof message.dataContractIds[i].length === "number" || $util.isString(message.dataContractIds[i])))
+                                            return "dataContractIds: buffer[] expected";
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DataContractFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter} DataContractFilter
+                             */
+                            DataContractFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter();
+                                if (object.dataContractIds) {
+                                    if (!Array.isArray(object.dataContractIds))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.dataContractIds: array expected");
+                                    message.dataContractIds = [];
+                                    for (var i = 0; i < object.dataContractIds.length; ++i)
+                                        if (typeof object.dataContractIds[i] === "string")
+                                            $util.base64.decode(object.dataContractIds[i], message.dataContractIds[i] = $util.newBuffer($util.base64.length(object.dataContractIds[i])), 0);
+                                        else if (object.dataContractIds[i].length >= 0)
+                                            message.dataContractIds[i] = object.dataContractIds[i];
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DataContractFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter} message DataContractFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DataContractFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.dataContractIds = [];
+                                if (message.dataContractIds && message.dataContractIds.length) {
+                                    object.dataContractIds = [];
+                                    for (var j = 0; j < message.dataContractIds.length; ++j)
+                                        object.dataContractIds[j] = options.bytes === String ? $util.base64.encode(message.dataContractIds[j], 0, message.dataContractIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractIds[j]) : message.dataContractIds[j];
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DataContractFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DataContractFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return DataContractFilter;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.StateTransitionFilter = (function() {
+
+                            /**
+                             * Properties of a StateTransitionFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface IStateTransitionFilter
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDocumentFilter|null} [documents] StateTransitionFilter documents
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IAddressFilter|null} [addresses] StateTransitionFilter addresses
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IIdentityFilter|null} [identities] StateTransitionFilter identities
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ITokenFilter|null} [tokens] StateTransitionFilter tokens
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDataContractFilter|null} [dataContracts] StateTransitionFilter dataContracts
+                             */
+
+                            /**
+                             * Constructs a new StateTransitionFilter.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents a StateTransitionFilter.
+                             * @implements IStateTransitionFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IStateTransitionFilter=} [properties] Properties to set
+                             */
+                            function StateTransitionFilter(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * StateTransitionFilter documents.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDocumentFilter|null|undefined} documents
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             */
+                            StateTransitionFilter.prototype.documents = null;
+
+                            /**
+                             * StateTransitionFilter addresses.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IAddressFilter|null|undefined} addresses
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             */
+                            StateTransitionFilter.prototype.addresses = null;
+
+                            /**
+                             * StateTransitionFilter identities.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IIdentityFilter|null|undefined} identities
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             */
+                            StateTransitionFilter.prototype.identities = null;
+
+                            /**
+                             * StateTransitionFilter tokens.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ITokenFilter|null|undefined} tokens
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             */
+                            StateTransitionFilter.prototype.tokens = null;
+
+                            /**
+                             * StateTransitionFilter dataContracts.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IDataContractFilter|null|undefined} dataContracts
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             */
+                            StateTransitionFilter.prototype.dataContracts = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * StateTransitionFilter filter.
+                             * @member {"documents"|"addresses"|"identities"|"tokens"|"dataContracts"|undefined} filter
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             */
+                            Object.defineProperty(StateTransitionFilter.prototype, "filter", {
+                                get: $util.oneOfGetter($oneOfFields = ["documents", "addresses", "identities", "tokens", "dataContracts"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new StateTransitionFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IStateTransitionFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter} StateTransitionFilter instance
+                             */
+                            StateTransitionFilter.create = function create(properties) {
+                                return new StateTransitionFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified StateTransitionFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IStateTransitionFilter} message StateTransitionFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateTransitionFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documents != null && Object.hasOwnProperty.call(message, "documents"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.addresses != null && Object.hasOwnProperty.call(message, "addresses"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.encode(message.addresses, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.identities != null && Object.hasOwnProperty.call(message, "identities"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.encode(message.identities, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.tokens != null && Object.hasOwnProperty.call(message, "tokens"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.encode(message.tokens, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.dataContracts != null && Object.hasOwnProperty.call(message, "dataContracts"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.encode(message.dataContracts, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified StateTransitionFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IStateTransitionFilter} message StateTransitionFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateTransitionFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a StateTransitionFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter} StateTransitionFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateTransitionFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.documents = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.addresses = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.identities = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.tokens = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.dataContracts = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a StateTransitionFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter} StateTransitionFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateTransitionFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a StateTransitionFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            StateTransitionFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    properties.filter = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.verify(message.documents);
+                                        if (error)
+                                            return "documents." + error;
+                                    }
+                                }
+                                if (message.addresses != null && message.hasOwnProperty("addresses")) {
+                                    if (properties.filter === 1)
+                                        return "filter: multiple values";
+                                    properties.filter = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.verify(message.addresses);
+                                        if (error)
+                                            return "addresses." + error;
+                                    }
+                                }
+                                if (message.identities != null && message.hasOwnProperty("identities")) {
+                                    if (properties.filter === 1)
+                                        return "filter: multiple values";
+                                    properties.filter = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.verify(message.identities);
+                                        if (error)
+                                            return "identities." + error;
+                                    }
+                                }
+                                if (message.tokens != null && message.hasOwnProperty("tokens")) {
+                                    if (properties.filter === 1)
+                                        return "filter: multiple values";
+                                    properties.filter = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.verify(message.tokens);
+                                        if (error)
+                                            return "tokens." + error;
+                                    }
+                                }
+                                if (message.dataContracts != null && message.hasOwnProperty("dataContracts")) {
+                                    if (properties.filter === 1)
+                                        return "filter: multiple values";
+                                    properties.filter = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.verify(message.dataContracts);
+                                        if (error)
+                                            return "dataContracts." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a StateTransitionFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter} StateTransitionFilter
+                             */
+                            StateTransitionFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter();
+                                if (object.documents != null) {
+                                    if (typeof object.documents !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.documents: object expected");
+                                    message.documents = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.fromObject(object.documents);
+                                }
+                                if (object.addresses != null) {
+                                    if (typeof object.addresses !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.addresses: object expected");
+                                    message.addresses = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.fromObject(object.addresses);
+                                }
+                                if (object.identities != null) {
+                                    if (typeof object.identities !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.identities: object expected");
+                                    message.identities = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.fromObject(object.identities);
+                                }
+                                if (object.tokens != null) {
+                                    if (typeof object.tokens !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.tokens: object expected");
+                                    message.tokens = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.fromObject(object.tokens);
+                                }
+                                if (object.dataContracts != null) {
+                                    if (typeof object.dataContracts !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.dataContracts: object expected");
+                                    message.dataContracts = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.fromObject(object.dataContracts);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a StateTransitionFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter} message StateTransitionFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            StateTransitionFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    object.documents = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.toObject(message.documents, options);
+                                    if (options.oneofs)
+                                        object.filter = "documents";
+                                }
+                                if (message.addresses != null && message.hasOwnProperty("addresses")) {
+                                    object.addresses = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.AddressFilter.toObject(message.addresses, options);
+                                    if (options.oneofs)
+                                        object.filter = "addresses";
+                                }
+                                if (message.identities != null && message.hasOwnProperty("identities")) {
+                                    object.identities = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IdentityFilter.toObject(message.identities, options);
+                                    if (options.oneofs)
+                                        object.filter = "identities";
+                                }
+                                if (message.tokens != null && message.hasOwnProperty("tokens")) {
+                                    object.tokens = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.TokenFilter.toObject(message.tokens, options);
+                                    if (options.oneofs)
+                                        object.filter = "tokens";
+                                }
+                                if (message.dataContracts != null && message.hasOwnProperty("dataContracts")) {
+                                    object.dataContracts = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DataContractFilter.toObject(message.dataContracts, options);
+                                    if (options.oneofs)
+                                        object.filter = "dataContracts";
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this StateTransitionFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            StateTransitionFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return StateTransitionFilter;
+                        })();
+
+                        SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a SubscribeToStateTransitionsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @interface ISubscribeToStateTransitionsRequestV0
+                             * @property {Array.<org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IStateTransitionFilter>|null} [filters] SubscribeToStateTransitionsRequestV0 filters
+                             * @property {number|Long|null} [fromBlockHeight] SubscribeToStateTransitionsRequestV0 fromBlockHeight
+                             */
+
+                            /**
+                             * Constructs a new SubscribeToStateTransitionsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest
+                             * @classdesc Represents a SubscribeToStateTransitionsRequestV0.
+                             * @implements ISubscribeToStateTransitionsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ISubscribeToStateTransitionsRequestV0=} [properties] Properties to set
+                             */
+                            function SubscribeToStateTransitionsRequestV0(properties) {
+                                this.filters = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * SubscribeToStateTransitionsRequestV0 filters.
+                             * @member {Array.<org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.IStateTransitionFilter>} filters
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @instance
+                             */
+                            SubscribeToStateTransitionsRequestV0.prototype.filters = $util.emptyArray;
+
+                            /**
+                             * SubscribeToStateTransitionsRequestV0 fromBlockHeight.
+                             * @member {number|Long} fromBlockHeight
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @instance
+                             */
+                            SubscribeToStateTransitionsRequestV0.prototype.fromBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new SubscribeToStateTransitionsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ISubscribeToStateTransitionsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0} SubscribeToStateTransitionsRequestV0 instance
+                             */
+                            SubscribeToStateTransitionsRequestV0.create = function create(properties) {
+                                return new SubscribeToStateTransitionsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified SubscribeToStateTransitionsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ISubscribeToStateTransitionsRequestV0} message SubscribeToStateTransitionsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            SubscribeToStateTransitionsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.filters != null && message.filters.length)
+                                    for (var i = 0; i < message.filters.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.encode(message.filters[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.fromBlockHeight != null && Object.hasOwnProperty.call(message, "fromBlockHeight"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.fromBlockHeight);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified SubscribeToStateTransitionsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.ISubscribeToStateTransitionsRequestV0} message SubscribeToStateTransitionsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            SubscribeToStateTransitionsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a SubscribeToStateTransitionsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0} SubscribeToStateTransitionsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            SubscribeToStateTransitionsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.filters && message.filters.length))
+                                            message.filters = [];
+                                        message.filters.push($root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.decode(reader, reader.uint32()));
+                                        break;
+                                    case 2:
+                                        message.fromBlockHeight = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a SubscribeToStateTransitionsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0} SubscribeToStateTransitionsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            SubscribeToStateTransitionsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a SubscribeToStateTransitionsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            SubscribeToStateTransitionsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.filters != null && message.hasOwnProperty("filters")) {
+                                    if (!Array.isArray(message.filters))
+                                        return "filters: array expected";
+                                    for (var i = 0; i < message.filters.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.verify(message.filters[i]);
+                                        if (error)
+                                            return "filters." + error;
+                                    }
+                                }
+                                if (message.fromBlockHeight != null && message.hasOwnProperty("fromBlockHeight"))
+                                    if (!$util.isInteger(message.fromBlockHeight) && !(message.fromBlockHeight && $util.isInteger(message.fromBlockHeight.low) && $util.isInteger(message.fromBlockHeight.high)))
+                                        return "fromBlockHeight: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a SubscribeToStateTransitionsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0} SubscribeToStateTransitionsRequestV0
+                             */
+                            SubscribeToStateTransitionsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0();
+                                if (object.filters) {
+                                    if (!Array.isArray(object.filters))
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.filters: array expected");
+                                    message.filters = [];
+                                    for (var i = 0; i < object.filters.length; ++i) {
+                                        if (typeof object.filters[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0.filters: object expected");
+                                        message.filters[i] = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.fromObject(object.filters[i]);
+                                    }
+                                }
+                                if (object.fromBlockHeight != null)
+                                    if ($util.Long)
+                                        (message.fromBlockHeight = $util.Long.fromValue(object.fromBlockHeight)).unsigned = true;
+                                    else if (typeof object.fromBlockHeight === "string")
+                                        message.fromBlockHeight = parseInt(object.fromBlockHeight, 10);
+                                    else if (typeof object.fromBlockHeight === "number")
+                                        message.fromBlockHeight = object.fromBlockHeight;
+                                    else if (typeof object.fromBlockHeight === "object")
+                                        message.fromBlockHeight = new $util.LongBits(object.fromBlockHeight.low >>> 0, object.fromBlockHeight.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a SubscribeToStateTransitionsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0} message SubscribeToStateTransitionsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            SubscribeToStateTransitionsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.filters = [];
+                                if (options.defaults)
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.fromBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.fromBlockHeight = options.longs === String ? "0" : 0;
+                                if (message.filters && message.filters.length) {
+                                    object.filters = [];
+                                    for (var j = 0; j < message.filters.length; ++j)
+                                        object.filters[j] = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.StateTransitionFilter.toObject(message.filters[j], options);
+                                }
+                                if (message.fromBlockHeight != null && message.hasOwnProperty("fromBlockHeight"))
+                                    if (typeof message.fromBlockHeight === "number")
+                                        object.fromBlockHeight = options.longs === String ? String(message.fromBlockHeight) : message.fromBlockHeight;
+                                    else
+                                        object.fromBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.fromBlockHeight) : options.longs === Number ? new $util.LongBits(message.fromBlockHeight.low >>> 0, message.fromBlockHeight.high >>> 0).toNumber(true) : message.fromBlockHeight;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this SubscribeToStateTransitionsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.SubscribeToStateTransitionsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            SubscribeToStateTransitionsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return SubscribeToStateTransitionsRequestV0;
+                        })();
+
+                        return SubscribeToStateTransitionsRequest;
+                    })();
+
+                    v0.SubscribeToStateTransitionsResponse = (function() {
+
+                        /**
+                         * Properties of a SubscribeToStateTransitionsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ISubscribeToStateTransitionsResponse
+                         * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.ISubscribeToStateTransitionsResponseV0|null} [v0] SubscribeToStateTransitionsResponse v0
+                         */
+
+                        /**
+                         * Constructs a new SubscribeToStateTransitionsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a SubscribeToStateTransitionsResponse.
+                         * @implements ISubscribeToStateTransitionsResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsResponse=} [properties] Properties to set
+                         */
+                        function SubscribeToStateTransitionsResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * SubscribeToStateTransitionsResponse v0.
+                         * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.ISubscribeToStateTransitionsResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @instance
+                         */
+                        SubscribeToStateTransitionsResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * SubscribeToStateTransitionsResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @instance
+                         */
+                        Object.defineProperty(SubscribeToStateTransitionsResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new SubscribeToStateTransitionsResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse} SubscribeToStateTransitionsResponse instance
+                         */
+                        SubscribeToStateTransitionsResponse.create = function create(properties) {
+                            return new SubscribeToStateTransitionsResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified SubscribeToStateTransitionsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsResponse} message SubscribeToStateTransitionsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        SubscribeToStateTransitionsResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified SubscribeToStateTransitionsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ISubscribeToStateTransitionsResponse} message SubscribeToStateTransitionsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        SubscribeToStateTransitionsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a SubscribeToStateTransitionsResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse} SubscribeToStateTransitionsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        SubscribeToStateTransitionsResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a SubscribeToStateTransitionsResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse} SubscribeToStateTransitionsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        SubscribeToStateTransitionsResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a SubscribeToStateTransitionsResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        SubscribeToStateTransitionsResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a SubscribeToStateTransitionsResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse} SubscribeToStateTransitionsResponse
+                         */
+                        SubscribeToStateTransitionsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a SubscribeToStateTransitionsResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse} message SubscribeToStateTransitionsResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        SubscribeToStateTransitionsResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this SubscribeToStateTransitionsResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        SubscribeToStateTransitionsResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0 = (function() {
+
+                            /**
+                             * Properties of a SubscribeToStateTransitionsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                             * @interface ISubscribeToStateTransitionsResponseV0
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.IStateTransitionMatch|null} [stateTransition] SubscribeToStateTransitionsResponseV0 stateTransition
+                             * @property {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.ICheckpoint|null} [checkpoint] SubscribeToStateTransitionsResponseV0 checkpoint
+                             */
+
+                            /**
+                             * Constructs a new SubscribeToStateTransitionsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse
+                             * @classdesc Represents a SubscribeToStateTransitionsResponseV0.
+                             * @implements ISubscribeToStateTransitionsResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.ISubscribeToStateTransitionsResponseV0=} [properties] Properties to set
+                             */
+                            function SubscribeToStateTransitionsResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * SubscribeToStateTransitionsResponseV0 stateTransition.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.IStateTransitionMatch|null|undefined} stateTransition
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @instance
+                             */
+                            SubscribeToStateTransitionsResponseV0.prototype.stateTransition = null;
+
+                            /**
+                             * SubscribeToStateTransitionsResponseV0 checkpoint.
+                             * @member {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.ICheckpoint|null|undefined} checkpoint
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @instance
+                             */
+                            SubscribeToStateTransitionsResponseV0.prototype.checkpoint = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * SubscribeToStateTransitionsResponseV0 responses.
+                             * @member {"stateTransition"|"checkpoint"|undefined} responses
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(SubscribeToStateTransitionsResponseV0.prototype, "responses", {
+                                get: $util.oneOfGetter($oneOfFields = ["stateTransition", "checkpoint"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new SubscribeToStateTransitionsResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.ISubscribeToStateTransitionsResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0} SubscribeToStateTransitionsResponseV0 instance
+                             */
+                            SubscribeToStateTransitionsResponseV0.create = function create(properties) {
+                                return new SubscribeToStateTransitionsResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified SubscribeToStateTransitionsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.ISubscribeToStateTransitionsResponseV0} message SubscribeToStateTransitionsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            SubscribeToStateTransitionsResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.stateTransition != null && Object.hasOwnProperty.call(message, "stateTransition"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.encode(message.stateTransition, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.checkpoint != null && Object.hasOwnProperty.call(message, "checkpoint"))
+                                    $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.encode(message.checkpoint, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified SubscribeToStateTransitionsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.ISubscribeToStateTransitionsResponseV0} message SubscribeToStateTransitionsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            SubscribeToStateTransitionsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a SubscribeToStateTransitionsResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0} SubscribeToStateTransitionsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            SubscribeToStateTransitionsResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.stateTransition = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.checkpoint = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a SubscribeToStateTransitionsResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0} SubscribeToStateTransitionsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            SubscribeToStateTransitionsResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a SubscribeToStateTransitionsResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            SubscribeToStateTransitionsResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.stateTransition != null && message.hasOwnProperty("stateTransition")) {
+                                    properties.responses = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.verify(message.stateTransition);
+                                        if (error)
+                                            return "stateTransition." + error;
+                                    }
+                                }
+                                if (message.checkpoint != null && message.hasOwnProperty("checkpoint")) {
+                                    if (properties.responses === 1)
+                                        return "responses: multiple values";
+                                    properties.responses = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.verify(message.checkpoint);
+                                        if (error)
+                                            return "checkpoint." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a SubscribeToStateTransitionsResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0} SubscribeToStateTransitionsResponseV0
+                             */
+                            SubscribeToStateTransitionsResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0();
+                                if (object.stateTransition != null) {
+                                    if (typeof object.stateTransition !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.stateTransition: object expected");
+                                    message.stateTransition = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.fromObject(object.stateTransition);
+                                }
+                                if (object.checkpoint != null) {
+                                    if (typeof object.checkpoint !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.checkpoint: object expected");
+                                    message.checkpoint = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.fromObject(object.checkpoint);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a SubscribeToStateTransitionsResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0} message SubscribeToStateTransitionsResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            SubscribeToStateTransitionsResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (message.stateTransition != null && message.hasOwnProperty("stateTransition")) {
+                                    object.stateTransition = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.toObject(message.stateTransition, options);
+                                    if (options.oneofs)
+                                        object.responses = "stateTransition";
+                                }
+                                if (message.checkpoint != null && message.hasOwnProperty("checkpoint")) {
+                                    object.checkpoint = $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.toObject(message.checkpoint, options);
+                                    if (options.oneofs)
+                                        object.responses = "checkpoint";
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this SubscribeToStateTransitionsResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            SubscribeToStateTransitionsResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            SubscribeToStateTransitionsResponseV0.StateTransitionMatch = (function() {
+
+                                /**
+                                 * Properties of a StateTransitionMatch.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                                 * @interface IStateTransitionMatch
+                                 * @property {number|Long|null} [blockHeight] StateTransitionMatch blockHeight
+                                 * @property {number|Long|null} [blockTimeMs] StateTransitionMatch blockTimeMs
+                                 * @property {number|null} [protocolVersion] StateTransitionMatch protocolVersion
+                                 * @property {number|null} [indexInBlock] StateTransitionMatch indexInBlock
+                                 * @property {Uint8Array|null} [stateTransitionHash] StateTransitionMatch stateTransitionHash
+                                 * @property {Uint8Array|null} [stateTransition] StateTransitionMatch stateTransition
+                                 * @property {Array.<number>|null} [matchedFilters] StateTransitionMatch matchedFilters
+                                 * @property {Array.<number>|null} [matchedBatchPositions] StateTransitionMatch matchedBatchPositions
+                                 */
+
+                                /**
+                                 * Constructs a new StateTransitionMatch.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                                 * @classdesc Represents a StateTransitionMatch.
+                                 * @implements IStateTransitionMatch
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.IStateTransitionMatch=} [properties] Properties to set
+                                 */
+                                function StateTransitionMatch(properties) {
+                                    this.matchedFilters = [];
+                                    this.matchedBatchPositions = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * StateTransitionMatch blockHeight.
+                                 * @member {number|Long} blockHeight
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateTransitionMatch blockTimeMs.
+                                 * @member {number|Long} blockTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.blockTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateTransitionMatch protocolVersion.
+                                 * @member {number} protocolVersion
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.protocolVersion = 0;
+
+                                /**
+                                 * StateTransitionMatch indexInBlock.
+                                 * @member {number} indexInBlock
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.indexInBlock = 0;
+
+                                /**
+                                 * StateTransitionMatch stateTransitionHash.
+                                 * @member {Uint8Array} stateTransitionHash
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                                /**
+                                 * StateTransitionMatch stateTransition.
+                                 * @member {Uint8Array} stateTransition
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.stateTransition = $util.newBuffer([]);
+
+                                /**
+                                 * StateTransitionMatch matchedFilters.
+                                 * @member {Array.<number>} matchedFilters
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.matchedFilters = $util.emptyArray;
+
+                                /**
+                                 * StateTransitionMatch matchedBatchPositions.
+                                 * @member {Array.<number>} matchedBatchPositions
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 */
+                                StateTransitionMatch.prototype.matchedBatchPositions = $util.emptyArray;
+
+                                /**
+                                 * Creates a new StateTransitionMatch instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.IStateTransitionMatch=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch} StateTransitionMatch instance
+                                 */
+                                StateTransitionMatch.create = function create(properties) {
+                                    return new StateTransitionMatch(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified StateTransitionMatch message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.IStateTransitionMatch} message StateTransitionMatch message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StateTransitionMatch.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.blockHeight);
+                                    if (message.blockTimeMs != null && Object.hasOwnProperty.call(message, "blockTimeMs"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.blockTimeMs);
+                                    if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.protocolVersion);
+                                    if (message.indexInBlock != null && Object.hasOwnProperty.call(message, "indexInBlock"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.indexInBlock);
+                                    if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.stateTransitionHash);
+                                    if (message.stateTransition != null && Object.hasOwnProperty.call(message, "stateTransition"))
+                                        writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.stateTransition);
+                                    if (message.matchedFilters != null && message.matchedFilters.length) {
+                                        writer.uint32(/* id 7, wireType 2 =*/58).fork();
+                                        for (var i = 0; i < message.matchedFilters.length; ++i)
+                                            writer.uint32(message.matchedFilters[i]);
+                                        writer.ldelim();
+                                    }
+                                    if (message.matchedBatchPositions != null && message.matchedBatchPositions.length) {
+                                        writer.uint32(/* id 8, wireType 2 =*/66).fork();
+                                        for (var i = 0; i < message.matchedBatchPositions.length; ++i)
+                                            writer.uint32(message.matchedBatchPositions[i]);
+                                        writer.ldelim();
+                                    }
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified StateTransitionMatch message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.IStateTransitionMatch} message StateTransitionMatch message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StateTransitionMatch.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a StateTransitionMatch message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch} StateTransitionMatch
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StateTransitionMatch.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.blockHeight = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.blockTimeMs = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.protocolVersion = reader.uint32();
+                                            break;
+                                        case 4:
+                                            message.indexInBlock = reader.uint32();
+                                            break;
+                                        case 5:
+                                            message.stateTransitionHash = reader.bytes();
+                                            break;
+                                        case 6:
+                                            message.stateTransition = reader.bytes();
+                                            break;
+                                        case 7:
+                                            if (!(message.matchedFilters && message.matchedFilters.length))
+                                                message.matchedFilters = [];
+                                            if ((tag & 7) === 2) {
+                                                var end2 = reader.uint32() + reader.pos;
+                                                while (reader.pos < end2)
+                                                    message.matchedFilters.push(reader.uint32());
+                                            } else
+                                                message.matchedFilters.push(reader.uint32());
+                                            break;
+                                        case 8:
+                                            if (!(message.matchedBatchPositions && message.matchedBatchPositions.length))
+                                                message.matchedBatchPositions = [];
+                                            if ((tag & 7) === 2) {
+                                                var end2 = reader.uint32() + reader.pos;
+                                                while (reader.pos < end2)
+                                                    message.matchedBatchPositions.push(reader.uint32());
+                                            } else
+                                                message.matchedBatchPositions.push(reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a StateTransitionMatch message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch} StateTransitionMatch
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StateTransitionMatch.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a StateTransitionMatch message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                StateTransitionMatch.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                        if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                            return "blockHeight: integer|Long expected";
+                                    if (message.blockTimeMs != null && message.hasOwnProperty("blockTimeMs"))
+                                        if (!$util.isInteger(message.blockTimeMs) && !(message.blockTimeMs && $util.isInteger(message.blockTimeMs.low) && $util.isInteger(message.blockTimeMs.high)))
+                                            return "blockTimeMs: integer|Long expected";
+                                    if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
+                                        if (!$util.isInteger(message.protocolVersion))
+                                            return "protocolVersion: integer expected";
+                                    if (message.indexInBlock != null && message.hasOwnProperty("indexInBlock"))
+                                        if (!$util.isInteger(message.indexInBlock))
+                                            return "indexInBlock: integer expected";
+                                    if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                        if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
+                                            return "stateTransitionHash: buffer expected";
+                                    if (message.stateTransition != null && message.hasOwnProperty("stateTransition"))
+                                        if (!(message.stateTransition && typeof message.stateTransition.length === "number" || $util.isString(message.stateTransition)))
+                                            return "stateTransition: buffer expected";
+                                    if (message.matchedFilters != null && message.hasOwnProperty("matchedFilters")) {
+                                        if (!Array.isArray(message.matchedFilters))
+                                            return "matchedFilters: array expected";
+                                        for (var i = 0; i < message.matchedFilters.length; ++i)
+                                            if (!$util.isInteger(message.matchedFilters[i]))
+                                                return "matchedFilters: integer[] expected";
+                                    }
+                                    if (message.matchedBatchPositions != null && message.hasOwnProperty("matchedBatchPositions")) {
+                                        if (!Array.isArray(message.matchedBatchPositions))
+                                            return "matchedBatchPositions: array expected";
+                                        for (var i = 0; i < message.matchedBatchPositions.length; ++i)
+                                            if (!$util.isInteger(message.matchedBatchPositions[i]))
+                                                return "matchedBatchPositions: integer[] expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a StateTransitionMatch message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch} StateTransitionMatch
+                                 */
+                                StateTransitionMatch.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch();
+                                    if (object.blockHeight != null)
+                                        if ($util.Long)
+                                            (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                        else if (typeof object.blockHeight === "string")
+                                            message.blockHeight = parseInt(object.blockHeight, 10);
+                                        else if (typeof object.blockHeight === "number")
+                                            message.blockHeight = object.blockHeight;
+                                        else if (typeof object.blockHeight === "object")
+                                            message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                                    if (object.blockTimeMs != null)
+                                        if ($util.Long)
+                                            (message.blockTimeMs = $util.Long.fromValue(object.blockTimeMs)).unsigned = true;
+                                        else if (typeof object.blockTimeMs === "string")
+                                            message.blockTimeMs = parseInt(object.blockTimeMs, 10);
+                                        else if (typeof object.blockTimeMs === "number")
+                                            message.blockTimeMs = object.blockTimeMs;
+                                        else if (typeof object.blockTimeMs === "object")
+                                            message.blockTimeMs = new $util.LongBits(object.blockTimeMs.low >>> 0, object.blockTimeMs.high >>> 0).toNumber(true);
+                                    if (object.protocolVersion != null)
+                                        message.protocolVersion = object.protocolVersion >>> 0;
+                                    if (object.indexInBlock != null)
+                                        message.indexInBlock = object.indexInBlock >>> 0;
+                                    if (object.stateTransitionHash != null)
+                                        if (typeof object.stateTransitionHash === "string")
+                                            $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
+                                        else if (object.stateTransitionHash.length >= 0)
+                                            message.stateTransitionHash = object.stateTransitionHash;
+                                    if (object.stateTransition != null)
+                                        if (typeof object.stateTransition === "string")
+                                            $util.base64.decode(object.stateTransition, message.stateTransition = $util.newBuffer($util.base64.length(object.stateTransition)), 0);
+                                        else if (object.stateTransition.length >= 0)
+                                            message.stateTransition = object.stateTransition;
+                                    if (object.matchedFilters) {
+                                        if (!Array.isArray(object.matchedFilters))
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.matchedFilters: array expected");
+                                        message.matchedFilters = [];
+                                        for (var i = 0; i < object.matchedFilters.length; ++i)
+                                            message.matchedFilters[i] = object.matchedFilters[i] >>> 0;
+                                    }
+                                    if (object.matchedBatchPositions) {
+                                        if (!Array.isArray(object.matchedBatchPositions))
+                                            throw TypeError(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.matchedBatchPositions: array expected");
+                                        message.matchedBatchPositions = [];
+                                        for (var i = 0; i < object.matchedBatchPositions.length; ++i)
+                                            message.matchedBatchPositions[i] = object.matchedBatchPositions[i] >>> 0;
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a StateTransitionMatch message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch} message StateTransitionMatch
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                StateTransitionMatch.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults) {
+                                        object.matchedFilters = [];
+                                        object.matchedBatchPositions = [];
+                                    }
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.blockHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.blockTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.blockTimeMs = options.longs === String ? "0" : 0;
+                                        object.protocolVersion = 0;
+                                        object.indexInBlock = 0;
+                                        if (options.bytes === String)
+                                            object.stateTransitionHash = "";
+                                        else {
+                                            object.stateTransitionHash = [];
+                                            if (options.bytes !== Array)
+                                                object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
+                                        }
+                                        if (options.bytes === String)
+                                            object.stateTransition = "";
+                                        else {
+                                            object.stateTransition = [];
+                                            if (options.bytes !== Array)
+                                                object.stateTransition = $util.newBuffer(object.stateTransition);
+                                        }
+                                    }
+                                    if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                        if (typeof message.blockHeight === "number")
+                                            object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                        else
+                                            object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                                    if (message.blockTimeMs != null && message.hasOwnProperty("blockTimeMs"))
+                                        if (typeof message.blockTimeMs === "number")
+                                            object.blockTimeMs = options.longs === String ? String(message.blockTimeMs) : message.blockTimeMs;
+                                        else
+                                            object.blockTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.blockTimeMs) : options.longs === Number ? new $util.LongBits(message.blockTimeMs.low >>> 0, message.blockTimeMs.high >>> 0).toNumber(true) : message.blockTimeMs;
+                                    if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
+                                        object.protocolVersion = message.protocolVersion;
+                                    if (message.indexInBlock != null && message.hasOwnProperty("indexInBlock"))
+                                        object.indexInBlock = message.indexInBlock;
+                                    if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                        object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                                    if (message.stateTransition != null && message.hasOwnProperty("stateTransition"))
+                                        object.stateTransition = options.bytes === String ? $util.base64.encode(message.stateTransition, 0, message.stateTransition.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransition) : message.stateTransition;
+                                    if (message.matchedFilters && message.matchedFilters.length) {
+                                        object.matchedFilters = [];
+                                        for (var j = 0; j < message.matchedFilters.length; ++j)
+                                            object.matchedFilters[j] = message.matchedFilters[j];
+                                    }
+                                    if (message.matchedBatchPositions && message.matchedBatchPositions.length) {
+                                        object.matchedBatchPositions = [];
+                                        for (var j = 0; j < message.matchedBatchPositions.length; ++j)
+                                            object.matchedBatchPositions[j] = message.matchedBatchPositions[j];
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this StateTransitionMatch to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                StateTransitionMatch.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return StateTransitionMatch;
+                            })();
+
+                            SubscribeToStateTransitionsResponseV0.Checkpoint = (function() {
+
+                                /**
+                                 * Properties of a Checkpoint.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                                 * @interface ICheckpoint
+                                 * @property {number|Long|null} [blockHeight] Checkpoint blockHeight
+                                 */
+
+                                /**
+                                 * Constructs a new Checkpoint.
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0
+                                 * @classdesc Represents a Checkpoint.
+                                 * @implements ICheckpoint
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.ICheckpoint=} [properties] Properties to set
+                                 */
+                                function Checkpoint(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Checkpoint blockHeight.
+                                 * @member {number|Long} blockHeight
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @instance
+                                 */
+                                Checkpoint.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new Checkpoint instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.ICheckpoint=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint} Checkpoint instance
+                                 */
+                                Checkpoint.create = function create(properties) {
+                                    return new Checkpoint(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Checkpoint message. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.ICheckpoint} message Checkpoint message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Checkpoint.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.blockHeight);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Checkpoint message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.ICheckpoint} message Checkpoint message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Checkpoint.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Checkpoint message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint} Checkpoint
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Checkpoint.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.blockHeight = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Checkpoint message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint} Checkpoint
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Checkpoint.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Checkpoint message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Checkpoint.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                        if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                            return "blockHeight: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Checkpoint message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint} Checkpoint
+                                 */
+                                Checkpoint.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint();
+                                    if (object.blockHeight != null)
+                                        if ($util.Long)
+                                            (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                        else if (typeof object.blockHeight === "string")
+                                            message.blockHeight = parseInt(object.blockHeight, 10);
+                                        else if (typeof object.blockHeight === "number")
+                                            message.blockHeight = object.blockHeight;
+                                        else if (typeof object.blockHeight === "object")
+                                            message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Checkpoint message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint} message Checkpoint
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Checkpoint.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.blockHeight = options.longs === String ? "0" : 0;
+                                    if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                        if (typeof message.blockHeight === "number")
+                                            object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                        else
+                                            object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Checkpoint to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.Checkpoint
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Checkpoint.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Checkpoint;
+                            })();
+
+                            return SubscribeToStateTransitionsResponseV0;
+                        })();
+
+                        return SubscribeToStateTransitionsResponse;
                     })();
 
                     return v0;
