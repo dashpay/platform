@@ -152,14 +152,21 @@ impl PlatformWalletInfo {
                 removed,
             } = id_cs;
 
-            for (_id, entry) in identities {
-                self.identity_manager.apply_identity_entry(entry);
-            }
             // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
-            // reach in and touch the index from out here.
-            for removed_id in &removed {
+            // reach in and touch the index from out here. Removals of
+            // identities the batch does not also snapshot go first, freeing
+            // their slots for entries that take them over; the rest still
+            // apply last, so removal wins over a same-batch snapshot.
+            let (freeing, last): (Vec<_>, Vec<_>) =
+                removed.iter().partition(|id| !identities.contains_key(id));
+            for removed_id in freeing {
+                self.identity_manager.remove_for_apply(removed_id);
+            }
+            self.identity_manager
+                .apply_identity_entries(identities.into_values());
+            for removed_id in last {
                 self.identity_manager.remove_for_apply(removed_id);
             }
         }
@@ -1395,6 +1402,111 @@ mod tests {
             .managed_identity(&id)
             .expect("present");
         assert_eq!(restored.identity.revision(), 5);
+    }
+
+    fn slotted_entry(id_byte: u8, wallet_id: Option<[u8; 32]>, index: u32) -> IdentityEntry {
+        let managed = ManagedIdentity::new(make_test_identity(id_byte, 0), index);
+        let mut entry = IdentityEntry::from_managed(&managed);
+        entry.wallet_id = wallet_id;
+        entry.identity_index = wallet_id.map(|_| index);
+        entry
+    }
+
+    fn apply_entries(
+        info: &mut PlatformWalletInfo,
+        wallet: &mut Wallet,
+        entries: impl IntoIterator<Item = IdentityEntry>,
+    ) {
+        let mut cs = IdentityChangeSet::default();
+        for entry in entries {
+            cs.identities.insert(entry.id, entry);
+        }
+        info.apply_changeset(wallet, wrap_id(cs)).expect("apply");
+    }
+
+    fn assert_slot(info: &PlatformWalletInfo, wallet_id: [u8; 32], index: u32, id_byte: u8) {
+        use dpp::identity::accessors::IdentityGettersV0;
+        let id = Identifier::from([id_byte; 32]);
+        let slotted = &info.identity_manager.wallet_identities[&wallet_id][&index];
+        assert_eq!(slotted.identity.id(), id, "slot {index}");
+        let found = info
+            .identity_manager
+            .managed_identity(&id)
+            .expect("present");
+        assert_eq!(found.identity_index, Some(index));
+        assert_eq!(found.wallet_id, Some(wallet_id));
+    }
+
+    /// Replaying a re-slot (A@0 → A@5) must move A, so a later B@0 takes the
+    /// freed slot instead of overwriting A — applied one by one or merged
+    /// into a batch that visits B (lower id) before A.
+    #[test]
+    fn apply_follows_identity_reslot_into_its_verified_index() {
+        let w = [0xAB; 32];
+        for merged in [false, true] {
+            let mut wallet = build_test_wallet();
+            let mut info = empty_info(&wallet);
+            apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 0)]);
+            if merged {
+                apply_entries(
+                    &mut info,
+                    &mut wallet,
+                    [slotted_entry(9, Some(w), 5), slotted_entry(1, Some(w), 0)],
+                );
+            } else {
+                apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 5)]);
+                apply_entries(&mut info, &mut wallet, [slotted_entry(1, Some(w), 0)]);
+            }
+            assert_eq!(info.identity_manager.identity_count(), 2, "merged={merged}");
+            assert_slot(&info, w, 5, 9);
+            assert_slot(&info, w, 0, 1);
+        }
+    }
+
+    /// An observed identity adopted into the wallet replays into its slot.
+    #[test]
+    fn apply_promotes_an_observed_identity_into_the_wallet() {
+        let w = [0xAB; 32];
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, None, 0)]);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 3)]);
+        assert_eq!(info.identity_manager.identity_count(), 1);
+        assert_slot(&info, w, 3, 9);
+    }
+
+    /// A new entry claiming a slot another identity still holds is skipped
+    /// rather than discarding the occupant.
+    #[test]
+    fn apply_does_not_insert_over_an_occupied_slot() {
+        let w = [0xAB; 32];
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 0)]);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(1, Some(w), 0)]);
+        assert_slot(&info, w, 0, 9);
+        assert!(info
+            .identity_manager
+            .managed_identity(&Identifier::from([1; 32]))
+            .is_none());
+    }
+
+    /// A batch removing an identity frees its slot for a new entry in the
+    /// same batch.
+    #[test]
+    fn apply_removal_frees_the_slot_for_a_same_batch_entry() {
+        let w = [0xAB; 32];
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 3)]);
+        let mut cs = IdentityChangeSet::default();
+        let entry = slotted_entry(1, Some(w), 3);
+        cs.identities.insert(entry.id, entry);
+        cs.removed.insert(Identifier::from([9; 32]));
+        info.apply_changeset(&mut wallet, wrap_id(cs))
+            .expect("apply");
+        assert_eq!(info.identity_manager.identity_count(), 1);
+        assert_slot(&info, w, 3, 1);
     }
 
     /// A contact tombstone for a present (non-orphan) owner

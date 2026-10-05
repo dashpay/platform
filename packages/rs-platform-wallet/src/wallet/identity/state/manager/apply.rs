@@ -36,7 +36,10 @@ impl IdentityManager {
     ///
     /// Idempotent: applying the same entry twice produces the same state
     /// as applying it once. If the identity already exists in either
-    /// bucket, the scalar fields are updated in place; balance/revision
+    /// bucket, it first moves to the wallet slot the entry carries (a
+    /// re-slot by [`Self::adopt_into_wallet`]) unless another identity
+    /// holds that slot (placement follows the latest entry applied, as in
+    /// `IdentityChangeSet::merge`), and the scalar fields are updated; balance/revision
     /// are gated on `entry.revision >= existing.identity.revision()`
     /// matching the merge policy on `IdentityChangeSet`. DPNS labels and
     /// contested DPNS labels are complete canonical snapshots and are
@@ -45,6 +48,20 @@ impl IdentityManager {
         use dpp::identity::accessors::IdentitySettersV0;
 
         let id = entry.id;
+
+        // Follow a re-slot (placeholder index 0 to its verified index, or an
+        // observed identity adopted into the wallet) before updating in place.
+        if self.identity(&id).is_some() {
+            if let Some((wallet_id, index)) = entry.wallet_id.zip(entry.identity_index) {
+                if let Err(error) = self.adopt_into_wallet(&id, wallet_id, index) {
+                    tracing::warn!(
+                        identity = %id,
+                        %error,
+                        "keeping identity at its current slot during apply",
+                    );
+                }
+            }
+        }
 
         // Updating an existing identity — find it across both buckets.
         if let Some(existing) = self.locate_mut(&id) {
@@ -107,6 +124,18 @@ impl IdentityManager {
                     );
                     return;
                 };
+                // Inserting would discard the occupant while its reverse-index
+                // entry kept pointing here.
+                if let Some(occupant) = self.slot_holder(&wallet_id, registration_index) {
+                    tracing::warn!(
+                        identity = %id,
+                        %occupant,
+                        wallet_id = %hex::encode(wallet_id),
+                        registration_index,
+                        "skipping wallet-owned identity entry whose slot is occupied during apply",
+                    );
+                    return;
+                }
 
                 let mut managed = ManagedIdentity::new(identity, registration_index);
                 managed.last_updated_balance_block_time = entry.last_updated_balance_block_time;
@@ -160,6 +189,48 @@ impl IdentityManager {
                 self.location_index_insert(id, IdentityLocation::OutOfWallet);
             }
         }
+    }
+
+    /// Restore a batch of entries independently of their order. Known
+    /// identities are applied first, each deferred while its target slot is
+    /// still held by another identity that the batch moves out, and new ones
+    /// are inserted last: a re-slot A@0 → A@5 frees slot 0 for a new B@0
+    /// whichever entry is visited first. Identities still blocked (two
+    /// swapping slots) are updated in place.
+    pub(crate) fn apply_identity_entries(
+        &mut self,
+        entries: impl IntoIterator<Item = IdentityEntry>,
+    ) {
+        let (mut pending, fresh): (Vec<_>, Vec<_>) = entries
+            .into_iter()
+            .partition(|entry| self.identity(&entry.id).is_some());
+        loop {
+            let before = pending.len();
+            let (blocked, ready): (Vec<_>, Vec<_>) = pending.into_iter().partition(|entry| {
+                entry
+                    .wallet_id
+                    .zip(entry.identity_index)
+                    .and_then(|(wallet_id, index)| self.slot_holder(&wallet_id, index))
+                    .is_some_and(|holder| holder != entry.id)
+            });
+            for entry in ready {
+                self.apply_identity_entry(entry);
+            }
+            pending = blocked;
+            if pending.is_empty() || pending.len() == before {
+                break;
+            }
+        }
+        for entry in pending.into_iter().chain(fresh) {
+            self.apply_identity_entry(entry);
+        }
+    }
+
+    fn slot_holder(&self, wallet_id: &[u8; 32], index: u32) -> Option<Identifier> {
+        self.wallet_identities
+            .get(wallet_id)
+            .and_then(|bucket| bucket.get(&index))
+            .map(|occupant| occupant.identity.id())
     }
 
     /// Restore a single [`IdentityKeyEntry`] onto the matching

@@ -368,7 +368,8 @@ pub struct PlatformWallet {
     /// caller that reads the current set and binds an augmented copy (tip
     /// preparation) must not interleave with another bind, or the other
     /// bind's ordinary accounts are dropped and their live state purged.
-    /// Taken at the top of every bind entry point, before `shield_guard`.
+    /// Taken at the top of every bind entry point and by
+    /// `shielded_add_account`, before `shield_guard`.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
@@ -1169,6 +1170,9 @@ impl PlatformWallet {
             )));
         }
         self.ensure_shielded_attached()?;
+        // Serialized with the binds: tip preparation rebinds a snapshot of
+        // the account set, which would drop an account inserted mid-way.
+        let _config = self.shielded_config_lock.lock().await;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is

@@ -1369,14 +1369,16 @@ async fn should_bind_more_than_64_persisted_tip_accounts_from_an_ordinary_reques
     }
 }
 
-/// Tip preparation reads the bound account set and binds it plus the tip
-/// account. A bind of ordinary accounts landing between those two steps must
-/// not be undone by the stale snapshot: preparation is paused right after its
-/// snapshot while another task binds accounts 0 and 1, and account 1 must
-/// still be bound and registered once both finish.
-#[tokio::test]
-async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
-    use crate::shielded_tip_account_index;
+/// A wallet bound to account 0 whose identity at index 2 can prepare a tip
+/// address, for racing preparation against other account-set writers.
+async fn tip_race_fixture(
+    tag: &str,
+) -> (
+    PlatformWallet,
+    [u8; 64],
+    dpp::prelude::Identifier,
+    Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+) {
     use dpp::identity::{Identity, IdentityV0};
     use dpp::prelude::Identifier;
     let phrase = crate::test_support::MESSAGE_SIGNING_TEST_MNEMONIC;
@@ -1429,17 +1431,30 @@ async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
             )
             .unwrap();
     }
-    let coordinator = coordinator_at(&temp_dir("tips_concurrent_bind"));
+    let coordinator = coordinator_at(&temp_dir(tag));
     wallet
         .bind_shielded(&seed, &[0], &coordinator)
         .await
         .unwrap();
-    let tip = shielded_tip_account_index(2).unwrap();
+    (wallet, seed, id, coordinator)
+}
 
-    let (reached, resume) = super::tips::test_hooks::pause_after_snapshot(wallet.wallet_id());
+/// Pause tip preparation right after its account snapshot, run `writer`
+/// against the same wallet, and require the writer to wait for preparation.
+async fn race_tip_preparation<F, Fut>(
+    wallet: &PlatformWallet,
+    seed: [u8; 64],
+    id: dpp::prelude::Identifier,
+    coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    writer: F,
+) where
+    F: FnOnce(PlatformWallet) -> Fut,
+    Fut: std::future::Future<Output = Result<(), crate::PlatformWalletError>> + Send + 'static,
+{
+    let (reached, resume) = super::tips::test_hooks::pause_after_snapshot(wallet);
     let preparing = {
         let wallet = wallet.clone();
-        let coordinator = Arc::clone(&coordinator);
+        let coordinator = Arc::clone(coordinator);
         tokio::spawn(async move {
             wallet
                 .prepare_shielded_tip_address(&seed, &id, &coordinator)
@@ -1447,22 +1462,37 @@ async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
         })
     };
     reached.await.expect("preparation reached its snapshot");
-    let mut binding = {
-        let wallet = wallet.clone();
-        let coordinator = Arc::clone(&coordinator);
-        tokio::spawn(async move { wallet.bind_shielded(&seed, &[0, 1], &coordinator).await })
-    };
-    // Unserialized, this bind finishes now and the resumed preparation then
+    let mut writing = tokio::spawn(writer(wallet.clone()));
+    // Unserialized, the writer finishes now and the resumed preparation then
     // rebinds its stale {0} plus the tip account, dropping account 1.
     let finished_early =
-        tokio::time::timeout(std::time::Duration::from_millis(500), &mut binding).await;
+        tokio::time::timeout(std::time::Duration::from_millis(500), &mut writing).await;
     assert!(
         finished_early.is_err(),
-        "a concurrent bind must wait for tip preparation's read-modify-write"
+        "an account-set writer must wait for tip preparation's read-modify-write"
     );
     resume.send(()).unwrap();
     preparing.await.unwrap().expect("tip address prepared");
-    binding.await.unwrap().expect("ordinary bind succeeds");
+    writing.await.unwrap().expect("account-set writer succeeds");
+}
+
+/// Tip preparation reads the bound account set and binds it plus the tip
+/// account. A bind of ordinary accounts landing between those two steps must
+/// not be undone by the stale snapshot: preparation is paused right after its
+/// snapshot while another task binds accounts 0 and 1, and account 1 must
+/// still be bound and registered once both finish.
+#[tokio::test]
+async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
+    use crate::shielded_tip_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_concurrent_bind").await;
+    let tip = shielded_tip_account_index(2).unwrap();
+    let bind_coordinator = Arc::clone(&coordinator);
+    race_tip_preparation(&wallet, seed, id, &coordinator, move |wallet| async move {
+        wallet
+            .bind_shielded(&seed, &[0, 1], &bind_coordinator)
+            .await
+    })
+    .await;
 
     let bound = wallet.shielded_account_indices().await;
     for account in [0, 1, tip] {
@@ -1476,6 +1506,28 @@ async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
         assert!(
             registered.contains(&SubwalletId::new(wallet.wallet_id(), account)),
             "account {account} registered"
+        );
+    }
+}
+
+/// `shielded_add_account` writes the same account set, so it must not land
+/// between preparation's snapshot and its bind either, or that bind replaces
+/// the key map without the added account.
+#[tokio::test]
+async fn should_keep_an_added_account_during_tip_preparation() {
+    use crate::shielded_tip_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_concurrent_add").await;
+    let tip = shielded_tip_account_index(2).unwrap();
+    race_tip_preparation(&wallet, seed, id, &coordinator, move |wallet| async move {
+        wallet.shielded_add_account(&seed, 1).await
+    })
+    .await;
+
+    let bound = wallet.shielded_account_indices().await;
+    for account in [0, 1, tip] {
+        assert!(
+            bound.contains(&account),
+            "account {account} bound: {bound:?}"
         );
     }
 }

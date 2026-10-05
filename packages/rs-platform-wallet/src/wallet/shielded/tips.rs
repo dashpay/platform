@@ -148,7 +148,7 @@ impl PlatformWallet {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
         #[cfg(test)]
-        test_hooks::after_snapshot(self.wallet_id()).await;
+        test_hooks::after_snapshot(self).await;
         accounts.push(account);
         self.bind_shielded_locked(seed, &accounts, coordinator)
             .await?;
@@ -230,20 +230,26 @@ impl PlatformWallet {
 }
 
 /// Test-only pause point between tip preparation's account snapshot and
-/// its bind, keyed by wallet so parallel tests do not interfere.
+/// its bind, keyed by wallet instance (shared by its clones) so parallel
+/// tests built from the same mnemonic do not interfere.
 #[cfg(test)]
 pub(crate) mod test_hooks {
+    use super::PlatformWallet;
     use std::collections::HashMap;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
     use tokio::sync::oneshot;
 
     type Hook = (oneshot::Sender<()>, oneshot::Receiver<()>);
-    static AFTER_SNAPSHOT: Mutex<Option<HashMap<[u8; 32], Hook>>> = Mutex::new(None);
+    static AFTER_SNAPSHOT: Mutex<Option<HashMap<usize, Hook>>> = Mutex::new(None);
+
+    fn key(wallet: &PlatformWallet) -> usize {
+        Arc::as_ptr(&wallet.shielded_config_lock) as usize
+    }
 
     /// Arm the pause for `wallet`. Returns a receiver that fires when
     /// preparation reaches the pause, and the sender that resumes it.
     pub(crate) fn pause_after_snapshot(
-        wallet: [u8; 32],
+        wallet: &PlatformWallet,
     ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
         let (reached_tx, reached_rx) = oneshot::channel();
         let (resume_tx, resume_rx) = oneshot::channel();
@@ -251,16 +257,16 @@ pub(crate) mod test_hooks {
             .lock()
             .unwrap()
             .get_or_insert_with(HashMap::new)
-            .insert(wallet, (reached_tx, resume_rx));
+            .insert(key(wallet), (reached_tx, resume_rx));
         (reached_rx, resume_tx)
     }
 
-    pub(crate) async fn after_snapshot(wallet: [u8; 32]) {
+    pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         let hook = AFTER_SNAPSHOT
             .lock()
             .unwrap()
             .as_mut()
-            .and_then(|hooks| hooks.remove(&wallet));
+            .and_then(|hooks| hooks.remove(&key(wallet)));
         if let Some((reached, resume)) = hook {
             let _ = reached.send(());
             let _ = resume.await;
