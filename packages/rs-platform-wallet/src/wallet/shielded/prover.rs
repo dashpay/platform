@@ -110,13 +110,22 @@ impl<K: Send + Sync + 'static> ProvingKeyCell<K> {
     /// the cell then stays empty and a later call retries. Note the retry
     /// granularity (`OnceCell::get_or_try_init` semantics): a persistently
     /// failing build is re-attempted once by each waiter queued behind the
-    /// failed attempt, one after another.
+    /// failed attempt, one after another. (A build panic is only
+    /// recoverable where panics unwind, not under `panic = "abort"`.)
     pub(crate) async fn prepare(&'static self) -> Result<&'static K, PlatformWalletError> {
         if let Some(value) = self.value.get() {
             return Ok(value);
         }
         if tokio::runtime::Handle::try_current().is_err() {
-            return Ok(self.get_or_build_blocking());
+            // Same panic-to-error contract as the blocking-pool path below.
+            return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.get_or_build_blocking()
+            }))
+            .map_err(|_| {
+                PlatformWalletError::ShieldedBuildError(
+                    "Orchard proving key preparation failed: the build panicked".to_string(),
+                )
+            });
         }
         self.async_init
             .get_or_try_init(|| async move {
@@ -572,6 +581,25 @@ mod tests {
         let value = futures::executor::block_on(CELL.prepare()).unwrap();
         assert_eq!(*value, 42);
         assert_eq!(BUILDS.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn panicking_build_without_runtime_reports_error_and_a_later_call_retries() {
+        static ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
+        static CELL: ProvingKeyCell<u64> = ProvingKeyCell::new(
+            || {
+                if ATTEMPTS.fetch_add(1, Ordering::SeqCst) == 0 {
+                    panic!("first build fails");
+                }
+                7
+            },
+            run_inline,
+        );
+        let err = futures::executor::block_on(CELL.prepare()).unwrap_err();
+        assert!(err.to_string().contains("panicked"), "{err}");
+        assert!(CELL.get().is_none());
+        assert_eq!(*futures::executor::block_on(CELL.prepare()).unwrap(), 7);
+        assert_eq!(ATTEMPTS.load(Ordering::SeqCst), 2);
     }
 
     /// Test double for the send path: a `ShieldedProver` backed by a test

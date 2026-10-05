@@ -630,7 +630,7 @@ extension PlatformWalletManager {
     /// for a "preparing prover…" UI affordance — `false` doesn't
     /// mean shielded sends will fail, just that the next one
     /// waits for the build to finish first.
-    public static var isShieldedProverReady: Bool {
+    nonisolated public static var isShieldedProverReady: Bool {
         platform_wallet_shielded_prover_is_ready()
     }
 

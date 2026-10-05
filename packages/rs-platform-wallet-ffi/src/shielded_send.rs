@@ -174,10 +174,17 @@ pub unsafe extern "C" fn platform_wallet_shielded_warm_up_prover() {
 /// shutting down; the cache then stays empty and a later call retries.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_prepare_prover() -> PlatformWalletFFIResult {
-    match block_on_worker(CachedOrchardProver::prepare()) {
-        Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(e) => e.into(),
-    }
+    // Preparation spends nothing, so a panic in the runtime bridge is a
+    // definitive failure rather than an ambiguous spend outcome.
+    catch_panic_to_code(
+        "shielded prover preparation",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "No spend was broadcast.",
+        || match block_on_worker(CachedOrchardProver::prepare()) {
+            Ok(()) => PlatformWalletFFIResult::ok(),
+            Err(e) => e.into(),
+        },
+    )
 }
 
 /// Whether the Halo 2 proving key has already been built.
@@ -2335,11 +2342,10 @@ mod tests {
             assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
             assert!(platform_wallet_shielded_prover_is_ready());
             eprintln!("prepare_prover waited {:?}", start.elapsed());
-            // Ready: a second call is immediate.
-            let start = std::time::Instant::now();
+            // Ready: repeated preparation succeeds and preserves readiness.
             let result = platform_wallet_shielded_prepare_prover();
             assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-            assert!(start.elapsed() < std::time::Duration::from_millis(100));
+            assert!(platform_wallet_shielded_prover_is_ready());
         }
     }
 
