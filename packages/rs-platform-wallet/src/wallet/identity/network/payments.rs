@@ -1174,11 +1174,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
         // Host persistence may re-enter wallet APIs, so never invoke it under
         // the manager guard. Failure must not expose an unpersisted address.
-        self.persister.store(changeset).map_err(|e| {
-            PlatformWalletError::Persistence(format!(
-                "failed to persist payment-address reservation: {e}"
-            ))
-        })?;
+        self.persister
+            .store(changeset)
+            .map_err(|e| self.persister.classify_store_failure(e))?;
         self.persister.flush().map_err(|e| {
             PlatformWalletError::Persistence(format!(
                 "failed to flush payment-address reservation: {e}"
@@ -6430,7 +6428,7 @@ mod tests {
                 .dashpay()
                 .reserve_payment_address(&owner, &contact, &provider)
                 .await,
-            Err(PlatformWalletError::Persistence(_))
+            Err(PlatformWalletError::PersisterStore(_))
         ));
         *persister.allow_stores_then_fail.lock().unwrap() = None;
         *persister.fail_flush.lock().unwrap() = true;
