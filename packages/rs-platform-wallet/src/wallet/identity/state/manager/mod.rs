@@ -29,6 +29,7 @@
 mod accessors;
 mod apply;
 mod lifecycle;
+pub use lifecycle::VerifiedPlacement;
 
 use super::managed_identity::ManagedIdentity;
 use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
@@ -222,6 +223,7 @@ impl IdentityManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::PlatformWalletError;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
@@ -269,20 +271,64 @@ mod tests {
         assert_eq!(manager.highest_registration_index(&wallet_id), Some(0));
     }
 
-    /// Load and discovery prove an index by derivation. An identity already
-    /// known as observed, or restored at a placeholder slot, must move into the
-    /// verified slot with its index set, never keep a `wallet_id` without one.
+    #[derive(Default)]
+    struct CountingPersistence {
+        stores: std::sync::atomic::AtomicUsize,
+    }
+    impl crate::changeset::PlatformWalletPersistence for CountingPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.stores
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
+    }
+
+    /// Load and discovery prove an index by derivation and place the identity
+    /// through `place_verified_identity` before touching status or keys. An
+    /// identity already known (observed, or restored at a placeholder slot)
+    /// moves into the verified slot as `Adopted`, which discovery does not
+    /// report as newly discovered. A slot held by a different identity is a
+    /// typed refusal that changes and persists nothing.
     #[test]
-    fn adopt_into_wallet_moves_identities_into_their_verified_slot() {
+    fn verified_placement_adopts_known_identities_and_refuses_occupied_slots() {
+        use std::sync::atomic::Ordering;
         let mut manager = IdentityManager::new();
         let wallet_id: WalletId = [9u8; 32];
-        let p = noop_persister();
+        let counter = Arc::new(CountingPersistence::default());
+        let p = WalletPersister::new(wallet_id, Arc::clone(&counter) as _);
 
+        let fresh = Identifier::from([5u8; 32]);
+        assert_eq!(
+            manager
+                .place_verified_identity(create_test_identity(fresh), 2, wallet_id, &p)
+                .unwrap(),
+            VerifiedPlacement::Added
+        );
+
+        // Promotion of an observed identity: no new id is reported.
         let observed = Identifier::from([1u8; 32]);
         manager
             .add_out_of_wallet_identity(create_test_identity(observed), &p)
             .unwrap();
-        assert!(manager.adopt_into_wallet(&observed, wallet_id, 4));
+        assert_eq!(
+            manager
+                .place_verified_identity(create_test_identity(observed), 4, wallet_id, &p)
+                .unwrap(),
+            VerifiedPlacement::Adopted
+        );
         assert!(manager.out_of_wallet_identities.is_empty());
         let managed = manager.identity(&observed).expect("present");
         assert_eq!(managed.identity_index, Some(4));
@@ -294,24 +340,46 @@ mod tests {
         manager
             .add_identity(create_test_identity(placeholder), 0, wallet_id, &p)
             .unwrap();
-        assert!(manager.adopt_into_wallet(&placeholder, wallet_id, 7));
+        manager
+            .adopt_into_wallet(&placeholder, wallet_id, 7)
+            .unwrap();
         let bucket = &manager.wallet_identities[&wallet_id];
         assert!(!bucket.contains_key(&0));
         assert_eq!(bucket[&7].identity.id(), placeholder);
         assert_eq!(manager.identity_index(&placeholder), Some(7));
-
         // Already in place: a no-op success.
-        assert!(manager.adopt_into_wallet(&placeholder, wallet_id, 7));
+        manager
+            .adopt_into_wallet(&placeholder, wallet_id, 7)
+            .unwrap();
 
-        // Never evict a different identity from the target slot.
+        // Never evict a different identity from the target slot, and persist
+        // nothing on the refusal.
         let other = Identifier::from([3u8; 32]);
         manager
             .add_out_of_wallet_identity(create_test_identity(other), &p)
             .unwrap();
-        assert!(!manager.adopt_into_wallet(&other, wallet_id, 7));
+        let stores_before = counter.stores.load(Ordering::SeqCst);
+        let refused =
+            manager.place_verified_identity(create_test_identity(other), 7, wallet_id, &p);
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::IdentityIndexOccupied {
+                    identity_id,
+                    identity_index: 7,
+                    occupant,
+                }) if identity_id == other && occupant == placeholder
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(counter.stores.load(Ordering::SeqCst), stores_before);
         assert_eq!(manager.identity_index(&other), None);
+        assert!(manager.identity(&other).unwrap().wallet_id.is_none());
         assert_eq!(manager.identity_index(&placeholder), Some(7));
-        assert!(!manager.adopt_into_wallet(&Identifier::from([4u8; 32]), wallet_id, 9));
+        assert!(matches!(
+            manager.adopt_into_wallet(&Identifier::from([4u8; 32]), wallet_id, 9),
+            Err(PlatformWalletError::IdentityNotFound(_))
+        ));
     }
 
     #[test]

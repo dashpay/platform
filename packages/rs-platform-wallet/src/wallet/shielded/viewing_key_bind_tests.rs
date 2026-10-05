@@ -1044,11 +1044,11 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
     // Rediscovery proves index 5 and re-slots the identity.
     {
         let mut wm = wallet.wallet_manager().write().await;
-        assert!(wm
-            .get_wallet_info_mut(&wallet.wallet_id())
+        wm.get_wallet_info_mut(&wallet.wallet_id())
             .unwrap()
             .identity_manager
-            .adopt_into_wallet(&id, wallet.wallet_id(), 5));
+            .adopt_into_wallet(&id, wallet.wallet_id(), 5)
+            .unwrap();
     }
     let address = wallet
         .prepare_shielded_tip_address(&seed, &id, &coordinator)

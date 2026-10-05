@@ -15,6 +15,15 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 
+/// How [`IdentityManager::place_verified_identity`] placed an identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifiedPlacement {
+    /// Newly added to the wallet bucket.
+    Added,
+    /// Already known; moved into (or confirmed at) the verified slot.
+    Adopted,
+}
+
 impl IdentityManager {
     /// Create a new identity manager
     pub fn new() -> Self {
@@ -92,7 +101,29 @@ impl IdentityManager {
         Ok(())
     }
 
-    /// Place an already-known identity in `wallet_id`'s bucket at the
+    /// Place an identity a key derivation just proved at `identity_index` in
+    /// `wallet_id`'s bucket: add it when unknown, otherwise move it into that
+    /// slot (see [`Self::adopt_into_wallet`]). Identity load and discovery both
+    /// go through here before they touch status or keys, so a refused
+    /// placement leaves nothing persisted at the new coordinates.
+    pub fn place_verified_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+        persister: &WalletPersister,
+    ) -> Result<VerifiedPlacement, PlatformWalletError> {
+        let identity_id = identity.id();
+        if self.identity(&identity_id).is_none() {
+            self.add_identity(identity, identity_index, wallet_id, persister)?;
+            Ok(VerifiedPlacement::Added)
+        } else {
+            self.adopt_into_wallet(&identity_id, wallet_id, identity_index)?;
+            Ok(VerifiedPlacement::Adopted)
+        }
+    }
+
+    /// Move an already-known identity into `wallet_id`'s bucket at the
     /// `identity_index` a key derivation just proved for it.
     ///
     /// Identity load and discovery find identities by deriving this wallet's
@@ -105,35 +136,36 @@ impl IdentityManager {
     /// would then attribute to identity 0.
     ///
     /// Does not persist; the caller's following snapshot write carries the
-    /// updated `wallet_id` / `identity_index`. Returns `false` and leaves the
-    /// identity where it is when the target slot already holds a different
-    /// identity, or the id is unknown.
+    /// updated `wallet_id` / `identity_index`. Fails with
+    /// [`PlatformWalletError::IdentityIndexOccupied`], changing nothing, when
+    /// the slot already holds a different identity.
     pub fn adopt_into_wallet(
         &mut self,
         identity_id: &Identifier,
         wallet_id: WalletId,
         identity_index: u32,
-    ) -> bool {
+    ) -> Result<(), PlatformWalletError> {
         let target = IdentityLocation::InWallet {
             wallet_id,
             registration_index: identity_index,
         };
-        let Some(current) = self.location_index().get(identity_id).copied() else {
-            return false;
-        };
+        let current = self
+            .location_index()
+            .get(identity_id)
+            .copied()
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         if current != target {
-            let occupied = self
+            if let Some(other) = self
                 .wallet_identities
                 .get(&wallet_id)
                 .and_then(|bucket| bucket.get(&identity_index))
-                .is_some_and(|other| other.identity.id() != *identity_id);
-            if occupied {
-                tracing::warn!(
-                    identity = %identity_id,
+                .filter(|other| other.identity.id() != *identity_id)
+            {
+                return Err(PlatformWalletError::IdentityIndexOccupied {
+                    identity_id: *identity_id,
                     identity_index,
-                    "identity index slot already holds another identity; not re-slotting"
-                );
-                return false;
+                    occupant: other.identity.id(),
+                });
             }
             let managed = match current {
                 IdentityLocation::OutOfWallet => self.out_of_wallet_identities.remove(identity_id),
@@ -144,10 +176,8 @@ impl IdentityManager {
                     .wallet_identities
                     .get_mut(&wallet_id)
                     .and_then(|bucket| bucket.remove(&registration_index)),
-            };
-            let Some(managed) = managed else {
-                return false;
-            };
+            }
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             self.wallet_identities
                 .entry(wallet_id)
                 .or_default()
@@ -162,7 +192,7 @@ impl IdentityManager {
             managed.wallet_id = Some(wallet_id);
             managed.identity_index = Some(identity_index);
         }
-        true
+        Ok(())
     }
 
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
