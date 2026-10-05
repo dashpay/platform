@@ -308,6 +308,7 @@ p.write_text(json.dumps(r))
                                    "test-token", base_branch=base)
                 git_call.assert_not_called()
                 github.assert_not_called()
+        self.assertEqual(worker.require_branch("release/v5.0"), "release/v5.0")
 
     def test_fixture_check_closes_connection_on_success_or_failure(self):
         for corrupt in (False, True):

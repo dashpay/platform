@@ -77,6 +77,17 @@ def require_string(value, pattern, label):
     return value
 
 
+def require_branch(value):
+    """Accept any branch name Git accepts, except one Git would parse as an option."""
+    if not isinstance(value, str) or not value or value.startswith("-"):
+        raise ReleaseError("Invalid Platform base branch")
+    try:
+        run(None, "git", "check-ref-format", f"refs/heads/{value}")
+    except ReleaseError:
+        raise ReleaseError("Invalid Platform base branch") from None
+    return value
+
+
 def read_blob(directory, commit, path, *, allow_executable=False):
     entry = git(directory, "ls-tree", commit, "--", path)
     modes = ("100644 blob ", "100755 blob ") if allow_executable else ("100644 blob ",)
@@ -311,7 +322,7 @@ No runtime schema switch is included. This draft requires human review and a man
 
 
 def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False, *, base_branch):
-    require_string(base_branch, COMPONENT, "Platform base branch")
+    require_branch(base_branch)
     proof, manifest, fixture = validate_publication(data_repo, data_commit, release_id)
     branch = f"codex/freeze-swift-schema-v{manifest['schema']['schema_version']}"
     api = GitHub(token)
