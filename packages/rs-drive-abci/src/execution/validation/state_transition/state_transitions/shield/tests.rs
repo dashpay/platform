@@ -3240,6 +3240,103 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_split_failed_proof_fees_across_signed_payers_in_strategy_order() {
+            let pv = PlatformVersion::latest();
+            let nominal = pv
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+            let balance = nominal * 3 / 4;
+
+            for indices in [[1, 0], [0, 1]] {
+                let mut platform = setup_platform();
+                let mut signer = TestAddressSigner::new();
+                let address_a = signer.add_p2pkh([98; 32]);
+                let address_b = signer.add_p2pkh([99; 32]);
+                for address in [address_a, address_b] {
+                    setup_address_with_balance(&mut platform, address, 0, balance);
+                }
+                let inputs = BTreeMap::from([(address_a, (1, balance)), (address_b, (1, balance))]);
+                let addresses: Vec<_> = inputs.keys().copied().collect();
+                let first_payer = addresses[indices[0] as usize];
+                let second_payer = addresses[indices[1] as usize];
+                let action = create_dummy_serialized_action();
+                let nullifier = action.nullifier;
+                let st = create_signed_shield_transition(
+                    &signer,
+                    inputs,
+                    vec![action],
+                    1_000,
+                    vec![0; 100],
+                    [0; 64],
+                    AddressFundsFeeStrategy::from(
+                        indices
+                            .into_iter()
+                            .map(AddressFundsFeeStrategyStep::DeductFromInput)
+                            .collect::<Vec<_>>(),
+                    ),
+                )
+                .await;
+
+                let (base, penalty) = failure_fee_and_penalty(&platform, &st);
+                assert_eq!(penalty, nominal, "both signed payers fund the full penalty");
+                assert!(base + penalty <= balance * 2);
+                assert!(
+                    balance < base + penalty,
+                    "neither payer covers the estimate alone"
+                );
+
+                let result = process_transition_and_commit(&platform, st, pv);
+                let actual = match result.execution_results().as_slice() {
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                        actual_fees,
+                        ..
+                    }] => actual_fees.total_base_fee(),
+                    other => panic!("jointly funded failure must be paid: {other:?}"),
+                };
+                assert!(actual >= penalty, "the prepared penalty is charged");
+                assert!(actual <= base + penalty, "the estimate covers execution");
+                assert!(
+                    actual > balance,
+                    "neither payer covers the actual charge alone"
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_balance_and_nonce(&first_payer, None, pv)
+                        .expect("first payer"),
+                    Some((1, 0)),
+                    "the first signed payer is exhausted and retains its consumed nonce"
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_balance_and_nonce(&second_payer, None, pv)
+                        .expect("second payer"),
+                    Some((1, balance - (actual - balance))),
+                    "the second signed payer covers only the remaining fee"
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .read_shielded_pool_total_balance(None, &mut vec![], pv)
+                        .expect("pool"),
+                    0
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .shielded_pool_notes_count(None, &mut vec![], pv)
+                        .expect("notes"),
+                    0
+                );
+                assert!(!has_recorded_nullifier(&platform, &nullifier));
+            }
+        }
+
+        #[tokio::test]
         async fn should_bound_failed_proof_penalties_after_reserving_the_estimated_fee() {
             let pv = PlatformVersion::latest();
             let nominal = pv
