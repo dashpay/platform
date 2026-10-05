@@ -465,8 +465,8 @@ fn summarize_document_transition(
         }
     }
     let base = transition.base();
-    if let Some(payment) = base.token_payment_info() {
-        lines.push(budget.line("token payment", &payment)?);
+    if let Some(payment) = base.token_payment_info_ref() {
+        lines.push(budget.line("token payment", payment)?);
     }
     if let Some(fees) = base.action_fee_agreement() {
         lines.push(budget.line("action fees", &fees)?);
@@ -550,6 +550,18 @@ fn summarize_token_transition(
                     .push(budget.write(format_args!("price schedule: removed (not for sale)"))?),
             }
             (None, None, None, t.public_note())
+        }
+        // Shielded-pool operations carry notes, proofs and amounts with no typed projection: the
+        // whole transition is rendered and the row is incomplete.
+        TokenTransition::Shield(_)
+        | TokenTransition::Unshield(_)
+        | TokenTransition::ShieldedTransfer(_)
+        | TokenTransition::MintToPool(_)
+        | TokenTransition::BurnFromPool(_)
+        | TokenTransition::ClaimToPool(_)
+        | TokenTransition::DirectPurchaseToPool(_) => {
+            lines.push(budget.line("transition", transition)?);
+            (None, None, None, None)
         }
     };
     if let Some(note) = public_note {
@@ -906,6 +918,33 @@ mod tests {
             }]))
             .is_signed
         );
+    }
+
+    /// A shielded-pool token operation has no typed projection: it renders
+    /// whole, so its amount reaches the details, and the row is incomplete.
+    #[test]
+    fn a_shielded_pool_token_row_renders_whole_and_is_incomplete() {
+        use dpp::state_transition::batch_transition::batched_transition::token_mint_to_pool_transition::TokenMintToPoolTransitionV0;
+        use dpp::state_transition::batch_transition::TokenMintToPoolTransition;
+
+        let summary = summarize_bytes(&batch(vec![BatchedTransition::Token(
+            TokenTransition::MintToPool(TokenMintToPoolTransition::V0(
+                TokenMintToPoolTransitionV0 {
+                    base: token_base(),
+                    amount: 7_654_321,
+                    ..Default::default()
+                },
+            )),
+        )]));
+        let StateTransitionSummaryKind::Batch { transitions, .. } = &summary.kind else {
+            panic!("a batch: {:?}", summary.kind)
+        };
+        assert_eq!(transitions.len(), 1);
+        assert!(!transitions[0].is_complete());
+        assert_eq!(transitions[0].amount, None);
+        let details = transitions[0].details.as_deref().expect("details");
+        assert!(details.contains("amount: 7654321"), "{details}");
+        assert!(!summary.is_complete());
     }
 
     /// Two config updates granting manual minting to different takers must not
