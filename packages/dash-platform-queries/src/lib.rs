@@ -17,6 +17,7 @@ pub mod documents;
 pub mod dpns_usernames;
 pub mod error;
 pub mod mock;
+pub mod subscriptions;
 pub mod transition;
 pub mod types;
 
