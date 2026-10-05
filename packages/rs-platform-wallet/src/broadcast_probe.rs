@@ -85,6 +85,15 @@ const REFUSAL_REASONS: &[&str] = &[
     "tx-txlock-conflict",
 ];
 
+/// Phrases of a gRPC status that a broken connection, not a node, produced.
+const TRANSPORT_MARKERS: &[&str] = &[
+    "h2 protocol error",
+    "connection closed",
+    "connection reset",
+    "broken pipe",
+    "transport error",
+];
+
 /// What a single Core node said when handed a signed transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NodeVerdict {
@@ -104,11 +113,20 @@ pub(crate) enum NodeVerdict {
 
 /// Classify a failed `broadcastTransaction` gRPC response.
 pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdict {
-    // Transport-level: no node's answer reached us.
-    if matches!(
-        code,
-        Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled
-    ) {
+    // Transport-level: no node's answer reached us — including a stream the
+    // connection broke mid-response, which tonic reports as Unknown or
+    // Internal (Core's own rejections arrive with their reason instead).
+    let lowered = message.to_ascii_lowercase();
+    let broken_stream = matches!(code, Code::Unknown | Code::Internal)
+        && TRANSPORT_MARKERS
+            .iter()
+            .any(|marker| lowered.contains(marker));
+    if broken_stream
+        || matches!(
+            code,
+            Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled
+        )
+    {
         return NodeVerdict::Unreachable {
             reason: format!("{code:?}: {message}"),
         };
@@ -116,7 +134,6 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
     if code == Code::AlreadyExists {
         return NodeVerdict::Mined;
     }
-    let lowered = message.to_ascii_lowercase();
     if REFUSAL_REASONS
         .iter()
         .any(|reason| lowered.contains(reason))
@@ -996,10 +1013,22 @@ mod tests {
                 ProbeVerdict::Unresolved { answered: true, .. }
             ));
         }
-        assert!(matches!(
-            classify_failed_submission(Code::DeadlineExceeded, "no complete response"),
-            NodeVerdict::Unreachable { .. }
-        ));
+        for (code, message) in [
+            (Code::DeadlineExceeded, "no complete response"),
+            (
+                Code::Internal,
+                "h2 protocol error: error reading a body from connection",
+            ),
+            (Code::Unknown, "connection closed before message completed"),
+        ] {
+            assert!(
+                matches!(
+                    classify_failed_submission(code, message),
+                    NodeVerdict::Unreachable { .. }
+                ),
+                "{code:?} {message}"
+            );
+        }
     }
 
     #[tokio::test]

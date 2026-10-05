@@ -109,9 +109,9 @@ extension PlatformWalletManager {
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
     /// the background does not restart the 24 — plus once when a sync that
-    /// was catching up (a launch, a reconnect) completes, and 1, 2 and 4
-    /// minutes after a probe no evonode answered (at most three times per
-    /// block). It publishes each *change* of
+    /// was catching up (a launch, a reconnect) completes, and about 1, 3 and
+    /// 7 minutes after a probe at the tip that no evonode answered (at most
+    /// three retries per block). It publishes each *change* of
     /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
     /// `lastOutgoingTransactionProbe` (an accepted send whose nodes' block
     /// evidence comes or goes may be published accepted again). Every verdict
