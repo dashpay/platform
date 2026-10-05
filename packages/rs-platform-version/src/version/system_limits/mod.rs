@@ -343,21 +343,6 @@ pub struct SystemLimits {
     ///
     /// 0 on protocol versions that predate document expiry, where the event does not run.
     pub max_document_expiration_weight_per_block: u32,
-    /// Lowest GroveDB proof envelope version a client accepts from a
-    /// current-state response.
-    ///
-    /// Read by `drive-proof-verifier`'s `supported_grovedb_proof_bytes` and
-    /// `verify_tenderdash_proof`, by `wasm-drive-verify`'s
-    /// `supported_grovedb_proof`, and by Drive's
-    /// `verify_compacted_address_balance_changes` v1 for its nested proofs.
-    ///
-    /// `0` keeps accepting the legacy V0 envelope. Protocol version 14 raises
-    /// the floor to `1`: V0's item binding lets a prover return different
-    /// item bytes under the same authenticated root, so a quorum signature on
-    /// the root does not make a V0 payload safe. GroveDB emits V1 from grove
-    /// version 3 (protocol version 13), so every live network already serves
-    /// V1 by the time the floor applies.
-    pub minimum_grovedb_proof_envelope_version: u32,
     /// The largest magnitude a summed property may admit on a document type with a
     /// contested index, enforced when a contract is registered or updated (full validation
     /// only, like `max_document_ttl_seconds`): the property's schema must declare a
