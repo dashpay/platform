@@ -2,9 +2,6 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::encode_snapshot_metadata;
-use drive::grovedb::{PathQuery, Query, QueryItem, SizedQuery};
-use drive::query::QueryResultType;
-use std::ops::RangeFull;
 use tenderdash_abci::proto::abci as proto;
 
 /// Lists the state sync snapshots this node can serve.
@@ -69,74 +66,6 @@ pub fn list_snapshots<C>(
             continue;
         }
 
-        // GroveDB replication currently cannot restore indexed trees. Walk the
-        // checkpoint's tree elements before advertising it; otherwise a valid
-        // ranked contract would be offered and fail permanently during restore.
-        const DISCOVERY_PAGE_SIZE: u16 = 1024;
-        const DISCOVERY_MAX_PAGES: usize = 4096;
-        let mut pending_pages = vec![(vec![], None)];
-        let mut may_contain_indexed_tree = false;
-        let mut inspected_pages = 0usize;
-        while let Some((path, start_after)) = pending_pages.pop() {
-            inspected_pages += 1;
-            if inspected_pages > DISCOVERY_MAX_PAGES {
-                may_contain_indexed_tree = true;
-                break;
-            }
-            let mut query = Query::new();
-            query.insert_item(match start_after {
-                Some(key) => QueryItem::RangeAfter(key..),
-                None => QueryItem::RangeFull(RangeFull),
-            });
-            // Even genesis has more than one page of epoch entries. Continue full
-            // pages from their last key so unsupported trees cannot be hidden beyond
-            // the first page. The total page budget also bounds large document trees;
-            // if it is exhausted, the incompletely inspected checkpoint is not offered.
-            let path_query = PathQuery::new(
-                path.clone(),
-                SizedQuery::new(query, Some(DISCOVERY_PAGE_SIZE), None),
-            );
-            let (elements, _) = checkpoint
-                .grove_db
-                .query_raw(
-                    &path_query,
-                    false,
-                    true,
-                    true,
-                    QueryResultType::QueryKeyElementPairResultType,
-                    None,
-                    grove_version,
-                )
-                .value
-                .map_err(Error::from)?;
-            let elements = elements.to_key_elements();
-            if elements.len() == usize::from(DISCOVERY_PAGE_SIZE) {
-                let (last_key, _) = elements.last().expect("a full page is non-empty");
-                pending_pages.push((path.clone(), Some(last_key.clone())));
-            }
-            for (key, element) in elements {
-                if element.is_indexed_tree() {
-                    may_contain_indexed_tree = true;
-                    break;
-                }
-                if element.is_any_tree() {
-                    let mut child_path = path.clone();
-                    child_path.push(key);
-                    pending_pages.push((child_path, None));
-                }
-            }
-            if may_contain_indexed_tree {
-                break;
-            }
-        }
-        if may_contain_indexed_tree {
-            tracing::warn!(
-                height,
-                "[state_sync] not offering checkpoint: indexed tree found or discovery limit reached"
-            );
-            continue;
-        }
-
         let root_hash = checkpoint
             .grove_db
             .root_hash(None, grove_version)
@@ -187,77 +116,6 @@ mod tests {
         let response =
             list_snapshots(&platform, Default::default()).expect("should list snapshots");
         assert!(response.snapshots.is_empty());
-    }
-
-    #[test]
-    fn list_snapshots_discovers_indexed_trees_beyond_the_first_page() {
-        let platform = TestPlatformBuilder::new()
-            .with_config(config_with_snapshots_enabled())
-            .build_with_mock_rpc()
-            .set_genesis_state();
-        let platform_version = PlatformVersion::latest();
-        let grove_version = &platform_version.drive.grove_version;
-        let reduced_platform_state = platform.state.load().to_reduced_platform_state(None, 42);
-        platform
-            .store_reduced_platform_state(&reduced_platform_state, None, platform_version)
-            .expect("should store reduced platform state");
-        platform
-            .drive
-            .store_current_protocol_version(platform_version.protocol_version, None)
-            .expect("should store protocol version");
-
-        let misc_path = [vec![RootTree::Misc as u8]];
-        platform
-            .drive
-            .grove
-            .insert(
-                &misc_path,
-                b"discovery",
-                Element::empty_tree(),
-                None,
-                None,
-                grove_version,
-            )
-            .value
-            .expect("should create discovery subtree");
-        let path = [misc_path[0].clone(), b"discovery".to_vec()];
-        let mut advertised = Vec::new();
-        for key in 0u16..1025 {
-            // Put an unsupported indexed tree just beyond the first 1024 results.
-            let element = if key == 1024 {
-                Element::empty_provable_count_indexed_tree()
-            } else {
-                Element::new_item(vec![0])
-            };
-            platform
-                .drive
-                .grove
-                .insert(
-                    &path,
-                    &key.to_be_bytes(),
-                    element,
-                    None,
-                    None,
-                    grove_version,
-                )
-                .value
-                .expect("should insert discovery element");
-            if key >= 1022 {
-                let height = u64::from(key - 1021) * 10;
-                fast_forward_to_block(&platform, height * 100_000, height, 42, 0, false);
-                platform
-                    .create_grovedb_checkpoint(platform_version)
-                    .expect("should create checkpoint");
-                let response =
-                    list_snapshots(&platform, Default::default()).expect("should list snapshots");
-                advertised.push(response.snapshots.iter().any(|s| s.height == height));
-            }
-        }
-        assert_eq!(
-            advertised,
-            vec![true, true, false],
-            "offer supported trees below and at the page limit, but detect an indexed tree beyond it"
-        );
     }
 
     #[test]

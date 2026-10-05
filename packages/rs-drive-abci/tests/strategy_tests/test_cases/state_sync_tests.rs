@@ -371,8 +371,6 @@ pub(crate) mod tests {
     /// along the way to prove refetch/restart recovery), reconstruct the target
     /// platform state, and verify the target matches the source checkpoint exactly.
     #[tokio::test]
-    #[ignore = "needs the grovedb sum-tree restore fix (dashpay/grovedb#840), which reaches \
-                this workspace with the GroveDB 6.0.0 bump in #4635; un-ignore at that re-pin"]
     async fn run_state_sync_between_two_platforms() {
         let config = state_sync_platform_config();
         let mut source_platform = TestPlatformBuilder::new()
@@ -508,6 +506,110 @@ pub(crate) mod tests {
             .expect("target info handler must succeed");
         assert_eq!(info.last_block_height as u64, snapshot.height);
         assert_eq!(info.last_block_app_hash, snapshot.hash);
+    }
+
+    /// Indexed trees (the ranked-aggregate trees protocol v14 contracts can declare)
+    /// cross the ABCI handlers intact: the source serves a checkpoint holding a populated
+    /// indexed tree, the target restores it one chunk id per request, and both sides end
+    /// with the same root hash and a clean `verify_grovedb`. Snapshot serving relies on
+    /// this to offer checkpoints of chains that hold such trees.
+    #[tokio::test]
+    async fn state_sync_restores_indexed_trees() {
+        use drive::drive::RootTree;
+        use drive::grovedb::Element;
+
+        let config = state_sync_platform_config();
+        let mut source_platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let source = run_source_chain(&mut source_platform, &config).await;
+
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+
+        // Put a populated two-axis indexed tree into the newest checkpoint. The
+        // checkpoint is its own database, so this changes only what it serves.
+        let checkpoints = source.source_app.platform.drive.checkpoints.load();
+        let checkpoint = &checkpoints
+            .get(&source.snapshot.height)
+            .expect("the offered snapshot is a checkpoint")
+            .checkpoint;
+        let misc = [RootTree::Misc as u8];
+        let axes: Vec<(u8, Option<Vec<u8>>)> = vec![(0, None), (1, None)];
+        checkpoint
+            .grove_db
+            .insert(
+                [misc.as_slice()].as_ref(),
+                b"indexed",
+                Element::empty_provable_count_provable_sum_indexed_tree(axes)
+                    .expect("canonical axes"),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("create the indexed tree");
+        for (key, sum) in [(b"a", 5i64), (b"b", -3), (b"c", 12)] {
+            checkpoint
+                .grove_db
+                .insert_into_provable_count_provable_sum_indexed_tree(
+                    [misc.as_slice(), b"indexed"].as_ref(),
+                    key,
+                    Element::new_item_with_sum_item(b"v".to_vec(), sum),
+                    None,
+                    grove_version,
+                )
+                .unwrap()
+                .expect("insert an indexed tree entry");
+        }
+
+        let snapshot = source
+            .source_app
+            .list_snapshots(Default::default())
+            .expect("source should list snapshots")
+            .snapshots
+            .into_iter()
+            .find(|snapshot| snapshot.height == source.snapshot.height)
+            .expect("a checkpoint holding an indexed tree must still be offered");
+        assert_ne!(
+            snapshot.hash, source.snapshot.hash,
+            "the offered snapshot must include the indexed tree"
+        );
+
+        let mut target_platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        install_reconstruction_core_mocks(
+            &mut target_platform.platform,
+            source.proposers.clone(),
+            &source.validator_quorums,
+        );
+        let target_app = FullAbciApplication::new(&target_platform);
+
+        assert_eq!(
+            sync_snapshot(&source.source_app, &target_app, &snapshot, false)
+                .expect("state sync must not error"),
+            SnapshotSyncOutcome::Completed,
+            "a snapshot holding an indexed tree must restore"
+        );
+
+        let target_root_hash = target_platform
+            .drive
+            .grove
+            .root_hash(None, grove_version)
+            .unwrap()
+            .expect("target root hash");
+        assert_eq!(target_root_hash.to_vec(), snapshot.hash);
+        let verification_issues = target_platform
+            .drive
+            .grove
+            .verify_grovedb(None, true, false, grove_version)
+            .expect("expected to verify grovedb");
+        assert!(
+            verification_issues.is_empty(),
+            "restored grovedb must verify cleanly: {:?}",
+            verification_issues
+        );
     }
 
     /// Exercises the platform state reconstruction end to end without going through
