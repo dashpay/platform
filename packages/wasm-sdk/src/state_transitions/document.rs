@@ -1200,3 +1200,143 @@ mod tests {
         assert_eq!(builder.user_fee_increase, Some(3));
     }
 }
+
+/// The `actionFeeAgreement` option as JavaScript passes it, which a host test cannot build.
+/// Run with:
+///   CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+///     cargo test -p wasm-sdk --target wasm32-unknown-unknown --lib state_transitions::document
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::v0::DocumentActionFeeAgreementV0;
+    use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::{
+        AgreedFeeMultiplier, DocumentActionFeeAgreement,
+    };
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    fn object(entries: &[(&str, JsValue)]) -> JsValue {
+        let object = js_sys::Object::new();
+        for (key, value) in entries {
+            Reflect::set(&object, &JsValue::from_str(key), value).expect("set a property");
+        }
+        object.into()
+    }
+
+    /// Settings already carrying what other options set, which the agreement must not replace
+    fn settings_with_other_options() -> Option<PutSettings> {
+        let mut settings = Some(PutSettings {
+            user_fee_increase: Some(3),
+            ..Default::default()
+        });
+        let creation_options = creation_options_of(&mut settings);
+        creation_options.contest_fund = Some(5);
+        creation_options
+            .signing_options
+            .allow_signing_with_any_purpose = true;
+        settings
+    }
+
+    fn stored_agreement(options: &JsValue) -> (PutSettings, StateTransitionCreationOptions) {
+        let mut settings = settings_with_other_options();
+        apply_action_fee_agreement_option(options, &mut settings).expect("a valid agreement");
+
+        let settings = settings.expect("settings are kept");
+        assert_eq!(settings.user_fee_increase, Some(3));
+        let creation_options = settings
+            .state_transition_creation_options
+            .expect("creation options are kept");
+        assert_eq!(creation_options.contest_fund, Some(5));
+        assert!(
+            creation_options
+                .signing_options
+                .allow_signing_with_any_purpose
+        );
+        (settings, creation_options)
+    }
+
+    #[wasm_bindgen_test]
+    fn an_agreement_instance_is_stored_beside_the_other_creation_options() {
+        let agreement = DocumentActionFeeAgreementWasm::constructor(
+            object(&[
+                ("owner", JsValue::from(80_000_000u64)),
+                ("moderators", JsValue::from(16_000_000u64)),
+            ])
+            .unchecked_into(),
+        )
+        .expect("an agreement");
+        let options = object(&[("actionFeeAgreement", JsValue::from(agreement))]);
+
+        let (_, creation_options) = stored_agreement(&options);
+
+        assert_eq!(
+            creation_options.action_fee_agreement,
+            Some(DocumentActionFeeAgreement::from(
+                DocumentActionFeeAgreementV0 {
+                    owner: 80_000_000,
+                    moderators: 16_000_000,
+                    fee_multiplier: None,
+                }
+            ))
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn agreement_options_are_stored_beside_the_other_creation_options() {
+        let options = object(&[(
+            "actionFeeAgreement",
+            object(&[
+                ("owner", JsValue::from(1_000u64)),
+                ("moderators", JsValue::from(500u64)),
+                (
+                    "feeMultiplier",
+                    object(&[
+                        ("knownPermille", JsValue::from(1_000u64)),
+                        ("increaseTolerancePercent", JsValue::from(20u16)),
+                    ]),
+                ),
+            ]),
+        )]);
+
+        let (_, creation_options) = stored_agreement(&options);
+
+        assert_eq!(
+            creation_options.action_fee_agreement,
+            Some(DocumentActionFeeAgreement::from(
+                DocumentActionFeeAgreementV0 {
+                    owner: 1_000,
+                    moderators: 500,
+                    fee_multiplier: Some(AgreedFeeMultiplier {
+                        known_permille: 1_000,
+                        increase_tolerance_percent: 20,
+                    }),
+                }
+            ))
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn no_agreement_leaves_the_settings_as_they_were() {
+        let mut settings = None;
+        apply_action_fee_agreement_option(&object(&[]), &mut settings).expect("no agreement");
+        assert!(
+            settings.is_none(),
+            "no settings are created for an absent agreement"
+        );
+
+        let mut settings = settings_with_other_options();
+        apply_action_fee_agreement_option(
+            &object(&[("actionFeeAgreement", JsValue::UNDEFINED)]),
+            &mut settings,
+        )
+        .expect("no agreement");
+        let creation_options = settings
+            .and_then(|settings| settings.state_transition_creation_options)
+            .expect("creation options are kept");
+        assert_eq!(
+            creation_options,
+            settings_with_other_options()
+                .and_then(|settings| settings.state_transition_creation_options)
+                .expect("creation options")
+        );
+    }
+}
