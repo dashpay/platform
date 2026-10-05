@@ -12,6 +12,7 @@ use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
+use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
@@ -108,7 +109,9 @@ fn preallocated_index_keyed_by(
 /// [`document_reference_kind_mismatch`]): for `permanentDocument` its
 /// documents never leave state, for `moderatedDocument` they leave it only
 /// through a moderator's recorded removal, for `deletableDocument` in any
-/// other way.
+/// other way. A declaration resolved by a document's id (no `findBy`, or
+/// `inList`) may not name an indexOnly document type, whose documents cannot
+/// be fetched by id.
 /// Every `where` entry is checked for all three, and a `findBy` into another
 /// contract's document type is checked against that type's indexes
 /// (one into the declaring contract was checked by the contract parse). Self
@@ -500,6 +503,26 @@ fn validate_reference_target_declaration_v0(
             .into(),
         ));
     };
+
+    // An indexOnly document type keeps its documents only as index entries: Drive refuses to
+    // fetch one by its id, so a write could never resolve a reference that names its document
+    // by id (one without `findBy`, or a list element, whose list's document is read by the id
+    // `findBy` reads `$id` from) and would fail with an internal error instead. No kind of
+    // reference fixes that, so this comes before the kind check. A `findBy` into such a type is
+    // refused by its own check (`DocumentReferenceLookup::referenced_side_error`). In place in
+    // generation 0, which every table selects: only parser generation 3, selected from
+    // protocol version 14, admits an indexOnly document type, so no earlier version reaches
+    // this refusal.
+    if lookup.is_none() && referenced_document_type.index_only() {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedDocumentTypeIndexOnlyError::new(
+                effective_contract_id,
+                document_type_name.to_string(),
+                declaration_path,
+            )
+            .into(),
+        ));
+    }
 
     // The three document references are disjoint: a `permanentDocument` one demands a
     // document type whose documents never leave state, a `moderatedDocument` one a type whose

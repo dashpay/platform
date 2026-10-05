@@ -639,8 +639,8 @@ mod test {
     /// - one payout: the same owner identity as a legacy payout address (TRANSFER key 0,
     ///   OWNER key 1);
     /// - several payouts: an owner identity with only the OWNER key 1;
-    /// - a later payout change through `payouts`: no key change, since only a `payoutAddress`
-    ///   change rotates the TRANSFER key.
+    /// - a later payout-list change: revoke obsolete keys and authorize only a sole P2PKH
+    ///   recipient, preserving the OWNER key.
     #[test]
     fn should_update_masternode_identities_from_a_core_v24_masternode_list() {
         let platform_version = PlatformVersion::latest();
@@ -742,9 +742,9 @@ mod test {
 
         let hash160 = |hex: &str| -> Vec<u8> { hex::decode(hex).expect("expected hex") };
 
-        // The keys of an identity, none of them disabled; `None` if there is no identity.
+        // The keys and disabled state of an identity; `None` if there is no identity.
         let identity_keys =
-            |identity_id: Identifier| -> Option<BTreeMap<KeyID, (Purpose, Vec<u8>)>> {
+            |identity_id: Identifier| -> Option<BTreeMap<KeyID, (Purpose, Vec<u8>, bool)>> {
                 platform
                     .drive
                     .fetch_full_identity(
@@ -758,15 +758,17 @@ mod test {
                             .public_keys()
                             .iter()
                             .map(|(key_id, key)| {
-                                assert!(key.disabled_at().is_none(), "key {key_id} is disabled");
-                                (*key_id, (key.purpose(), key.data().to_vec()))
+                                (
+                                    *key_id,
+                                    (key.purpose(), key.data().to_vec(), key.is_disabled()),
+                                )
                             })
                             .collect()
                     })
             };
 
-        let owner_key = |hex: &str| (Purpose::OWNER, hash160(hex));
-        let transfer_key = |hex: &str| (Purpose::TRANSFER, hash160(hex));
+        let owner_key = |hex: &str| (Purpose::OWNER, hash160(hex), false);
+        let transfer_key = |hex: &str| (Purpose::TRANSFER, hash160(hex), false);
 
         let voting_421c = "421c03add2c804421451c4e022258778175e60d8";
         let voting_064c = "064cd21ff210c1a92adaea49a4768a41c2aef1bc";
@@ -789,7 +791,7 @@ mod test {
                 voting_421c,
                 "a792ce1af5f7bb9281053b3934cb8b08d00d075a56498e1a525388ce467f188e8a80911fd96a20982baa9b9678452534".to_string(),
                 Some(BTreeMap::from([
-                    (0, transfer_key("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
+                    (0, (Purpose::TRANSFER, hash160("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"), true)),
                     (1, owner_key("b740a2ab3f631e4dfe15debf746364f1d8352c50")),
                 ])),
             ),
@@ -806,7 +808,8 @@ mod test {
                 voting_421c,
                 "b2".repeat(48),
                 Some(BTreeMap::from([
-                    (0, transfer_key("5555555555555555555555555555555555555555")),
+                    (0, (Purpose::TRANSFER, hash160("5555555555555555555555555555555555555555"), true)),
+                    (2, transfer_key("f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1")),
                     (1, owner_key("0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a")),
                 ])),
             ),

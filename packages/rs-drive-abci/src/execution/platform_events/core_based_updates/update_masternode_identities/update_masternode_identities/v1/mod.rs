@@ -1,17 +1,26 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::ProTxHash;
-use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use dpp::dashcore::{ProTxHash, PubkeyHash, ScriptBuf};
+use dpp::dashcore_rpc::dashcore_rpc_json::{DMNPayout, MasternodeListDiff};
 use dpp::dashcore_rpc::json::MasternodeListItem;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{KeyType, Purpose};
 
 use dpp::version::PlatformVersion;
 
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
+};
+use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
-use drive::util::batch::IdentityOperationType::AddNewIdentity;
+use drive::util::batch::IdentityOperationType::{
+    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+};
 
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
@@ -30,9 +39,9 @@ where
     /// Version 0 is paired with `create_owner_identity` 0 and 1, which create an owner identity
     /// for every masternode or fail. `create_owner_identity` 2 creates none for a masternode
     /// without an owner address, such as a shared masternode, and this version then adds only
-    /// its voter and operator identities. Updates and removals are processed exactly as in
-    /// version 0: only a `payout_address` change rotates the owner identity's TRANSFER key, and
-    /// a `payouts` change is not acted on.
+    /// its voter and operator identities. Legacy payout-address changes and removals follow
+    /// version 0. Payout-list changes reconcile TRANSFER keys: only a sole supported P2PKH
+    /// recipient retains withdrawal authority.
     pub(super) fn update_masternode_identities_v1(
         &self,
         masternode_diff: MasternodeListDiff,
@@ -58,6 +67,16 @@ where
 
         // Sort updated_mns based on pro_tx_hash (the first element of the tuple)
         updated_mns.sort_by_key(|mn| mn.0);
+
+        if updated_mns
+            .iter()
+            .any(|(_, diff)| diff.payout_address.is_some() && diff.payouts.is_some())
+        {
+            return Err(ExecutionError::DashCoreBadResponseError(
+                "masternode diff contains both a payout address and a payout list".to_string(),
+            )
+            .into());
+        }
 
         let mut drive_operations = vec![];
 
@@ -122,7 +141,15 @@ where
                         &mut drive_operations,
                         platform_version,
                     )?;
-                };
+                } else if let Some(payouts) = state_diff.payouts.as_deref() {
+                    self.reconcile_owner_payout_keys(
+                        pro_tx_hash.to_byte_array(),
+                        payouts,
+                        transaction,
+                        &mut drive_operations,
+                        platform_version,
+                    )?;
+                }
 
                 self.update_voter_identity(
                     update,
@@ -175,7 +202,103 @@ where
 
         Ok(())
     }
+
+    /// A sole P2PKH recipient can spend the owner's balance. Other payout shapes must
+    /// retire that authority without changing the OWNER key or the accumulated credits.
+    fn reconcile_owner_payout_keys(
+        &self,
+        owner_identifier: [u8; 32],
+        payouts: &[DMNPayout],
+        transaction: &Transaction,
+        drive_operations: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let authorized_address = match payouts {
+            [payout]
+                if payout.script
+                    == ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(payout.address)) =>
+            {
+                Some(payout.address)
+            }
+            _ => None,
+        };
+        let keys = self
+            .drive
+            .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                IdentityKeysRequest {
+                    identity_id: owner_identifier,
+                    request_type: KeyRequestType::AllKeys,
+                    limit: None,
+                    offset: None,
+                },
+                Some(transaction),
+                platform_version,
+            )?;
+        let Some((&last_key_id, _)) = keys.last_key_value() else {
+            return Err(ExecutionError::DriveMissingData(
+                "expected masternode owner identity to be in state".to_string(),
+            )
+            .into());
+        };
+        // Prefer an enabled matching key, then a disabled one; numeric IDs break ties.
+        let reusable_key = authorized_address.and_then(|address| {
+            keys.iter()
+                .filter(|(_, key)| {
+                    key.purpose() == Purpose::TRANSFER
+                        && key.key_type() == KeyType::ECDSA_HASH160
+                        && key.data().as_slice() == address
+                })
+                .min_by_key(|(key_id, key)| (key.is_disabled(), **key_id))
+        });
+        let new_key = match (authorized_address, reusable_key) {
+            (Some(address), None) => {
+                let key_id = last_key_id.checked_add(1).ok_or(ExecutionError::Overflow(
+                    "masternode owner identity key id exhausted",
+                ))?;
+                Some(Self::get_owner_identity_withdrawal_key(
+                    address,
+                    key_id,
+                    platform_version,
+                )?)
+            }
+            _ => None,
+        };
+        let keys_ids = keys
+            .iter()
+            .filter_map(|(key_id, key)| {
+                (key.purpose() == Purpose::TRANSFER
+                    && !key.is_disabled()
+                    && reusable_key.map(|(reused_id, _)| reused_id) != Some(key_id))
+                .then_some(*key_id)
+            })
+            .collect::<Vec<_>>();
+        if !keys_ids.is_empty() {
+            drive_operations.push(IdentityOperation(DisableIdentityKeys {
+                identity_id: owner_identifier,
+                keys_ids,
+            }));
+        }
+        if let Some((key_id, key)) = reusable_key {
+            if key.is_disabled() {
+                drive_operations.push(IdentityOperation(ReEnableIdentityKeys {
+                    identity_id: owner_identifier,
+                    keys_ids: vec![*key_id],
+                }));
+            }
+        }
+        if let Some(key) = new_key {
+            drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                identity_id: owner_identifier,
+                unique_keys_to_add: vec![],
+                non_unique_keys_to_add: vec![key],
+            }));
+        }
+        Ok(())
+    }
 }
+
+#[cfg(test)]
+mod payout_tests;
 
 #[cfg(test)]
 mod tests {

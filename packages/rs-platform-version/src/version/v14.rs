@@ -226,14 +226,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   lookups are ever needed. Reads dispatch on the byte prefix, so
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
-/// 7. **Client-side GroveDB proof envelope floor**:
-///    `SYSTEM_LIMITS_V4.minimum_grovedb_proof_envelope_version` becomes 1, so
-///    a client verifying with v14 tables rejects the legacy V0 proof
-///    envelope before its bytes reach Drive (`drive-proof-verifier`,
-///    `wasm-drive-verify`, and the nested compacted address proofs). V0's
-///    item binding lets a prover return different item bytes under the same
-///    authenticated root; every live network has emitted V1 envelopes since
-///    v13 (grove version 3), so no honest response is affected.
+/// 7. **Client-side GroveDB proof envelope floor (not a version-table
+///    entry)**: clients refuse the legacy V0 proof envelope at every protocol
+///    version through
+///    `drive::verify::grovedb_proof_envelope::MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`,
+///    so nothing about it is gated on v14. The note keeps its number so the
+///    later notes keep theirs.
 /// 8. **Epoch-based perpetual distribution claims stop wrapping**:
 ///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
 ///    may redeem, selected by
@@ -1955,7 +1953,42 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     author whose documents can not be deleted can still take one back. Inert
 ///     before this version: the gate and the keyword exist only here.
 ///
-/// 73. **Owner identities for shared and extended-address masternodes**: from
+/// 75. **No reference by id to an indexOnly document type**: the contract
+///     reference validation 0 (`validate_data_contract_references`), in place,
+///     refuses a `permanentDocument`, `deletableDocument` or
+///     `moderatedDocument` reference without `findBy` (or with `inList`) whose
+///     referenced document type, in the declaring contract or another, is
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146, StateError
+///     discriminant 171). Such a type's documents exist only as index entries,
+///     and Drive refuses to fetch one by id, so every write resolving the
+///     reference failed with an internal error, dropped unpaid. A `findBy`
+///     into one keeps its own refusal (40137, or 10231 in the declaring
+///     contract). Inert before this version: only parser generation 3 admits
+///     an indexOnly document type.
+///
+/// 76. **Every revealed nullifier is recorded once**: each action of an
+///     outputs-only Orchard bundle reveals a nullifier (that of a dummy spend,
+///     which becomes the new note's `rho`). The spends already recorded and
+///     checked theirs; now `Shield`, `ShieldFromAssetLock` and
+///     `ShieldFromIdentity` do too. `transform_into_action` 1 of the shield and
+///     the shield from asset lock (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`), and
+///     `transform_into_action` 0 of the shield from identity in place, refuse a
+///     nullifier repeated inside the bundle or already recorded, with
+///     `NullifierAlreadySpentError`: unpaid for the first two, as for the
+///     spends, and a paid nonce bump for the identity-signed one. The
+///     high-level operations of the shield and the shield from asset lock 1
+///     (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`), and of the shield from
+///     identity 0 in place, record the nullifiers. Recording them is metered
+///     storage for the shield and the shield from identity; the shield from
+///     asset lock's flat pool fee already prices a note and a nullifier write
+///     per action. The shield from identity's admission floor
+///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
+///     of its complete fee) uses versioned allowances of 400 effective bytes
+///     per action and 500 flat bytes, covering the complete execution-event
+///     admission estimate. Actual fees remain metered. Nullifiers revealed by
+///     shields before this version are not added.
+///
+/// 77. **Owner identities for shared and extended-address masternodes**: from
 ///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
 ///     or collateral address, and extended-address masternodes, which have a
 ///     `payouts` list instead of a `payoutAddress`. `create_owner_identity` 1
@@ -1964,16 +1997,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `create_owner_identity` 2 and `update_masternode_identities` 1
 ///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`), a masternode without an owner
 ///     address gets no owner identity, only its voter and operator identities;
-///     one with an owner address and a single payout address (the payout
-///     address, else the only entry of a one-entry payout list) gets the
-///     version 1 identity, TRANSFER key id 0 and OWNER key id 1, byte for byte;
-///     and one paid to several payouts gets an owner identity with only the
-///     OWNER key id 1. Updates are unchanged: only a `payoutAddress` change
-///     rotates the TRANSFER key, and a `payouts` change is not acted on. This
+///     one with an owner address and either a legacy payout address or a sole
+///     payout with a matching P2PKH script gets the version 1 identity,
+///     TRANSFER key id 0 and OWNER key id 1, byte for byte; other payout shapes
+///     get only OWNER key id 1. Legacy payout-address rotation is unchanged.
+///     Payout-list changes retain, re-enable or add the sole supported P2PKH
+///     TRANSFER key and disable obsolete TRANSFER keys. Split, empty or
+///     unsupported lists disable all TRANSFER authority while preserving OWNER
+///     and balance. Historical updaters keep their payout-list policy. This
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///
-/// 74. **Versioned Core masternode address resolution**: `update_masternode_list` 1
+/// 78. **Versioned Core masternode address resolution**: `update_masternode_list` 1
 ///     resolves nested platform addresses first, then falls back to legacy ports,
 ///     before storing the masternode state. Earlier protocol versions keep their
 ///     flat-field interpretation. The stored layout and validator construction
@@ -2094,7 +2129,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

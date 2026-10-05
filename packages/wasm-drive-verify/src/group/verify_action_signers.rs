@@ -64,7 +64,7 @@ pub fn verify_action_signers_vec(
 
     let (root_hash, signers_vec): (RootHash, Vec<(Identifier, GroupMemberPower)>) =
         Drive::verify_action_signers(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             Identifier::from(contract_id_bytes),
             group_contract_position,
             action_status_enum,
@@ -125,7 +125,7 @@ pub fn verify_action_signers_map(
 
     let (root_hash, signers_map): (RootHash, BTreeMap<Identifier, GroupMemberPower>) =
         Drive::verify_action_signers(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             Identifier::from(contract_id_bytes),
             group_contract_position,
             action_status_enum,

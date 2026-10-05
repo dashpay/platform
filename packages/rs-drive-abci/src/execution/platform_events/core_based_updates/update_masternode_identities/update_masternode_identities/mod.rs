@@ -81,18 +81,13 @@ mod tests {
     use std::collections::BTreeMap;
 
     /// A payout change of an extended-address masternode reaches Drive only as `payouts`,
-    /// never as `payout_address`. Both generations rotate the owner identity's TRANSFER key
-    /// only on a `payout_address` change and leave the owner identity's keys as they are on a
-    /// `payouts` change. Protocol version 13 is pinned because a node running it against Dash
-    /// Core v24 receives such diffs.
+    /// never as `payout_address`. The historical updater leaves these keys unchanged.
+    /// Protocol version 13 is pinned to preserve replay of its payout-list policy.
     #[test]
     fn should_not_change_owner_identity_keys_on_a_payout_list_change() {
-        for platform_version in [
+        assert_owner_identity_keys_unchanged_by_payout_list_changes(
             PlatformVersion::get(13).expect("expected protocol version 13"),
-            PlatformVersion::latest(),
-        ] {
-            assert_owner_identity_keys_unchanged_by_payout_list_changes(platform_version);
-        }
+        );
     }
 
     fn assert_owner_identity_keys_unchanged_by_payout_list_changes(

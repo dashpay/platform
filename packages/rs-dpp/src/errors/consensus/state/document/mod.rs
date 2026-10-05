@@ -30,6 +30,7 @@ pub mod referenced_document_property_mismatch_error;
 pub mod referenced_document_removed_error;
 pub mod referenced_document_requirement_not_met_error;
 pub mod referenced_document_type_deletable_error;
+pub mod referenced_document_type_index_only_error;
 pub mod referenced_document_type_moderated_error;
 pub mod referenced_document_type_not_deletable_error;
 pub mod referenced_document_type_not_found_error;

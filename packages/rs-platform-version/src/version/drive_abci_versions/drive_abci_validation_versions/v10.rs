@@ -43,6 +43,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // contenders and again for every `contested_document_contenders_per_fund_doubling` (50) more
 // (DocumentContestNotPaidForError), and charges one stating more only that fund. Structure
 // validation 1 leaves the amount to it where 0 wanted exactly the contest's fund.
+// Shield and shield from asset lock transform_into_action 1 refuse an action
+// nullifier repeated inside the bundle or already recorded in state
+// (NullifierAlreadySpentError), the same check the spends run.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -353,7 +356,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: nullifier checks
             },
             shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -377,7 +380,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from
+                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from, and the nullifiers its actions reveal are checked against the bundle and the state and then recorded
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -491,6 +494,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             // so the storage component alone pays for the database work and
             // the compute fees above stay reserved for compute.
             shielded_storage_bytes_per_action: 550,
+            // Fee admission estimates note/nullifier paths at depth 16 and identity
+            // writes at the maximum-element depth. These effective-byte allowances
+            // cover that estimate and its validation context, including a BLS signature;
+            // they do not change the metered charge or the pool-paid fee formula.
+            shielded_identity_action_write_storage_bytes: 400,
+            shielded_identity_balance_write_storage_bytes: 500,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
             // v13 revises the v8 set: adds 0.03 and 0.25 DASH, retires 0.3 DASH.
