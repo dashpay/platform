@@ -647,4 +647,38 @@ mod tests {
             .join()
             .expect("all three requests must have been in flight together");
     }
+
+    /// The hook `withTrustedContext` registers is what lets proved reads and
+    /// typed writes recover from a rotation: a quorum that formed after the
+    /// prefetch is unknown until the hook runs, and known once it has.
+    #[tokio::test]
+    async fn quorum_refresher_loads_a_quorum_newer_than_the_prefetch() {
+        let (base_url, server) = spawn_endpoint(
+            vec![
+                ("/quorums", quorums_body(0x31, 0x61)),
+                ("/previous", previous_body(0x32, 0x62)),
+            ],
+            false,
+        );
+        let context = WasmTrustedContext::for_testing_with_url(vec![], base_url);
+
+        let missing = context
+            .get_quorum_public_key(1, [0x31; 32], 1)
+            .expect_err("the rotated quorum is not cached yet");
+        assert!(matches!(missing, ContextProviderError::InvalidQuorum(_)));
+
+        (context.quorum_refresher())()
+            .await
+            .expect("the refresh hook must reach the quorum service");
+
+        assert_eq!(
+            context
+                .get_quorum_public_key(1, [0x31; 32], 1)
+                .expect("the refresh hook must load the rotated quorum"),
+            [0x61; 48]
+        );
+        server
+            .join()
+            .expect("the hook must fetch the current and previous quorum lists");
+    }
 }
