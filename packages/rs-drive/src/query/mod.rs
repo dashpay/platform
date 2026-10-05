@@ -528,6 +528,16 @@ impl InternalClauses {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
+    /// Returns true if an `in`, range or equal clause names a `$`-prefixed system field.
+    pub fn names_system_field(&self) -> bool {
+        self.in_clauses
+            .iter()
+            .chain(self.range_clause.iter())
+            .chain(self.equal_clauses.values())
+            .any(|clause| clause.field.starts_with('$'))
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
