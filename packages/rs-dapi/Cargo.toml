@@ -82,6 +82,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions",
 ] }
 dapi-grpc = { path = "../dapi-grpc", features = ["server", "client", "serde"] }
+dash-platform-queries = { path = "../dash-platform-queries" }
 quick_cache = "0.6.16"
 prometheus = "0.14"
 once_cell = "1.19"
@@ -101,6 +102,8 @@ serial_test = "3.1.1"
 test-case = "3.3.1"
 # Decodes dapi-grpc's FILE_DESCRIPTOR_SET in the metrics allowlist test.
 prost-types = "0.14"
+# Paused time in the subscription stream tests.
+tokio = { version = "1.47.0", features = ["full", "test-util"] }
 
 [package.metadata.cargo-machete]
 ignored = ["rs-dash-event-bus"]
