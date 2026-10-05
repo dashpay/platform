@@ -29,10 +29,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
 use dash_sdk::platform::shielded::{
     sync_shielded_notes_stream, try_decrypt_note, try_recover_outgoing_note,
 };
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
@@ -201,6 +202,81 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         return Ok(MultiSyncNotesResult::default());
     }
 
+    // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
+    // come back per batch as `batch.decrypted`; every other subwallet's
+    // are produced by local trial-decryption against `batch.notes`.
+    let driver_ivk = subwallets[0].1.prepared_ivk.clone();
+    sync_notes_from_source(
+        store,
+        subwallets,
+        on_tree_progress,
+        |aligned_start, tree_size| {
+            // Network-only config carrying the caller's "downloaded"
+            // progress callback; the SDK fires it once per completed network
+            // chunk inside the stream. The tree-progress ("checked") callback
+            // is owned by the consumer and never travels through the SDK
+            // config (the SDK doesn't append to a tree).
+            // Fetch up to 16 chunks concurrently (default is 4) to
+            // parallelize across the network's ~13 nodes. The per-chunk cost
+            // is dominated by server-side proof generation, so more in-flight
+            // requests is the main client-side lever; the pull-based stream
+            // still caps in-flight fetches at this bound and keeps memory
+            // bounded.
+            let mut sync_config =
+                dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
+                    max_concurrent: 16,
+                    ..Default::default()
+                };
+            if let Some(cb) = on_progress {
+                // Clamp the SDK's "downloaded" value up to the pre-stream
+                // tree leaf count before forwarding it to the host. The SDK
+                // reports downloaded as `aligned_start + scanned`, where
+                // `aligned_start` is the rewound MIN watermark across
+                // subwallets and can sit far below `tree_size` (a second
+                // subwallet binding at watermark 0 collapses it to 0; a
+                // partial-chunk-tail resume rewinds it below the tail). The
+                // "checked" signal is the absolute tree size, so over the
+                // gate-skipped re-scan region (`global_pos < tree_size`, no
+                // new appends) the unclamped download value reads *below*
+                // checked and breaks the advertised `Checked ≤ Downloaded ≤
+                // total` invariant. Everything already in the tree was
+                // necessarily downloaded on a prior pass, so counting it as
+                // downloaded is accurate; the clamp is a no-op once the
+                // stream advances past `tree_size`, and the cold-sync case
+                // (tree_size == 0) is entirely unaffected.
+                let cb = cb.clone();
+                sync_config.on_chunk_completed =
+                    Some(Arc::new(move |downloaded: u64, height: u64| {
+                        cb(downloaded.max(tree_size), height);
+                    }));
+            }
+            sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config))
+        },
+    )
+    .await
+}
+
+/// [`sync_notes_across`]'s consumer, generic over where the note batches
+/// come from.
+///
+/// `open_stream(aligned_start, tree_size)` is called exactly once, after
+/// the pass's watermark / tree-size snapshot, and must return the batches
+/// covering `aligned_start..` in ascending tree order — the contract of
+/// the SDK's `sync_shielded_notes_stream`, which is what production passes.
+/// Tests pass a hand-driven stream so a pass can be held mid-download.
+/// `subwallets` must be non-empty; `subwallets[0]` is the driver whose
+/// hits arrive pre-decrypted in `batch.decrypted`.
+async fn sync_notes_from_source<S, F, St>(
+    store: &Arc<RwLock<S>>,
+    subwallets: &[(SubwalletId, AccountViewingKeys)],
+    on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
+    open_stream: F,
+) -> Result<MultiSyncNotesResult, PlatformWalletError>
+where
+    S: ShieldedStore,
+    F: FnOnce(u64, u64) -> St,
+    St: Stream<Item = Result<ShieldedChunkBatch, dash_sdk::Error>>,
+{
     // Snapshot each subwallet's watermark and the shared tree's
     // current leaf count. Two distinct quantities drive the rest
     // of this pass:
@@ -261,46 +337,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // (total 0) until the first batch lands.
     let mut total_target: u64 = tree_size;
 
-    // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
-    // come back per batch as `batch.decrypted`; every other subwallet's
-    // are produced by local trial-decryption against `batch.notes`.
-    let (driver_id, driver_views) = &subwallets[0];
-    let driver_ivk = driver_views.prepared_ivk.clone();
-    // Network-only config carrying the caller's "downloaded" progress
-    // callback; the SDK fires it once per completed network chunk inside
-    // the stream. The tree-progress ("checked") callback is owned by
-    // this consumer and fired below — it never travels through the SDK
-    // config (the SDK doesn't append to a tree).
-    // Fetch up to 16 chunks concurrently (default is 4) to parallelize
-    // across the network's ~13 nodes. The per-chunk cost is dominated by
-    // server-side proof generation, so more in-flight requests is the main
-    // client-side lever; the pull-based stream still caps in-flight fetches
-    // at this bound and keeps memory bounded.
-    let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
-        max_concurrent: 16,
-        ..Default::default()
-    };
-    if let Some(cb) = on_progress {
-        // Clamp the SDK's "downloaded" value up to the pre-stream tree leaf
-        // count before forwarding it to the host. The SDK reports downloaded
-        // as `aligned_start + scanned`, where `aligned_start` is the rewound
-        // MIN watermark across subwallets and can sit far below `tree_size`
-        // (a second subwallet binding at watermark 0 collapses it to 0; a
-        // partial-chunk-tail resume rewinds it below the tail). The "checked"
-        // signal is the absolute tree size, so over the gate-skipped re-scan
-        // region (`global_pos < tree_size`, no new appends) the unclamped
-        // download value reads *below* checked and breaks the advertised
-        // `Checked ≤ Downloaded ≤ total` invariant. Everything already in the
-        // tree was necessarily downloaded on a prior pass, so counting it as
-        // downloaded is accurate; the clamp is a no-op once the stream
-        // advances past `tree_size`, and the cold-sync case (tree_size == 0)
-        // is entirely unaffected.
-        let cb = cb.clone();
-        let tree_baseline = tree_size;
-        sync_config.on_chunk_completed = Some(Arc::new(move |downloaded: u64, height: u64| {
-            cb(downloaded.max(tree_baseline), height);
-        }));
-    }
+    let driver_id = &subwallets[0].0;
 
     // Acquire the store write lock for the whole interleaved consume.
     // This is the only writer during a pass, so holding it across
@@ -311,7 +348,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // network fetches at `max_concurrent`.
     let mut store = store.write().await;
 
-    let stream = sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config));
+    let stream = open_stream(aligned_start, tree_size);
     futures::pin_mut!(stream);
 
     // Route decryptions to the subwallet that owns the IVK, accumulated
