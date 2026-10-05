@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use dashcore::ephemerealdata::instant_lock::InstantLock;
+use dashcore::transaction::TransactionPayload;
 use dashcore::{OutPoint, Txid};
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
@@ -31,6 +32,7 @@ use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, Platform
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
 use crate::sqlite::schema::core_pool::{self, OwningAccount};
+use crate::sqlite::util::safe_cast;
 use crate::WalletStorageError;
 
 /// Build a [`Wallet`] that will be provided to the platform-wallet during rehydration.
@@ -437,7 +439,8 @@ pub(crate) fn restore_recorded_transactions(
     wallet: &mut Wallet,
     records: Vec<TransactionRecord>,
     instant_locks: &BTreeMap<Txid, InstantLock>,
-) -> Vec<SweepBatch> {
+) -> Result<Vec<SweepBatch>, WalletStorageError> {
+    validate_replay_amounts(wallet_info, &records)?;
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
     let placed: HashMap<OutPoint, AccountType> = wallet_info
@@ -450,7 +453,7 @@ pub(crate) fn restore_recorded_transactions(
         })
         .collect();
     if records.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // TODO(bound-load-history-replay): every stored record is replayed on each
     // load; bounding it to records above the last chain lock needs care so
@@ -525,7 +528,7 @@ pub(crate) fn restore_recorded_transactions(
         );
         *wallet_info = info_before;
         *wallet = wallet_before;
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // A settled spend's first sweep cannot reach competitors replayed later.
     // The upstream sweep preserves ChainLock/InstantSend precedence.
@@ -576,7 +579,88 @@ pub(crate) fn restore_recorded_transactions(
         wallet_info.apply_chain_lock(chain_lock);
     }
     wallet_info.update_balance();
-    sweeps
+    Ok(sweeps)
+}
+
+/// The upstream checker casts each unsigned operand before signed subtraction.
+/// A fitting net does not make an overflowing operand safe. Include every source
+/// of replay inputs: durable coins, parent outputs, and staged input details.
+fn validate_replay_amounts(
+    wallet_info: &ManagedWalletInfo,
+    records: &[TransactionRecord],
+) -> Result<(), WalletStorageError> {
+    fn total(
+        field: &'static str,
+        values: impl IntoIterator<Item = u64>,
+    ) -> Result<(), WalletStorageError> {
+        let mut sum = 0_u64;
+        for value in values {
+            safe_cast::u64_to_i64(field, value)?;
+            // Both operands are at most i64::MAX, so this addition fits u64.
+            sum += value;
+            safe_cast::u64_to_i64(field, sum)?;
+        }
+        Ok(())
+    }
+
+    let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
+    let mut remember = |outpoint, value| {
+        amounts
+            .entry(outpoint)
+            .and_modify(|known| *known = (*known).max(value))
+            .or_insert(value);
+    };
+    for account in wallet_info.accounts.all_funding_accounts() {
+        for (outpoint, coin) in &account.utxos {
+            safe_cast::u64_to_i64("replay.utxo", coin.txout.value)?;
+            remember(*outpoint, coin.txout.value);
+        }
+    }
+    for record in records {
+        total(
+            "replay.input_details",
+            record.input_details.iter().map(|d| d.value),
+        )?;
+        total(
+            "replay.output_details",
+            record.output_details.iter().map(|d| d.value),
+        )?;
+        let credit_outputs = match &record.transaction.special_transaction_payload {
+            Some(TransactionPayload::AssetLockPayloadType(payload)) => {
+                payload.credit_outputs.as_slice()
+            }
+            _ => &[],
+        };
+        total(
+            "replay.outputs",
+            record
+                .transaction
+                .output
+                .iter()
+                .chain(credit_outputs)
+                .map(|o| o.value),
+        )?;
+        let txid = record.transaction.txid();
+        for (index, output) in record.transaction.output.iter().enumerate() {
+            remember(OutPoint::new(txid, index as u32), output.value);
+        }
+        for detail in &record.input_details {
+            if let Some(input) = record.transaction.input.get(detail.index as usize) {
+                remember(input.previous_output, detail.value);
+            }
+        }
+    }
+    for record in records {
+        total(
+            "replay.inputs",
+            record
+                .transaction
+                .input
+                .iter()
+                .filter_map(|input| amounts.get(&input.previous_output).copied()),
+        )?;
+    }
+    Ok(())
 }
 
 fn replay_sweep(
@@ -3702,7 +3786,8 @@ mod tests {
                     },
                 );
             }
-            restore_recorded_transactions(&mut restored, &mut wallet, records, &Default::default());
+            restore_recorded_transactions(&mut restored, &mut wallet, records, &Default::default())
+                .unwrap();
 
             let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
             assert!(!coins.contains_key(&spent), "{case}");
@@ -3797,7 +3882,7 @@ mod tests {
         // Alone, the locked spend comes back InstantSend.
         let mut alone = ManagedWalletInfo::from_wallet(&wallet, 0);
         let pair = vec![record_of(funding.txid()), record_of(winner.txid())];
-        restore_recorded_transactions(&mut alone, &mut wallet, pair, &locks);
+        restore_recorded_transactions(&mut alone, &mut wallet, pair, &locks).unwrap();
         assert!(
             alone.accounts.standard_bip44_accounts[&0]
                 .transactions()
@@ -3808,7 +3893,8 @@ mod tests {
 
         // Replayed after a conflicting spend, its lock sweeps that spend.
         let mut contested = ManagedWalletInfo::from_wallet(&wallet, 0);
-        restore_recorded_transactions(&mut contested, &mut wallet, records.clone(), &locks);
+        restore_recorded_transactions(&mut contested, &mut wallet, records.clone(), &locks)
+            .unwrap();
         assert!(
             !contested.accounts.standard_bip44_accounts[&0]
                 .transactions()
@@ -3955,7 +4041,7 @@ mod tests {
                     );
                 }
 
-                restore_recorded_transactions(&mut restored, &mut wallet, records, &locks);
+                restore_recorded_transactions(&mut restored, &mut wallet, records, &locks).unwrap();
 
                 let account = &restored.accounts.standard_bip44_accounts[&0];
                 let keep_competitor = matches!(settlement, "block" | "persisted_chainlock_below")
@@ -4286,7 +4372,7 @@ mod tests {
         for (case, records, key, lock) in cases {
             let locks: BTreeMap<Txid, InstantLock> = [(key, lock)].into_iter().collect();
             let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
-            restore_recorded_transactions(&mut restored, &mut wallet, records, &locks);
+            restore_recorded_transactions(&mut restored, &mut wallet, records, &locks).unwrap();
             let transactions = restored.accounts.standard_bip44_accounts[&0].transactions();
             assert!(
                 !transactions

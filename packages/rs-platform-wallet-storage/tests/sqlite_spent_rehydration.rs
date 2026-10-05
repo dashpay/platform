@@ -708,6 +708,10 @@ enum ConflictCase {
     RecordlessClaim,
     RecordlessPlaceholder,
     FailedRepair,
+    Assets,
+    AssetsRecovery,
+    AssetsFailedRepair,
+    Unconverged,
     DefeatedLock,
 }
 
@@ -726,7 +730,11 @@ async fn assert_conflict_restart(case: ConflictCase) {
         ConflictCase::RecordlessClaim | ConflictCase::RecordlessPlaceholder
     );
     let expect_released = !surviving_claim && !recordless_claim;
-    let recovery = matches!(case, ConflictCase::Recovery);
+    let recovery = matches!(case, ConflictCase::Recovery | ConflictCase::AssetsRecovery);
+    let assets = matches!(
+        case,
+        ConflictCase::Assets | ConflictCase::AssetsRecovery | ConflictCase::AssetsFailedRepair
+    );
 
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -945,11 +953,92 @@ async fn assert_conflict_restart(case: ConflictCase) {
             "UPDATE core_utxos SET value = 0, script = X'', is_sweep_placeholder = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
             rusqlite::params![wallet.wallet_id.as_slice(), &extra_key]).unwrap();
     }
-    if matches!(case, ConflictCase::FailedRepair) {
+    let mut other_wallet_id = None;
+    if assets {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
+        use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+        let entries: std::collections::BTreeMap<_, _> =
+            [AssetLockStatus::Broadcast, AssetLockStatus::Consumed]
+                .into_iter()
+                .enumerate()
+                .map(|(vout, status)| {
+                    let out_point = OutPoint::new(loser.txid(), vout as u32);
+                    (
+                        out_point,
+                        AssetLockEntry {
+                            out_point,
+                            transaction: loser.clone(),
+                            account_index: 0,
+                            funding_type: AssetLockFundingType::IdentityTopUp,
+                            identity_index: 0,
+                            amount_duffs: 1000,
+                            status,
+                            proof: None,
+                        },
+                    )
+                })
+                .collect();
+        let other =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        other_wallet_id = Some(other.wallet_id);
+        let outpoint = OutPoint::new(loser.txid(), 0);
+        persister
+            .store(
+                other.wallet_id,
+                PlatformWalletChangeSet {
+                    wallet_metadata: Some(WalletMetadataEntry {
+                        network: Network::Testnet,
+                        wallet_group_id: [0; 32],
+                        birth_height: 0,
+                    }),
+                    account_registrations: other
+                        .accounts
+                        .all_accounts()
+                        .into_iter()
+                        .map(|account| AccountRegistrationEntry {
+                            account_type: account.account_type,
+                            account_xpub: account.account_xpub,
+                        })
+                        .collect(),
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: [(outpoint, entries[&outpoint].clone())]
+                            .into_iter()
+                            .collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        persister
+            .store(
+                wallet.wallet_id,
+                PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: entries,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    if matches!(
+        case,
+        ConflictCase::FailedRepair | ConflictCase::AssetsFailedRepair
+    ) {
         persister.lock_conn_for_test().execute_batch(
             "CREATE TRIGGER fail_replay_repair BEFORE UPDATE OF spent ON core_utxos WHEN NEW.spent = 0 BEGIN SELECT RAISE(ABORT, 'injected replay repair failure'); END;",
         ).unwrap();
         assert!(persister.load().is_err());
+        if assets {
+            assert_eq!(
+                asset_count(&persister),
+                3,
+                "failed reconciliation must roll back asset lifecycle deletions"
+            );
+        }
         assert!(persister
             .get_core_tx_record(wallet.wallet_id, &loser.txid())
             .unwrap()
@@ -968,6 +1057,18 @@ async fn assert_conflict_restart(case: ConflictCase) {
             .execute_batch("DROP TRIGGER fail_replay_repair")
             .unwrap();
     }
+    if matches!(case, ConflictCase::Unconverged) {
+        persister.lock_conn_for_test().execute_batch("CREATE TRIGGER preserve_history BEFORE DELETE ON core_transactions BEGIN SELECT RAISE(IGNORE); END;").unwrap();
+        let error = persister.load().unwrap_err();
+        assert!(
+            matches!(typed_error(error), platform_wallet_storage::WalletStorageError::WalletRehydrationFailed { wallet_id, .. } if wallet_id == wallet.wallet_id)
+        );
+        assert!(persister
+            .get_core_tx_record(wallet.wallet_id, &loser.txid())
+            .unwrap()
+            .is_some());
+        return;
+    }
     drop(persister);
     for _ in 0..2 {
         let policy = if recovery {
@@ -978,7 +1079,29 @@ async fn assert_conflict_restart(case: ConflictCase) {
         let persister =
             SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
                 .unwrap();
-        let state = persister.load().unwrap();
+        let mut state = persister.load().unwrap();
+        if assets {
+            assert!(
+                state.wallets[&wallet.wallet_id]
+                    .unused_asset_locks
+                    .is_empty(),
+                "swept asset locks must not be resumable"
+            );
+            assert_eq!(
+                asset_count(&persister),
+                if recovery { 3 } else { 2 },
+                "consumed history is retained and Recovery rolls back removals"
+            );
+        }
+        if let Some(other_id) = other_wallet_id {
+            assert!(
+                state.wallets[&other_id]
+                    .unused_asset_locks
+                    .values()
+                    .any(|locks| locks.contains_key(&OutPoint::new(loser.txid(), 0))),
+                "the same asset lock in another wallet must survive"
+            );
+        }
         let info = &state.wallets[&wallet.wallet_id].wallet_info;
         let account = &info.accounts.standard_bip44_accounts[&0];
         assert!(!account.transactions().contains_key(&loser.txid()));
@@ -1031,5 +1154,238 @@ async fn assert_conflict_restart(case: ConflictCase) {
         } else {
             assert_eq!(selection.unwrap().selected[0].outpoint, coins[1].outpoint);
         }
+        if recordless_claim {
+            let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+            loaded
+                .wallet_info
+                .check_core_transaction(&funding, block(100), &mut loaded.wallet, true, true)
+                .await;
+            assert!(
+                !loaded.wallet_info.accounts.standard_bip44_accounts[&0]
+                    .utxos
+                    .contains_key(&coins[1].outpoint),
+                "recordless claim must survive funding redelivery"
+            );
+            assert_eq!(loaded.wallet_info.balance.total(), 0);
+        }
     }
+}
+
+fn asset_count(persister: &SqlitePersister) -> i64 {
+    persister
+        .lock_conn_for_test()
+        .query_row("SELECT COUNT(*) FROM asset_locks", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn should_remove_swept_asset_locks_on_restart() {
+    assert_conflict_restart(ConflictCase::Assets).await;
+}
+
+#[tokio::test]
+async fn should_rollback_swept_asset_locks_in_recovery() {
+    assert_conflict_restart(ConflictCase::AssetsRecovery).await;
+}
+
+#[tokio::test]
+async fn should_rollback_swept_asset_locks_on_sql_failure() {
+    assert_conflict_restart(ConflictCase::AssetsFailedRepair).await;
+}
+
+#[tokio::test]
+async fn should_guard_recordless_spends_with_missing_funding_and_finality() {
+    for funding_state in ["absent", "height_only", "record"] {
+        for spender_row in [false, true] {
+            for placeholder in [false, true] {
+                for known_claimant in [false, true] {
+                    let fixture =
+                        Fixture::build(block(100), block(200), funding_state == "record").await;
+                    {
+                        let conn = fixture.persister.lock_conn_for_test();
+                        if spender_row {
+                            conn.execute(
+                                "UPDATE core_transactions SET record_blob = NULL WHERE txid != ?1",
+                                [fixture.funding.txid().as_byte_array().as_slice()],
+                            )
+                            .unwrap();
+                        } else {
+                            conn.execute(
+                                "DELETE FROM core_transactions WHERE txid != ?1",
+                                [fixture.funding.txid().as_byte_array().as_slice()],
+                            )
+                            .unwrap();
+                        }
+                        if funding_state == "absent" {
+                            conn.execute(
+                                "DELETE FROM core_transactions WHERE txid = ?1",
+                                [fixture.funding.txid().as_byte_array().as_slice()],
+                            )
+                            .unwrap();
+                        }
+                        if !known_claimant {
+                            conn.execute(
+                                "UPDATE core_utxos SET spent_in_txid = NULL WHERE spent = 1",
+                                [],
+                            )
+                            .unwrap();
+                        }
+                        if placeholder {
+                            conn.execute("UPDATE core_utxos SET value = 0, script = X'', is_sweep_placeholder = 1 WHERE spent = 1", []).unwrap();
+                        }
+                    }
+                    let (mut wallet, mut info) = fixture.load();
+                    info.apply_chain_lock(ChainLock {
+                        block_height: 300,
+                        block_hash: BlockHash::from_byte_array([30; 32]),
+                        signature: [0; 96].into(),
+                    });
+                    info.check_core_transaction(
+                        &fixture.funding,
+                        block(100),
+                        &mut wallet,
+                        true,
+                        true,
+                    )
+                    .await;
+                    fixture.assert_spent_excluded(&info);
+                    // A later loser must not release a different durable claimant's input.
+                    let mut loser = fixture.funding.clone();
+                    loser.input = [fixture.spent, fixture.available]
+                        .into_iter()
+                        .map(|previous_output| TxIn {
+                            previous_output,
+                            ..Default::default()
+                        })
+                        .collect();
+                    loser.output.truncate(1);
+                    loser.output[0].value = 119_000;
+                    info.check_core_transaction(
+                        &loser,
+                        TransactionContext::Mempool,
+                        &mut wallet,
+                        true,
+                        true,
+                    )
+                    .await;
+                    let mut winner = loser.clone();
+                    winner.input.remove(0);
+                    winner.output[0] = TxOut {
+                        value: 19_000,
+                        script_pubkey: ScriptBuf::new(),
+                    };
+                    info.check_core_transaction(&winner, block(301), &mut wallet, true, true)
+                        .await;
+                    info.check_core_transaction(
+                        &fixture.funding,
+                        block(100),
+                        &mut wallet,
+                        true,
+                        true,
+                    )
+                    .await;
+                    assert!(
+                        !info.accounts.standard_bip44_accounts[&0]
+                            .utxos
+                            .contains_key(&fixture.spent),
+                        "a later conflict cannot release a recordless durable claim"
+                    );
+                    assert_eq!(info.balance.total(), 0);
+                }
+            }
+        }
+    }
+}
+
+async fn assert_replay_amount_rejected(values: &[u64], received: u64) {
+    use key_wallet::managed_account::transaction_record::{InputDetail, OutputDetail, OutputRole};
+    use platform_wallet_storage::{sqlite::schema::blob, WalletStorageError};
+    let fixture = Fixture::with_height_only_funding(block(200)).await;
+    let conn = fixture.persister.lock_conn_for_test();
+    let bytes: Vec<u8> = conn
+        .query_row(
+            "SELECT record_blob FROM core_transactions WHERE record_blob IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut record: key_wallet::managed_account::transaction_record::TransactionRecord =
+        blob::decode(&bytes).unwrap();
+    let address = record.input_details[0].address.clone();
+    record.transaction.input = values
+        .iter()
+        .enumerate()
+        .map(|(index, _)| TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([90; 32]), index as u32),
+            ..Default::default()
+        })
+        .collect();
+    record.input_details = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| InputDetail {
+            index: index as u32,
+            value: *value,
+            address: address.clone(),
+        })
+        .collect();
+    record.transaction.output = vec![TxOut {
+        value: received,
+        script_pubkey: address.script_pubkey(),
+    }];
+    record.output_details = vec![OutputDetail {
+        index: 0,
+        value: received,
+        address: Some(address),
+        role: OutputRole::Received,
+    }];
+    record.net_amount =
+        i64::try_from(i128::from(received) - values.iter().map(|v| i128::from(*v)).sum::<i128>())
+            .unwrap();
+    record.txid = record.transaction.txid();
+    conn.execute("DELETE FROM core_transactions", []).unwrap();
+    conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 200, 0, ?3)", rusqlite::params![fixture.wallet_id.as_slice(), record.txid.as_byte_array().as_slice(), blob::encode(&record).unwrap()]).unwrap();
+    drop(conn);
+    let error = fixture
+        .persister
+        .load()
+        .expect_err("unsafe checker operands must return a typed error");
+    assert!(
+        matches!(
+            typed_error(error),
+            WalletStorageError::IntegerOverflow { .. }
+        ),
+        "unsafe checker arithmetic must be rejected before replay"
+    );
+}
+
+#[tokio::test]
+async fn should_reject_individually_overflowing_replay_input_with_fitting_net() {
+    assert_replay_amount_rejected(&[1_u64 << 63], 1).await;
+}
+
+#[tokio::test]
+async fn should_reject_cumulatively_overflowing_replay_inputs_with_fitting_net() {
+    assert_replay_amount_rejected(&[i64::MAX as u64, 1], 1).await;
+}
+
+#[tokio::test]
+async fn should_reject_overflowing_replay_output_with_fitting_net() {
+    assert_replay_amount_rejected(&[i64::MAX as u64], 1_u64 << 63).await;
+}
+
+#[tokio::test]
+async fn should_report_wallet_scoped_unconverged_replay() {
+    assert_conflict_restart(ConflictCase::Unconverged).await;
+}
+
+fn typed_error(
+    error: platform_wallet::changeset::PersistenceError,
+) -> platform_wallet_storage::WalletStorageError {
+    let platform_wallet::changeset::PersistenceError::Backend { source, .. } = error else {
+        panic!("expected backend error")
+    };
+    *source
+        .downcast::<platform_wallet_storage::WalletStorageError>()
+        .unwrap()
 }

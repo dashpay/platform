@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
+use dashcore::{hashes::Hash, OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
@@ -16,10 +17,10 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
-use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_history;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
+use crate::sqlite::schema::{asset_locks, blob};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
 // `islock_blob` (transaction records + InstantLocks are public chain data).
@@ -544,6 +545,7 @@ pub fn apply_replay_sweeps(
             .released_outpoints
             .retain(|outpoint| !held.contains_key(outpoint));
     }
+    asset_locks::remove_swept(tx, wallet_id, &removed)?;
     apply(
         tx,
         wallet_id,
@@ -953,6 +955,32 @@ fn upsert_sync_state(
         ],
     )?;
     Ok(())
+}
+
+/// Durable spend guards include recordless claims and unmaterialized sweep placeholders.
+pub(crate) fn load_spent_claims(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
+         FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut outpoints = Vec::new();
+    while let Some(row) = rows.next()? {
+        blob::check_size(row.get(0)?)?;
+        let bytes: Vec<u8> = row.get(1)?;
+        let claimant = if let Some(length) = row.get::<_, Option<i64>>(2)? {
+            blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
+            let raw: Vec<u8> = row.get(3)?;
+            Some(Txid::from_slice(&raw)?)
+        } else {
+            None
+        };
+        outpoints.push((blob::decode_outpoint(&bytes)?, claimant));
+    }
+    Ok(outpoints)
 }
 
 /// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one wallet

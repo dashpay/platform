@@ -1698,9 +1698,13 @@ fn load_one_wallet(
         // Rebuild from the repaired projection, including released materialized inputs.
         let (repaired, remaining) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
         if !remaining.is_empty() {
-            return Err(PersistenceError::from(WalletStorageError::blob_decode(
-                "conflicting transaction history remained after replay reconciliation",
-            )));
+            return Err(PersistenceError::from(
+                WalletStorageError::WalletRehydrationFailed {
+                    wallet_id,
+                    cause: "conflicting transaction history remained after replay reconciliation"
+                        .to_string(),
+                },
+            ));
         }
         state = repaired;
     }
@@ -1896,7 +1900,12 @@ fn load_wallet_snapshot(
         &mut wallet,
         core_state.records,
         &core_state.instant_locks_for_non_final_records,
-    );
+    )
+    .map_err(PersistenceError::from)?;
+    // Restore durable claims after replay/finality, including claims with no spend body.
+    let spent =
+        schema::core_state::load_spent_claims(conn, &wallet_id).map_err(PersistenceError::from)?;
+    wallet_info.restore_spent_outpoints(&spent);
     Ok((
         platform_wallet::changeset::ClientWalletStartState {
             wallet,

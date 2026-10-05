@@ -427,6 +427,10 @@ outputs disappear and genuinely released materialized inputs become available.
 Replay preserves a surviving `spent_in_txid` claim even when its winner has
 no stored transaction body. Strict loads commit this repair; Recovery loads
 return the repaired projection but roll back all database changes.
+After replay, every remaining spent row restores an in-memory guard with its
+optional claimant, including unmaterialized placeholders. Funding redelivery
+cannot credit it; later conflict removal releases a restored guard only when
+its known claimant is removed. Unknown claims remain protected.
 
 What gates the funding UTXO's own later upsert (`execute_upsert_utxo`) is
 the row's shape, not that link: a never-materialised held row (`is_sweep_placeholder = 1`, `spent = 1` — the placeholder `apply_sweep` writes for an input whose
@@ -642,6 +646,9 @@ unfiltered inspection reader (`schema::asset_locks::list_active`). The
 rehydration feed reads through `schema::asset_locks::load_unconsumed`, which
 filters at the SQL level (`status NOT IN ('consumed')`), so a spent one-shot
 lock is never resurrected as actionable.
+Load-time Core conflict reconciliation also removes the losing transactions'
+non-consumed lifecycle rows in the same wallet transaction. Consumed history
+survives, and Recovery rolls back both Core and lifecycle repairs.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
