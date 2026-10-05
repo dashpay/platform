@@ -376,6 +376,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
             // The declared physical payload (312 note bytes + 32 nullifier
             // bytes); locked — released versions replay what they charged.
             shielded_storage_bytes_per_action: 344,
+            shielded_identity_action_write_storage_bytes: 0,
+            shielded_identity_balance_write_storage_bytes: 20,
             shielded_implicit_fee_cap: 20_000_000_000,
             shielded_identity_create_denominations: &[],
         },

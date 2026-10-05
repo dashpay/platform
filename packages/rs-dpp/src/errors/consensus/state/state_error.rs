@@ -82,6 +82,7 @@ use crate::consensus::state::document::referenced_contract_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
@@ -716,6 +717,11 @@ pub enum StateError {
     // (`deleteSettled.approversPredateDocument`, protocol version 14).
     #[error(transparent)]
     ContractTeamMemberAddedAfterDocumentError(ContractTeamMemberAddedAfterDocumentError),
+
+    // A document reference resolved by a document's id names an indexOnly document type, whose
+    // documents can not be fetched by id (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeIndexOnlyError(ReferencedDocumentTypeIndexOnlyError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1576,6 +1582,17 @@ mod tests {
                 )
             )),
             170
+        );
+        // A document reference by id to an indexOnly document type (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeIndexOnlyError(
+                ReferencedDocumentTypeIndexOnlyError::new(
+                    identity_id,
+                    "like".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            171
         );
     }
 }
