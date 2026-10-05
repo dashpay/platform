@@ -579,3 +579,66 @@ fn should_reject_a_wire_action_match_without_its_action() {
         Err(SubscriptionFilterError::InvalidFilter { index: 3, .. })
     ));
 }
+
+fn rating_contract() -> Arc<DataContract> {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    let documents = platform_value!({
+        "rating": {
+            "type": "object",
+            "properties": {
+                "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+            },
+            "additionalProperties": false
+        }
+    });
+    Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(id(1), 1, documents, None, None)
+            .expect("the contract parses")
+            .data_contract_owned(),
+    )
+}
+
+#[test]
+fn should_group_range_bounds_given_with_different_integer_widths() {
+    let contract = rating_contract();
+    let bound = |operator, value| drive::query::WhereClause {
+        field: "stars".to_string(),
+        operator,
+        value,
+    };
+    let filter = StateTransitionFilter::Documents(
+        DocumentFilter::new(contract.id())
+            .with_document_type("rating")
+            .with_action(
+                DocumentActionMatch::new(DocumentAction::Create)
+                    .with_new_document_where(bound(
+                        WhereOperator::GreaterThanOrEquals,
+                        Value::I64(1),
+                    ))
+                    .with_new_document_where(bound(WhereOperator::LessThanOrEquals, Value::U64(5))),
+            ),
+    );
+    // Natively, and after the wire round trip that keeps int64 and uint64 apart.
+    let wire = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
+    for filter in [filter, wire] {
+        let filters = resolve(vec![filter], &contract).expect("mixed-width bounds group");
+        let rated = |stars: u64| {
+            batch(
+                id(2),
+                vec![BatchedTransition::Document(DocumentTransition::Create(
+                    DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                        base: document_base(&contract, "rating", 10),
+                        entropy: [0u8; 32],
+                        data: BTreeMap::from([("stars".to_string(), Value::U64(stars))]),
+                        prefunded_voting_balance: None,
+                    }),
+                ))],
+            )
+        };
+        assert!(matches(&filters, &rated(3)).is_some());
+        assert!(matches(&filters, &rated(9)).is_none());
+    }
+}

@@ -612,22 +612,7 @@ impl DriveDocumentQueryFilter<'_> {
                 .chain(range_clause.iter_mut())
                 .chain(equal_clauses.values_mut())
             {
-                // A `u8` field's IN candidates may come packed as bytes, already canonical.
-                if clause.operator == WhereOperator::In
-                    && matches!(clause.value, Value::Bytes(_))
-                    && matches!(
-                        document_type
-                            .flattened_properties()
-                            .get(&clause.field)
-                            .map(|property| &property.property_type),
-                        Some(DocumentPropertyType::U8)
-                    )
-                {
-                    continue;
-                }
-                clause.value = canonical_operand(clause.operator, &clause.value, |value| {
-                    canonical_value_for_key(document_type, &clause.field, value, platform_version)
-                })?;
+                canonicalize_where_clause(document_type, clause, platform_version)?;
             }
         }
         if let Some((key, clause)) = scalar_clause {
@@ -810,6 +795,35 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
     }
+}
+
+/// Bring a where clause's operand to the form `document_type` stores its field in (see
+/// [`DriveDocumentQueryFilter::canonicalize_clause_values`]). Callers that group clauses (range
+/// bounds into one range) should canonicalize first, so bounds given with different integer
+/// widths compare.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn canonicalize_where_clause(
+    document_type: DocumentTypeRef,
+    clause: &mut WhereClause,
+    platform_version: &PlatformVersion,
+) -> Result<(), QuerySyntaxError> {
+    // A `u8` field's IN candidates may come packed as bytes, already canonical.
+    if clause.operator == WhereOperator::In
+        && matches!(clause.value, Value::Bytes(_))
+        && matches!(
+            document_type
+                .flattened_properties()
+                .get(&clause.field)
+                .map(|property| &property.property_type),
+            Some(DocumentPropertyType::U8)
+        )
+    {
+        return Ok(());
+    }
+    clause.value = canonical_operand(clause.operator, &clause.value, |value| {
+        canonical_value_for_key(document_type, &clause.field, value, platform_version)
+    })?;
+    Ok(())
 }
 
 /// `value` as the document type stores `key`: encoded the way its index keys are, then
@@ -3660,6 +3674,61 @@ mod tests {
                     expected
                 );
             }
+        }
+
+        /// A wrong-typed text value whose 20th byte falls inside a character, reported through
+        /// `Value`'s `Display`, must be refused rather than panic.
+        #[test]
+        fn should_refuse_rather_than_panic_on_a_wrong_typed_unicode_value() {
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let platform_version = PlatformVersion::latest();
+            let unicode = Value::Text(format!("{}é", "a".repeat(19)));
+
+            let mut operand = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("stars", unicode.clone()),
+                },
+            };
+            assert!(operand
+                .canonicalize_clause_values(platform_version)
+                .is_err());
+
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("stars", Value::U64(3)),
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            let transition = create(
+                &contract,
+                "rating",
+                BTreeMap::from([("stars".to_string(), unicode)]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Fail
+            );
         }
     }
 }

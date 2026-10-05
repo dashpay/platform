@@ -660,4 +660,95 @@ mod tests {
             .contracts_to_refresh
             .contains(&data_contract_id));
     }
+
+    #[test]
+    fn should_skip_rather_than_panic_on_a_fabricated_wrong_typed_unicode_value() {
+        use dash_platform_queries::subscriptions::{DocumentAction, DocumentActionMatch, DocumentFilter};
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::{platform_value, Value};
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+        use drive::query::{WhereClause, WhereOperator};
+
+        let documents = platform_value!({
+            "rating": {
+                "type": "object",
+                "properties": {
+                    "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                },
+                "additionalProperties": false
+            }
+        });
+        let contract = Arc::new(
+            DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned(),
+        );
+        let filters = vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(contract.id())
+                .with_document_type("rating")
+                .with_action(
+                    DocumentActionMatch::new(DocumentAction::Create).with_new_document_where(
+                        WhereClause {
+                            field: "stars".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::U64(3),
+                        },
+                    ),
+                ),
+        )];
+        let resolved = ResolvedFilters::resolve(
+            filters.clone(),
+            |_| Some(contract.clone()),
+            PlatformVersion::latest(),
+        )
+        .expect("filters resolve");
+        let mut subscription = StateTransitionSubscription {
+            filters,
+            caller_filters: 1,
+            resolved,
+            ..subscription()
+        };
+
+        // A node fabricates a create whose integer property is text with a multi-byte character
+        // across byte 20, and supplies its correct hash.
+        let fabricated = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([2u8; 32]),
+            transitions: vec![BatchedTransition::Document(DocumentTransition::Create(
+                DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                    base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                        id: Identifier::from([3u8; 32]),
+                        document_type_name: "rating".to_string(),
+                        data_contract_id: contract.id(),
+                        identity_contract_nonce: 0,
+                        token_payment_info: None,
+                    }),
+                    entropy: [0u8; 32],
+                    data: std::collections::BTreeMap::from([(
+                        "stars".to_string(),
+                        Value::Text(format!("{}é", "a".repeat(19))),
+                    )]),
+                    prefunded_voting_balance: None,
+                }),
+            ))],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }))
+        .serialize_to_bytes()
+        .expect("serializable");
+
+        assert!(subscription
+            .accept(response(Responses::StateTransition(matched(fabricated))))
+            .expect("skipped, not failed")
+            .is_none());
+    }
 }

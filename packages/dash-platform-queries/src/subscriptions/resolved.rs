@@ -23,9 +23,10 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::query::filter::{
-    DocumentActionMatchClauses, DriveDocumentQueryFilter, TransitionCheckResult,
+    canonicalize_where_clause, DocumentActionMatchClauses, DriveDocumentQueryFilter,
+    TransitionCheckResult,
 };
-use drive::query::{InternalClauses, ValueClause, WhereOperator};
+use drive::query::{InternalClauses, ValueClause, WhereClause, WhereOperator};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -553,9 +554,18 @@ fn action_clauses(
         return Err("a price clause applies only to update price".to_string());
     }
 
-    let extract = |clauses: &Vec<_>| {
-        InternalClauses::extract_from_clauses(clauses.clone(), platform_version)
-            .map_err(|e| e.to_string())
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .map_err(|e| e.to_string())?;
+    // Canonicalize before extraction groups range bounds, so bounds given with different
+    // integer widths (`>= I64(1)`, `<= U64(5)` on a u8 field) group.
+    let extract = |clauses: &Vec<WhereClause>| {
+        let mut clauses = clauses.clone();
+        for clause in &mut clauses {
+            canonicalize_where_clause(document_type, clause, platform_version)
+                .map_err(|e| e.to_string())?;
+        }
+        InternalClauses::extract_from_clauses(clauses, platform_version).map_err(|e| e.to_string())
     };
     let new_document_clauses = extract(&action.new_document_where)?;
     let original_document_clauses = extract(&action.original_document_where)?;
