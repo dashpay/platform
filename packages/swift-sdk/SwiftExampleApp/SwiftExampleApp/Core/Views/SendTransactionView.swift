@@ -368,6 +368,13 @@ struct SendTransactionView: View {
                     try? walletManager.prefetchShieldedSpendAnchors()
                 }
             }
+            .onChange(of: shieldedBalance) { oldBalance, newBalance in
+                // Notes that land after `.onAppear` (sync still persisting)
+                // would otherwise leave this screen without a prefetch.
+                if oldBalance == 0, newBalance > 0 {
+                    try? walletManager.prefetchShieldedSpendAnchors()
+                }
+            }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
             }
