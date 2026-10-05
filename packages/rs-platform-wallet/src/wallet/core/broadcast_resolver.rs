@@ -4942,18 +4942,47 @@ mod tests {
         // The lookup has finished, its result not delivered yet, when a
         // wallet is added.
         let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
-        assert!(matches!(&listed, Ok((_, JobDone::Listed { .. }))));
-        rig.handle(Command::WalletAdded([9u8; 32]));
+        let stale = match &listed {
+            Ok((_, JobDone::Listed { report, own, .. })) => {
+                assert_eq!(own, &vec![wallet()]);
+                *report
+            }
+            _ => panic!("expected the holder lookup"),
+        };
+        // The added wallet holds the send too: only a lookup made after it
+        // was added can name it.
+        let added = [9u8; 32];
+        rig.views(added, vec![send(200, &[outpoint(250, 0)])]);
+        rig.handle(Command::WalletAdded(added));
         rig.actor.joined(listed);
-        rig.settle().await;
 
+        // The stale result routed nothing; a newer lookup is out.
         assert!(
             rig.actor
-                .reported
+                .report_lookups
                 .get(&txid(200))
-                .is_some_and(|holders| holders.contains(&wallet())),
+                .is_some_and(|(token, _)| *token > stale),
+            "looked up again"
+        );
+        assert!(!rig.actor.reported.contains_key(&txid(200)));
+        let entry = &rig.actor.wallets[&wallet()];
+        assert!(entry
+            .pending
+            .as_ref()
+            .is_none_or(|pending| !pending.forced.contains(&txid(200))));
+        assert!(entry
+            .run
+            .as_ref()
+            .is_none_or(|run| !run.forced.contains(&txid(200))));
+
+        rig.settle().await;
+
+        let holders = rig.actor.reported.get(&txid(200)).expect("reported");
+        assert!(
+            holders.contains(&wallet()),
             "still a priority of its wallet"
         );
+        assert!(holders.contains(&added), "named by the new lookup only");
         assert!(
             probe.probed()[before..].contains(&txid(200)),
             "forced probe went out"
