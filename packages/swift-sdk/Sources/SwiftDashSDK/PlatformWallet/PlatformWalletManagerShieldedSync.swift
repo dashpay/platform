@@ -575,21 +575,56 @@ extension PlatformWalletManager {
         return present ? Data(bytes) : nil
     }
 
-    /// Build the Halo 2 proving key on a background thread so the
-    /// first shielded send doesn't pay the ~30 s build cost
-    /// inline. Idempotent and safe to call from any thread; later
-    /// calls return immediately. Independent of any wallet — the
-    /// cache is process-global on the Rust side.
+    /// Start building the Halo 2 proving key in the background so
+    /// the first shielded send doesn't pay the build cost inline.
+    /// Fire-and-forget: this returns as soon as the build has been
+    /// scheduled, NOT when the key is ready — await
+    /// `prepareShieldedProver()` (or poll `isShieldedProverReady`) for
+    /// that. The build runs at user-initiated QoS on Rust-owned threads
+    /// even though this task is background priority, so a send that
+    /// arrives mid-build is not left waiting on a throttled build.
+    /// Idempotent and safe to call from any thread. Independent of any wallet — the cache
+    /// is process-global on the Rust side.
     public static func warmUpShieldedProver() async {
         await Task.detached(priority: .background) {
             platform_wallet_shielded_warm_up_prover()
         }.value
     }
 
+    /// Suspend until the Halo 2 proving key is built, starting the
+    /// build if nothing has yet; returns immediately once it is
+    /// cached. Shares the single process-wide build with
+    /// `warmUpShieldedProver()` and with shielded sends, so awaiting
+    /// it during a warm-up waits only for the remainder.
+    ///
+    /// The blocking FFI wait runs on a global dispatch queue, not on
+    /// the Swift cooperative pool, so awaiting this never pins a
+    /// cooperative thread for the build. The build itself runs on
+    /// Rust-owned threads at user-initiated QoS regardless of the
+    /// caller's priority (the same holds for `warmUpShieldedProver()`). Sends do not need to call
+    /// this first — they await the same preparation internally; use
+    /// it to drive a "preparing…" UI state or to warm up with a
+    /// completion signal.
+    ///
+    /// Throws only if the build failed (a panic on the Rust side or
+    /// runtime shutdown); a later call retries.
+    public static func prepareShieldedProver() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try platform_wallet_shielded_prepare_prover().check()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Whether the Halo 2 proving key has been built yet. Useful
     /// for a "preparing prover…" UI affordance — `false` doesn't
     /// mean shielded sends will fail, just that the next one
-    /// pays the build cost.
+    /// waits for the build to finish first.
     public static var isShieldedProverReady: Bool {
         platform_wallet_shielded_prover_is_ready()
     }
