@@ -95,13 +95,24 @@ pub(crate) enum NodeVerdict {
     Mined,
     /// The node refused it for its inputs ([`REFUSAL_REASONS`]).
     Refused { reason: String },
-    /// No verdict: transport failure, timeout, or another rejection (such as
+    /// The node answered, but with no verdict: another rejection (such as
     /// `txn-mempool-conflict`).
     Unknown { reason: String },
+    /// No node answered: unreachable, timed out, or no address left to try.
+    Unreachable { reason: String },
 }
 
 /// Classify a failed `broadcastTransaction` gRPC response.
 pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdict {
+    // Transport-level: no node's answer reached us.
+    if matches!(
+        code,
+        Code::Unavailable | Code::DeadlineExceeded | Code::Cancelled
+    ) {
+        return NodeVerdict::Unreachable {
+            reason: format!("{code:?}: {message}"),
+        };
+    }
     if code == Code::AlreadyExists {
         return NodeVerdict::Mined;
     }
@@ -132,10 +143,10 @@ pub enum ProbeVerdict {
     Mined,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.
-    /// `answered`: some node gave a definite answer (refused it); `false`
-    /// when every submission failed without one — no node reachable,
-    /// timeouts, transport errors — so the probe learned nothing and is
-    /// worth repeating soon.
+    /// `answered`: some node answered a submission (with a refusal or any
+    /// other rejection); `false` when none did — no node reachable, timeouts,
+    /// no address left to try — so the probe learned nothing and is worth
+    /// repeating soon.
     Unresolved { reason: String, answered: bool },
 }
 
@@ -206,9 +217,11 @@ pub(crate) async fn probe_with(
     let mut refusing_nodes: HashSet<String> = HashSet::new();
     let mut first_refusal: Option<String> = None;
     let mut last_other = String::from("no submission was answered");
+    let mut answered = false;
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
         let (node, verdict) = submitter.submit(transaction).await;
+        answered |= !matches!(verdict, NodeVerdict::Unreachable { .. });
         tracing::debug!(
             txid = %transaction.txid(),
             node = node.as_deref().unwrap_or("unidentified"),
@@ -244,14 +257,14 @@ pub(crate) async fn probe_with(
                     .await;
                 }
             }
-            NodeVerdict::Unknown { reason } => {
+            NodeVerdict::Unknown { reason } | NodeVerdict::Unreachable { reason } => {
                 last_other = reason;
             }
         }
     }
 
     ProbeVerdict::Unresolved {
-        answered: first_refusal.is_some(),
+        answered,
         reason: match first_refusal {
             None => last_other,
             Some(reason) => format!(
@@ -436,7 +449,7 @@ impl NodeSubmitter for DapiNodeSubmitter {
                     DapiClientError::Transport(TransportError::Grpc(status)) => {
                         classify_failed_submission(status.code(), status.message())
                     }
-                    other => NodeVerdict::Unknown {
+                    other => NodeVerdict::Unreachable {
                         reason: other.to_string(),
                     },
                 };
@@ -652,11 +665,23 @@ mod tests {
         }
     }
 
+    /// Neither a transport failure nor an unknown rejection is a verdict;
+    /// only the second is a node's answer.
     #[test]
     fn should_leave_transport_failures_and_unknown_rejections_without_a_verdict() {
         for (code, message) in [
             (Code::Unavailable, "connection refused"),
             (Code::DeadlineExceeded, "timeout"),
+        ] {
+            assert!(
+                matches!(
+                    classify_failed_submission(code, message),
+                    NodeVerdict::Unreachable { .. }
+                ),
+                "{code:?} {message}"
+            );
+        }
+        for (code, message) in [
             (
                 Code::InvalidArgument,
                 "invalid transaction: TX decode failed",
@@ -929,10 +954,11 @@ mod tests {
 
     /// A probe tells whether any node answered: every submission failing
     /// without an answer (no reachable node) is `answered: false` — worth
-    /// repeating soon — while a refusal short of the quorum is an answer.
+    /// repeating soon — while a refusal short of the quorum, or any other
+    /// rejection, is an answer.
     #[tokio::test]
     async fn should_tell_a_probe_no_node_answered_from_one_a_node_refused() {
-        let unreachable = || NodeVerdict::Unknown {
+        let unreachable = || NodeVerdict::Unreachable {
             reason: "no available addresses".to_string(),
         };
         let nodes = ScriptedNodes::new(vec![
@@ -949,15 +975,26 @@ mod tests {
             }
         ));
 
-        let nodes = ScriptedNodes::new(vec![
-            (Some("a"), refused()),
-            (None, unreachable()),
-            (None, unreachable()),
-            (None, unreachable()),
-        ]);
+        for answer in [
+            refused(),
+            NodeVerdict::Unknown {
+                reason: "txn-mempool-conflict".to_string(),
+            },
+        ] {
+            let nodes = ScriptedNodes::new(vec![
+                (Some("a"), answer),
+                (None, unreachable()),
+                (None, unreachable()),
+                (None, unreachable()),
+            ]);
+            assert!(matches!(
+                probe_with(&nodes, &transaction()).await,
+                ProbeVerdict::Unresolved { answered: true, .. }
+            ));
+        }
         assert!(matches!(
-            probe_with(&nodes, &transaction()).await,
-            ProbeVerdict::Unresolved { answered: true, .. }
+            classify_failed_submission(Code::DeadlineExceeded, "no complete response"),
+            NodeVerdict::Unreachable { .. }
         ));
     }
 
