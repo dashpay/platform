@@ -47,10 +47,31 @@ fn temp_tree_path(tag: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("sync_lock_{tag}_{nanos}.sqlite"))
 }
 
-fn open_store(tag: &str) -> (Arc<RwLock<FileBackedShieldedStore>>, std::path::PathBuf) {
+/// Removes the test's SQLite tree on drop, panics included.
+struct TempTree(std::path::PathBuf);
+
+impl Drop for TempTree {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// A fresh file-backed store plus the epoch its passes watch. Keep the
+/// `TempTree` alive for the whole test.
+fn open_store(
+    tag: &str,
+) -> (
+    Arc<RwLock<FileBackedShieldedStore>>,
+    Arc<StoreEpoch>,
+    TempTree,
+) {
     let path = temp_tree_path(tag);
     let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
-    (Arc::new(RwLock::new(store)), path)
+    (
+        Arc::new(RwLock::new(store)),
+        Arc::new(StoreEpoch::default()),
+        TempTree(path),
+    )
 }
 
 /// A canonical (small) Pallas base-field element per tree position, so the
@@ -120,14 +141,20 @@ fn expect_completed(outcome: NoteSyncOutcome) -> super::MultiSyncNotesResult {
     }
 }
 
+fn expect_superseded(outcome: NoteSyncOutcome) {
+    assert!(
+        matches!(outcome, NoteSyncOutcome::Superseded),
+        "pass should have been superseded, got {outcome:?}"
+    );
+}
+
 /// The latency regression: a send's store work — reserving notes, probing
 /// the anchor/witnesses — must not wait for a sync pass's next network
 /// batch. Before the fix the pass held the store write lock across
 /// `stream.next().await`, so this wait equalled the whole network stall.
 #[tokio::test]
 async fn should_not_hold_store_lock_while_sync_waits_for_network() {
-    let (store, path) = open_store("contention");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("contention");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
 
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
@@ -176,8 +203,6 @@ async fn should_not_hold_store_lock_while_sync_waits_for_network() {
         store.witness_at_depth(2147, 0).unwrap().is_some(),
         "the pass checkpoints the tree at its final size on commit"
     );
-    drop(store);
-    let _ = std::fs::remove_file(&path);
 }
 
 /// The worst-case store-lock wait a send sees while a pass ingests a large
@@ -185,8 +210,7 @@ async fn should_not_hold_store_lock_while_sync_waits_for_network() {
 /// batch (let alone the download).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn should_bound_store_lock_hold_while_appending_a_large_batch() {
-    let (store, path) = open_store("append_slices");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("append_slices");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
 
     let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -230,7 +254,6 @@ async fn should_bound_store_lock_hold_while_appending_a_large_batch() {
         max_wait < batch_elapsed / 3,
         "a probe waited {max_wait:?} of a {batch_elapsed:?} batch ingest"
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// Appends a pass makes between lock holds are invisible to a send: the
@@ -241,7 +264,7 @@ async fn should_bound_store_lock_hold_while_appending_a_large_batch() {
 /// reachable one checkpoint deeper.
 #[tokio::test]
 async fn should_keep_spend_witnesses_stable_while_a_pass_is_mid_download() {
-    let (store, path) = open_store("witness_stable");
+    let (store, epoch, _tree) = open_store("witness_stable");
     let note_cmx = ExtractedNoteCommitment::from_bytes(&cmx(0)).unwrap();
     {
         let mut guard = store.write().await;
@@ -259,7 +282,6 @@ async fn should_keep_spend_witnesses_stable_while_a_pass_is_mid_download() {
             .root(note_cmx)
     };
 
-    let epoch = Arc::new(StoreEpoch::default());
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
@@ -293,8 +315,6 @@ async fn should_keep_spend_witnesses_stable_while_a_pass_is_mid_download() {
         .root(note_cmx);
     assert_ne!(depth0.to_bytes(), root_before.to_bytes());
     assert_eq!(depth1.to_bytes(), root_before.to_bytes());
-    drop(guard);
-    let _ = std::fs::remove_file(&path);
 }
 
 /// A lifecycle change landing mid-download (here `unregister_wallet`'s
@@ -303,8 +323,7 @@ async fn should_keep_spend_witnesses_stable_while_a_pass_is_mid_download() {
 /// otherwise resurrect sync state for the wallet that was just removed.
 #[tokio::test]
 async fn should_supersede_pass_when_a_lifecycle_change_lands_mid_download() {
-    let (store, path) = open_store("superseded_purge");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("superseded_purge");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
@@ -317,10 +336,7 @@ async fn should_supersede_pass_when_a_lifecycle_change_lands_mid_download() {
     tx.unbounded_send(Ok(batch(2048, 100))).unwrap();
     drop(tx);
 
-    assert!(matches!(
-        pass.await.unwrap().unwrap(),
-        NoteSyncOutcome::Superseded
-    ));
+    expect_superseded(pass.await.unwrap().unwrap());
     let guard = store.read().await;
     assert_eq!(
         guard.tree_size().unwrap(),
@@ -336,8 +352,6 @@ async fn should_supersede_pass_when_a_lifecycle_change_lands_mid_download() {
         guard.witness_at_depth(0, 0).unwrap().is_none(),
         "a superseded pass must not checkpoint"
     );
-    drop(guard);
-    let _ = std::fs::remove_file(&path);
 }
 
 /// Clear resets the tree mid-download; the pass must not commit (or append)
@@ -345,8 +359,7 @@ async fn should_supersede_pass_when_a_lifecycle_change_lands_mid_download() {
 /// batch, right before the final commit.
 #[tokio::test]
 async fn should_supersede_pass_when_tree_is_reset_before_commit() {
-    let (store, path) = open_store("superseded_clear");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("superseded_clear");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
@@ -359,15 +372,10 @@ async fn should_supersede_pass_when_tree_is_reset_before_commit() {
     }
     drop(tx);
 
-    assert!(matches!(
-        pass.await.unwrap().unwrap(),
-        NoteSyncOutcome::Superseded
-    ));
+    expect_superseded(pass.await.unwrap().unwrap());
     let guard = store.read().await;
     assert_eq!(guard.tree_size().unwrap(), 0);
     assert_eq!(guard.last_synced_note_index(subwallet()).unwrap(), 0);
-    drop(guard);
-    let _ = std::fs::remove_file(&path);
 }
 
 /// Backstop for writers that don't bump the epoch: if the tree's leaf count
@@ -376,8 +384,7 @@ async fn should_supersede_pass_when_tree_is_reset_before_commit() {
 /// would duplicate or misplace leaves and corrupt every later witness).
 #[tokio::test]
 async fn should_supersede_pass_when_another_writer_moves_the_tree() {
-    let (store, path) = open_store("superseded_foreign");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("superseded_foreign");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
@@ -390,23 +397,17 @@ async fn should_supersede_pass_when_another_writer_moves_the_tree() {
     tx.unbounded_send(Ok(batch(2048, 100))).unwrap();
     drop(tx);
 
-    assert!(matches!(
-        pass.await.unwrap().unwrap(),
-        NoteSyncOutcome::Superseded
-    ));
+    expect_superseded(pass.await.unwrap().unwrap());
     let guard = store.read().await;
     assert_eq!(guard.tree_size().unwrap(), 2049, "no append after the move");
     assert_eq!(guard.last_synced_note_index(subwallet()).unwrap(), 0);
-    drop(guard);
-    let _ = std::fs::remove_file(&path);
 }
 
 /// A change scoped to another wallet (its restore, removal, or account
 /// purge) does not supersede a pass that isn't scanning that wallet.
 #[tokio::test]
 async fn should_not_supersede_pass_for_another_wallets_lifecycle_change() {
-    let (store, path) = open_store("unrelated_wallet");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("unrelated_wallet");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
@@ -426,7 +427,6 @@ async fn should_not_supersede_pass_for_another_wallets_lifecycle_change() {
             .unwrap(),
         2148
     );
-    let _ = std::fs::remove_file(&path);
 }
 
 /// A superseded pass leaves only uncheckpointed leaves behind — the state an
@@ -436,8 +436,7 @@ async fn should_not_supersede_pass_for_another_wallets_lifecycle_change() {
 /// notes it saves there would be unwitnessable at spend time.
 #[tokio::test]
 async fn should_checkpoint_leaves_left_by_a_superseded_pass_on_retry() {
-    let (store, path) = open_store("retry");
-    let epoch = Arc::new(StoreEpoch::default());
+    let (store, epoch, _tree) = open_store("retry");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
@@ -447,10 +446,7 @@ async fn should_checkpoint_leaves_left_by_a_superseded_pass_on_retry() {
         epoch.bump_wallet(&mut guard, WALLET);
     }
     drop(tx);
-    assert!(matches!(
-        pass.await.unwrap().unwrap(),
-        NoteSyncOutcome::Superseded
-    ));
+    expect_superseded(pass.await.unwrap().unwrap());
     assert!(
         store.read().await.witness_at_depth(0, 0).unwrap().is_none(),
         "superseded pass left its leaves uncheckpointed"
@@ -494,6 +490,4 @@ async fn should_checkpoint_leaves_left_by_a_superseded_pass_on_retry() {
         guard.witness_at_depth(0, 1).unwrap().is_none(),
         "an unchanged tree must not gain a second checkpoint"
     );
-    drop(guard);
-    let _ = std::fs::remove_file(&path);
 }

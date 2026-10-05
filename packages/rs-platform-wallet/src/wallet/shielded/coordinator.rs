@@ -265,15 +265,10 @@ pub struct NetworkShieldedCoordinator {
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
 
-    /// Invalidates in-flight sync passes whose snapshot a lifecycle
-    /// mutation of the store just made stale. A pass releases the store
-    /// lock while it waits on the network, so every store mutation that
-    /// would conflict with a pass's eventual commit — subwallet purges
-    /// (unregister, account-dropping re-bind) and host snapshot restores
-    /// (that wallet's generation), Clear (every pass) — bumps it under its
-    /// store write guard; the pass then abandons its commit and
-    /// [`sync`](Self::sync) retries it from a fresh registry snapshot. See
-    /// [`StoreEpoch`].
+    /// Generations a sync pass re-checks before every store write;
+    /// lifecycle mutations that conflict with a pass's commit bump them
+    /// under their store write guard, and [`sync`](Self::sync) retries a
+    /// superseded pass from a fresh registry snapshot. See [`StoreEpoch`].
     store_epoch: StoreEpoch,
 
     /// Serializes [`sync`](Self::sync) passes on this coordinator. The
@@ -1069,10 +1064,6 @@ impl NetworkShieldedCoordinator {
         }
 
         let mut store = self.store.write().await;
-        // Set once the first subwallet passes the filters below — the
-        // restore then writes notes and watermarks an in-flight sync pass
-        // over this wallet may have snapshotted (or be about to overwrite).
-        let mut bumped = false;
         for (id, sub) in &snapshot.per_subwallet {
             // Only restore subwallets that are registered on this
             // coordinator — `registered` holds `wallet_id`'s alone, so
@@ -1096,10 +1087,9 @@ impl NetworkShieldedCoordinator {
                     continue;
                 }
             }
-            if !bumped {
-                self.store_epoch.bump_wallet(&mut store, wallet_id);
-                bumped = true;
-            }
+            // This restore writes state an in-flight pass over the wallet
+            // may have snapshotted (or be about to overwrite).
+            self.store_epoch.bump_wallet(&mut store, wallet_id);
             // Nullifiers the store already tracks for this subwallet.
             // The in-memory state is always at least as fresh as the
             // host snapshot (the snapshot's rows were produced from
