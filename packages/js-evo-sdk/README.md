@@ -32,7 +32,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 npm install @dashevo/evo-sdk
 ```
 
-The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic `import()`. Requires Node.js >= 18.18.
+The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic `import()`. Requires Node.js >= 20 (the bundled WASM draws entropy from the global WebCrypto `crypto` object, which Node.js exposes by default from v19).
 
 ## Usage
 
