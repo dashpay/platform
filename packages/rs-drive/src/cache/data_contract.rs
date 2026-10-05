@@ -53,6 +53,10 @@ pub struct DataContractCache {
     block_modified: RwLock<HashSet<[u8; 32]>>,
     /// Bumped once per promotion, that is once per committed block.
     committed_generation: AtomicU64,
+    /// Held shared by [`Self::insert_committed`] across its generation check and write, and
+    /// exclusively by [`Self::reset_for_database_replacement`], which has no key to take
+    /// moka's per-key lock on and so waits here for approved inserts to land instead.
+    replacement_fence: RwLock<()>,
 }
 
 impl DataContractCache {
@@ -63,6 +67,7 @@ impl DataContractCache {
             block_cache: Cache::new(block_cache_max_capacity),
             block_modified: RwLock::new(HashSet::new()),
             committed_generation: AtomicU64::new(0),
+            replacement_fence: RwLock::new(()),
         }
     }
 
@@ -114,6 +119,7 @@ impl DataContractCache {
     ) {
         let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
 
+        let _fence = self.replacement_fence.read();
         self.global_cache
             .entry(data_contract_id_bytes)
             .and_compute_with(|existing| {
@@ -295,6 +301,25 @@ impl DataContractCache {
     /// every reader to reload them) must not let transactional reads fall back to the
     /// global cache again.
     pub fn clear(&self) {
+        self.block_cache.invalidate_all();
+        self.global_cache.invalidate_all();
+    }
+
+    /// Forgets everything, for when the database under the cache was replaced (wiped for a
+    /// state sync restore, or by the restore itself).
+    ///
+    /// Unlike [`Self::clear`] this also fences committed-state readers: one that read a
+    /// contract from the old database must not insert it after the reset, where block
+    /// execution on the restored state would resolve the stale definition. The generation
+    /// advances, so a reader that took its snapshot before the reset inserts nothing. An
+    /// insert already approved under the old generation holds the fence shared until it
+    /// lands; the reset takes it exclusively, so it waits for that insert and then drops
+    /// it with everything else. The record of what a block rewrote goes too: no block
+    /// spans a database replacement.
+    pub fn reset_for_database_replacement(&self) {
+        let _fence = self.replacement_fence.write();
+        self.committed_generation.fetch_add(1, Ordering::SeqCst);
+        self.block_modified.write().clear();
         self.block_cache.invalidate_all();
         self.global_cache.invalidate_all();
     }
@@ -944,6 +969,62 @@ mod tests {
 
     mod clear {
         use super::*;
+
+        /// A committed-state reader that read a contract from the database before it was
+        /// replaced must not repopulate the cache with it afterwards.
+        #[test]
+        fn test_reset_for_database_replacement_fences_earlier_readers() {
+            let data_contract_cache = Arc::new(DataContractCache::new(10, 10));
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                PlatformVersion::latest().protocol_version,
+            ));
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            let read_done = Arc::new(Barrier::new(2));
+            let reset_done = Arc::new(Barrier::new(2));
+            let reader = {
+                let data_contract_cache = Arc::clone(&data_contract_cache);
+                let (read_done, reset_done) = (Arc::clone(&read_done), Arc::clone(&reset_done));
+                thread::spawn(move || {
+                    // Snapshot, then "read" the pre-replacement contract
+                    let observed = data_contract_cache.committed_generation();
+                    read_done.wait();
+                    reset_done.wait();
+                    data_contract_cache.insert_committed(fetch_info, observed);
+                })
+            };
+
+            read_done.wait();
+            data_contract_cache.reset_for_database_replacement();
+            reset_done.wait();
+            reader.join().expect("the reader must finish");
+
+            assert!(
+                data_contract_cache.get(contract_id, false).is_none(),
+                "a read from the replaced database must not land in the cache"
+            );
+        }
+
+        #[test]
+        fn test_reset_for_database_replacement_empties_everything() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                PlatformVersion::latest().protocol_version,
+            ));
+            let contract_id = fetch_info.contract.id().to_buffer();
+            data_contract_cache.insert_committed(
+                Arc::clone(&fetch_info),
+                data_contract_cache.committed_generation(),
+            );
+            data_contract_cache.mark_modified_in_block(contract_id);
+            data_contract_cache.insert_block(fetch_info);
+
+            data_contract_cache.reset_for_database_replacement();
+
+            assert!(data_contract_cache.get(contract_id, false).is_none());
+            assert!(data_contract_cache.get(contract_id, true).is_none());
+            assert!(!data_contract_cache.is_modified_in_block(contract_id));
+        }
 
         #[test]
         fn test_clear_empties_global_and_block_caches() {

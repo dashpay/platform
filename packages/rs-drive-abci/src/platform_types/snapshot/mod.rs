@@ -109,7 +109,9 @@ pub fn restore_sentinel_exists(db_path: &Path) -> bool {
 /// a `loaded` flag, so `load_if_needed` would never re-read the new version counters and
 /// the next block would write vote counts derived from the wiped chain — an immediate app
 /// hash fork. Resetting the counter wholesale (rather than `clear_global_cache`) is
-/// deliberate: it clears that flag too, so the cache reloads on first use.
+/// deliberate: it clears that flag too, so the cache reloads on first use. The contract
+/// cache is reset rather than cleared so a query thread that read a contract from the
+/// wiped database cannot put it back afterwards.
 ///
 /// `system_data_contracts` is deliberately NOT cleared — those are compiled-in,
 /// version-keyed contracts that never come from grovedb.
@@ -121,7 +123,7 @@ pub fn restore_sentinel_exists(db_path: &Path) -> bool {
 /// directories are removed when the last `Arc` drops, rather than leaking on disk.
 pub fn reset_drive_caches_after_wipe(drive: &Drive) {
     *drive.cache.protocol_versions_counter.write() = Default::default();
-    drive.cache.data_contracts.clear();
+    drive.cache.data_contracts.reset_for_database_replacement();
     *drive.cache.genesis_time_ms.write() = None;
 
     let checkpoints = drive.checkpoints.load();
