@@ -41,6 +41,8 @@ pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
 mod traits;
+#[cfg(feature = "state-transition-validation")]
+mod verify_identity_signed_signature;
 
 // pub mod state_transition_fee;
 
@@ -53,9 +55,7 @@ use crate::consensus::signature::{
     ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
 };
 #[cfg(feature = "state-transition-validation")]
-use crate::consensus::signature::{
-    InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
-};
+use crate::consensus::signature::{InvalidStateTransitionSignatureError, SignatureError};
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::ConsensusError;
 pub use traits::*;
@@ -64,10 +64,7 @@ use crate::address_funds::PlatformAddress;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoundsCheck;
@@ -75,10 +72,7 @@ use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoun
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::Purpose;
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
@@ -117,15 +111,15 @@ use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
 };
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
 #[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::StateTransitionIsNotSignedError;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
-};
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::{
     IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
@@ -2288,112 +2282,6 @@ impl StateTransition {
             });
         }
         Ok(())
-    }
-
-    /// Verifies the transition's signature with `public_key`, the identity key it names.
-    ///
-    /// Generation 0 (protocol versions 1 to 13) accepts a BLS12_381 signature that is well
-    /// formed but does not verify: it fails only when the BLS module errors, never on its
-    /// `Ok(false)`. Generation 1 refuses that signature too.
-    #[cfg(feature = "state-transition-validation")]
-    pub fn verify_identity_signed_signature(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
-        match platform_version
-            .dpp
-            .state_transition_method_versions
-            .verify_identity_signed_signature
-        {
-            0 => self.verify_identity_signed_signature_v0(public_key, bls),
-            1 => self.verify_identity_signed_signature_v1(public_key, bls),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "StateTransition::verify_identity_signed_signature".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            }),
-        }
-    }
-
-    /// Kept as is for replay: the BLS verdict is dropped, so a BLS12_381 signature that does
-    /// not verify passes.
-    #[cfg(feature = "state-transition-validation")]
-    fn verify_identity_signed_signature_v0(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-    ) -> Result<(), ProtocolError> {
-        self.identity_signed_signature_verdict(public_key, bls)
-            .map(|_| ())
-    }
-
-    #[cfg(feature = "state-transition-validation")]
-    fn verify_identity_signed_signature_v1(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-    ) -> Result<(), ProtocolError> {
-        if self.identity_signed_signature_verdict(public_key, bls)? {
-            Ok(())
-        } else {
-            Err(ProtocolError::from(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError(
-                    InvalidStateTransitionSignatureError::new(
-                        "bls signature does not verify".to_string(),
-                    ),
-                ),
-            )))
-        }
-    }
-
-    /// The checks every generation of [`Self::verify_identity_signed_signature`] runs, returning
-    /// whether the signature verifies. A failed ECDSA check is an error, so `Ok(false)` only
-    /// comes from a BLS12_381 signature that is well formed but does not verify.
-    #[cfg(feature = "state-transition-validation")]
-    fn identity_signed_signature_verdict(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-    ) -> Result<bool, ProtocolError> {
-        // self.verify_public_key_level_and_purpose(public_key)?;
-        if public_key.disabled_at().is_some() {
-            return Err(ProtocolError::PublicKeyIsDisabledError(
-                PublicKeyIsDisabledError::new(public_key.id()),
-            ));
-        }
-
-        let Some(signature) = self.signature() else {
-            return Err(ProtocolError::CorruptedCodeExecution("verifying identity signature for a state transition that doesn't use identity signatures".to_string()));
-        };
-        if signature.is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone()),
-            ));
-        }
-
-        if self.signature_public_key_id() != Some(public_key.id()) {
-            return Err(ProtocolError::PublicKeyMismatchError(
-                PublicKeyMismatchError::new(public_key.clone()),
-            ));
-        }
-
-        let public_key_bytes = public_key.data().as_slice();
-        match public_key.key_type() {
-            KeyType::ECDSA_HASH160 => self
-                .verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
-                .map(|()| true),
-
-            KeyType::ECDSA_SECP256K1 => self
-                .verify_ecdsa_signature_by_public_key(public_key_bytes)
-                .map(|()| true),
-
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
-
-            // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(true),
-        }
     }
 
     #[cfg(feature = "state-transition-validation")]
