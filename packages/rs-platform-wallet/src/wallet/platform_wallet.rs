@@ -363,6 +363,14 @@ pub struct PlatformWallet {
     /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes changes to the bound shielded account set. A bind
+    /// replaces the registration with the accounts it was given, so a
+    /// caller that reads the current set and binds an augmented copy (tip
+    /// preparation) must not interleave with another bind, or the other
+    /// bind's ordinary accounts are dropped and their live state purged.
+    /// Taken at the top of every bind entry point, before `shield_guard`.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -747,6 +755,8 @@ impl PlatformWallet {
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
+            shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -779,6 +789,19 @@ impl PlatformWallet {
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded(
+        &self,
+        seed: &[u8],
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<(), PlatformWalletError> {
+        let _config = self.shielded_config_lock.lock().await;
+        self.bind_shielded_locked(seed, accounts, coordinator).await
+    }
+
+    /// [`Self::bind_shielded`] for a caller already holding
+    /// `shielded_config_lock`.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn bind_shielded_locked(
         &self,
         seed: &[u8],
         accounts: &[u32],
@@ -913,6 +936,7 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -2276,6 +2300,8 @@ impl Clone for PlatformWallet {
             shielded_keys: self.shielded_keys.clone(),
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
+            #[cfg(feature = "shielded")]
+            shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
         }

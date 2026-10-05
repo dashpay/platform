@@ -1040,6 +1040,37 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
         matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
         "{refused:?}"
     );
+    // Spending selects the source account from the same recorded index, so
+    // sending from identity 0's tip account on this identity's behalf is
+    // refused too, before any network resolution or proving.
+    let recipient = crate::ShieldedTipRecipient {
+        identity_id: Identifier::from([0x77; 32]),
+        address: [0; 43],
+    };
+    let spend = |account: u32| {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        let recipient = recipient.clone();
+        async move {
+            wallet
+                .send_shielded_tip(
+                    &coordinator,
+                    &seed,
+                    account,
+                    "recipient.dash",
+                    &recipient,
+                    1_000,
+                    [0; 36],
+                    &super::CachedOrchardProver::new(),
+                )
+                .await
+        }
+    };
+    let refused_spend = spend(identity_zero_tips).await;
+    assert!(
+        matches!(refused_spend, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
+        "{refused_spend:?}"
+    );
 
     // Rediscovery proves index 5 and re-slots the identity.
     {
@@ -1061,6 +1092,14 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
             .await
             .unwrap(),
         address
+    );
+    // Its own tip account now passes the ownership check (the mock SDK then
+    // fails the recipient lookup), and identity 0's slot is empty, so that
+    // retired-style account is no longer attributed to this identity.
+    let own = spend(shielded_tip_account_index(5).unwrap()).await;
+    assert!(
+        !matches!(own, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
+        "{own:?}"
     );
 }
 
@@ -1327,5 +1366,116 @@ async fn should_bind_more_than_64_persisted_tip_accounts_from_an_ordinary_reques
                 "{tag}: tip account {account} registered for sync"
             );
         }
+    }
+}
+
+/// Tip preparation reads the bound account set and binds it plus the tip
+/// account. A bind of ordinary accounts landing between those two steps must
+/// not be undone by the stale snapshot: preparation is paused right after its
+/// snapshot while another task binds accounts 0 and 1, and account 1 must
+/// still be bound and registered once both finish.
+#[tokio::test]
+async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
+    use crate::shielded_tip_account_index;
+    use dpp::identity::{Identity, IdentityV0};
+    use dpp::prelude::Identifier;
+    let phrase = crate::test_support::MESSAGE_SIGNING_TEST_MNEMONIC;
+    let seed = key_wallet::Mnemonic::from_phrase(phrase)
+        .unwrap()
+        .to_seed("");
+    let (wallet_manager, wallet_id, _, _) =
+        crate::test_support::mnemonic_wallet_manager(phrase).await;
+    let generation = wallet_manager
+        .read()
+        .await
+        .get_wallet_info(&wallet_id)
+        .unwrap()
+        .generation
+        .clone();
+    let spv = Arc::new(crate::spv::SpvRuntime::new(
+        Arc::clone(&wallet_manager),
+        Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+    ));
+    let sdk = dash_sdk::SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .build()
+        .unwrap();
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = PlatformWallet::new(
+        Arc::new(sdk),
+        wallet_id,
+        wallet_manager,
+        generation,
+        Arc::new(tokio::sync::Notify::new()),
+        persister.clone(),
+        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+    );
+    let id = Identifier::from([0x66; 32]);
+    {
+        let mut wm = wallet.wallet_manager().write().await;
+        wm.get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id,
+                    public_keys: seed_master_key(&seed, 2),
+                    balance: 0,
+                    revision: 0,
+                }),
+                2,
+                wallet.wallet_id(),
+                wallet.persister(),
+            )
+            .unwrap();
+    }
+    let coordinator = coordinator_at(&temp_dir("tips_concurrent_bind"));
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .unwrap();
+    let tip = shielded_tip_account_index(2).unwrap();
+
+    let (reached, resume) = super::tips::test_hooks::pause_after_snapshot(wallet.wallet_id());
+    let preparing = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .prepare_shielded_tip_address(&seed, &id, &coordinator)
+                .await
+        })
+    };
+    reached.await.expect("preparation reached its snapshot");
+    let mut binding = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move { wallet.bind_shielded(&seed, &[0, 1], &coordinator).await })
+    };
+    // Unserialized, this bind finishes now and the resumed preparation then
+    // rebinds its stale {0} plus the tip account, dropping account 1.
+    let finished_early =
+        tokio::time::timeout(std::time::Duration::from_millis(500), &mut binding).await;
+    assert!(
+        finished_early.is_err(),
+        "a concurrent bind must wait for tip preparation's read-modify-write"
+    );
+    resume.send(()).unwrap();
+    preparing.await.unwrap().expect("tip address prepared");
+    binding.await.unwrap().expect("ordinary bind succeeds");
+
+    let bound = wallet.shielded_account_indices().await;
+    for account in [0, 1, tip] {
+        assert!(
+            bound.contains(&account),
+            "account {account} bound: {bound:?}"
+        );
+    }
+    let registered = coordinator.registered_subwallets().await;
+    for account in [0, 1, tip] {
+        assert!(
+            registered.contains(&SubwalletId::new(wallet.wallet_id(), account)),
+            "account {account} registered"
+        );
     }
 }

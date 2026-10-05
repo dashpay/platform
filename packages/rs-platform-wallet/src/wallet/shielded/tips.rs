@@ -139,18 +139,52 @@ impl PlatformWallet {
             verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
             shielded_tip_account_index(index)?
         };
+        // Read the bound set and bind the augmented copy as one step: a bind
+        // replaces the registration, so another bind landing in between
+        // would have its ordinary accounts dropped by this stale snapshot.
+        let _config = self.shielded_config_lock.lock().await;
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
+        #[cfg(test)]
+        test_hooks::after_snapshot(self.wallet_id()).await;
         accounts.push(account);
-        self.bind_shielded(seed, &accounts, coordinator).await?;
+        self.bind_shielded_locked(seed, &accounts, coordinator)
+            .await?;
         self.persister()
             .flush()
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
         self.shielded_default_address(account)
             .await
             .ok_or(PlatformWalletError::ShieldedNotBound)
+    }
+
+    /// Refuse to spend from a dedicated tip account whose slot holds an identity
+    /// the seed does not prove to be at that index. Hosts select the source
+    /// account from the identity's recorded index, and a host-restored
+    /// placeholder index 0 would otherwise spend identity 0's tip pool on
+    /// another identity's behalf. A tip account whose slot is empty (a retired
+    /// identity's) has no such ambiguity and stays spendable.
+    async fn verify_tip_account_owner(
+        &self,
+        seed: &[u8],
+        account: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let index = account - SHIELDED_TIP_ACCOUNT_BASE;
+        let wm = self.wallet_manager.read().await;
+        let info = wm
+            .get_wallet_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        let Some(owner) = info
+            .identity_manager
+            .wallet_identities
+            .get(&self.wallet_id())
+            .and_then(|bucket| bucket.get(&index))
+        else {
+            return Ok(());
+        };
+        verify_identity_index(seed, self.sdk.network, index, &owner.identity)
     }
 
     /// Send only to the identity/address pair that the user confirmed. A changed
@@ -169,6 +203,9 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        if is_shielded_tip_account(account) {
+            self.verify_tip_account_owner(seed, account).await?;
+        }
         let current = self
             .identity()
             .dashpay()
@@ -189,6 +226,45 @@ impl PlatformWallet {
             prover,
         )
         .await
+    }
+}
+
+/// Test-only pause point between tip preparation's account snapshot and
+/// its bind, keyed by wallet so parallel tests do not interfere.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use tokio::sync::oneshot;
+
+    type Hook = (oneshot::Sender<()>, oneshot::Receiver<()>);
+    static AFTER_SNAPSHOT: Mutex<Option<HashMap<[u8; 32], Hook>>> = Mutex::new(None);
+
+    /// Arm the pause for `wallet`. Returns a receiver that fires when
+    /// preparation reaches the pause, and the sender that resumes it.
+    pub(crate) fn pause_after_snapshot(
+        wallet: [u8; 32],
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (resume_tx, resume_rx) = oneshot::channel();
+        AFTER_SNAPSHOT
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(wallet, (reached_tx, resume_rx));
+        (reached_rx, resume_tx)
+    }
+
+    pub(crate) async fn after_snapshot(wallet: [u8; 32]) {
+        let hook = AFTER_SNAPSHOT
+            .lock()
+            .unwrap()
+            .as_mut()
+            .and_then(|hooks| hooks.remove(&wallet));
+        if let Some((reached, resume)) = hook {
+            let _ = reached.send(());
+            let _ = resume.await;
+        }
     }
 }
 
