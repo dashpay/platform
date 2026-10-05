@@ -328,16 +328,27 @@ impl Scan {
                         let matches = self.match_block(&block)?;
                         if !matches.is_empty() {
                             replay_permit.take();
-                            // Each payload is copied only as it is sent.
-                            for (index, filter_match) in matches {
-                                let tx = &block.txs[index];
+                            // Keep only what the responses need, the serialized payloads shared
+                            // with the block, and let go of the decoded block before waiting on
+                            // the client: a stalled reader then pins no decoded transitions.
+                            let (time_ms, protocol_version) =
+                                (block.time_ms, block.protocol_version);
+                            let pending: Vec<_> = matches
+                                .into_iter()
+                                .map(|(position, filter_match)| {
+                                    let tx = &block.txs[position];
+                                    (tx.index, tx.hash, tx.bytes.clone(), filter_match)
+                                })
+                                .collect();
+                            drop(block);
+                            for (index_in_block, hash, bytes, filter_match) in pending {
                                 self.send(Responses::StateTransition(StateTransitionMatch {
                                     block_height: height,
-                                    block_time_ms: block.time_ms,
-                                    protocol_version: block.protocol_version,
-                                    index_in_block: tx.index,
-                                    state_transition_hash: tx.hash.to_vec(),
-                                    state_transition: tx.bytes.as_ref().clone(),
+                                    block_time_ms: time_ms,
+                                    protocol_version,
+                                    index_in_block,
+                                    state_transition_hash: hash.to_vec(),
+                                    state_transition: bytes.as_ref().clone(),
                                     matched_filters: filter_match.matched_filters,
                                     matched_batch_positions: filter_match.matched_batch_positions,
                                 }))

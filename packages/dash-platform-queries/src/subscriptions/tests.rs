@@ -669,6 +669,21 @@ fn should_resolve_wide_integer_operands_the_same_after_the_wire() {
     resolve(vec![filter.clone()], &contract).expect("resolves natively");
     let wire = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
     resolve(vec![wire], &contract).expect("resolves after the wire round trip");
+
+    // A signed 128-bit value that fits only an unsigned 64-bit integer.
+    let price = StateTransitionFilter::Documents(
+        DocumentFilter::new(contract.id())
+            .with_document_type("rating")
+            .with_action(
+                DocumentActionMatch::new(DocumentAction::UpdatePrice).with_price(ValueClause {
+                    operator: WhereOperator::Equal,
+                    value: Value::I128(1_i128 << 63),
+                }),
+            ),
+    );
+    resolve(vec![price.clone()], &contract).expect("resolves natively");
+    let wire = StateTransitionFilter::from_proto(0, price.to_proto().unwrap()).unwrap();
+    resolve(vec![wire], &contract).expect("resolves after the wire round trip");
 }
 
 #[test]

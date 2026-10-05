@@ -142,7 +142,10 @@ fn document_filter_to_proto(filter: &DocumentFilter) -> Result<proto::DocumentFi
 fn narrowed(value: &Value) -> Value {
     match value {
         Value::U128(n) => u64::try_from(*n).map_or(value.clone(), Value::U64),
-        Value::I128(n) => i64::try_from(*n).map_or(value.clone(), Value::I64),
+        Value::I128(n) => i64::try_from(*n)
+            .map(Value::I64)
+            .or_else(|_| u64::try_from(*n).map(Value::U64))
+            .unwrap_or_else(|_| value.clone()),
         Value::Array(values) => Value::Array(values.iter().map(narrowed).collect()),
         _ => value.clone(),
     }

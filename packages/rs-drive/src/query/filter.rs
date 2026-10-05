@@ -3740,17 +3740,33 @@ mod tests {
 
         #[test]
         fn should_not_let_null_satisfy_an_ordered_comparison() {
-            let contract = contract();
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            // A numeric field: its codec round-trips null, which `Value` orders after numbers.
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
             let platform_version = PlatformVersion::latest();
             let mut filter = DriveDocumentQueryFilter {
                 contract: &contract,
-                document_type_name: "niceDocument".to_string(),
+                document_type_name: "rating".to_string(),
                 action_clauses: DocumentActionMatchClauses::Create {
                     new_document_clauses: InternalClauses {
                         range_clause: Some(WhereClause {
-                            field: "name".to_string(),
+                            field: "stars".to_string(),
                             operator: WhereOperator::GreaterThan,
-                            value: Value::Text("a".to_string()),
+                            value: Value::U64(3),
                         }),
                         ..Default::default()
                     },
@@ -3759,14 +3775,20 @@ mod tests {
             filter
                 .canonicalize_clause_values(platform_version)
                 .expect("canonical");
-            let transition = create(
-                &contract,
-                "niceDocument",
-                BTreeMap::from([("name".to_string(), Value::Null)]),
+            let rated = |stars: Value| {
+                create(
+                    &contract,
+                    "rating",
+                    BTreeMap::from([("stars".to_string(), stars)]),
+                )
+            };
+            assert_eq!(
+                filter.matches_document_transition(&rated(Value::Null), None, platform_version),
+                TransitionCheckResult::Fail
             );
             assert_eq!(
-                filter.matches_document_transition(&transition, None, platform_version),
-                TransitionCheckResult::Fail
+                filter.matches_document_transition(&rated(Value::U64(5)), None, platform_version),
+                TransitionCheckResult::Pass
             );
         }
     }

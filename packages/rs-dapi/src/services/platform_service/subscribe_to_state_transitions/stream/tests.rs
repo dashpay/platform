@@ -138,6 +138,7 @@ fn recipient_filter(recipient: u8) -> ResolvedFilters {
 
 struct Harness {
     chain: Arc<FakeChain>,
+    blocks: Arc<BlockSource>,
     service: SubscriptionService,
     tip: watch::Sender<u64>,
 }
@@ -147,7 +148,8 @@ fn harness(limits: SubscriptionLimits) -> Harness {
     let blocks = Arc::new(BlockSource::new(chain.clone()));
     let (tip, tip_receiver) = watch::channel(0);
     Harness {
-        service: SubscriptionService::new(blocks, tip_receiver, limits),
+        service: SubscriptionService::new(blocks.clone(), tip_receiver, limits),
+        blocks,
         chain,
         tip,
     }
@@ -447,4 +449,39 @@ async fn should_bound_concurrent_catch_up_reads_after_sending_matches() {
         drain.await.unwrap();
     }
     assert_eq!(harness.chain.max_reads_in_flight.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn should_not_pin_decoded_blocks_while_waiting_on_a_stalled_reader() {
+    let harness = harness(SubscriptionLimits::default());
+    // Several matches a block, many blocks: far more than the stream buffer holds.
+    for _ in 0..40 {
+        harness.commit(vec![
+            credit_transfer(7),
+            credit_transfer(7),
+            credit_transfer(7),
+        ]);
+    }
+    let _stalled = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            recipient_filter(7),
+            Some(1),
+        )
+        .await
+        .unwrap();
+    // Let the scan fill the buffer and block on a send.
+    sleep(Duration::from_millis(300)).await;
+
+    for height in 1..=40 {
+        if let Ok(BlockRead::Block(block)) = harness.blocks.read(height).await {
+            // Held by the cache and by this test only, never by the stalled scan.
+            assert!(
+                Arc::strong_count(&block) <= 2,
+                "block {height} is pinned by {} owners",
+                Arc::strong_count(&block)
+            );
+        }
+    }
 }
