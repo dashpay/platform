@@ -418,6 +418,17 @@ fn submit_reply(
         Err(error) => {
             let node = error.address.as_ref().map(ToString::to_string);
             let verdict = match &error.inner {
+                // tonic attaches the transport error (h2, hyper, io) as the
+                // source of a status it made itself; a node's own status has
+                // none. The message phrases are only a fallback.
+                DapiClientError::Transport(TransportError::Grpc(status))
+                    if matches!(status.code(), Code::Unknown | Code::Internal)
+                        && std::error::Error::source(status).is_some() =>
+                {
+                    NodeVerdict::Unreachable {
+                        reason: format!("{:?}: {}", status.code(), status.message()),
+                    }
+                }
                 DapiClientError::Transport(TransportError::Grpc(status)) => {
                     classify_failed_submission(status.code(), status.message())
                 }
@@ -1011,6 +1022,25 @@ mod tests {
         assert!(reason.contains("txn-mempool-conflict"), "{reason}");
     }
 
+    /// A rate-limited submission is a node's answer: no fast retry.
+    #[tokio::test]
+    async fn should_count_a_rate_limit_as_an_answer() {
+        let limited = || NodeVerdict::Unknown {
+            reason: "ResourceExhausted: rate limited".to_string(),
+        };
+        let nodes = ScriptedNodes::new(vec![
+            (Some("a"), limited()),
+            (Some("b"), limited()),
+            (Some("c"), limited()),
+            (Some("d"), limited()),
+        ]);
+        assert!(probe_with(&nodes, &transaction()).await.answered);
+        assert!(matches!(
+            classify_failed_submission(Code::ResourceExhausted, "rate limited"),
+            NodeVerdict::Unknown { .. }
+        ));
+    }
+
     /// The live log's case: every address banned, so the SDK fails with
     /// `NoAvailableAddresses` before any node is asked — no answer, which
     /// arms the resolver's retry. A node's status is an answer.
@@ -1035,6 +1065,35 @@ mod tests {
         ))));
         assert!(
             matches!(verdict, NodeVerdict::Unknown { .. }),
+            "{verdict:?}"
+        );
+
+        // A stream that broke mid-response, whatever its wording: tonic's
+        // status carries the transport error as its source.
+        let broken = Status::from_error(Box::new(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "unexpected end of file",
+        )));
+        let (_, verdict) = submit_reply(failed(DapiClientError::Transport(TransportError::Grpc(
+            broken,
+        ))));
+        assert!(
+            matches!(verdict, NodeVerdict::Unreachable { .. }),
+            "{verdict:?}"
+        );
+        // A node's Unknown/Internal with no transport source is an answer.
+        let (_, verdict) = submit_reply(failed(DapiClientError::Transport(TransportError::Grpc(
+            Status::internal("bad-txns-in-belowout"),
+        ))));
+        assert!(
+            matches!(verdict, NodeVerdict::Unknown { .. }),
+            "{verdict:?}"
+        );
+        let (_, verdict) = submit_reply(failed(DapiClientError::Transport(TransportError::Grpc(
+            Status::cancelled("cancelled"),
+        ))));
+        assert!(
+            matches!(verdict, NodeVerdict::Unreachable { .. }),
             "{verdict:?}"
         );
     }
