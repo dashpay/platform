@@ -59,7 +59,8 @@ use dash_sdk::dapi_client::{
     DapiClientError, DapiRequestExecutor, ExecutionResult, RequestSettings,
 };
 use dash_sdk::dapi_grpc::core::v0::{
-    BroadcastTransactionRequest, GetTransactionRequest, GetTransactionResponse,
+    BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
+    GetTransactionResponse,
 };
 use dash_sdk::dapi_grpc::tonic::Code;
 use dashcore::consensus;
@@ -402,6 +403,29 @@ async fn confirm_by_lookup(
     }
 }
 
+/// Which node answered a `broadcastTransaction` submission and what it said.
+/// A failure that is not a node's gRPC status (no address left to try, a
+/// connection that never opened) is no answer at all.
+fn submit_reply(
+    result: ExecutionResult<BroadcastTransactionResponse, DapiClientError>,
+) -> (Option<String>, NodeVerdict) {
+    match result {
+        Ok(response) => (Some(response.address.to_string()), NodeVerdict::Accepted),
+        Err(error) => {
+            let node = error.address.as_ref().map(ToString::to_string);
+            let verdict = match &error.inner {
+                DapiClientError::Transport(TransportError::Grpc(status)) => {
+                    classify_failed_submission(status.code(), status.message())
+                }
+                other => NodeVerdict::Unreachable {
+                    reason: other.to_string(),
+                },
+            };
+            (node, verdict)
+        }
+    }
+}
+
 /// Which node answered a `getTransaction` lookup and what the answer says. A
 /// reply is read the way the SDK reads one ([`transaction_from_reply`]): an
 /// empty one, or one carrying another transaction, is the node not showing the
@@ -481,21 +505,7 @@ impl NodeSubmitter for DapiNodeSubmitter {
             allow_high_fees: false,
             bypass_limits: false,
         };
-        match self.sdk.execute(request, single_node()).await {
-            Ok(response) => (Some(response.address.to_string()), NodeVerdict::Accepted),
-            Err(error) => {
-                let node = error.address.as_ref().map(ToString::to_string);
-                let verdict = match &error.inner {
-                    DapiClientError::Transport(TransportError::Grpc(status)) => {
-                        classify_failed_submission(status.code(), status.message())
-                    }
-                    other => NodeVerdict::Unreachable {
-                        reason: other.to_string(),
-                    },
-                };
-                (node, verdict)
-            }
-        }
+        submit_reply(self.sdk.execute(request, single_node()).await)
     }
 
     async fn lookup(&self, txid: &Txid) -> (Option<String>, LookupAnswer) {
@@ -967,6 +977,43 @@ mod tests {
 
         let (_, known) = lookup_reply(&txid, reply(consensus::serialize(&held)));
         assert_eq!(known, in_mempool());
+    }
+
+    /// The live log's case: every address banned, so the SDK fails with
+    /// `NoAvailableAddresses` before any node is asked — no answer, which
+    /// arms the resolver's retry. A node's status is an answer.
+    #[test]
+    fn should_read_a_submission_no_node_received_as_unreachable() {
+        let failed = |inner: DapiClientError| {
+            Err(ExecutionError {
+                inner,
+                retries: 0,
+                address: None,
+            })
+        };
+        let (node, verdict) = submit_reply(failed(DapiClientError::NoAvailableAddresses));
+        assert!(node.is_none());
+        assert!(
+            matches!(verdict, NodeVerdict::Unreachable { .. }),
+            "{verdict:?}"
+        );
+
+        let (_, verdict) = submit_reply(failed(DapiClientError::Transport(TransportError::Grpc(
+            Status::failed_precondition("txn-mempool-conflict"),
+        ))));
+        assert!(
+            matches!(verdict, NodeVerdict::Unknown { .. }),
+            "{verdict:?}"
+        );
+    }
+
+    /// A probe never bans the address it reached, and asks one node per
+    /// request.
+    #[test]
+    fn should_probe_without_banning_and_without_retries() {
+        let settings = single_node();
+        assert_eq!(settings.ban_failed_address, Some(false));
+        assert_eq!(settings.retries, Some(0));
     }
 
     /// A failed lookup: gRPC `NOT_FOUND` is the node not knowing the txid,

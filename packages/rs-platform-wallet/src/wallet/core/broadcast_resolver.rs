@@ -50,10 +50,12 @@
 //! counted from the first height-driven pass that sees it while the wallet
 //! follows the tip (a forced pass does not start it), and every
 //! [`SLOW_INTERVAL`] blocks after. A probe no node answered (DAPI
-//! unreachable — its addresses still banned just after an outage) is
-//! repeated, when its pass followed the tip, after [`NO_ANSWER_RETRY`] and
-//! then twice and four times that again (at most [`MAX_NO_ANSWER_RETRIES`]
-//! per height); probes never ban a DAPI address themselves. Each Uncertain
+//! unreachable — its addresses still banned just after an outage) does not
+//! count: its root is due again at every block, whatever its phase, and when
+//! its pass followed the tip it is repeated after [`NO_ANSWER_RETRY`] if no
+//! block comes first (then after twice and four times that again; at most
+//! [`MAX_NO_ANSWER_RETRIES`] per height). Probes never ban a DAPI address
+//! themselves. Each Uncertain
 //! report forces a probe of
 //! its chain's current root in the next pass (reports queued together share
 //! it).
@@ -1083,7 +1085,8 @@ struct Actor {
     /// the echo windows run on, so a wallet behind the others (rescanning,
     /// rewound) neither stamps nor expires them.
     followed_tip: Option<u32>,
-    /// The header tip of dash-spv's last completed sync cycle.
+    /// Names each retry series (see [`NoAnswerRetries`]), so a stale timer
+    /// matches no later series.
     next_retry_series: u64,
     /// Echoes whose holder lookup is out, by the token their result carries.
     /// A send that settles, or a wallet that leaves or re-registers, withdraws
@@ -1394,11 +1397,19 @@ impl Actor {
                 // without a step since launch reads its own height. While
                 // probing is off this does nothing (queue_followed_pass): the
                 // next completion, after the next block, covers it.
+                // A wallet whose probes at that height reached no node and
+                // wait for their retry gets none: the retry is the next try.
                 let at_tip: Vec<(WalletId, u32)> = self
                     .wallets
                     .iter()
-                    .map(|(wallet_id, entry)| (*wallet_id, entry.height.unwrap_or(tip)))
-                    .filter(|(_, height)| near_tip(*height, tip))
+                    .map(|(wallet_id, entry)| (wallet_id, entry, entry.height.unwrap_or(tip)))
+                    .filter(|(_, entry, height)| {
+                        near_tip(*height, tip)
+                            && !entry
+                                .no_answer
+                                .is_some_and(|retries| retries.waiting && retries.height == *height)
+                    })
+                    .map(|(wallet_id, _, height)| (*wallet_id, height))
                     .collect();
                 for (wallet_id, height) in at_tip {
                     self.queue_followed_pass(wallet_id, height);
@@ -1578,24 +1589,17 @@ impl Actor {
                         // The wallet is not where this pass was queued: far
                         // ahead (a catch-up whose height step has not arrived
                         // yet) or behind (a rewind for a rescan). Either way a
-                        // catch-up — confine the pass to forced roots. A sync
-                        // completion's pass that ends up so has not run: its
-                        // tip is not done.
-                        let stale = entry
-                            .run
-                            .as_ref()
-                            .and_then(|run| run.anchor_at)
-                            .filter(|at| {
-                                read.synced_height < *at
-                                    || read.synced_height > at.saturating_add(CATCH_UP_STEP)
-                            });
+                        // catch-up — confine the pass to forced roots.
                         let Some(current) = entry.run.as_mut() else {
                             return; // matched by id above
                         };
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
-                        if stale.is_some() {
+                        if current.anchor_at.is_some_and(|at| {
+                            read.synced_height < at
+                                || read.synced_height > at.saturating_add(CATCH_UP_STEP)
+                        }) {
                             current.anchor_at = None;
                         }
                         // What an event settled since the read began is not
@@ -1743,8 +1747,10 @@ impl Actor {
     /// of that height: an anchored pass after [`NO_ANSWER_RETRY`], then
     /// after twice and four times that again (about 1, 3 and 7 minutes after
     /// the first probe), at most [`MAX_NO_ANSWER_RETRIES`] per height — while
-    /// DAPI stays down, a root costs its probe per block plus up to three
-    /// retries. A forced pass (an `Uncertain` report's) arms none: its height
+    /// DAPI stays down, an unanswered root is probed at every block, whatever
+    /// its schedule's phase, plus the retries until the next block comes
+    /// (usually the first, after a minute); a sync completion at a height
+    /// whose retry waits adds none. A forced pass (an `Uncertain` report's) arms none: its height
     /// may be one the wallet does not follow (a stale stored tip, a
     /// catch-up), and anchoring there would start windows at the wrong
     /// height; the next followed block or sync completion probes the root.
@@ -2145,22 +2151,30 @@ impl EventHandler for BroadcastResolver {
     }
 
     fn on_sync_event(&self, event: &SyncEvent) {
-        match event {
-            SyncEvent::TransactionBroadcastResult {
-                txid,
-                result: BroadcastResult::Uncertain,
-            } => self.send(Command::Uncertain(*txid)),
-            // dash-spv lets a send it reported Uncertain still turn Accepted
-            // when a peer echoes it later.
-            SyncEvent::TransactionBroadcastResult {
-                txid,
-                result: BroadcastResult::Accepted { .. },
-            } => self.send(Command::Echoed(*txid)),
-            SyncEvent::SyncComplete { header_tip, .. } if *header_tip > 0 => {
-                self.send(Command::SyncComplete { tip: *header_tip })
-            }
-            _ => {}
+        if let Some(command) = sync_command(event) {
+            self.send(command);
         }
+    }
+}
+
+/// The command an SPV sync event means for the resolver, if any.
+fn sync_command(event: &SyncEvent) -> Option<Command> {
+    match event {
+        SyncEvent::TransactionBroadcastResult {
+            txid,
+            result: BroadcastResult::Uncertain,
+        } => Some(Command::Uncertain(*txid)),
+        // dash-spv lets a send it reported Uncertain still turn Accepted when
+        // a peer echoes it later.
+        SyncEvent::TransactionBroadcastResult {
+            txid,
+            result: BroadcastResult::Accepted { .. },
+        } => Some(Command::Echoed(*txid)),
+        // A tip of 0 is dash-spv's "unknown": no height to follow.
+        SyncEvent::SyncComplete { header_tip, .. } if *header_tip > 0 => {
+            Some(Command::SyncComplete { tip: *header_tip })
+        }
+        _ => None,
     }
 }
 
@@ -3711,6 +3725,90 @@ mod tests {
         assert!(rig
             .sent()
             .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)));
+    }
+
+    /// A completion at a height whose probe reached no node adds no probe of
+    /// its own: the waiting retry is the next try.
+    #[tokio::test(start_paused = true)]
+    async fn should_leave_an_unanswered_height_to_its_retry_at_completion() {
+        let probe = Arc::new(SequenceProbe::new(&[no_answer(), ProbeVerdict::Accepted]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 100,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        for _ in 0..2 {
+            let job = rig
+                .actor
+                .jobs
+                .join_next_with_id()
+                .await
+                .expect("read, then probe");
+            rig.actor.joined(job);
+        }
+        assert_eq!(probe.calls(), 1);
+
+        rig.handle(sync_complete(101));
+        let entry = &rig.actor.wallets[&wallet()];
+        assert!(entry.run.is_none() && entry.pending.is_none(), "no pass");
+
+        rig.settle().await; // the retry
+        assert_eq!(probe.calls(), 2);
+    }
+
+    /// While probing is off a completion does nothing; the next one, after
+    /// it is on again, runs the pass.
+    #[tokio::test]
+    async fn should_ignore_a_completion_while_probing_is_off() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 500).await; // catch-up
+
+        rig.send(Command::SetEnabled(false)).await;
+        rig.send(sync_complete(500)).await;
+        assert!(probe.probed().is_empty());
+
+        rig.send(Command::SetEnabled(true)).await;
+        rig.send(sync_complete(500)).await;
+        assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// A wallet with no step since launch that reads far below the tip (a
+    /// new wallet scanning from its birth height) is not anchored at the tip.
+    #[tokio::test]
+    async fn should_not_probe_a_wallet_with_no_step_reading_far_below_the_tip() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 1_000);
+
+        rig.send(sync_complete(1_566_577)).await;
+
+        assert!(probe.probed().is_empty());
+    }
+
+    /// dash-spv's completion with an unknown tip (0) means nothing to follow.
+    #[test]
+    fn should_ignore_a_completion_without_a_tip() {
+        let complete = |header_tip| SyncEvent::SyncComplete {
+            header_tip,
+            cycle: 1,
+        };
+        assert!(sync_command(&complete(0)).is_none());
+        assert!(matches!(
+            sync_command(&complete(7)),
+            Some(Command::SyncComplete { tip: 7 })
+        ));
     }
 
     /// A refusal is an answer: no early retry.
