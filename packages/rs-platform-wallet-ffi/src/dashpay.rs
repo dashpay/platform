@@ -606,9 +606,11 @@ pub unsafe extern "C" fn platform_wallet_reserve_dashpay_payment_address(
     core_signer_handle: *mut MnemonicResolverHandle,
     out_address: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(core_signer_handle);
     check_ptr!(out_address);
+    // Sentinel first, before any other fallible check, so every early return
+    // leaves `*out_address` null for a cleanup-on-error caller.
     *out_address = std::ptr::null_mut();
+    check_ptr!(core_signer_handle);
     let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
     let to_id = unwrap_result_or_return!(read_identifier(to_contact_identity_id));
     let signer_addr = core_signer_handle as usize;
@@ -1438,6 +1440,26 @@ mod tests {
             out_marker.is_null(),
             "out_marker is zero-initialized before the lookup"
         );
+    }
+
+    /// A null `core_signer_handle` is rejected with `ErrorNullPointer`, and
+    /// `*out_address` is already nulled when it is, so a cleanup-on-error
+    /// caller that did not pre-initialize the slot never frees garbage.
+    #[test]
+    fn reserve_dashpay_payment_address_null_signer_nulls_out_address() {
+        let id = [0u8; 32];
+        let mut out_address: *mut c_char = std::ptr::dangling_mut();
+        let r = unsafe {
+            platform_wallet_reserve_dashpay_payment_address(
+                1,
+                id.as_ptr(),
+                id.as_ptr(),
+                std::ptr::null_mut(),
+                &mut out_address,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(out_address.is_null());
     }
 
     /// A null `out_count` is rejected with `ErrorNullPointer` (the `check_ptr!`
