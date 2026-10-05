@@ -363,6 +363,9 @@ pub(crate) struct ProbeSchedule {
     /// stored tip. Only anchored passes probe unforced roots, and they set the
     /// window first; `None` counting as in-window matters for `next_due`.
     window_start: Option<u32>,
+    /// The first height a pass that followed the tip saw the root at: its
+    /// place in the queue until its first probe (see `MAX_ROOTS_PER_PASS`).
+    seen_at: Option<u32>,
     last_probe: Option<u32>,
     /// The last probe reached no node: due again at the next height, in any
     /// phase — but not at the same height, where only a retry
@@ -583,14 +586,19 @@ fn near_tip(height: u32, tip: u32) -> bool {
 /// and come round at the next pass — so the forced pass starts after the
 /// probe in flight, not after a queue of scheduled roots.
 fn yield_to_forced(entry: &mut WalletEntry) {
-    if !entry
+    let Some(run) = entry.run.as_mut() else {
+        return;
+    };
+    // Only for a request the run does not already carry (a repeated report
+    // of a send it forces itself changes nothing).
+    let new = entry
         .pending
         .as_ref()
-        .is_some_and(|pending| !pending.forced.is_empty())
-    {
+        .is_some_and(|pending| pending.forced.iter().any(|txid| !run.forced.contains(txid)));
+    if !new {
         return;
     }
-    if let Some(probing) = entry.run.as_mut().and_then(|run| run.probing.as_mut()) {
+    if let Some(probing) = run.probing.as_mut() {
         probing.due.retain(|root| root.forced);
     }
 }
@@ -658,41 +666,52 @@ pub(crate) fn begin_pass(
     let roots = graph.roots();
     let forced_roots = graph.roots_of(forced.iter().copied());
 
-    // Forced roots first, then at most `MAX_ROOTS_PER_PASS` scheduled ones,
-    // those probed longest ago (or never) first.
+    // Forced roots first, then at most `MAX_ROOTS_PER_PASS` scheduled ones
+    // in turn: those probed longest ago first, a never-probed one by the
+    // height it was first seen at — a queue, so fresh roots (a peer can feed
+    // them at will) wait behind older ones and cannot starve them.
+    let due_root = |view: &OutgoingView, forced| DueRoot {
+        txid: view.txid,
+        transaction: Arc::clone(&view.transaction),
+        own: graph.is_own(&view.txid),
+        forced,
+    };
     let mut due = VecDeque::new();
-    let mut scheduled: Vec<(Option<u32>, &OutgoingView)> = Vec::new();
+    let mut scheduled: Vec<((u32, bool, Txid), &OutgoingView)> = Vec::new();
     for view in &roots {
-        let key = (wallet_id, view.txid);
-        let schedule = state.schedules.entry(key).or_default();
+        let schedule = state.schedules.entry((wallet_id, view.txid)).or_default();
         if let Some(anchor) = anchor {
-            schedule.anchor(anchor);
+            schedule.seen_at.get_or_insert(anchor);
         }
-        let root = |forced| DueRoot {
-            txid: view.txid,
-            transaction: Arc::clone(&view.transaction),
-            own: graph.is_own(&view.txid),
-            forced,
-        };
         if forced_roots.contains(&view.txid) {
-            due.push_back(root(true));
+            due.push_back(due_root(view, true));
         } else if anchor.is_some() && schedule.is_due(height) {
             // Without an anchor the pass is confined to forced roots.
-            scheduled.push((schedule.last_probe, view));
+            // At the same height, one still waiting for its first probe goes
+            // before one probed there.
+            let turn = (
+                schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
+                schedule.last_probe.is_some(),
+                view.txid,
+            );
+            scheduled.push((turn, view));
         }
     }
-    scheduled.sort_by_key(|(last_probe, view)| (*last_probe, view.txid));
-    due.extend(
-        scheduled
-            .into_iter()
-            .take(MAX_ROOTS_PER_PASS)
-            .map(|(_, view)| DueRoot {
-                txid: view.txid,
-                transaction: Arc::clone(&view.transaction),
-                own: graph.is_own(&view.txid),
-                forced: false,
-            }),
-    );
+    if scheduled.len() > MAX_ROOTS_PER_PASS {
+        scheduled.select_nth_unstable_by_key(MAX_ROOTS_PER_PASS, |(turn, _)| *turn);
+        scheduled.truncate(MAX_ROOTS_PER_PASS);
+    }
+    scheduled.sort_unstable_by_key(|(turn, _)| *turn);
+    due.extend(scheduled.into_iter().map(|(_, view)| due_root(view, false)));
+    // A root's every-block window starts when a pass that follows the tip
+    // first takes it — not while it waits in a backlog.
+    if let Some(anchor) = anchor {
+        for root in &due {
+            if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root.txid)) {
+                schedule.anchor(anchor);
+            }
+        }
+    }
     PassStart { events, due }
 }
 
@@ -1825,16 +1844,20 @@ impl Actor {
                 };
                 // Due now, though the wait was computed before.
                 entry.wait_until = None;
-                if anchored {
-                    self.queue_followed_pass(wallet_id, height);
-                } else if self.enabled {
-                    // Forced passes only: force the roots again, starting no
-                    // window at a height the wallet may not follow.
-                    let pending = entry.pending.get_or_insert_with(PendingPass::default);
-                    pending.height = pending.height.max(height);
-                    pending.retried.extend(roots);
-                    self.start(wallet_id);
+                if !self.enabled {
+                    return;
                 }
+                // The roots go as retried — ahead of the per-pass cap, like
+                // the forced probes they repeat. The pass is anchored when
+                // any of those probes was; otherwise it starts no window at
+                // a height the wallet may not follow.
+                let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                pending.height = pending.height.max(height);
+                pending.retried.extend(roots);
+                if anchored {
+                    pending.anchor_at = Some(height);
+                }
+                self.start(wallet_id);
             }
             JobDone::Probed {
                 wallet_id,
@@ -1932,8 +1955,9 @@ impl Actor {
     /// height's unanswered probes ran in one; after forced passes only (an
     /// `Uncertain` report's, whose height may be a stale stored tip or a
     /// catch-up) it forces the roots instead and starts no window. While DAPI
-    /// stays down, an unanswered root is probed once at every block plus the
-    /// retries until the next block comes. One info line per such root and
+    /// stays down, an unanswered root is due once at every block (in its turn
+    /// under [`MAX_ROOTS_PER_PASS`] when a backlog is larger) plus the
+    /// retries, which go ahead of the cap, until the next block comes. One info line per such root and
     /// probe — an unchanged Unresolved publishes nothing otherwise.
     fn arm_no_answer_retry(
         &mut self,
@@ -4357,6 +4381,106 @@ mod tests {
             probe.probed().len() - before <= MAX_ROOTS_PER_PASS + 1,
             "bounded work at that height"
         );
+    }
+
+    /// A peer feeding fresh roots every block cannot starve older ones: the
+    /// queue serves roots in the order they were first seen.
+    #[tokio::test]
+    async fn should_not_let_fresh_roots_starve_older_ones() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..30); // 20 roots, seen at 101
+        rig.views(wallet(), views.clone());
+        rig.follow(wallet(), 100).await;
+
+        for (height, fresh) in [(102, 30..38), (103, 38..46), (104, 46..54)] {
+            views.extend(peer_injected(fresh)); // 8 fresh roots each block
+            rig.views(wallet(), views.clone());
+            rig.height(wallet(), height).await;
+        }
+
+        let probed: HashSet<Txid> = probe.probed().into_iter().collect();
+        assert!(
+            (10..30).all(|n| probed.contains(&txid(n))),
+            "every older root came round before the fresh ones"
+        );
+    }
+
+    /// A root waiting in a backlog keeps its every-block window: it starts at
+    /// its first probe, not when the root was first seen.
+    #[tokio::test]
+    async fn should_start_a_window_at_the_first_probe_not_while_waiting() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), peer_injected(10..30)); // 20 roots
+        rig.follow(wallet(), 100).await; // 8 probed at 101
+
+        let waiting = &rig.actor.state.schedules[&(wallet(), txid(29))];
+        assert_eq!(waiting.window_start, None);
+        assert_eq!(waiting.seen_at, Some(101));
+        rig.height(wallet(), 102).await;
+        rig.height(wallet(), 103).await; // 29 is in the third batch
+
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(29))].window_start,
+            Some(103)
+        );
+    }
+
+    /// A forced request routed while the run is still reading makes it give
+    /// way as soon as the read is in.
+    #[tokio::test]
+    async fn should_give_way_to_a_forced_request_routed_during_the_read() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..30);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.follow(wallet(), 100).await;
+        let before = probe.probed().len();
+        rig.source.pause(true);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.actor.handle(Command::Uncertain(txid(200)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed); // routed while the read waits
+        rig.source.pause(false);
+
+        rig.settle().await;
+
+        let since = &probe.probed()[before..];
+        assert_eq!(since.first(), Some(&txid(200)), "{since:?}");
+    }
+
+    /// A forced root no node answered stays ahead of the cap at its retry,
+    /// whatever the backlog.
+    #[tokio::test(start_paused = true)]
+    async fn should_retry_a_forced_root_ahead_of_a_backlog() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(200), unreachable_verdict())]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = peer_injected(10..40);
+        views.push(send(200, &[outpoint(250, 0)]));
+        rig.views(wallet(), views);
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 100,
+        });
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        rig.handle(Command::Uncertain(txid(200)));
+
+        rig.settle().await; // the anchored pass with the forced root, then retries
+
+        let genuine = probe
+            .probed()
+            .iter()
+            .filter(|probed| **probed == txid(200))
+            .count();
+        assert_eq!(genuine, 1 + MAX_NO_ANSWER_RETRIES as usize);
     }
 
     /// A refusal is an answer: no early retry.
