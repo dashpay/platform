@@ -99,12 +99,12 @@ final class SDKMethodTests: XCTestCase {
   }
 
   /// Fetches an identity through `identityGet` from rs-sdk's recorded
-  /// `test_identity_read` vectors: the mock replays the recorded DAPI
+  /// `test_identity_read_v1` vectors: the mock replays the recorded DAPI
   /// response, the SDK verifies its proof against the recorded quorum key,
   /// and the identity is decoded into the Swift result.
   @MainActor
   func testSimpleIdentityFetch() async throws {
-    let vectors = Self.rsSdkVectors("test_identity_read")
+    let vectors = Self.rsSdkVectors("test_identity_read_v1")
     guard FileManager.default.fileExists(atPath: vectors) else {
       XCTFail("missing rs-sdk offline vectors at \(vectors)")
       return
@@ -113,8 +113,8 @@ final class SDKMethodTests: XCTestCase {
     SDK.initialize()
     let sdk = try SDK(mockVectorsDirectory: vectors)
 
-    // The vectors record identity [1; 32], rs-sdk's IDENTITY_ID_1.
-    let identityId = Data(repeating: 1, count: 32).toBase58()
+    // The vectors contain a testnet identity with a GroveDB V1 proof.
+    let identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"
     let identity = try await sdk.identityGet(identityId: identityId)
 
     XCTAssertEqual(identity["id"] as? String, identityId)
