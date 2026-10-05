@@ -544,18 +544,9 @@ impl DriveDocumentQueryFilter<'_> {
             }
         };
 
-        clauses
-            .in_clauses
-            .iter()
-            .all(|clause| field_matches(clause))
-            && clauses
-                .range_clause
-                .iter()
-                .all(|clause| field_matches(clause))
-            && clauses
-                .equal_clauses
-                .values()
-                .all(|clause| field_matches(clause))
+        clauses.in_clauses.iter().all(&field_matches)
+            && clauses.range_clause.iter().all(&field_matches)
+            && clauses.equal_clauses.values().all(&field_matches)
     }
 
     /// Bring every clause value to the form the document type stores its field in, so
