@@ -84,7 +84,7 @@ public final class PersistentTransaction {
     /// replaces it with the real discriminant on touch. Accessors
     /// treat the sentinel as unknown (no branch fires).
     public var transactionTypeKind: UInt8 = 0xFF
-    /// Net amount in duffs (signed: positive=received, negative=sent).
+    /// Net Core amount in duffs across locally owned TXOs (positive=received, negative=sent).
     public var netAmount: Int64
     /// Fee in duffs (nil if unknown).
     public var fee: UInt64?
@@ -228,12 +228,121 @@ public final class PersistentTransaction {
         }
     }
 
+    /// Core value movement for one wallet; `nil` when it cannot be derived yet.
+    ///
+    /// The stored scalar is the last recording wallet's (Rust `net_amount`,
+    /// or the reconciliation over its own TXOs), so it answers only when
+    /// `walletId` is the sole participant. Pending inputs do not veto that
+    /// answer: `upsertTransaction` writes one for every input whose prevout
+    /// has no local TXO — every foreign input of an incoming payment — and
+    /// never prunes them, so they cannot tell a late input of ours apart.
+    public func netAmount(for walletId: Data) -> Int64? {
+        func owned(_ rows: [PersistentTxo]) -> [PersistentTxo] {
+            var seen = Set<Data>()
+            return rows.filter {
+                PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
+                    && PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
+                    && seen.insert($0.outpoint).inserted
+            }
+        }
+        let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
+        if participatingWalletIds == [walletId], !hasUnownedTxos { return netAmount }
+        // Computed from TXOs alone: a pending input this wallet recorded may be
+        // one of its own still-unlinked coins, so the sum is only provisional.
+        guard !pendingInputs.contains(where: { $0.walletId == walletId }) else { return nil }
+        let walletInputs = owned(inputs)
+        let walletOutputs = owned(outputs)
+        guard !walletInputs.isEmpty || !walletOutputs.isEmpty else { return nil }
+        return Self.reconciledAccounting(
+            inputs: walletInputs, ownedOutputAmounts: walletOutputs.map(\.amount),
+            allOutputsOwned: false, previousDirection: direction, isAssetLock: isAssetLock
+        )?.netAmount
+    }
+
+    /// Direction relative to one wallet for transactions shared by multiple local wallets.
+    public func direction(for walletId: Data) -> UInt32 {
+        guard participatingWalletIds.count > 1, direction != CoreDirectionCode.coinJoin,
+              typedKind != .coinJoin, !isAssetLock else { return direction }
+        let spendsOurs = inputs.contains {
+            PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
+                && PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
+        }
+        return spendsOurs ? CoreDirectionCode.outgoing : CoreDirectionCode.incoming
+    }
+
+    /// Format the wallet's Core value movement in DASH.
+    public func formattedAmount(for walletId: Data) -> String {
+        guard let amount = netAmount(for: walletId) else { return "Amount unavailable" }
+        return Self.format(duffs: amount)
+    }
+
+    /// Net amount for `walletId`, or the stored scalar when no wallet scope is given.
+    public func displayNetAmount(for walletId: Data?) -> Int64? {
+        walletId.map { netAmount(for: $0) } ?? netAmount
+    }
+
+    /// `CoreDirectionCode` for `walletId`, or the stored direction when no wallet scope is given.
+    public func displayDirectionCode(for walletId: Data?) -> UInt32 {
+        walletId.map { direction(for: $0) } ?? direction
+    }
+
+    /// Formatted amount for `walletId`, or the stored scalar's when no wallet scope is given.
+    public func displayFormattedAmount(for walletId: Data?) -> String {
+        walletId.map { formattedAmount(for: $0) } ?? formattedAmount
+    }
+
+    /// Signed DASH text for a duff amount; `magnitude` cannot trap on `Int64.min`.
+    static func format(duffs: Int64) -> String {
+        String(format: "%@%.8f DASH", duffs >= 0 ? "+" : "-", Double(duffs.magnitude) / 100_000_000)
+    }
+
+    /// Local wallets owning one of this transaction's TXOs or having recorded it
+    /// (`involvedAccounts`), whose last writer's accounting is the stored scalar.
+    private var participatingWalletIds: Set<Data> {
+        let owning = (inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
+            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) }
+        let recording = involvedAccounts.compactMap { account -> Data? in
+            let wallet: PersistentWallet? = account.wallet
+            return wallet?.walletId
+        }
+        return Set(owning + recording)
+    }
+
+    static func reconciledAccounting(
+        inputs: [PersistentTxo], ownedOutputAmounts: [UInt64],
+        allOutputsOwned: Bool, previousDirection: UInt32, isAssetLock: Bool
+    ) -> (netAmount: Int64, direction: UInt32)? {
+        func total(_ amounts: [UInt64]) -> Int64? {
+            var sum: Int64 = 0
+            for amount in amounts {
+                guard let value = Int64(exactly: amount) else { return nil }
+                let addition = sum.addingReportingOverflow(value)
+                guard !addition.overflow else { return nil }
+                sum = addition.partialValue
+            }
+            return sum
+        }
+        guard let received = total(ownedOutputAmounts), let spent = total(inputs.map(\.amount)) else {
+            return nil
+        }
+        // Same rule as Rust (`platform_wallet::changeset::wallet_direction`):
+        // internal only when nothing leaves the wallet and something stays in
+        // it, or an asset lock burns into Platform. Both sides test one table.
+        let direction: UInt32
+        if previousDirection == CoreDirectionCode.coinJoin { direction = CoreDirectionCode.coinJoin }
+        else if inputs.isEmpty { direction = CoreDirectionCode.incoming }
+        else if allOutputsOwned && (!ownedOutputAmounts.isEmpty || isAssetLock) {
+            direction = CoreDirectionCode.internalTransfer
+        } else { direction = CoreDirectionCode.outgoing }
+        return (received - spent, direction)
+    }
+
     public var directionName: String {
         switch direction {
-        case 0: return "Incoming"
-        case 1: return "Outgoing"
-        case 2: return "Internal"
-        case 3: return "CoinJoin"
+        case CoreDirectionCode.incoming: return "Incoming"
+        case CoreDirectionCode.outgoing: return "Outgoing"
+        case CoreDirectionCode.internalTransfer: return "Internal"
+        case CoreDirectionCode.coinJoin: return "CoinJoin"
         default: return "Unknown"
         }
     }
@@ -337,10 +446,17 @@ public final class PersistentTransaction {
     }
 
     public var formattedAmount: String {
-        let dash = Double(abs(netAmount)) / 100_000_000.0
-        let sign = netAmount >= 0 ? "+" : "-"
-        return String(format: "%@%.8f DASH", sign, dash)
+        Self.format(duffs: netAmount)
     }
+}
+
+/// Wire values of `PersistentTransaction.direction`, matching `directionName`
+/// and the FFI's `TransactionDirection` discriminants.
+public enum CoreDirectionCode {
+    public static let incoming: UInt32 = 0
+    public static let outgoing: UInt32 = 1
+    public static let internalTransfer: UInt32 = 2
+    public static let coinJoin: UInt32 = 3
 }
 
 /// Typed mirror of Rust's

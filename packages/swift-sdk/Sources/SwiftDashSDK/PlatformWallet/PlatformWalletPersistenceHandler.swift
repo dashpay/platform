@@ -105,6 +105,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return wallet?.walletId
     }
 
+    /// Contact watch-only TXOs do not belong to the wallet tracking their addresses.
+    static func isWalletOwnedTxo(_ txo: PersistentTxo) -> Bool {
+        resolvedWalletId(of: txo) != nil
+            && txo.account?.accountType != dashpayExternalAccountTypeTag
+            && txo.coreAddress?.account?.accountType != dashpayExternalAccountTypeTag
+    }
+
+    /// Network of the account's wallet, read through the same Optional cast
+    /// as `resolvedWalletId(of:)`.
+    static func walletNetwork(of account: PersistentAccount?) -> Network? {
+        let wallet: PersistentWallet? = account?.wallet
+        return wallet?.network
+    }
+
     static func walletOwnsTransaction(
         walletId: Data,
         transaction: PersistentTransaction
@@ -246,6 +260,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var coreAddressesByAddress: [String: PersistentCoreAddress] = [:]
     }
     private var roundIndex: ChangesetRoundIndex?
+    private var accountingDirty: [Data: PersistentTransaction] = [:]
     /// Number of persistence rounds committed by this handler, read and
     /// compared on `serialQueue`. The store reconcile classifies rows off
     /// this queue and applies the verdicts on it; a round committed in
@@ -411,6 +426,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 error: error
             )
             backgroundContext.rollback()
+            // Rows staged by the failed save are gone; never reconcile them.
+            accountingDirty.removeAll()
         }
     }
 
@@ -2538,7 +2555,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.hasBlockPosition = tx.has_block_position
         let blockHashBytes = hashData(tx.block_hash)
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
-        record.direction = tx.direction
+        // A context-only recovery record has zero accounting; a funded asset lock burns Core value.
+        // A stored debit is itself the proof we funded it: its inputs may not be linked yet.
+        let preserveLockAccounting = tx.transaction_type_kind == TransactionTypeKind.assetLock.rawValue
+            && tx.net_amount == 0 && !tx.has_fee
+            && record.netAmount < 0
+        if !preserveLockAccounting { record.direction = tx.direction }
         if let typeName = tx.transaction_type {
             record.transactionType = String(cString: typeName)
         }
@@ -2560,8 +2582,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.providerVotingKeyHash = tx.has_provider_voting_key_hash
             ? withUnsafeBytes(of: tx.provider_voting_key_hash) { Data($0) }
             : nil
-        record.netAmount = tx.net_amount
-        record.fee = tx.has_fee ? tx.fee : nil
+        if !preserveLockAccounting {
+            record.netAmount = tx.net_amount
+            record.fee = tx.has_fee ? tx.fee : nil
+        }
+        accountingDirty[record.txid] = record
         if let labelPtr = tx.label {
             record.label = String(cString: labelPtr)
         }
@@ -2905,6 +2930,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// (`reconcileHealMissingTxos`), so both writers honour the same
     /// tombstone precedence and spender-adoption rules.
     private func drainPendingInputs(into record: PersistentTxo, resolvedWalletId: Data) {
+        if let parent = record.transaction { accountingDirty[parent.txid] = parent }
+        if let spender = record.spendingTransaction { accountingDirty[spender.txid] = spender }
         let pendingRows = pendingInputRows(outpoint: record.outpoint)
         if !pendingRows.isEmpty {
             // A tombstone is not an observation — it is a sweep's settled
@@ -3037,7 +3064,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         spender: PersistentTransaction,
         inputIndex: UInt32?
     ) {
+        accountingDirty[spender.txid] = spender
         let currentSpender = txo.spendingTransaction
+        if let currentSpender { accountingDirty[currentSpender.txid] = currentSpender }
         let verdict = Self.reconcileSpendObservation(
             currentSpenderTxid: currentSpender?.txid,
             currentSpenderContext: currentSpender?.context,
@@ -3280,6 +3309,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             self.inChangeset = true
             self.roundUtxoCreditVerdicts = [:]
             self.roundUtxoCreditTally = UtxoCreditVerdictTally()
+            // Out-of-round writers (heal paths, deferred backfills) stage
+            // entries too; they are not this round's to reconcile and may
+            // point at rows a failed save rolled back. Load-time accounting
+            // repairs whatever they touched.
+            self.accountingDirty.removeAll()
             SDKLogger.event(
                 "persistence_changeset_started",
                 category: .persistence,
@@ -3366,6 +3400,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 self.roundUtxoCreditVerdicts = [:]
                 self.roundUtxoCreditTally = UtxoCreditVerdictTally()
                 self.roundIndex = nil
+                self.accountingDirty.removeAll()
                 self.roundAdvancedFinalityBoundary = false
                 self.inChangeset = false
                 self.drainDeferredBackfills()
@@ -3407,6 +3442,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // `collectFinalizedSweptTombstones` for why not earlier.
                 if roundAdvancedFinalityBoundary {
                     collectFinalizedSweptTombstones(walletId: walletId)
+                }
+                // Display-only accounting: a failure here must not fail the
+                // round, and is reported under its own event, not save_failed.
+                // Recomputed values that did land are consistent on their own.
+                // TODO(test-round-accounting-failure): cover this catch with a
+                // FetchFaultInjector test; pinning which read faults needs a Swift run.
+                do {
+                    try reconcileTransactionAccounting(Array(accountingDirty.values))
+                } catch {
+                    SDKLogger.event(
+                        "persistence_transaction_accounting_failed", category: .persistence, severity: .error,
+                        fields: ["phase": .publicText("round"), "wallet_reference": .reference(walletId)],
+                        error: error
+                    )
                 }
                 do {
                     try backgroundContext.save()
@@ -6788,6 +6837,72 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return txids
     }
 
+    /// Repair only fully resolved spends; missing prevouts are not evidence of external ownership.
+    func reconcileTransactionAccounting(
+        _ transactions: [PersistentTransaction], txos: [Data: PersistentTxo]? = nil,
+        addresses: [String: PersistentCoreAddress]? = nil
+    ) throws {
+        for transaction in transactions where !transaction.isDeleted {
+            guard let transactionNetwork = network
+                ?? Self.walletNetwork(of: transaction.involvedAccounts.first)
+                ?? Self.walletNetwork(of: transaction.inputs.first?.account)
+                ?? Self.walletNetwork(of: transaction.outputs.first?.account),
+                let decoded = try? TransactionDecoder.decode(
+                    transaction.transactionData, network: transactionNetwork
+                ), !decoded.inputs.isEmpty else { continue }
+            var inputs: [PersistentTxo] = []
+            var complete = true
+            for input in decoded.inputs {
+                let key = PersistentTxo.makeOutpoint(txid: input.prevTxid, vout: input.prevVout)
+                let row: PersistentTxo?
+                if let txos { row = txos[key] }
+                else { row = try fetchTxoRowChecked(outpoint: key) }
+                guard let row, !row.isDeleted, Self.isWalletOwnedTxo(row) else {
+                    complete = false
+                    break
+                }
+                inputs.append(row)
+            }
+            guard complete else { continue }
+            var amounts: [UInt64] = []
+            var allOutputsOwned = true
+            let ownedVouts = Set(transaction.outputs.filter { !$0.isDeleted && Self.isWalletOwnedTxo($0) }.map(\.vout))
+            // An address-matched output with no linked TXO carries no wallet of
+            // its own, so it counts only for the spending wallets: another local
+            // wallet's credit must not hide inside the sender's scalar.
+            let spendingWallets = Set(inputs.compactMap { Self.resolvedWalletId(of: $0) })
+            for (index, output) in decoded.outputs.enumerated() {
+                // OP_RETURN burns (including asset locks) are not spendable Core outputs.
+                if output.isOpReturn { continue }
+                var belongs = ownedVouts.contains(UInt32(index))
+                if !belongs, let address = output.address {
+                    let descriptor = FetchDescriptor<PersistentCoreAddress>(predicate: #Predicate { $0.address == address })
+                    let owner: PersistentCoreAddress?
+                    if let cached = roundIndex?.coreAddressesByAddress[address] { owner = cached }
+                    else if let addresses { owner = addresses[address] }
+                    else { owner = try modelFetcher.fetch(descriptor, in: backgroundContext).first }
+                    if let account = owner?.account, account.accountType != Self.dashpayExternalAccountTypeTag {
+                        let ownerWallet: PersistentWallet? = account.wallet
+                        if let ownerWallet, spendingWallets.contains(ownerWallet.walletId) {
+                            belongs = true
+                        }
+                    }
+                }
+                if belongs { amounts.append(output.valueDuffs) }
+                else { allOutputsOwned = false }
+            }
+            if let accounting = PersistentTransaction.reconciledAccounting(
+                inputs: inputs, ownedOutputAmounts: amounts, allOutputsOwned: allOutputsOwned,
+                previousDirection: transaction.typedKind == .coinJoin
+                    ? CoreDirectionCode.coinJoin : transaction.direction,
+                isAssetLock: transaction.isAssetLock
+            ) {
+                transaction.netAmount = accounting.netAmount
+                transaction.direction = accounting.direction
+            }
+        }
+    }
+
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         SDKLogger.event(
@@ -6832,6 +6947,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 error: error
             )
             return (nil, 0, true)
+        }
+        // Mid-round the context holds another round's staged writes: saving
+        // would commit half of it and rolling back would silently drop it.
+        // That round reconciles its own dirty rows; the next load repairs the rest.
+        // TODO(persist-accounting-backfill-marker): this pass re-reads all
+        // history on every launch; a persisted completion marker needs a
+        // SwiftData shape change (a new live schema version) or a side
+        // channel, which is a product decision.
+        if !inChangeset {
+            do {
+                let walletIds = Set(wallets.map(\.walletId))
+                let transactions = try modelFetcher.fetch(FetchDescriptor<PersistentTransaction>(), in: backgroundContext)
+                    .filter { row in
+                        walletIds.contains { Self.walletOwnsTransaction(walletId: $0, transaction: row) }
+                    }
+                let txos = try modelFetcher.fetch(FetchDescriptor<PersistentTxo>(), in: backgroundContext)
+                // One read instead of one per unlinked output.
+                let addresses = try modelFetcher.fetch(FetchDescriptor<PersistentCoreAddress>(), in: backgroundContext)
+                try reconcileTransactionAccounting(
+                    transactions,
+                    // Never trap on a duplicate outpoint; a live row wins over a deleted one.
+                    txos: Dictionary(txos.map { ($0.outpoint, $0) }, uniquingKeysWith: { kept, other in
+                        kept.isDeleted ? other : kept
+                    }),
+                    addresses: Dictionary(addresses.map { ($0.address, $0) }, uniquingKeysWith: { first, _ in first })
+                )
+                try backgroundContext.save()
+            } catch {
+                // Display-only accounting must never block restoring wallets:
+                // drop this pass's edits and restore on the stored values.
+                backgroundContext.rollback()
+                SDKLogger.event(
+                    "persistence_transaction_accounting_failed", category: .persistence, severity: .error,
+                    fields: ["phase": .publicText("load")], error: error
+                )
+            }
         }
         let restorable = wallets.filter { wallet in
             wallet.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }

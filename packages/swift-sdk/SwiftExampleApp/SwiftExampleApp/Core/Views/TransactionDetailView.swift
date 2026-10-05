@@ -3,36 +3,29 @@ import SwiftDashSDK
 
 struct TransactionDetailView: View {
     let transaction: PersistentTransaction
-    /// Override amount for asset-lock txs. The wallet's `netAmount`
-    /// shows ~0 for these (credit output is structurally self-owned),
-    /// so the list view passes the linked
-    /// `PersistentAssetLock.amountDuffs`. `nil` for non-asset-lock
-    /// rows OR consumed asset locks whose tracking row was cleaned
-    /// up after successful identity registration.
+    var walletId: Data? = nil
+    /// `nil` while this wallet's amount is unresolved — the same state the
+    /// amount label shows as "Amount unavailable", so fee and amount agree.
+    private var netAmount: Int64? { transaction.displayNetAmount(for: walletId) }
+    private var direction: UInt32 { transaction.displayDirectionCode(for: walletId) }
+    /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
 
-    /// Amount label rendered prominently at the top of the sheet.
-    /// Same precedence rule as the row: asset-lock duffs when we
-    /// have them, else an explicit "amount unknown" label for the
-    /// historical-asset-lock case (rather than the misleading
-    /// `+0.00000000 DASH` from `transaction.formattedAmount`).
-    /// `nil` for a payload-only provider special tx — a ProRegTx
-    /// observed via the owner/voting keys moves no wallet balance,
-    /// and `+0.00000000 DASH` reads as a broken zero-value receive.
+    /// Show the lock's funding amount, or the wallet's Core value movement for ordinary transactions.
     private var displayAmount: String? {
         if transaction.isAssetLock {
             if let duffs = assetLockAmountDuffs {
                 let dash = Double(duffs) / 100_000_000.0
                 return String(format: "-%.8f DASH", dash)
             }
-            return "Asset Lock (amount unknown)"
+            return "Asset Lock (amount unavailable)"
         }
-        if transaction.isProviderSpecial && transaction.netAmount == 0 {
+        if transaction.isProviderSpecial && netAmount == 0 {
             return nil
         }
-        return transaction.formattedAmount
+        return transaction.displayFormattedAmount(for: walletId)
     }
 
     private var typeDescription: String {
@@ -42,11 +35,13 @@ struct TransactionDetailView: View {
             || transaction.isProviderSpecial {
             return transaction.displayDirection
         }
-        switch transaction.netAmount {
-        case let amount where amount > 0:
+        switch direction {
+        case CoreDirectionCode.incoming:
             return "Received"
-        case let amount where amount < 0:
+        case CoreDirectionCode.outgoing:
             return "Sent"
+        case CoreDirectionCode.coinJoin:
+            return "CoinJoin"
         default:
             return "Self-Transfer"
         }
@@ -56,14 +51,7 @@ struct TransactionDetailView: View {
         if transaction.isAssetLock { return "lock.fill" }
         if transaction.isAssetUnlock { return "lock.open.fill" }
         if transaction.isProviderSpecial { return "server.rack" }
-        switch transaction.netAmount {
-        case let amount where amount > 0:
-            return "arrow.down.circle.fill"
-        case let amount where amount < 0:
-            return "arrow.up.circle.fill"
-        default:
-            return "arrow.triangle.2.circlepath"
-        }
+        return TransactionDirectionStyle.icon(for: direction)
     }
 
     private var typeColor: Color {
@@ -73,14 +61,7 @@ struct TransactionDetailView: View {
         if transaction.isProviderSpecial {
             return .orange
         }
-        switch transaction.netAmount {
-        case let amount where amount > 0:
-            return .green
-        case let amount where amount < 0:
-            return .red
-        default:
-            return .blue
-        }
+        return TransactionDirectionStyle.color(for: direction)
     }
 
     private var isConfirmed: Bool {
@@ -208,7 +189,7 @@ struct TransactionDetailView: View {
                             )
                         }
 
-                        if let fee = formattedFee, transaction.netAmount < 0 {
+                        if let fee = formattedFee, let amount = netAmount, amount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee

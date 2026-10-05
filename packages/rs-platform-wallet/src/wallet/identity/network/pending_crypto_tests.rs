@@ -57,7 +57,7 @@ pub(super) async fn fixture() -> (
     let manager = crate::PlatformWalletManager::new(
         Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
         backend.clone(),
-        Arc::new(NoopEvents),
+        vec![Arc::new(NoopEvents)],
     );
     let wallet = manager
         .create_wallet_from_seed_bytes(

@@ -12,7 +12,7 @@ use crate::PlatformWalletError;
 mod fund_from_asset_lock;
 pub(crate) mod provider;
 mod sync;
-mod transfer;
+pub mod transfer;
 mod wallet;
 mod withdrawal;
 

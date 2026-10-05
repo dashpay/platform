@@ -843,7 +843,7 @@ mod idempotent_load_tests {
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(persister),
-            event_handler,
+            vec![event_handler],
         ))
     }
 
@@ -1138,7 +1138,7 @@ mod idempotent_load_tests {
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(persister),
-            event_handler,
+            vec![event_handler],
         ))
     }
 
@@ -1258,7 +1258,7 @@ mod idempotent_load_tests {
                 wallet: ctx.wallet,
                 managed: ctx.managed_wallet,
             }),
-            event_handler,
+            vec![event_handler],
         ));
 
         let result = manager.load_from_persistor().await;
@@ -1382,7 +1382,7 @@ mod tests {
     ) -> PlatformWalletManager<P> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
-        PlatformWalletManager::new(sdk, persister, handler)
+        PlatformWalletManager::new(sdk, persister, vec![handler])
     }
 
     #[tokio::test]

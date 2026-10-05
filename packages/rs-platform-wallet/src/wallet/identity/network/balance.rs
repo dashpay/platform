@@ -175,8 +175,11 @@ mod tests {
             .await
             .unwrap();
         let backend = Arc::new(BalancePersister::default());
-        let manager =
-            crate::PlatformWalletManager::new(Arc::new(sdk), backend.clone(), Arc::new(NoopEvents));
+        let manager = crate::PlatformWalletManager::new(
+            Arc::new(sdk),
+            backend.clone(),
+            vec![Arc::new(NoopEvents)],
+        );
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 key_wallet::Network::Testnet,
