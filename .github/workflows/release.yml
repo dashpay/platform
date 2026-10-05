@@ -353,16 +353,15 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      # `npm publish` in release-npm returns before the registry makes the new
-      # versions resolvable; pack_dashmate.sh installs them from the registry.
-      - name: Wait for published NPM packages to become resolvable
-        run: "${GITHUB_WORKSPACE}/scripts/wait_for_npm_packages.sh"
-
       - name: Create package
         env:
           # Packaging executes dependency and lifecycle scripts, including
           # output from the persistent builder. Signing happens in a new job.
           DASHMATE_UNSIGNED: 'true'
+          # Install the workspace packages from the tarballs release-npm
+          # published, not from the registry: npm can take many minutes to
+          # serve a version it has just accepted.
+          DASHMATE_NPM_TARBALLS_DIR: ${{ github.workspace }}/npm-packages
         run: |
           "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 

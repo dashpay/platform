@@ -120,6 +120,24 @@ impl StateTransition {
                 )?
                 .into()
             }
+            StateTransitionType::TokenShieldedTransferWithShieldedFee => {
+                TokenShieldedTransferWithShieldedFeeTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::TokenUnshieldWithShieldedFee => {
+                TokenUnshieldWithShieldedFeeTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
+            StateTransitionType::TokenPurchaseFromShieldedPool => {
+                TokenPurchaseFromShieldedPoolTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
             StateTransitionType::IdentityKeyLimitsUpdate => {
                 IdentityKeyLimitsUpdateTransition::deserialize_from_bytes_untrusted_exact(bytes)?
                     .into()

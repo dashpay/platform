@@ -479,7 +479,7 @@ pub(super) mod tests {
                     "properties": {
                         "text": { "type": "string", "maxLength": 50, "position": 0 },
                     },
-                    "required": ["$updatedAt"],
+                    "required": ["$createdAt", "$updatedAt"],
                     "additionalProperties": false,
                     "moderatorAbilities": {
                         "delete": true,
