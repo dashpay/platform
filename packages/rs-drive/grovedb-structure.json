@@ -6156,7 +6156,7 @@
       }
     },
     "tokens.shielded_pools.token": {
-      "origin": "fixture token_shielded_pool@14",
+      "origin": "fixture token_shielded_pool@15",
       "tree": {
         "hex": "60",
         "left": {
