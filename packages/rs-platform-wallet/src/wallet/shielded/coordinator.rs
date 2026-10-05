@@ -89,6 +89,7 @@ use super::store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
     SubwalletId,
 };
+use super::sync::{NoteSyncOutcome, StoreEpoch};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
@@ -263,7 +264,34 @@ pub struct NetworkShieldedCoordinator {
     /// counter before the load and re-reading it inside the transaction
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
+
+    /// Invalidates in-flight sync passes whose snapshot a lifecycle
+    /// mutation of the store just made stale. A pass releases the store
+    /// lock while it waits on the network, so every store mutation that
+    /// would conflict with a pass's eventual commit — subwallet purges
+    /// (unregister, account-dropping re-bind) and host snapshot restores
+    /// (that wallet's generation), Clear (every pass) — bumps it under its
+    /// store write guard; the pass then abandons its commit and
+    /// [`sync`](Self::sync) retries it from a fresh registry snapshot. See
+    /// [`StoreEpoch`].
+    store_epoch: StoreEpoch,
+
+    /// Serializes [`sync`](Self::sync) passes on this coordinator. The
+    /// manager already runs one pass at a time, but a pass no longer
+    /// holds the store lock for its duration, so this is what keeps the
+    /// pass the shared tree's only appender (a second concurrent pass
+    /// would otherwise only be caught, and abandoned, by the leaf-count
+    /// check). Taken before any store lock; nothing takes it the other way
+    /// round.
+    sync_pass: tokio::sync::Mutex<()>,
 }
+
+/// Times [`NetworkShieldedCoordinator::sync`] re-runs a note scan that a
+/// concurrent lifecycle change superseded before giving up on the pass.
+/// Each retry re-snapshots the registry, so it scans for exactly the
+/// wallets bound by then; supersession needs a lifecycle mutation landing
+/// mid-download, so more than one retry in a row is already unusual.
+const MAX_SUPERSEDED_SYNC_RETRIES: usize = 2;
 
 /// Exclusive handle on one wallet's shielded install transaction,
 /// returned by
@@ -401,6 +429,8 @@ impl NetworkShieldedCoordinator {
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
+            store_epoch: StoreEpoch::default(),
+            sync_pass: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -760,14 +790,16 @@ impl NetworkShieldedCoordinator {
 
         // Purge ONLY the dropped / re-keyed subwallets' store state.
         // Skipped entirely on the identical-registration path (empty
-        // `stale`), which keeps that path free of the store lock — it
-        // must never queue behind an in-flight sync pass (that
-        // blocking, followed by a purge, was the original
-        // wipe-the-pass bug). A changed-set re-bind may block here,
-        // but it only ever touches subwallets the caller explicitly
+        // `stale`), which keeps that path free of the store lock and of
+        // the sync-supersession bump below (an in-flight pass over this
+        // wallet keeps its work). A purge mid-pass followed by the pass's
+        // commit was the original wipe-the-pass bug; now the bump makes
+        // that pass abandon its commit and retry instead. A changed-set
+        // re-bind only ever touches subwallets the caller explicitly
         // dropped; retained accounts are left untouched.
         if !stale.is_empty() {
             let mut store = self.store.write().await;
+            self.store_epoch.bump_wallet(&mut store, wallet_id);
             for (id, _) in stale {
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
@@ -889,7 +921,9 @@ impl NetworkShieldedCoordinator {
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
-        if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+        let mut store = self.store.write().await;
+        self.store_epoch.bump_wallet(&mut store, wallet_id);
+        if let Err(e) = store.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -928,8 +962,9 @@ impl NetworkShieldedCoordinator {
                 return Ok(ShieldedLocalBalanceState::Unbound);
             }
             let Ok(store) = self.store.try_read() else {
-                // A network scan can hold the store writer for minutes. Do not
-                // make store-free lifecycle operations wait behind this read.
+                // The store writer may be busy (a sync pass's append slice or
+                // final commit, a restore, Clear). Do not make store-free
+                // lifecycle operations wait behind this read.
                 drop(install);
                 // Wait only for readiness, then drop the temporary store guard
                 // BEFORE reacquiring lifecycle. Keeping it would invert the
@@ -1034,6 +1069,10 @@ impl NetworkShieldedCoordinator {
         }
 
         let mut store = self.store.write().await;
+        // Set once the first subwallet passes the filters below — the
+        // restore then writes notes and watermarks an in-flight sync pass
+        // over this wallet may have snapshotted (or be about to overwrite).
+        let mut bumped = false;
         for (id, sub) in &snapshot.per_subwallet {
             // Only restore subwallets that are registered on this
             // coordinator — `registered` holds `wallet_id`'s alone, so
@@ -1056,6 +1095,10 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
+            }
+            if !bumped {
+                self.store_epoch.bump_wallet(&mut store, wallet_id);
+                bumped = true;
             }
             // Nullifiers the store already tracks for this subwallet.
             // The in-memory state is always at least as fresh as the
@@ -1119,9 +1162,9 @@ impl NetworkShieldedCoordinator {
                 })?;
             }
             // Watermark restore is advance-only. A snapshot loaded
-            // before an in-flight sync pass (a mid-session re-bind
-            // queues behind the pass's store write lock) carries the
-            // PRE-pass watermark; applying it unconditionally rewinds
+            // before a sync pass committed (a mid-session re-bind that
+            // loaded the host snapshot while the pass was in flight)
+            // carries the PRE-pass watermark; applying it unconditionally rewinds
             // the store below what the pass just scanned and forces a
             // full rescan on every subsequent pass until restart.
             // The store's own value only ever comes from a completed
@@ -1211,6 +1254,10 @@ impl NetworkShieldedCoordinator {
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
+            // Bumped before either reset so a pass that resumes after this
+            // guard drops never appends into (or commits notes against) the
+            // emptied tree, whatever the reset outcome.
+            self.store_epoch.bump_all(&mut store);
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
                 first_err.get_or_insert_with(|| {
@@ -1285,6 +1332,12 @@ impl NetworkShieldedCoordinator {
         // told the clear failed, keeps its own state.
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
+        // A pass that watched the epoch after the bump above but read the
+        // registry before it was cleared would cold-rebuild the purged
+        // store for wallets that are no longer bound (their changesets then
+        // dropped for want of a persister). Bump again now that they are
+        // gone.
+        self.store_epoch.bump_all(&mut self.store.write().await);
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
@@ -1339,13 +1392,16 @@ impl NetworkShieldedCoordinator {
             return Self::cooldown_skip_summary(self).await;
         }
 
+        // One pass at a time — see the `sync_pass` field doc.
+        let _pass = self.sync_pass.lock().await;
+
         // Snapshot the flat subwallet registry. This Vec is both
         // the IVK fan-out for sync_notes_across and the
-        // identity-map for per-wallet summary demux below.
-        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = {
-            let accounts = self.accounts.read().await;
-            accounts.iter().map(|(id, v)| (*id, v.clone())).collect()
-        };
+        // identity-map for per-wallet summary demux below. The store
+        // epoch is watched FIRST — see `StoreEpoch` for why the order
+        // matters.
+        let mut epoch = self.store_epoch.watch();
+        let mut subwallets = self.subwallet_snapshot().await;
 
         let mut summary = ShieldedSyncPassSummary::default();
         if subwallets.is_empty() {
@@ -1378,17 +1434,47 @@ impl NetworkShieldedCoordinator {
         // Second, distinct signal: commitments committed to the local
         // tree as the interleaved consumer drains the SDK stream.
         let on_tree_progress = self.tree_progress_handler();
-        let notes = match super::sync::sync_notes_across(
-            &self.sdk,
-            &self.store,
-            &subwallets,
-            on_progress.as_ref(),
-            on_tree_progress.as_ref(),
-        )
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => return self.fail_all_wallets(&subwallets, &e),
+        let mut superseded_retries = 0;
+        let notes = loop {
+            match super::sync::sync_notes_across(
+                &self.sdk,
+                &self.store,
+                &epoch,
+                &subwallets,
+                on_progress.as_ref(),
+                on_tree_progress.as_ref(),
+            )
+            .await
+            {
+                Ok(NoteSyncOutcome::Completed(r)) => break r,
+                // A lifecycle change (wallet removed, accounts re-keyed,
+                // snapshot restored, Clear) landed mid-download and
+                // invalidated the scan's snapshot before it committed
+                // anything but tree leaves. Re-snapshot the registry so the
+                // retry scans exactly the wallets bound now — never one the
+                // change just purged. The pre-scan stranded-release snapshot
+                // stays valid: the retry's scan still runs after it.
+                Ok(NoteSyncOutcome::Superseded)
+                    if superseded_retries < MAX_SUPERSEDED_SYNC_RETRIES =>
+                {
+                    superseded_retries += 1;
+                    epoch = self.store_epoch.watch();
+                    subwallets = self.subwallet_snapshot().await;
+                    if subwallets.is_empty() {
+                        summary.sync_unix_seconds = Self::now_unix();
+                        return summary;
+                    }
+                }
+                Ok(NoteSyncOutcome::Superseded) => {
+                    let e = PlatformWalletError::ShieldedSyncFailed(
+                        "shielded sync was repeatedly superseded by concurrent wallet \
+                         lifecycle changes; it will run again on the next pass"
+                            .to_string(),
+                    );
+                    return self.fail_all_wallets(&subwallets, &e);
+                }
+                Err(e) => return self.fail_all_wallets(&subwallets, &e),
+            }
         };
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
@@ -1525,6 +1611,12 @@ impl NetworkShieldedCoordinator {
             build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
         summary
+    }
+
+    /// Snapshot of every registered subwallet and its viewing keys.
+    async fn subwallet_snapshot(&self) -> Vec<(SubwalletId, AccountViewingKeys)> {
+        let accounts = self.accounts.read().await;
+        accounts.iter().map(|(id, v)| (*id, v.clone())).collect()
     }
 
     /// Build a `ShieldedSyncPassSummary` where every registered
@@ -2955,8 +3047,8 @@ mod tests {
 
     /// Regression guard for the mid-session re-bind stomp: a
     /// `restore_for_wallet` call whose snapshot predates a completed
-    /// sync pass (the exact state a re-bind queued behind the pass's
-    /// store write lock applies) must not rewind the watermark and
+    /// sync pass (the exact state a re-bind that loaded its snapshot
+    /// while the pass was in flight applies) must not rewind the watermark and
     /// must not overwrite notes the store already tracks.
     ///
     /// Observed on iOS (rc.2, testnet): pass discovers a note and
@@ -3061,6 +3153,99 @@ mod tests {
         );
         assert_eq!(unspent[0].nullifier, new_nf);
         assert_eq!(store.get_all_notes(id).unwrap().len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every lifecycle mutation that would conflict with an in-flight sync
+    /// pass's commit invalidates that pass's snapshot (so it is superseded
+    /// and retried rather than writing over the change). Store-free
+    /// operations — above all the idempotent re-bind fast path — and changes
+    /// scoped to a wallet the pass isn't scanning leave it alone.
+    #[tokio::test]
+    async fn should_invalidate_in_flight_sync_snapshots_on_conflicting_lifecycle_changes() {
+        use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+
+        let dir = temp_dir("store_epoch");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let other_wallet: WalletId = [0x22; 32];
+        let views = |account| {
+            OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, account)
+                .expect("derive viewing keys")
+                .viewing_keys()
+        };
+        let coordinator = &coordinator;
+        let register = |wallet: WalletId, accounts: &[u32]| {
+            let account_views: BTreeMap<u32, AccountViewingKeys> =
+                accounts.iter().map(|a| (*a, views(*a))).collect();
+            coordinator.register_wallet(
+                wallet,
+                account_views,
+                WalletPersister::new(wallet, Arc::new(NoPlatformPersistence)),
+            )
+        };
+        let restore = |wallet: WalletId, account: u32| async move {
+            let snapshot = ShieldedSyncStartState {
+                per_subwallet: BTreeMap::from([(
+                    SubwalletId::new(wallet, account),
+                    ShieldedSubwalletStartState {
+                        has_sync_state: true,
+                        last_synced_index: 4096,
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            };
+            coordinator.restore_for_wallet(wallet, &snapshot).await
+        };
+        // What an in-flight pass over `wallet_id`'s account 0 depends on.
+        let pass = vec![(SubwalletId::new(wallet_id, 0), views(0))];
+
+        let watch = coordinator.store_epoch.watch();
+        register(wallet_id, &[0]).await.unwrap();
+        assert!(
+            watch.still_current(&pass),
+            "identical re-bind stays store-free"
+        );
+        register(wallet_id, &[0, 1]).await.unwrap();
+        assert!(
+            watch.still_current(&pass),
+            "adding an account purges nothing"
+        );
+        restore(wallet_id, 7).await.unwrap();
+        assert!(
+            watch.still_current(&pass),
+            "a restore that writes nothing (unregistered account) changes nothing"
+        );
+        register(other_wallet, &[0]).await.unwrap();
+        restore(other_wallet, 0).await.unwrap();
+        coordinator.unregister_wallet(other_wallet).await;
+        assert!(
+            watch.still_current(&pass),
+            "another wallet's restore / removal doesn't touch this pass's state"
+        );
+
+        register(wallet_id, &[0]).await.unwrap();
+        assert!(
+            !watch.still_current(&pass),
+            "dropping an account purges its state"
+        );
+
+        let watch = coordinator.store_epoch.watch();
+        restore(wallet_id, 0).await.unwrap();
+        assert!(!watch.still_current(&pass), "a restore writes watermarks");
+
+        let watch = coordinator.store_epoch.watch();
+        coordinator.unregister_wallet(wallet_id).await;
+        assert!(!watch.still_current(&pass));
+
+        let watch = coordinator.store_epoch.watch();
+        coordinator.clear().await.unwrap();
+        assert!(
+            !watch.still_current(&[]),
+            "Clear resets the shared tree under every pass"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

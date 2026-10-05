@@ -411,6 +411,12 @@ pub trait ShieldedStore: Send + Sync {
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error>;
 
     /// Create a tree checkpoint at the given identifier.
+    ///
+    /// Identifiers must be strictly increasing: an id that is not above
+    /// the newest checkpoint's is a successful no-op (shardtree's
+    /// semantics). The sync path relies on this — it checkpoints at the
+    /// tree size on every committing pass, which is a no-op whenever the
+    /// tree hasn't grown since the last checkpoint.
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error>;
 
     /// Return the current tree root (Sinsemilla anchor, 32 bytes).
@@ -1069,7 +1075,9 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
-        self.checkpoints.push(checkpoint_id);
+        if self.checkpoints.last() < Some(&checkpoint_id) {
+            self.checkpoints.push(checkpoint_id);
+        }
         Ok(())
     }
 
