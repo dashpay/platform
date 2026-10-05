@@ -15,8 +15,8 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use grovedb_commitment_tree::{
     redpallas, Action, ActionFromPartsError, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
-    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, ProofSizeEnforcement,
-    TransmittedNoteCiphertext, ValueCommitment, VerifyingKey,
+    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, TransmittedNoteCiphertext,
+    ValueCommitment, VerifyingKey,
 };
 use std::sync::OnceLock;
 
@@ -189,8 +189,8 @@ pub fn reconstruct_and_verify_bundle(
         .ok_or_else(|| InvalidShieldedProofError::new("bundle has no actions".to_string()))?;
 
     // Reconstruct the `Bundle<Authorized>` (`try_from_parts` is orchard 0.14's only
-    // public constructor for it). `ProofSizeEnforcement::Strict` rejects a proof
-    // whose byte-length is not canonical for the action count — anti-malleability.
+    // public constructor for it). It always rejects a proof whose byte-length is not
+    // canonical for the action count — anti-malleability (dashpay/orchard#11).
     // Spend-auth signatures were attached per-action in `Action::from_parts` above,
     // so action↔signature pairing is preserved with no separate list to reorder.
     let bundle = Bundle::try_from_parts(
@@ -199,7 +199,6 @@ pub fn reconstruct_and_verify_bundle(
         value_balance,
         orchard_anchor,
         authorized,
-        ProofSizeEnforcement::Strict,
     )
     .map_err(|e| {
         InvalidShieldedProofError::new(format!("failed to reconstruct authorized bundle: {e}"))
@@ -655,20 +654,17 @@ mod tests {
             );
         }
 
-        /// `Bundle::try_from_parts(.., ProofSizeEnforcement::Strict)` ->
-        /// `BundleError::NonCanonicalProofSize`.
+        /// `Bundle::try_from_parts` -> `BundleError::NonCanonicalProofSize`.
         ///
         /// Pins the proof-size policy. The base action is valid, so reconstruction
         /// clears `Action::from_parts` and reaches `try_from_parts`; the proof
-        /// byte-length (100) is not canonical for a single-action bundle, so
-        /// `Strict` rejects it. This is what distinguishes `Strict` from
-        /// `Unenforced`: under `Unenforced` the bundle would build and this test
-        /// would fail. The positive round-trip tests use canonical proofs and pass
-        /// under either setting, so without this test a refactor could silently flip
-        /// the policy. A 32-byte zero anchor (field element 0) is used so anchor
-        /// decoding succeeds and we reach the proof-size check.
+        /// byte-length (100) is not canonical for a single-action bundle, so it is
+        /// rejected. The positive round-trip tests use canonical proofs and would
+        /// pass without the check, so without this test a dependency change could
+        /// silently drop it. A 32-byte zero anchor (field element 0) is used so
+        /// anchor decoding succeeds and we reach the proof-size check.
         #[test]
-        fn test_noncanonical_proof_size_rejected_under_strict() {
+        fn test_noncanonical_proof_size_rejected() {
             let action = valid_base_serialized_action();
             let result = reconstruct_and_verify_bundle(
                 &[action],
@@ -685,7 +681,7 @@ mod tests {
             assert!(
                 err.message()
                     .contains("failed to reconstruct authorized bundle"),
-                "expected NonCanonicalProofSize rejection from try_from_parts(Strict), got: {}",
+                "expected NonCanonicalProofSize rejection from try_from_parts, got: {}",
                 err.message()
             );
         }
