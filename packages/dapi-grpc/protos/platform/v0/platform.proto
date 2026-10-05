@@ -4270,7 +4270,9 @@ message SubscribeToStateTransitionsRequest {
     // values follow the getDocuments typing rules; the document type's schema
     // decides each field's type.
     message ActionMatch {
-      Action action = 1;
+      // Required; `optional` so a missing action is rejected rather than read
+      // as CREATE.
+      optional Action action = 1;
       // CREATE and REPLACE: clauses on the document data the transition
       // carries.
       repeated GetDocumentsRequest.WhereClause new_document_where = 2;

@@ -28,6 +28,7 @@ use quick_cache::sync::Cache;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::debug;
 
 /// Heights per `blockchain` page; Tenderdash's own cap.
 pub const META_PAGE: u64 = 20;
@@ -198,8 +199,12 @@ impl BlockSource {
         let Some(block) = block.map_err(ReadMiss::Failed)?.block else {
             return Err(ReadMiss::NotYet);
         };
-        // Results are saved after the block is stored: not available yet.
-        let results = results.map_err(|_| ReadMiss::NotYet)?;
+        // Results are saved after the block is stored: not available yet. Keep the cause, in
+        // case it is not that.
+        let results = results.map_err(|error| {
+            debug!(height, %error, "block results not readable yet");
+            ReadMiss::NotYet
+        })?;
         if block.data.txs.len() != results.txs_results.len() {
             if results.txs_results.is_empty() {
                 return Err(ReadMiss::NotYet);

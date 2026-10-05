@@ -504,3 +504,28 @@ fn should_rebind_document_filters_to_an_updated_contract() {
     filters.rebind_data_contract(contract.clone(), PlatformVersion::latest());
     assert!(matches(&filters, &state_transition).is_some());
 }
+
+#[test]
+fn should_reject_a_wire_action_match_without_its_action() {
+    use dapi_grpc::platform::v0::subscribe_to_state_transitions_request::{
+        document_filter, state_transition_filter, DocumentFilter as ProtoDocumentFilter,
+        StateTransitionFilter as ProtoStateTransitionFilter,
+    };
+    let filter = ProtoStateTransitionFilter {
+        filter: Some(state_transition_filter::Filter::Documents(
+            ProtoDocumentFilter {
+                data_contract_id: id(1).to_vec(),
+                document_type_name: Some("niceDocument".to_string()),
+                actions: vec![document_filter::ActionMatch {
+                    action: None,
+                    ..Default::default()
+                }],
+                batch_owner_id: None,
+            },
+        )),
+    };
+    assert!(matches!(
+        StateTransitionFilter::from_proto(3, filter),
+        Err(SubscriptionFilterError::InvalidFilter { index: 3, .. })
+    ));
+}

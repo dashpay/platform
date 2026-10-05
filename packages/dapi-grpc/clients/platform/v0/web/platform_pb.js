@@ -121126,8 +121126,8 @@ proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilte
  */
 proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getAction();
-  if (f !== 0.0) {
+  f = /** @type {!proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.Action} */ (jspb.Message.getField(message, 1));
+  if (f != null) {
     writer.writeEnum(
       1,
       f
@@ -121181,7 +121181,25 @@ proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilte
  * @return {!proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} returns this
  */
 proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.prototype.setAction = function(value) {
-  return jspb.Message.setProto3EnumField(this, 1, value);
+  return jspb.Message.setField(this, 1, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch} returns this
+ */
+proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.prototype.clearAction = function() {
+  return jspb.Message.setField(this, 1, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.SubscribeToStateTransitionsRequest.DocumentFilter.ActionMatch.prototype.hasAction = function() {
+  return jspb.Message.getField(this, 1) != null;
 };
 
 

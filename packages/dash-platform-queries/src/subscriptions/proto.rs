@@ -144,7 +144,7 @@ fn action_match_to_proto(
         .action
         .ok_or_else(|| Error::Config("a document action match must name its action".to_string()))?;
     Ok(document_filter::ActionMatch {
-        action: action_to_proto(action_kind) as i32,
+        action: Some(action_to_proto(action_kind) as i32),
         new_document_where: action
             .new_document_where
             .iter()
@@ -191,8 +191,11 @@ fn document_filter_from_proto(filter: proto::DocumentFilter) -> Result<DocumentF
 fn action_match_from_proto(
     action: document_filter::ActionMatch,
 ) -> Result<DocumentActionMatch, String> {
-    let action_kind = document_filter::Action::try_from(action.action)
-        .map_err(|_| format!("unknown document action {}", action.action))?;
+    let value = action
+        .action
+        .ok_or_else(|| "every action match must name its action".to_string())?;
+    let action_kind = document_filter::Action::try_from(value)
+        .map_err(|_| format!("unknown document action {value}"))?;
     Ok(DocumentActionMatch {
         action: Some(action_from_proto(action_kind)),
         new_document_where: where_clauses_from_proto(action.new_document_where)?,

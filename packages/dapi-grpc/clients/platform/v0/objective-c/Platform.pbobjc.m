@@ -33825,7 +33825,7 @@ void SetSubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_Operator_p
 
 @implementation SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch
 
-@dynamic action;
+@dynamic hasAction, action;
 @dynamic newDocumentWhereArray, newDocumentWhereArray_Count;
 @dynamic originalDocumentWhereArray, originalDocumentWhereArray_Count;
 @dynamic ownerIdsArray, ownerIdsArray_Count;
@@ -33852,7 +33852,7 @@ typedef struct SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__st
         .number = SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Action,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_, action),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor),
         .dataType = GPBDataTypeEnum,
       },
       {

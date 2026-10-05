@@ -14375,8 +14375,13 @@ typedef GPB_ENUM(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_F
  **/
 GPB_FINAL @interface SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch : GPBMessage
 
+/**
+ * Required; `optional` so a missing action is rejected rather than read
+ * as CREATE.
+ **/
 @property(nonatomic, readwrite) SubscribeToStateTransitionsRequest_DocumentFilter_Action action;
 
+@property(nonatomic, readwrite) BOOL hasAction;
 /**
  * CREATE and REPLACE: clauses on the document data the transition
  * carries.

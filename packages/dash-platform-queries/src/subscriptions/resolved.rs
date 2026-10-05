@@ -96,6 +96,12 @@ impl ResolvedFilters {
     /// Validate `filters` and bind each document filter to its contract, looked up by
     /// `data_contract`. Clause values are brought to their fields' types under
     /// `platform_version`.
+    ///
+    /// The binding is to the contract as given, normally its current version, and changes
+    /// only through [`Self::follow`]. Transitions replayed from before the latest update are
+    /// therefore matched against a newer schema: contract updates are backwards compatible, so
+    /// existing fields compare the same, but a `generatedFrom` property added since is generated
+    /// for them too, so a clause on it can match a transition stored without it.
     pub fn resolve(
         filters: Vec<StateTransitionFilter>,
         data_contract: impl Fn(&Identifier) -> Option<Arc<DataContract>>,

@@ -77,7 +77,10 @@ Filters are evaluated against what a transition itself names, so:
   transition does not name; seller proceeds of a purchase, masternode rewards and other credits
   outside a transition are not seen;
 - shielded senders and recipients are not public;
-- a token transition that only proposes a group action succeeds before the action executes.
+- a token transition that only proposes a group action succeeds before the action executes;
+- document clauses are evaluated against the data contract's current version, followed through
+  updates seen in the stream, so history from before the latest update is read with the newer
+  schema (a property generated from others since then is generated for older documents too).
 
 ## Trust
 

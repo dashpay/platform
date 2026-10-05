@@ -15928,6 +15928,8 @@ export namespace SubscribeToStateTransitionsRequest {
     }
 
     export class ActionMatch extends jspb.Message {
+      hasAction(): boolean;
+      clearAction(): void;
       getAction(): SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap[keyof SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap];
       setAction(value: SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap[keyof SubscribeToStateTransitionsRequest.DocumentFilter.ActionMap]): void;
 

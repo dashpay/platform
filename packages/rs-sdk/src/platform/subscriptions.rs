@@ -104,7 +104,8 @@ impl Sdk {
     /// what the node sends; a contract that does not exist fails the call. The subscription
     /// also follows updates of those contracts, which the node applies to its matching, so both
     /// sides match against the same contract version; those updates are not reported unless
-    /// `filters` asks for them.
+    /// `filters` asks for them. Following takes one of the request's filters, so with document
+    /// filters at most `MAX_FILTERS - 1` filters may be given.
     pub async fn subscribe_to_state_transitions(
         &self,
         mut filters: Vec<StateTransitionFilter>,
@@ -118,8 +119,14 @@ impl Sdk {
                 contracts.insert(*data_contract_id, Arc::new(contract));
             }
         }
-        // Within the request's filter limit; without room the caller's filters go alone.
-        if !data_contract_ids.is_empty() && filters.len() < MAX_FILTERS {
+        if !data_contract_ids.is_empty() {
+            if filters.len() >= MAX_FILTERS {
+                return Err(Error::Config(format!(
+                    "with document filters at most {} filters may be given: one is needed to \
+                     follow updates of their data contracts",
+                    MAX_FILTERS - 1
+                )));
+            }
             filters.push(StateTransitionFilter::DataContracts {
                 data_contract_ids: data_contract_ids.into_iter().collect(),
             });
@@ -169,7 +176,7 @@ impl StateTransitionSubscription {
                     if self.stream_messages > 1 {
                         self.consecutive_failures = 0;
                     }
-                    if let Some(event) = self.accept(response) {
+                    if let Some(event) = self.accept(response)? {
                         return Ok(event);
                     }
                     continue;
@@ -242,16 +249,22 @@ impl StateTransitionSubscription {
         }
     }
 
-    /// The event a response carries, after checking it; `None` for a response to skip.
+    /// The event a response carries, after checking it; `None` for a response to skip. A
+    /// transition the node should not have sent (wrong hash, not matching) is skipped; one this
+    /// SDK cannot judge (a protocol version or transition it does not know) is an error, since
+    /// guessing could report or drop it wrongly: upgrade the SDK.
     fn accept(
         &mut self,
         response: SubscribeToStateTransitionsResponse,
-    ) -> Option<SubscriptionEvent> {
+    ) -> Result<Option<SubscriptionEvent>, Error> {
         let Some(Version::V0(response)) = response.version else {
             tracing::warn!("skipping a state transition subscription response of unknown version");
-            return None;
+            return Ok(None);
         };
-        match response.responses? {
+        let Some(responses) = response.responses else {
+            return Ok(None);
+        };
+        Ok(match responses {
             Responses::Checkpoint(checkpoint) => {
                 self.resume_from = Some(checkpoint.block_height + 1);
                 Some(SubscriptionEvent::Checkpoint {
@@ -265,19 +278,12 @@ impl StateTransitionSubscription {
                         height = matched.block_height,
                         "skipping a state transition whose hash does not match its bytes"
                     );
-                    return None;
+                    return Ok(None);
                 }
-                let state_transition = match StateTransition::deserialize_from_bytes_untrusted(
-                    &matched.state_transition,
-                ) {
-                    Ok(state_transition) => state_transition,
-                    Err(error) => {
-                        tracing::warn!(height = matched.block_height, %error, "skipping a state transition this SDK cannot decode");
-                        return None;
-                    }
-                };
                 let platform_version = PlatformVersion::get(matched.protocol_version)
-                    .unwrap_or_else(|_| PlatformVersion::latest());
+                    .map_err(|e| Error::Protocol(e.into()))?;
+                let state_transition =
+                    StateTransition::deserialize_from_bytes_untrusted(&matched.state_transition)?;
                 let local_match = self.resolved.matches(&state_transition, platform_version);
                 self.resolved.follow(&state_transition, platform_version);
                 let Some(mut local_match) = local_match else {
@@ -285,7 +291,7 @@ impl StateTransitionSubscription {
                         height = matched.block_height,
                         "skipping a state transition the node sent that does not match the filters"
                     );
-                    return None;
+                    return Ok(None);
                 };
                 // Contract updates the subscription follows only for itself are not reported.
                 let caller_filters = self.caller_filters as u32;
@@ -293,7 +299,7 @@ impl StateTransitionSubscription {
                     .matched_filters
                     .retain(|index| *index < caller_filters);
                 if local_match.matched_filters.is_empty() {
-                    return None;
+                    return Ok(None);
                 }
                 Some(SubscriptionEvent::StateTransition(Box::new(
                     StateTransitionEvent {
@@ -308,7 +314,7 @@ impl StateTransitionSubscription {
                     },
                 )))
             }
-        }
+        })
     }
 }
 
@@ -345,6 +351,141 @@ fn status_error(status: Status) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::subscribe_to_state_transitions_response_v0::{
+        Checkpoint, StateTransitionMatch,
+    };
+    use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::SubscribeToStateTransitionsResponseV0;
+    use dash_platform_queries::subscriptions::Role;
+    use dpp::prelude::Identifier;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+
+    /// A subscription to transfers received by identity 7, plus an internal filter on identity
+    /// 9 standing in for the contract-update filter the SDK adds for itself.
+    fn subscription() -> StateTransitionSubscription {
+        let identities = |id: u8| StateTransitionFilter::Identities {
+            identity_ids: vec![Identifier::from([id; 32])],
+            role: Role::Recipient,
+        };
+        let filters = vec![identities(7), identities(9)];
+        let resolved =
+            ResolvedFilters::resolve(filters.clone(), |_| None, PlatformVersion::latest())
+                .expect("filters resolve");
+        StateTransitionSubscription {
+            sdk: Sdk::new_mock(),
+            filters,
+            caller_filters: 1,
+            resolved,
+            stream: None,
+            stream_messages: 0,
+            resume_from: None,
+            consecutive_failures: 0,
+        }
+    }
+
+    fn transfer_to(recipient: u8) -> Vec<u8> {
+        StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0 {
+                identity_id: Identifier::from([1u8; 32]),
+                recipient_id: Identifier::from([recipient; 32]),
+                amount: 10,
+                ..Default::default()
+            },
+        ))
+        .serialize_to_bytes()
+        .expect("serializable")
+    }
+
+    fn response(message: Responses) -> SubscribeToStateTransitionsResponse {
+        SubscribeToStateTransitionsResponse {
+            version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
+                responses: Some(message),
+            })),
+        }
+    }
+
+    fn matched(bytes: Vec<u8>) -> StateTransitionMatch {
+        StateTransitionMatch {
+            block_height: 5,
+            block_time_ms: 1,
+            protocol_version: PlatformVersion::latest().protocol_version,
+            index_in_block: 0,
+            state_transition_hash: sha256::Hash::hash(&bytes).to_byte_array().to_vec(),
+            state_transition: bytes,
+            matched_filters: vec![0],
+            matched_batch_positions: vec![],
+        }
+    }
+
+    #[test]
+    fn should_deliver_a_matching_transition_with_caller_filter_indexes() {
+        let mut subscription = subscription();
+        let event = subscription
+            .accept(response(Responses::StateTransition(matched(transfer_to(
+                7,
+            )))))
+            .expect("accepted");
+        let Some(SubscriptionEvent::StateTransition(event)) = event else {
+            panic!("expected a transition event");
+        };
+        assert_eq!(event.block_height, 5);
+        assert_eq!(event.matched_filters, vec![0]);
+    }
+
+    #[test]
+    fn should_skip_transitions_with_a_wrong_hash_or_not_matching_the_filters() {
+        let mut subscription = subscription();
+        let mut wrong_hash = matched(transfer_to(7));
+        wrong_hash.state_transition_hash = vec![0; 32];
+        assert!(subscription
+            .accept(response(Responses::StateTransition(wrong_hash)))
+            .expect("skipped, not failed")
+            .is_none());
+        assert!(subscription
+            .accept(response(Responses::StateTransition(matched(transfer_to(
+                8
+            )))))
+            .expect("skipped, not failed")
+            .is_none());
+    }
+
+    #[test]
+    fn should_not_report_matches_of_the_internal_contract_update_filter() {
+        let mut subscription = subscription();
+        assert!(subscription
+            .accept(response(Responses::StateTransition(matched(transfer_to(
+                9
+            )))))
+            .expect("skipped, not failed")
+            .is_none());
+    }
+
+    #[test]
+    fn should_fail_on_a_protocol_version_or_transition_this_sdk_does_not_know() {
+        let mut subscription = subscription();
+        let mut unknown_version = matched(transfer_to(7));
+        unknown_version.protocol_version = u32::MAX;
+        assert!(subscription
+            .accept(response(Responses::StateTransition(unknown_version)))
+            .is_err());
+        assert!(subscription
+            .accept(response(Responses::StateTransition(matched(vec![
+                0xff, 0, 0x13
+            ]))))
+            .is_err());
+    }
+
+    #[test]
+    fn should_resume_after_the_last_checkpoint() {
+        let mut subscription = subscription();
+        subscription
+            .accept(response(Responses::Checkpoint(Checkpoint {
+                block_height: 41,
+            })))
+            .expect("accepted");
+        assert_eq!(subscription.resume_height(), Some(42));
+    }
 
     #[test]
     fn should_resume_after_transient_failures_but_not_after_refusals() {
