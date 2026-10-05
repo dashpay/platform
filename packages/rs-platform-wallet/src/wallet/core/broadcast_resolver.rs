@@ -614,11 +614,9 @@ fn yield_to_forced(entry: &mut WalletEntry) {
     if entry.yielded_at == Some(probing.height) {
         return;
     }
-    let planned = probing.due.len();
-    probing.due.retain(|root| root.forced);
     // The allowance is used only by a yield that dropped something: one of a
     // pass with only forced roots left costs the backlog nothing.
-    if probing.due.len() < planned {
+    if probing.drop_scheduled() {
         entry.yielded_at = Some(probing.height);
     }
 }
@@ -1211,6 +1209,16 @@ struct Probing {
     in_flight: Option<DueRoot>,
 }
 
+impl Probing {
+    /// Keep only the forced roots still to send: the scheduled ones stay due
+    /// for a later pass. Whether any was dropped.
+    fn drop_scheduled(&mut self) -> bool {
+        let planned = self.due.len();
+        self.due.retain(|root| root.forced);
+        self.due.len() < planned
+    }
+}
+
 #[derive(Default)]
 struct WalletEntry {
     /// Last synced height reported, for telling catch-up from following.
@@ -1394,13 +1402,20 @@ impl Actor {
                         if probed.is_some() && probed != in_flight_txid {
                             return;
                         }
-                        let in_flight = current
-                            .probing
-                            .as_mut()
-                            .and_then(|probing| probing.in_flight.take());
+                        let in_flight = current.probing.as_mut().and_then(|probing| {
+                            probing.in_flight.take().map(|root| (root, probing.height))
+                        });
                         entry.wait_until = None;
-                        if let Some(root) = in_flight {
+                        if let Some((root, height)) = in_flight {
                             withdraw_send(&mut self.state, wallet_id, root.txid);
+                            // To the back of the queue, as if first seen after
+                            // this height: a probe that panics every time must
+                            // not head every pass and end it.
+                            if let Some(schedule) =
+                                self.state.schedules.get_mut(&(wallet_id, root.txid))
+                            {
+                                schedule.seen_at = Some(height.saturating_add(1));
+                            }
                         }
                         self.end_run(wallet_id);
                     }
@@ -1480,7 +1495,7 @@ impl Actor {
                     run.anchor_at = None;
                     run.walk.store(false, Ordering::SeqCst);
                     if let Some(probing) = run.probing.as_mut() {
-                        probing.due.retain(|root| root.forced);
+                        probing.drop_scheduled();
                     }
                     // Still reading, with nothing forced: nothing it could
                     // probe — stop its walk over the records now.
@@ -1675,6 +1690,10 @@ impl Actor {
         self.echo_lookups.clear();
         // A report's lookup may name the wallet gone: look again, so the
         // other holders still get their forced probe and priority.
+        // One whose job ended without completing (it panicked) stays dropped:
+        // an old report must not come back with an unrelated wallet change.
+        self.report_lookups
+            .retain(|_, (_, lookup)| !lookup.is_finished());
         let reports: Vec<Txid> = self.report_lookups.keys().copied().collect();
         for txid in reports {
             self.look_up_report(txid);
@@ -1766,6 +1785,7 @@ impl Actor {
                 self.report_lookups.remove(&txid);
                 // No wallet holds it as an unsettled own send: its echo
                 // would be news to no one.
+                let own_holders: HashSet<WalletId> = own.iter().copied().collect();
                 if own.is_empty() {
                     self.uncertain.remove(&txid);
                     self.reported.remove(&txid);
@@ -1782,7 +1802,11 @@ impl Actor {
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
                     pending.forced.insert(txid);
-                    yield_to_forced(entry);
+                    // Only for a wallet whose own send it is: one that merely
+                    // receives it has no root to hurry.
+                    if own_holders.contains(&wallet_id) {
+                        yield_to_forced(entry);
+                    }
                     self.start(wallet_id);
                 }
             }
@@ -6443,6 +6467,46 @@ mod tests {
         async fn probe(&self, _transaction: &Transaction) -> ProbeOutcome {
             panic!("probe bug");
         }
+    }
+
+    /// A probe that panics for one transaction and records the others.
+    struct PanicOn {
+        txid: Txid,
+        probed: StdMutex<Vec<Txid>>,
+    }
+
+    #[async_trait]
+    impl AcceptanceProbe for PanicOn {
+        async fn probe(&self, transaction: &Transaction) -> ProbeOutcome {
+            let txid = transaction.txid();
+            if txid == self.txid {
+                panic!("probe bug");
+            }
+            self.probed.lock().expect("probed").push(txid);
+            ProbeOutcome::answered(unresolved())
+        }
+    }
+
+    /// A root whose probe panics goes to the back of the queue: a probe that
+    /// panics every time does not head every pass and end it before the
+    /// wallet's other roots.
+    #[tokio::test]
+    async fn should_not_let_a_panicking_probe_head_every_pass() {
+        let views = peer_injected(10..12);
+        let probe = Arc::new(PanicOn {
+            txid: views[0].transaction.txid(),
+            probed: StdMutex::new(Vec::new()),
+        });
+        let other = views[2].transaction.txid();
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), views);
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+
+        assert!(
+            probe.probed.lock().expect("probed").contains(&other),
+            "the other root came round"
+        );
     }
 
     /// A job that panics ends its run; the wallet's next pass still starts.
