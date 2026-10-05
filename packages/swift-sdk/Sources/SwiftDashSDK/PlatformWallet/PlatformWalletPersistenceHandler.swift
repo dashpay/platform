@@ -2455,7 +2455,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         descriptor.fetchLimit = 1
         if roundIndex != nil { descriptor.includePendingChanges = false }
-        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+        guard let row = (try? modelFetcher.fetch(descriptor, in: backgroundContext))?.first,
               !row.isDeleted else { return nil }
         roundIndex?.coreAddressesByAddress[address] = row
         return row

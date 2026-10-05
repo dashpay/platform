@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import DashSDKFFI
 @testable import SwiftDashSDK
 
 /// Pins the chunked `IN` fetches of the address-pool persist paths.
@@ -34,12 +35,12 @@ final class AddressPoolBulkFetchTests: XCTestCase {
         return (handler, container)
     }
 
-    private func seedAccount(in container: ModelContainer, typeTag: UInt32) throws {
+    private func seedAccount(in container: ModelContainer, typeTag: UInt32, name: String = "Test") throws {
         let context = ModelContext(container)
         let wallet = PersistentWallet(walletId: walletId, network: .testnet)
         context.insert(wallet)
         let account = PersistentAccount(
-            wallet: wallet, accountType: typeTag, accountIndex: 0, accountTypeName: "Test")
+            wallet: wallet, accountType: typeTag, accountIndex: 0, accountTypeName: name)
         account.userIdentityId = Data(count: 32)
         account.friendIdentityId = Data(count: 32)
         context.insert(account)
@@ -247,6 +248,127 @@ final class AddressPoolBulkFetchTests: XCTestCase {
         let rows = try coreAddressRows(container)
         XCTAssertEqual(rows.count, 2)
         XCTAssertTrue(try XCTUnwrap(rows.first { $0.address == coreAddress(0) }).isUsed)
+        // The faulted prime, then one per-row fallback per address — and no
+        // more: the fallback reads go through the same seam.
+        XCTAssertEqual(fetcher.readCount(of: PersistentCoreAddress.self), 1 + 2)
+    }
+
+    // MARK: - Same-round preservation
+
+    /// The batching is only equivalent to the per-entry fetches if it honours
+    /// what the round already staged. Within ONE round, through the handler:
+    /// a wallet changeset first stages a new TXO and updates a saved one
+    /// (spent by verdict, confirmed, InstantSend-locked, new height); then two
+    /// overlapping address emits follow. The backfill must find the staged
+    /// insert and keep the saved row's unsaved updates (it needs pending
+    /// changes), and the second emit must not re-fetch the address rows the
+    /// first one registered (the untouched-key filter on the store-only
+    /// prime, which would otherwise refresh registered rows to store values).
+    func testBulkLookupsHonourEarlierWritesInTheSameRound() throws {
+        let fetcher = FetchFaultInjector()
+        let (handler, container) = try makeHandler(fetcher: fetcher)
+        try seedAccount(in: container, typeTag: coreTypeTag, name: "Standard { index: 0 }")
+        let savedTxid = Data(repeating: 0x31, count: 32)
+        let newTxid = Data(repeating: 0x32, count: 32)
+        let savedAddress = coreAddress(10)
+        let newAddress = coreAddress(11)
+        try seedUnlinkedTxo(in: container, address: savedAddress, seed: savedTxid[0])
+
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertTrue(stageObservedSpentVerdict(handler, txid: savedTxid, vout: 0))
+        XCTAssertTrue(stageUtxosAdded(handler, [
+            (savedTxid, savedAddress, 2_400_001),
+            (newTxid, newAddress, 2_400_002),
+        ]))
+
+        let coreReadsBefore = fetcher.readCount(of: PersistentCoreAddress.self)
+        let txoReadsBefore = fetcher.readCount(of: PersistentTxo.self)
+        XCTAssertTrue(handler.persistAccountAddresses(
+            walletId: walletId, accountKey: lookupKey(typeTag: coreTypeTag),
+            entries: [entry(savedAddress, index: 10), entry(newAddress, index: 11), entry(coreAddress(12), index: 12)]))
+        XCTAssertEqual(fetcher.readCount(of: PersistentCoreAddress.self) - coreReadsBefore, 1)
+        XCTAssertEqual(fetcher.readCount(of: PersistentTxo.self) - txoReadsBefore, 1)
+
+        // Overlapping re-emit in the same round: every key is registered.
+        let coreReadsMid = fetcher.readCount(of: PersistentCoreAddress.self)
+        XCTAssertTrue(handler.persistAccountAddresses(
+            walletId: walletId, accountKey: lookupKey(typeTag: coreTypeTag),
+            entries: [entry(newAddress, index: 11, isUsed: true), entry(coreAddress(12), index: 12)]))
+        XCTAssertEqual(
+            fetcher.readCount(of: PersistentCoreAddress.self) - coreReadsMid, 0,
+            "registered address rows must be answered from the round index, not re-fetched")
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+
+        XCTAssertEqual(try linkedAddress(ofTxoAt: savedAddress, in: container), savedAddress)
+        XCTAssertEqual(try linkedAddress(ofTxoAt: newAddress, in: container), newAddress)
+        let saved = try XCTUnwrap(try ModelContext(container).fetch(FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.address == savedAddress }
+        )).first)
+        XCTAssertTrue(saved.isSpent, "the staged spend must survive the backfill fetch")
+        XCTAssertTrue(saved.isConfirmed)
+        XCTAssertTrue(saved.isInstantLocked)
+        XCTAssertEqual(saved.height, 2_400_001)
+        let rows = try coreAddressRows(container)
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertTrue(try XCTUnwrap(rows.first { $0.address == newAddress }).isUsed)
+    }
+
+    private func stageObservedSpentVerdict(
+        _ handler: PlatformWalletPersistenceHandler,
+        txid: Data,
+        vout: UInt32
+    ) -> Bool {
+        var verdict = UtxoCreditVerdictFFI()
+        Swift.withUnsafeMutableBytes(of: &verdict.outpoint.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        verdict.outpoint.vout = vout
+        verdict.verdict = 1  // observed spent
+        verdict.spent_at_height = 2_400_010
+        return withUnsafePointer(to: &verdict) { ptr in
+            handler.persistWalletChangesetUtxoVerdicts(walletId: walletId, verdicts: ptr, count: 1)
+        }
+    }
+
+    /// One wallet changeset whose BIP44 account adds a confirmed,
+    /// InstantSend-locked UTXO at vout 0 of each `(txid, address, height)`.
+    private func stageUtxosAdded(
+        _ handler: PlatformWalletPersistenceHandler,
+        _ outputs: [(txid: Data, address: String, height: UInt32)]
+    ) -> Bool {
+        let name = strdup("Standard { index: 0 }")
+        let addresses = outputs.map { strdup($0.address) }
+        defer {
+            free(name)
+            addresses.forEach { free($0) }
+        }
+        var utxos: [UtxoEntryFFI] = outputs.enumerated().map { i, output in
+            var utxo = UtxoEntryFFI()
+            Swift.withUnsafeMutableBytes(of: &utxo.outpoint.txid) { dst in
+                output.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            utxo.outpoint.vout = 0
+            utxo.amount = 1_000
+            utxo.address = addresses[i]
+            utxo.height = output.height
+            utxo.is_confirmed = true
+            utxo.is_instantlocked = true
+            return utxo
+        }
+        return utxos.withUnsafeMutableBufferPointer { utxoPtr in
+            var account = AccountChangeSetFFI()
+            account.account_type_name = name
+            account.utxos_added = utxoPtr.baseAddress
+            account.utxos_added_count = UInt(utxoPtr.count)
+            return withUnsafeMutablePointer(to: &account) { accountPtr in
+                var cs = WalletChangeSetFFI()
+                cs.accounts = accountPtr
+                cs.accounts_count = 1
+                return withUnsafePointer(to: &cs) { csPtr in
+                    handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                }
+            }
+        }
     }
 
     // MARK: - Platform payment (DIP-17) pools
