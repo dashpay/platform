@@ -228,9 +228,10 @@ pub struct ProbeOutcome {
     pub answered: bool,
 }
 
-impl From<ProbeVerdict> for ProbeOutcome {
-    /// A verdict some node gave.
-    fn from(verdict: ProbeVerdict) -> Self {
+impl ProbeOutcome {
+    /// A verdict some node gave. An outcome no node answered is built
+    /// explicitly (`answered: false`): never by default.
+    pub fn answered(verdict: ProbeVerdict) -> Self {
         Self {
             verdict,
             answered: true,
@@ -265,17 +266,18 @@ pub(crate) async fn probe_with(
             "broadcast probe: node answered"
         );
         match verdict {
-            NodeVerdict::Accepted => return ProbeVerdict::Accepted.into(),
+            NodeVerdict::Accepted => return ProbeOutcome::answered(ProbeVerdict::Accepted),
             NodeVerdict::Mined => {
                 // In a block by this node's word. A second opinion comes from
                 // a lookup, not from sending it again.
-                return confirm_by_lookup(
-                    submitter,
-                    transaction,
-                    LookupFor::SecondOpinion { seen_by: node },
-                )
-                .await
-                .into();
+                return ProbeOutcome::answered(
+                    confirm_by_lookup(
+                        submitter,
+                        transaction,
+                        LookupFor::SecondOpinion { seen_by: node },
+                    )
+                    .await,
+                );
             }
             NodeVerdict::Refused { reason } => {
                 // An unidentified node cannot count towards the quorum — it
@@ -286,13 +288,10 @@ pub(crate) async fn probe_with(
                 let first = first_refusal.get_or_insert(reason);
                 if refusing_nodes.len() >= REFUSAL_QUORUM {
                     let reason = first.clone();
-                    return confirm_by_lookup(
-                        submitter,
-                        transaction,
-                        LookupFor::Refused { reason },
-                    )
-                    .await
-                    .into();
+                    return ProbeOutcome::answered(
+                        confirm_by_lookup(submitter, transaction, LookupFor::Refused { reason })
+                            .await,
+                    );
                 }
             }
             NodeVerdict::Unknown { reason } | NodeVerdict::Unreachable { reason } => {
