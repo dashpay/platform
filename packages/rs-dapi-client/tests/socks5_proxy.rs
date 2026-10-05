@@ -514,6 +514,56 @@ async fn should_hold_a_stalled_route_against_the_node() {
     assert!(is_banned(&client, uri));
 }
 
+#[tokio::test]
+async fn should_bound_the_tunnel_and_tls_by_one_connect_deadline() {
+    // Answers the greeting, holds the CONNECT reply for most of the budget,
+    // grants it, and then never answers the TLS ClientHello. One budget
+    // covers the tunnel and TLS together, so the connection fails when it
+    // runs out instead of TLS starting a full budget of its own.
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let slow = listener.local_addr().expect("address");
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut greeting = [0u8; 3];
+            if stream.read_exact(&mut greeting).await.is_err()
+                || stream.write_all(&[0x05, 0x00]).await.is_err()
+            {
+                continue;
+            }
+            // CONNECT to an IPv4 address: header, address and port.
+            let mut request = [0u8; 10];
+            if stream.read_exact(&mut request).await.is_err() {
+                continue;
+            }
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            if stream
+                .write_all(&[0x05, SUCCEEDED, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await
+                .is_ok()
+            {
+                held.push(stream);
+            }
+        }
+    });
+    let uri = "https://127.0.0.1:1";
+    let client = client_with_connect_timeout(
+        uri,
+        tcp_proxy(slow, Socks5Auth::None),
+        Duration::from_secs(2),
+    );
+
+    let started = std::time::Instant::now();
+    let error = get_status(&client).await;
+    let elapsed = started.elapsed();
+
+    // With a TLS timeout of its own this took 1.5 s + 2 s.
+    assert!(elapsed >= Duration::from_secs(2), "{elapsed:?}: {error:?}");
+    assert!(elapsed < Duration::from_secs(3), "{elapsed:?}: {error:?}");
+    assert!(!transport_error(&error).is_proxy_failure(), "{error:?}");
+    assert!(is_banned(&client, uri));
+}
+
 /// Starts a proxy that reads the greeting (and, if `auth`, the RFC 1929
 /// request), writes `reply`, and then holds the connection open.
 async fn start_stalling_proxy(reply: &'static [u8], auth: bool) -> SocketAddr {

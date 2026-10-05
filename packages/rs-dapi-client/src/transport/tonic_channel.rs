@@ -4,6 +4,8 @@ use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig};
+use std::error::Error as _;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Platform Client using gRPC transport.
@@ -54,22 +56,8 @@ pub fn create_channel(
 
     let proxy = settings.and_then(|settings| settings.proxy.clone());
     let connect_timeout = settings.and_then(AppliedRequestSettings::effective_connect_timeout);
-    if let Some(settings) = settings {
-        match (connect_timeout, &proxy) {
-            // Through a proxy the connector enforces the budget itself, so
-            // it can tell a stuck proxy from a slow destination; TLS, which
-            // runs after it, gets the same budget of its own (a connection
-            // can so take up to twice the budget; the executor's attempt
-            // deadline still bounds the whole attempt).
-            (Some(timeout), Some(_)) => tls_config = tls_config.timeout(timeout),
-            (Some(timeout), None) => builder = builder.connect_timeout(timeout),
-            (None, _) => {}
-        }
-
-        if let Some(pem) = settings.ca_certificate.as_ref() {
-            let cert = Certificate::from_pem(pem);
-            tls_config = tls_config.ca_certificate(cert);
-        };
+    if let Some(pem) = settings.and_then(|settings| settings.ca_certificate.as_ref()) {
+        tls_config = tls_config.ca_certificate(Certificate::from_pem(pem));
     }
 
     // Ping only while a request is in flight: a connection whose network path
@@ -81,19 +69,46 @@ pub fn create_channel(
         .keep_alive_timeout(HTTP2_KEEP_ALIVE_TIMEOUT)
         .keep_alive_while_idle(false);
 
-    builder = builder.tls_config(tls_config).map_err(|e| {
-        TransportError::Grpc(dapi_grpc::tonic::Status::invalid_argument(format!(
-            "invalid TLS configuration: {e}"
-        )))
-    })?;
+    builder = builder.tls_config(tls_config).map_err(invalid_tls_config)?;
 
     Ok(match proxy {
-        None => builder.connect_lazy(),
-        Some(proxy) => builder.connect_with_connector_lazy(Socks5Connector {
-            proxy,
-            connect_timeout: connect_timeout.unwrap_or(PROXY_CONNECT_TIMEOUT),
-        }),
+        None => {
+            if let Some(timeout) = connect_timeout {
+                builder = builder.connect_timeout(timeout);
+            }
+            builder.connect_lazy()
+        }
+        Some(proxy) => {
+            // One absolute deadline for the whole connection: tonic applies
+            // it around the connector, so it covers the SOCKS5 tunnel and the
+            // TLS handshake after it. The connector times its own phases
+            // against the same budget from a start that is never later than
+            // tonic's, so it still tells a stuck proxy from a slow
+            // destination before this deadline fires.
+            let connect_timeout = connect_timeout.unwrap_or(PROXY_CONNECT_TIMEOUT);
+            builder
+                .connect_timeout(connect_timeout)
+                .connect_with_connector_lazy(Socks5Connector {
+                    proxy,
+                    connect_timeout,
+                })
+        }
     })
+}
+
+/// A TLS configuration tonic rejects, as an `InvalidArgument` status that
+/// keeps the cause: tonic's own message names only the error kind, the cause
+/// (an invalid server name, a malformed certificate) is in its source chain.
+fn invalid_tls_config(error: dapi_grpc::tonic::transport::Error) -> TransportError {
+    let mut message = format!("invalid TLS configuration: {error}");
+    let mut cause = error.source();
+    while let Some(current) = cause {
+        message.push_str(&format!(": {current}"));
+        cause = current.source();
+    }
+    let mut status = dapi_grpc::tonic::Status::invalid_argument(message);
+    status.set_source(Arc::new(error));
+    TransportError::Grpc(status)
 }
 
 /// The host of a URI without the brackets an IPv6 literal carries in it
@@ -134,5 +149,24 @@ mod tests {
             auth: Socks5Auth::None,
         }));
         create_channel(uri, Some(&settings)).expect("through a proxy");
+    }
+
+    #[test]
+    fn should_keep_the_cause_of_an_invalid_tls_configuration() {
+        // Not a valid TLS server name.
+        let uri: Uri = "https://foo..bar:1443".parse().expect("uri");
+        let Err(TransportError::Grpc(status)) = create_channel(uri, None) else {
+            panic!("an invalid server name must be rejected");
+        };
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::InvalidArgument);
+        assert!(
+            status.message().contains("invalid dns name"),
+            "{}",
+            status.message()
+        );
+        assert!(
+            status.source().is_some(),
+            "the tonic error stays in the source chain"
+        );
     }
 }

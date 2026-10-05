@@ -146,24 +146,19 @@ impl Socks5Proxy {
         format!("{} {auth}", self.endpoint)
     }
 
-    /// Opens a tunnel to `uri`'s host through the proxy within
-    /// `connect_timeout`: the proxy gets [PROXY_ANSWER_TIMEOUT] (or less, if
-    /// the budget is shorter) to accept and negotiate, and running out of it
-    /// is the proxy's failure; the CONNECT reply gets what is left, and
-    /// running out of that is the destination's.
+    /// Opens a tunnel to `uri`'s host through the proxy by `deadline`: the
+    /// proxy gets [PROXY_ANSWER_TIMEOUT] (or less, if the deadline is
+    /// closer) to accept and negotiate, and running out of it is the proxy's
+    /// failure; the CONNECT reply gets what is left, and running out of that
+    /// is the destination's.
     async fn connect(
         self,
         uri: Uri,
-        connect_timeout: Duration,
+        started: tokio::time::Instant,
+        deadline: tokio::time::Instant,
     ) -> Result<Box<dyn ProxiedStream>, BoxError> {
         let target = target(&uri)?;
-        let now = tokio::time::Instant::now();
-        // A budget too large to add (an "unlimited" Duration::MAX) is
-        // capped rather than overflowing.
-        let deadline = now
-            .checked_add(connect_timeout)
-            .unwrap_or_else(|| now + UNLIMITED);
-        let negotiated_by = deadline.min(now + PROXY_ANSWER_TIMEOUT);
+        let negotiated_by = deadline.min(started + PROXY_ANSWER_TIMEOUT);
         let proxy_error = |source: BoxError| ProxyError {
             proxy: self.endpoint.to_string(),
             source,
@@ -439,6 +434,13 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> ProxiedStream for S {}
 
 /// The tonic connector that tunnels every connection through the proxy
 /// within the connect budget (see [Socks5Proxy::connect]).
+///
+/// The channel's own connect timeout, set to the same budget, bounds the
+/// tunnel and the TLS handshake after it together. Its clock starts when
+/// the connection future is first polled, after [call](tower_service::Service::call)
+/// returns, and it polls the connection before checking its own deadline, so
+/// the connector's deadlines, fixed in `call`, always fire first: a proxy
+/// that stalls the negotiation is still reported as a [ProxyError].
 #[derive(Clone)]
 pub(crate) struct Socks5Connector {
     pub(crate) proxy: Socks5Proxy,
@@ -456,8 +458,18 @@ impl tower_service::Service<Uri> for Socks5Connector {
 
     fn call(&mut self, uri: Uri) -> Self::Future {
         let proxy = self.proxy.clone();
-        let connect_timeout = self.connect_timeout;
-        Box::pin(async move { proxy.connect(uri, connect_timeout).await.map(TokioIo::new) })
+        let started = tokio::time::Instant::now();
+        // A budget too large to add (an "unlimited" Duration::MAX) is
+        // capped rather than overflowing.
+        let deadline = started
+            .checked_add(self.connect_timeout)
+            .unwrap_or_else(|| started + UNLIMITED);
+        Box::pin(async move {
+            proxy
+                .connect(uri, started, deadline)
+                .await
+                .map(TokioIo::new)
+        })
     }
 }
 
