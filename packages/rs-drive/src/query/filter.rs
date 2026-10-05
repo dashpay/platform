@@ -528,6 +528,13 @@ impl DriveDocumentQueryFilter<'_> {
             let Some(value) = get_value_by_path(document_data, &clause.field) else {
                 return false;
             };
+            // `Value` orders null after every number, so a null value would satisfy `> n`; an
+            // ordered comparison never matches null, while equality and IN still can.
+            if value.is_null()
+                && !matches!(clause.operator, WhereOperator::Equal | WhereOperator::In)
+            {
+                return false;
+            }
             match (document_type, platform_version) {
                 (Some(document_type), Some(platform_version)) => {
                     match canonical_value_for_key(
@@ -3724,6 +3731,38 @@ mod tests {
                 &contract,
                 "rating",
                 BTreeMap::from([("stars".to_string(), unicode)]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Fail
+            );
+        }
+
+        #[test]
+        fn should_not_let_null_satisfy_an_ordered_comparison() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: InternalClauses {
+                        range_clause: Some(WhereClause {
+                            field: "name".to_string(),
+                            operator: WhereOperator::GreaterThan,
+                            value: Value::Text("a".to_string()),
+                        }),
+                        ..Default::default()
+                    },
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            let transition = create(
+                &contract,
+                "niceDocument",
+                BTreeMap::from([("name".to_string(), Value::Null)]),
             );
             assert_eq!(
                 filter.matches_document_transition(&transition, None, platform_version),

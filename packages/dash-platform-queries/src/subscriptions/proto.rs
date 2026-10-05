@@ -137,6 +137,25 @@ fn document_filter_to_proto(filter: &DocumentFilter) -> Result<proto::DocumentFi
     })
 }
 
+/// A clause operand as sent in a subscription: 128-bit integers that fit 64 bits become 64-bit,
+/// since the shared encoder sends 128-bit integers as text, which the node reads as text.
+fn narrowed(value: &Value) -> Value {
+    match value {
+        Value::U128(n) => u64::try_from(*n).map_or(value.clone(), Value::U64),
+        Value::I128(n) => i64::try_from(*n).map_or(value.clone(), Value::I64),
+        Value::Array(values) => Value::Array(values.iter().map(narrowed).collect()),
+        _ => value.clone(),
+    }
+}
+
+fn narrowed_clause(clause: &WhereClause) -> WhereClause {
+    WhereClause {
+        field: clause.field.clone(),
+        operator: clause.operator,
+        value: narrowed(&clause.value),
+    }
+}
+
 fn action_match_to_proto(
     action: &DocumentActionMatch,
 ) -> Result<document_filter::ActionMatch, Error> {
@@ -148,13 +167,13 @@ fn action_match_to_proto(
         new_document_where: action
             .new_document_where
             .iter()
-            .cloned()
+            .map(narrowed_clause)
             .map(where_clause_to_proto)
             .collect::<Result<_, _>>()?,
         original_document_where: action
             .original_document_where
             .iter()
-            .cloned()
+            .map(narrowed_clause)
             .map(where_clause_to_proto)
             .collect::<Result<_, _>>()?,
         owner_ids: action.owner_ids.iter().map(Identifier::to_vec).collect(),
@@ -164,7 +183,7 @@ fn action_match_to_proto(
             .map(|price| {
                 Ok::<_, Error>(document_filter::PriceClause {
                     operator: where_operator_to_proto(price.operator) as i32,
-                    value: Some(value_to_proto(price.value.clone())?),
+                    value: Some(value_to_proto(narrowed(&price.value))?),
                 })
             })
             .transpose()?,

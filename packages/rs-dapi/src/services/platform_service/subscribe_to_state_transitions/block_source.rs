@@ -21,6 +21,7 @@ use crate::error::DAPIResult;
 use async_trait::async_trait;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use dpp::platform_value::Value;
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use quick_cache::Weighter;
@@ -32,8 +33,9 @@ use tracing::debug;
 
 /// Heights per `blockchain` page; Tenderdash's own cap.
 pub const META_PAGE: u64 = 20;
-/// Bytes of decoded blocks kept for subscriptions reading the same heights.
-const BLOCK_CACHE_BYTES: u64 = 64 * 1024 * 1024;
+/// Bytes of decoded blocks kept for subscriptions reading the same heights, as weighed by
+/// [`BlockWeighter`].
+const BLOCK_CACHE_BYTES: u64 = 128 * 1024 * 1024;
 /// Block metas pages kept.
 const META_PAGE_CACHE_PAGES: usize = 256;
 
@@ -126,8 +128,15 @@ struct BlockWeighter;
 
 impl Weighter<u64, Arc<CommittedBlock>> for BlockWeighter {
     fn weight(&self, _height: &u64, block: &Arc<CommittedBlock>) -> u64 {
-        // The decoded transition takes roughly as much again as its bytes.
-        let tx_bytes: usize = block.txs.iter().map(|tx| 2 * tx.bytes.len() + 64).sum();
+        // A conservative bound on the decoded transition: every decoded value takes at least
+        // one encoded byte, and a collection reserves at most twice what it holds, so the
+        // decoded form is within two `Value` slots per encoded byte.
+        let per_byte = 1 + 2 * std::mem::size_of::<Value>();
+        let tx_bytes: usize = block
+            .txs
+            .iter()
+            .map(|tx| tx.bytes.len() * per_byte + 64)
+            .sum();
         (tx_bytes + 64) as u64
     }
 }

@@ -642,3 +642,31 @@ fn should_group_range_bounds_given_with_different_integer_widths() {
         assert!(matches(&filters, &rated(9)).is_none());
     }
 }
+
+#[test]
+fn should_resolve_wide_integer_operands_the_same_after_the_wire() {
+    use drive::query::ValueClause;
+    let contract = rating_contract();
+    let filter = StateTransitionFilter::Documents(
+        DocumentFilter::new(contract.id())
+            .with_document_type("rating")
+            .with_action(
+                DocumentActionMatch::new(DocumentAction::Create).with_new_document_where(
+                    drive::query::WhereClause {
+                        field: "stars".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::U128(3),
+                    },
+                ),
+            )
+            .with_action(
+                DocumentActionMatch::new(DocumentAction::UpdatePrice).with_price(ValueClause {
+                    operator: WhereOperator::Equal,
+                    value: Value::U128(50),
+                }),
+            ),
+    );
+    resolve(vec![filter.clone()], &contract).expect("resolves natively");
+    let wire = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
+    resolve(vec![wire], &contract).expect("resolves after the wire round trip");
+}

@@ -12,7 +12,7 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::{
     SubscribeToStateTransitionsResponseV0, Version,
 };
 use dapi_grpc::tonic::Status;
-use dash_platform_queries::subscriptions::ResolvedFilters;
+use dash_platform_queries::subscriptions::{FilterMatch, ResolvedFilters};
 use dpp::version::PlatformVersion;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -328,8 +328,20 @@ impl Scan {
                         let matches = self.match_block(&block)?;
                         if !matches.is_empty() {
                             replay_permit.take();
-                            for matched in matches {
-                                self.send(Responses::StateTransition(matched)).await?;
+                            // Each payload is copied only as it is sent.
+                            for (index, filter_match) in matches {
+                                let tx = &block.txs[index];
+                                self.send(Responses::StateTransition(StateTransitionMatch {
+                                    block_height: height,
+                                    block_time_ms: block.time_ms,
+                                    protocol_version: block.protocol_version,
+                                    index_in_block: tx.index,
+                                    state_transition_hash: tx.hash.to_vec(),
+                                    state_transition: tx.bytes.as_ref().clone(),
+                                    matched_filters: filter_match.matched_filters,
+                                    matched_batch_positions: filter_match.matched_batch_positions,
+                                }))
+                                .await?;
                             }
                             self.checkpoint_at(height).await?;
                             last_checkpoint = Instant::now();
@@ -391,8 +403,9 @@ impl Scan {
         }
     }
 
-    /// The block's transitions that match, in block order.
-    fn match_block(&mut self, block: &CommittedBlock) -> Result<Vec<StateTransitionMatch>, Stop> {
+    /// The positions, in `block.txs`, of the block's transitions that match, in block order,
+    /// with what they matched.
+    fn match_block(&mut self, block: &CommittedBlock) -> Result<Vec<(usize, FilterMatch)>, Stop> {
         let height = block.height;
         let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
             Stop::Fail(Status::failed_precondition(format!(
@@ -403,7 +416,7 @@ impl Scan {
         })?;
 
         let mut matches = Vec::new();
-        for tx in &block.txs {
+        for (position, tx) in block.txs.iter().enumerate() {
             let state_transition = tx.state_transition.as_ref().map_err(|e| {
                 warn!(height, index = tx.index, error = %e, "cannot decode an executed state transition");
                 Stop::Fail(Status::failed_precondition(format!(
@@ -413,16 +426,7 @@ impl Scan {
                 )))
             })?;
             if let Some(filter_match) = self.filters.matches(state_transition, platform_version) {
-                matches.push(StateTransitionMatch {
-                    block_height: height,
-                    block_time_ms: block.time_ms,
-                    protocol_version: block.protocol_version,
-                    index_in_block: tx.index,
-                    state_transition_hash: tx.hash.to_vec(),
-                    state_transition: tx.bytes.as_ref().clone(),
-                    matched_filters: filter_match.matched_filters,
-                    matched_batch_positions: filter_match.matched_batch_positions,
-                });
+                matches.push((position, filter_match));
             }
             self.filters
                 .follow(state_transition, platform_version)
