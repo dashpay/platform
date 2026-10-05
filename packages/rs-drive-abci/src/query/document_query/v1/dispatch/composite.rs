@@ -9,6 +9,7 @@
 //! re-derives the whole composition from the proven page.
 
 use super::count::into_v1_entry;
+use super::document_serialization_failure;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -325,21 +326,24 @@ impl<C> Platform<C> {
                 };
             let serialize_all = |documents: &[dpp::document::Document],
                                  sub: Option<&DriveSubQuery>|
-             -> Result<Vec<Vec<u8>>, Error> {
+             -> Result<Vec<Vec<u8>>, dpp::ProtocolError> {
                 let (document_type, contract) = match sub {
                     None => (composite.document_type, composite.contract),
                     Some(sub) => (sub.document_type, sub.contract),
                 };
                 documents
                     .iter()
-                    .map(|document| {
-                        document
-                            .serialize(document_type, contract, platform_version)
-                            .map_err(Error::Protocol)
-                    })
+                    .map(|document| document.serialize(document_type, contract, platform_version))
                     .collect()
             };
-            let page_documents = serialize_all(&outcome.result.page_documents, None)?;
+            let page_documents = match serialize_all(&outcome.result.page_documents, None) {
+                Ok(documents) => documents,
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        document_serialization_failure(error)?,
+                    ))
+                }
+            };
             let mut sub_results = Vec::with_capacity(composite.sub_queries.len());
             for (((sub, result), missing_ids), removed) in composite
                 .sub_queries
@@ -350,8 +354,16 @@ impl<C> Platform<C> {
             {
                 let result = match result {
                     SubQueryResult::Documents(documents) => {
+                        let documents = match serialize_all(&documents, Some(sub)) {
+                            Ok(documents) => documents,
+                            Err(error) => {
+                                return Ok(QueryValidationResult::new_with_error(
+                                    document_serialization_failure(error)?,
+                                ))
+                            }
+                        };
                         composite_documents::sub_query_result::Result::Documents(Documents {
-                            documents: serialize_all(&documents, Some(sub))?,
+                            documents,
                         })
                     }
                     SubQueryResult::Counts(entries) => {

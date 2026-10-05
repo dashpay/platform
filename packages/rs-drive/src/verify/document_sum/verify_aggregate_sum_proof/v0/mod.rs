@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
-use crate::verify::RootHash;
+use crate::verify::{verify_absent_range_tree, RootHash};
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -23,12 +23,19 @@ impl DriveDocumentSumQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, i64), Error> {
         let path_query = self.aggregate_sum_path_query(platform_version)?;
-        let (root_hash, sum) = GroveDb::verify_aggregate_sum_query(
+        // A range whose tree does not exist (an equality value no document
+        // holds) sums to zero (`verify_absent_range_tree`). Edited in place in
+        // this shipped generation: the prover is unchanged, and such a proof
+        // failed to verify before.
+        match GroveDb::verify_aggregate_sum_query(
             proof,
             &path_query,
             &platform_version.drive.grove_version,
-        )
-        .map_err(|e| Error::GroveDB(Box::new(e)))?;
-        Ok((root_hash, sum))
+        ) {
+            Ok(verified) => Ok(verified),
+            Err(error) => verify_absent_range_tree(proof, &path_query.path, platform_version)
+                .map(|root_hash| (root_hash, 0))
+                .ok_or_else(|| Error::GroveDB(Box::new(error))),
+        }
     }
 }

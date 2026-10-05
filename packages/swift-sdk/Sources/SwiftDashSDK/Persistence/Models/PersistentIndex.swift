@@ -122,32 +122,67 @@ extension PersistentIndex {
         return indices.first { $0["name"] as? String == name }
     }
 
+    /// Every keyword below from one read of `authoredDefinition`, which
+    /// parses the document type's whole persisted schema on each access.
+    /// A caller that shows more than one of them, like a list row, reads
+    /// this once instead of each accessor.
+    public var authoredKeywords: AuthoredIndexKeywords {
+        AuthoredIndexKeywords(authoredDefinition: authoredDefinition)
+    }
+
     /// The source index named by `summableOffCountIndex` (protocol version
     /// 14), or `nil` on any other index. Such an index keeps one counter per
     /// group of the source index instead of entries, so it has no terminal.
     public var summableOffCountIndex: String? {
-        authoredDefinition?["summableOffCountIndex"] as? String
+        authoredKeywords.summableOffCountIndex
     }
 
     /// The levels `rankedCountable` ranks at through its `{ "at": ... }`
     /// form (protocol version 14), in order. Empty for `true` or when absent.
     public var rankedCountableAt: [String] {
-        rankedAtLevels("rankedCountable")
+        authoredKeywords.rankedCountableAt
     }
 
     /// The levels `rankedSummable` ranks at; see `rankedCountableAt`.
     public var rankedSummableAt: [String] {
-        rankedAtLevels("rankedSummable")
+        authoredKeywords.rankedSummableAt
     }
 
     /// The levels `rankedAverageable` ranks at; see `rankedCountableAt`.
     public var rankedAverageableAt: [String] {
-        rankedAtLevels("rankedAverageable")
+        authoredKeywords.rankedAverageableAt
+    }
+}
+
+/// The protocol version 14 keywords of one index that have no column on
+/// `PersistentIndex`, as authored. Read through
+/// `PersistentIndex.authoredKeywords`; each field is documented on the
+/// `PersistentIndex` accessor of the same name.
+public struct AuthoredIndexKeywords: Equatable, Sendable {
+    public let summableOffCountIndex: String?
+    public let rankedCountableAt: [String]
+    public let rankedSummableAt: [String]
+    public let rankedAverageableAt: [String]
+}
+
+// Declared in an extension so the memberwise initializer stays available.
+extension AuthoredIndexKeywords {
+    /// The keywords of `definition`, an index dictionary as authored; all
+    /// absent when it is `nil`.
+    init(authoredDefinition definition: [String: Any]?) {
+        self.init(
+            summableOffCountIndex: definition?["summableOffCountIndex"] as? String,
+            rankedCountableAt: Self.rankedAtLevels(definition?["rankedCountable"]),
+            rankedSummableAt: Self.rankedAtLevels(definition?["rankedSummable"]),
+            rankedAverageableAt: Self.rankedAtLevels(definition?["rankedAverageable"])
+        )
     }
 
-    /// `at` is one property name or an ordered array of them.
-    private func rankedAtLevels(_ keyword: String) -> [String] {
-        guard let ranking = authoredDefinition?[keyword] as? [String: Any] else { return [] }
+    /// The levels of a ranking keyword's `{ "at": ... }` form, where `at` is
+    /// one property name or an ordered array of them. Empty for `true` or
+    /// when absent.
+    private static func rankedAtLevels(_ ranking: Any?) -> [String] {
+        guard let ranking = ranking as? [String: Any] else { return [] }
         if let level = ranking["at"] as? String {
             return [level]
         }

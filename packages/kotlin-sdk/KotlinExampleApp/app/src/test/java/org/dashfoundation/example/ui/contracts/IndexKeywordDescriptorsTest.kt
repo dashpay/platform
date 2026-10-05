@@ -86,7 +86,7 @@ class IndexKeywordDescriptorsTest {
     }
 
     @Test
-    fun counterIndexListsItsSourceAndAtRankings() {
+    fun shouldListACounterIndexSourceAndAtRankingsWithNoTerminal() {
         val index = buildJsonObject {
             put("summableOffCountIndex", "byPost")
             put("rangeSummable", true)

@@ -8,8 +8,8 @@
 //! and `byHashtagPost` by its values alone.
 
 use super::index_only_e2e_tests::{
-    assert_grovedb_is_consistent, build_like, delete_like, insert_like, platform_version,
-    read_grove_element,
+    assert_grovedb_is_consistent, assert_live_root_hash, build_like, delete_like, insert_like,
+    platform_version, read_grove_element,
 };
 use crate::drive::document::layout::{document_type_layout, LayoutNode, LayoutNote};
 use crate::drive::Drive;
@@ -451,9 +451,10 @@ fn should_keep_a_hashtag_an_outliving_window_holds_at_zero_on_a_page() {
         let proof = query
             .execute_distinct_count_with_proof(&drive, limit, true, None, pv)
             .expect("the range count proves");
-        let (_root_hash, proved) = query
+        let (root_hash, proved) = query
             .verify_distinct_count_proof(&proof, limit, true, pv)
             .expect("the range count proof verifies");
+        assert_live_root_hash(&drive, root_hash);
         assert_eq!(
             proved
                 .into_iter()

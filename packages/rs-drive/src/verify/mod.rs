@@ -54,3 +54,30 @@ mod bounded_decode;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];
+
+/// The root hash a range-total proof reconstructs when the tree it totals
+/// (the last key of `path`, or a key above it) does not exist, or `None` when
+/// the proof does not show that. grovedb proves such a path query by proving
+/// the missing key absent and descending no further, which its aggregate
+/// verifiers reject as a missing layer. The same proof verifies as a plain
+/// query for the path's last key, and comes back empty only when a key on the
+/// path is missing: a tree that exists comes with the lower layer the
+/// aggregate read proved, which a plain key query refuses. So `Some` proves
+/// the range holds nothing, and its total is zero.
+///
+/// The range-total verifiers fall back to it when grovedb refuses the proof.
+/// They are selected by every protocol version with range counts and sums,
+/// and the prover is unchanged: such a proof failed to verify before, and
+/// verifies to a zero total now.
+pub(crate) fn verify_absent_range_tree(
+    proof: &[u8],
+    path: &[Vec<u8>],
+    platform_version: &dpp::version::PlatformVersion,
+) -> Option<RootHash> {
+    let (key, parent) = path.split_last()?;
+    let absent = grovedb::PathQuery::new_single_key(parent.to_vec(), key.clone());
+    match grovedb::GroveDb::verify_query(proof, &absent, &platform_version.drive.grove_version) {
+        Ok((root_hash, elements)) if elements.is_empty() => Some(root_hash),
+        _ => None,
+    }
+}

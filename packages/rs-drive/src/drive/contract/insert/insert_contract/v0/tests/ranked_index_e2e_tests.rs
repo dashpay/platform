@@ -2024,7 +2024,7 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
 /// indexed tree; its `tab` type does the same with an unranked summable
 /// `byRestaurantDay` below the ranked `byRestaurantTabs`.
 fn build_order_contract_continuing_below_a_ranked_level() -> DataContract {
-    DataContractFactory::new(PROTOCOL_VERSION_V14)
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
         .expect("expected to create factory")
         .create_with_value_config(
             Identifier::from([7; 32]),

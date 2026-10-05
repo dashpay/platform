@@ -27,8 +27,8 @@
 
 use super::chained_query_e2e_tests::remove_post;
 use super::index_only_e2e_tests::{
-    assert_grovedb_is_consistent, build_like, count_top_k, delete_like, doctype_path, insert_like,
-    likes_query, platform_version, read_grove_element,
+    assert_grovedb_is_consistent, assert_live_root_hash, build_like, count_top_k, delete_like,
+    doctype_path, insert_like, likes_query, platform_version, read_grove_element,
 };
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -1244,18 +1244,6 @@ fn should_keep_an_empty_preallocated_group_on_a_page_of_range_reads() {
             value: Value::Identifier(post),
         }]
     };
-    let assert_live_root_hash = |root_hash: [u8; 32]| {
-        assert_eq!(
-            root_hash,
-            drive
-                .grove
-                .root_hash(None, &pv.drive.grove_version)
-                .unwrap()
-                .expect("root hash must be readable"),
-            "the proof must reconstruct the live grovedb root hash"
-        );
-    };
-
     // One page of one per kind of read, unproved and proved: (post, count, sum).
     let page = |where_clauses: Vec<WhereClause>, kind: &str| -> Vec<(Vec<u8>, u64, i64)> {
         let count_request = |prove| DocumentCountRequest {
@@ -1330,7 +1318,7 @@ fn should_keep_an_empty_preallocated_group_on_a_page_of_range_reads() {
                 let (root_hash, proved) = query
                     .verify_distinct_count_proof(&proof, 1, true, pv)
                     .expect("the count page's proof verifies");
-                assert_live_root_hash(root_hash);
+                assert_live_root_hash(&drive, root_hash);
                 let rows = |entries: Vec<SplitCountEntry>| {
                     entries
                         .into_iter()
@@ -1362,7 +1350,7 @@ fn should_keep_an_empty_preallocated_group_on_a_page_of_range_reads() {
                 let (root_hash, proved) = sum_query(index)
                     .verify_distinct_sum_proof(&proof, 1, true, pv)
                     .expect("the sum page's proof verifies");
-                assert_live_root_hash(root_hash);
+                assert_live_root_hash(&drive, root_hash);
                 let rows = |entries: Vec<SumEntry>| {
                     entries
                         .into_iter()
@@ -1394,7 +1382,7 @@ fn should_keep_an_empty_preallocated_group_on_a_page_of_range_reads() {
                 let (root_hash, proved) = sum_query(index)
                     .verify_distinct_count_and_sum_proof(&proof, 1, true, pv)
                     .expect("the average page's proof verifies");
-                assert_live_root_hash(root_hash);
+                assert_live_root_hash(&drive, root_hash);
                 let rows = |entries: Vec<AverageEntry>| {
                     entries
                         .into_iter()
@@ -1555,15 +1543,7 @@ fn should_keep_an_empty_group_a_preallocated_sibling_creates() {
         }
         .verify_distinct_count_proof(&proof, 1, true, pv)
         .expect("the page's proof verifies");
-        assert_eq!(
-            root_hash,
-            drive
-                .grove
-                .root_hash(None, &pv.drive.grove_version)
-                .unwrap()
-                .expect("root hash must be readable"),
-            "the proof must reconstruct the live grovedb root hash"
-        );
+        assert_live_root_hash(&drive, root_hash);
         assert_eq!(proved, unproved, "proved page after {after:?}");
         unproved
             .into_iter()

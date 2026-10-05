@@ -768,6 +768,84 @@ fn should_preserve_descending_documents_and_key_ordered_counts() {
     );
 }
 
+/// Documents of a `documentsSummable` type are stored as items carrying a
+/// sum: the composite verifier reads them as documents, page and sub-query
+/// alike, not as counts no component selected.
+#[test]
+fn should_verify_a_composition_over_documents_that_carry_a_sum() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
+        false,
+        pv,
+    )
+    .expect("expected to parse the tip jar contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the contract");
+    let mut tip_ids = Vec::new();
+    for (seed, amount) in [(1u64, 5u64), (2, 7)] {
+        let mut tip = build(&contract, "tip", seed);
+        tip.set("recipient", Value::Identifier(OWNER_1));
+        tip.set("amount", Value::U64(amount));
+        tip.set("sentAt", Value::U64(seed));
+        tip_ids.push(tip.id().to_buffer());
+        insert(&drive, &contract, "tip", &tip);
+    }
+
+    let page = DriveDocumentQuery {
+        contract: &contract,
+        document_type: contract.document_type_for_name("tip").expect("tip"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(tip_ids.iter().copied().map(Value::Identifier).collect()),
+            }],
+            pv,
+        )
+        .expect("by-id page"),
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let query = page.with_sub_queries(vec![bound(
+        &contract,
+        "tip",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "recipient",
+        "recipient",
+        Some(10),
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(materialized.page_documents.len(), 2);
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("a composition over sum-carrying documents verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
 /// The full round trip: the server's materialized result and the
 /// verifier's composed result agree component for component.
 #[test]

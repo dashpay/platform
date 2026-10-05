@@ -1438,6 +1438,16 @@ pub fn pins_reach_chain(index: &Index, pin_depth: usize, chain_position: Option<
 /// verifier all ask this, so the proof keeps what the unproven read keeps.
 /// Only meta-schema v3 (protocol version 14) admits `preallocated` and
 /// `outlivesDelete`, so every earlier index drops its empty groups as before.
+///
+/// One empty group it does not cover: a `nullSearchable: false` index keeps
+/// the value tree of the null key (the empty key) with nothing in it, since
+/// the walker creates the value tree before the reference step declines a
+/// document without the value, and no delete prunes it. A range that includes
+/// the empty key (`<`, `<=`, a `between` from it) still counts that group in
+/// its limit and leaves it out, so such a page may come back short with more
+/// groups after it. Keeping it here would change what the shipped count
+/// verifier returns at every protocol version, so it stays a documented
+/// exception.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn index_keeps_empty_groups(document_type: DocumentTypeRef, index: &Index) -> bool {
     document_type.indexes().values().any(|other| {
@@ -1446,25 +1456,65 @@ pub(crate) fn index_keeps_empty_groups(document_type: DocumentTypeRef, index: &I
     })
 }
 
-/// A range total's aggregate read without a proof, or zero when the tree it
-/// reads does not exist. An equality or `IN` value on the prefix that no
-/// document holds has no subtree, and grovedb's `query_aggregate_count`,
-/// `query_aggregate_sum` and `query_aggregate_count_and_sum` open the leaf
-/// tree directly, failing on the missing parent key
-/// (`InvalidParentLayerPath`), where the proof's carrier verifier drops a
-/// proved-absent `IN` value and the distinct walk returns nothing. Any other
-/// error stays an error.
+/// Whether a grovedb error from a raw path query says the queried path does
+/// not exist yet (no document of the type, no entry under the index), which a
+/// walk answers with no rows.
+#[cfg(feature = "server")]
+pub(crate) fn is_absent_path(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::GroveDB(e) if matches!(
+            e.as_ref(),
+            grovedb::Error::PathKeyNotFound(_)
+                | grovedb::Error::PathNotFound(_)
+                | grovedb::Error::PathParentLayerNotFound(_)
+        )
+    )
+}
+
+/// A range total's aggregate read without a proof (the tree at `path`), or
+/// zero when that tree does not exist. An equality or `IN` value on the prefix
+/// that no document holds has no subtree, and grovedb's
+/// `query_aggregate_count`, `query_aggregate_sum` and
+/// `query_aggregate_count_and_sum` open the leaf tree directly and fail with
+/// `InvalidParentLayerPath`. grovedb raises that for any failure reading a
+/// parent key, a corrupt or unreadable element included, so the zero is
+/// answered only once a plain read of the path, from its root down, finds a key
+/// missing; any other error stays an error. The proof agrees: its verifiers
+/// accept the prover's proof that the key is missing as a zero total
+/// ([`crate::verify::verify_absent_range_tree`]). Not where the missing key sits
+/// below an `IN` value of a carrier proof, between the `IN` and the range: the
+/// carrier verifier refuses that proof, though zero is the answer.
+///
+/// Unversioned, so every protocol version reaches it: before, such a read
+/// failed with an internal error at every protocol version with range counts.
 #[cfg(feature = "server")]
 pub(crate) fn aggregate_or_zero_when_absent<T: Default>(
+    drive: &Drive,
+    path: &[Vec<u8>],
     value: Result<T, grovedb::Error>,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<T, Error> {
     match value {
-        Err(
-            grovedb::Error::InvalidParentLayerPath(_)
-            | grovedb::Error::PathParentLayerNotFound(_)
-            | grovedb::Error::PathNotFound(_)
-            | grovedb::Error::PathKeyNotFound(_),
-        ) => Ok(T::default()),
+        Err(error @ grovedb::Error::InvalidParentLayerPath(_)) => {
+            for depth in 0..path.len() {
+                let found = drive
+                    .grove
+                    .get_raw_optional(
+                        path[..depth].into(),
+                        &path[depth],
+                        transaction,
+                        &platform_version.drive.grove_version,
+                    )
+                    .unwrap()
+                    .map_err(|e| Error::GroveDB(Box::new(e)))?;
+                if found.is_none() {
+                    return Ok(T::default());
+                }
+            }
+            Err(Error::GroveDB(Box::new(error)))
+        }
         other => other.map_err(|e| Error::GroveDB(Box::new(e))),
     }
 }
@@ -1510,82 +1560,59 @@ pub(crate) fn prefix_to_last_path_query(
     }
 }
 
-/// Range-total admission, in its own module so only the refusal can build a
-/// [`RangeTotalAdmitted`].
+/// Refuses a range total (one aggregate over a range, or one per carrier
+/// branch) read through `index` when its path passes through a ranked level:
+/// a level whose property-name tree Drive lays out as an indexed tree,
+/// whichever of the type's indexes ranks it (an index may continue below
+/// another's ranked last property). It walks the type's index structure along
+/// the index's levels and asks each the resolver the write path uses
+/// ([`property_name_tree_type_and_ranked_axes_for_level`]), so it reads the
+/// layout Drive builds. grovedb's range aggregates neither read an indexed
+/// tree (`AggregateCountOnRange`, `AggregateSumOnRange` and
+/// `AggregateCountAndSumOnRange` take provable trees only) nor descend
+/// through one when proving. An unproven read through a ranked ancestor
+/// would succeed (it opens only the leaf tree), but it is refused as well:
+/// every count, sum and count-and-sum range-total path builder calls this, so
+/// the unproven read, the proof and its verification refuse alike rather than
+/// answering only without a proof. Grouped by the last property, the same
+/// range reads each value.
+///
+/// Unversioned, so every protocol version reaches it: rankings exist only
+/// from protocol version 14 (meta-schema v3), so no level is an indexed tree
+/// before and it refuses nothing.
 #[cfg(any(feature = "server", feature = "verify"))]
-mod range_total_admission {
-    use super::*;
-
-    /// An index's admission to a range total by
-    /// [`refuse_a_range_total_through_a_ranked_index`], the only code able to
-    /// build one (its field is private to this module). The range-total builders
-    /// that skip that refusal, which a per-`In` fan-out calls once per value
-    /// after refusing once, take one, so none can build without it. It names no
-    /// index: a caller passes the one it got refusing the index it builds over.
-    #[derive(Debug, Clone, Copy)]
-    pub struct RangeTotalAdmitted(());
-
-    /// Refuses a range total (one aggregate over a range, or one per carrier
-    /// branch) read through `index` when its path passes through a ranked level:
-    /// a level whose property-name tree Drive lays out as an indexed tree,
-    /// whichever of the type's indexes ranks it (an index may continue below
-    /// another's ranked last property). It walks the type's index structure along
-    /// the index's levels and asks each the resolver the write path uses
-    /// ([`property_name_tree_type_and_ranked_axes_for_level`]), so it reads the
-    /// layout Drive builds. grovedb's range aggregates neither read an indexed
-    /// tree (`AggregateCountOnRange`, `AggregateSumOnRange` and
-    /// `AggregateCountAndSumOnRange` take provable trees only) nor descend
-    /// through one when proving. An unproven read through a ranked ancestor
-    /// would succeed (it opens only the leaf tree), but it is refused as well:
-    /// every count, sum and count-and-sum range-total path builder calls this, or
-    /// takes the [`RangeTotalAdmitted`] it returns, so the unproven read, the
-    /// proof and its verification refuse alike rather than answering only without
-    /// a proof. Grouped by the last property, the same range reads each value.
-    ///
-    /// Unversioned, so every protocol version reaches it: rankings exist only
-    /// from protocol version 14 (meta-schema v3), so no level is an indexed tree
-    /// before and it refuses nothing.
-    pub fn refuse_a_range_total_through_a_ranked_index(
-        document_type: DocumentTypeRef,
-        index: &Index,
-    ) -> Result<RangeTotalAdmitted, Error> {
-        let mut level = document_type.index_structure();
-        let mut crosses_a_ranked_level = false;
-        for (position, property) in index.properties.iter().enumerate() {
-            let Some(sub_level) = level
-                .sub_levels()
-                .get(&index.level_key(position, &property.name))
-            else {
-                break;
-            };
-            if !property_name_tree_type_and_ranked_axes_for_level(sub_level)?
-                .1
-                .is_empty()
-            {
-                crosses_a_ranked_level = true;
-                break;
-            }
-            level = sub_level;
+pub fn refuse_a_range_total_through_a_ranked_index(
+    document_type: DocumentTypeRef,
+    index: &Index,
+) -> Result<(), Error> {
+    let mut level = document_type.index_structure();
+    for (position, property) in index.properties.iter().enumerate() {
+        let Some(sub_level) = level
+            .sub_levels()
+            .get(&index.level_key(position, &property.name))
+        else {
+            return Ok(());
+        };
+        if !property_name_tree_type_and_ranked_axes_for_level(sub_level)?
+            .1
+            .is_empty()
+        {
+            let last = index
+                .properties
+                .last()
+                .map(|property| property.name.as_str())
+                .unwrap_or_default();
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "a range total over the index `{}` is not available: its path passes through a \
+                 ranked level, and a range total is read only through unranked trees; group by \
+                 `{last}` to read each value in the range",
+                index.name
+            ))));
         }
-        if !crosses_a_ranked_level {
-            return Ok(RangeTotalAdmitted(()));
-        }
-        let last = index
-            .properties
-            .last()
-            .map(|property| property.name.as_str())
-            .unwrap_or_default();
-        Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-            "a range total over the index `{}` is not available: its path passes through a ranked \
-             level, and a range total is read only through unranked trees; group by `{last}` to \
-             read each value in the range",
-            index.name
-        ))))
+        level = sub_level;
     }
+    Ok(())
 }
-
-#[cfg(any(feature = "server", feature = "verify"))]
-pub use range_total_admission::{refuse_a_range_total_through_a_ranked_index, RangeTotalAdmitted};
 
 /// Rejects a query whose resolution provenance and clause shapes disagree:
 /// every field in `resolved_time_ranges` must appear in the where

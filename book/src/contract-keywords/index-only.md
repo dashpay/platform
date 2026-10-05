@@ -71,7 +71,7 @@ A `like` of a social contract whose `post` type cannot be deleted:
 
 **No other action.** A document cannot be replaced, transferred, sold or repriced.
 
-**Queries.** A query goes through one index and returns documents rebuilt from its entries: the index's properties, the terminal, and `$ownerId` and `$createdAt` where the index holds them. A query through an index that holds only some of the properties yields only those. The rebuilt `$id` is a hash of the entry's position and addresses nothing, so there is no fetch by `$id` and no `startAt` cursor; a query pages by the terminal instead (`postId > <last seen>`, with a limit). A query that sets the terminal with an equality can put an `in` on the index's last property, with a limit of at least its number of values; a range on an index property in such a query is refused, because its pages could hold fewer rows than exist. List the equality-bound properties first in an index, and page by a range on its terminal instead. The proof that a create or delete took effect is the presence or absence of its entry in the **proof index**, an index that involves no `$createdAt`, does not skip and keeps entries.
+**Queries.** A query goes through one index and returns documents rebuilt from its entries: the index's properties, the terminal, and `$ownerId` and `$createdAt` where the index holds them. A query through an index that holds only some of the properties yields only those with a proof; without one it is refused (`Unsupported`), since the documents could not be serialized, and so is a chained or composite read of them. The rebuilt `$id` is a hash of the entry's position and addresses nothing, so there is no fetch by `$id` and no `startAt` cursor; a query pages by the terminal instead (`postId > <last seen>`, with a limit). A query that sets the terminal with an equality can put an `in` on the index's last property, with a limit of at least its number of values; a range on an index property in such a query is refused, because its pages could hold fewer rows than exist. List the equality-bound properties first in an index, and page by a range on its terminal instead. The proof that a create or delete took effect is the presence or absence of its entry in the **proof index**, an index that involves no `$createdAt`, does not skip and keeps entries.
 
 Rules at registration:
 
@@ -86,7 +86,7 @@ Rules at registration:
 - Every required property appears in at least one index that does not skip and keeps entries, as a property or a terminal component, except the `entryPayload` properties and a property a `summableOffCountIndex` index's source fixes. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone, except, again, one such a source fixes.
 - The type cannot also set [`ttl`](ttl.md) or `moderatorAbilities.delete`, and a `refersTo` `findBy` cannot target it.
 
-A property a `summableOffCountIndex` index's source fixes may sit in no index that keeps entries: in the [`summableOffCountIndex`](#summableoffcountindex) example, a like's `postAuthor`, which the `postId` reference's `where` entry `"$ownerId": "postAuthor"` fixes to the post's owner, sits only in `byAuthorPost`. No query returns such a property, so a document read back lacks it. Its value is the referenced document's (here the post's `$ownerId`), so a client building a delete reads it back from there.
+A property a `summableOffCountIndex` index's source fixes may sit in no index that keeps entries: in the [`summableOffCountIndex`](#summableoffcountindex) example, a like's `postAuthor`, which the `postId` reference's `where` entry `"$ownerId": "postAuthor"` fixes to the post's owner, sits only in `byAuthorPost`. No query returns such a property: a proved read gives documents without it, required or not, and since no index of the type then holds every property, every documents read of the type without a proof is refused. Its value is the referenced document's (here the post's `$ownerId`), so a client building a delete reads it back from there.
 
 ## `entryPayload`
 
@@ -175,6 +175,32 @@ A referenced document whose agreed value takes more bytes than the referring pro
 
 A like counted by post, by author and by hashtag is written three times: once in `byPost` and once in each of the other two, which hold nothing `byPost` does not already hold. When every like of a post lands in the same author and the same hashtag, the other two only need to know how many likes each post has. An index with `summableOffCountIndex` keeps exactly that: one counter per group, holding the number of entries its source index keeps for it, in place of an entry per document. A like then adds one to two counters instead of writing two more entries.
 
+Here the like of the [example](#example) also carries its post's author, fixed through the reference's `where` like its hashtag:
+
+```json
+"properties": {
+  "postId": {
+    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+    "contentMediaType": "application/x.dash.dpp.identifier",
+    "refersTo": {
+      "type": "permanentDocument",
+      "documentType": "post",
+      "where": { "hashtag": "hashtag", "$ownerId": "postAuthor" }
+    },
+    "position": 0
+  },
+  "hashtag": { "type": "string", "minLength": 1, "maxLength": 59, "position": 1 },
+  "postAuthor": {
+    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+    "contentMediaType": "application/x.dash.dpp.identifier",
+    "position": 2
+  }
+},
+"required": ["postId", "postAuthor"]
+```
+
+and counts its likes per author and post:
+
 ```json
 {
   "name": "byAuthorPost",
@@ -204,7 +230,7 @@ Rules at registration:
 - The source is another index of the type holding every document exactly once: it keeps entries (it is no `summableOffCountIndex` index itself), skips no document (`skipIfAbsent`), keeps no deleted one (`outlivesDelete`) and involves no `$createdAt`.
 - One summed value per type: no index of the type declares `summable`, every `summableOffCountIndex` index names the same source, and no property shares the source's name.
 - Every property of the source is a property of the index, so a group never counts two source groups.
-- Every other property is a referring value of a `where` on a `permanentDocument` or `moderatedDocument` reference to a type of the same contract, held by a property of the source, and the referenced value never changes once written: `$id`, `$creatorId`, an `$ownerId` no transfer or trade changes, or a property the referenced type never lets change. Through a `moderatedDocument` reference, the value must also stay on the removal record ([`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields)). Every like of one post then lands in one group.
+- Every other property is a referring value of a `where` on a `permanentDocument` or `moderatedDocument` reference by id (no `findBy` or `inList`, whose key could move to another document) to a type of the same contract, held by a property of the source, and the referenced value never changes once written: `$id`, `$creatorId`, `$createdAt` (and its block heights), an `$ownerId` no transfer or trade changes, `$updatedAt` or `$transferredAt` where nothing changes them, or a property the referenced type never lets change. Through a `moderatedDocument` reference, the value must also stay on the removal record ([`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields)). Every like of one post then lands in one group.
 - No other index continues below the index's last property, where the counter stands.
 - `rankedSummable` and `rankedAverageable` take the `{ "at": ... }` form only on such an index.
 

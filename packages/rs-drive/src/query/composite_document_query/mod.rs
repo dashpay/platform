@@ -102,6 +102,8 @@ use crate::error::Error;
 use crate::query::drive_document_count_query::point_lookup_count_entries;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
 #[cfg(feature = "server")]
+use crate::query::is_absent_path;
+#[cfg(feature = "server")]
 use crate::query::moderated_join::fetch_removals;
 use crate::query::moderated_join::{
     decode_removals, pair_missing_with_removals, removals_path_query,
@@ -1800,7 +1802,19 @@ impl<'a> DriveDocumentQuery<'a> {
                 entries.push((key, element));
                 continue;
             }
-            if !matches!(element, Element::Item(..)) {
+            // A document is any item, the sum-bearing ones of a
+            // `documentsSummable` type or a `summable` indexOnly index
+            // included (the items `decode_document_trios` reads); a count is a
+            // tree or a counter. Edited in place for the composite verifier's
+            // shipped generation: such a document failed verification as a
+            // count before, and every other element is classified as before.
+            if !matches!(
+                element.underlying(),
+                Element::Item(..)
+                    | Element::ItemWithSumItem(..)
+                    | Element::ItemWithBackwardsReferences(..)
+                    | Element::ItemWithSumItemWithBackwardsReferences(..)
+            ) {
                 let position = (path, key);
                 let members = count_members_by_position.get(&position).ok_or_else(|| {
                     corrupted_proof(
@@ -2040,22 +2054,6 @@ impl<'a> DriveDocumentQuery<'a> {
             )
         })
     }
-}
-
-/// Whether a grovedb error says the queried path does not exist yet (no
-/// document of the type, no entry under the index), which a query
-/// answers with no rows.
-#[cfg(feature = "server")]
-fn is_absent_path(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::GroveDB(e) if matches!(
-            e.as_ref(),
-            grovedb::Error::PathKeyNotFound(_)
-                | grovedb::Error::PathNotFound(_)
-                | grovedb::Error::PathParentLayerNotFound(_)
-        )
-    )
 }
 
 #[cfg(feature = "server")]

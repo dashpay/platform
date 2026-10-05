@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::query::drive_document_count_query::counter_sum_as_document_count;
 use crate::query::DriveDocumentCountQuery;
-use crate::verify::RootHash;
+use crate::verify::{verify_absent_range_tree, RootHash};
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -59,12 +59,19 @@ impl DriveDocumentCountQuery<'_> {
         }
         let path_query =
             self.carrier_aggregate_count_path_query(limit, left_to_right, platform_version)?;
-        let (root_hash, entries) = GroveDb::verify_aggregate_count_query_per_key(
+        // A carrier below an equality value no document holds has no branch
+        // (`verify_absent_range_tree`). Edited in place in this shipped
+        // generation: the prover is unchanged, and such a proof failed to
+        // verify before.
+        match GroveDb::verify_aggregate_count_query_per_key(
             proof,
             &path_query,
             &platform_version.drive.grove_version,
-        )
-        .map_err(|e| Error::GroveDB(Box::new(e)))?;
-        Ok((root_hash, entries))
+        ) {
+            Ok(verified) => Ok(verified),
+            Err(error) => verify_absent_range_tree(proof, &path_query.path, platform_version)
+                .map(|root_hash| (root_hash, Vec::new()))
+                .ok_or_else(|| Error::GroveDB(Box::new(error))),
+        }
     }
 }

@@ -414,10 +414,9 @@ fn counter_types_moved(
     }
     if preallocates {
         moved.extend(
-            preallocation_bindings_targeting(contract, document_type, |index| {
-                index.is_summable_off_count_index()
-            })
-            .map(|(referring_type, _, _)| referring_type.name().clone()),
+            preallocation_bindings_targeting(contract, document_type)
+                .filter(|(_, index, _)| index.is_summable_off_count_index())
+                .map(|(referring_type, _, _)| referring_type.name().clone()),
         );
     }
     moved

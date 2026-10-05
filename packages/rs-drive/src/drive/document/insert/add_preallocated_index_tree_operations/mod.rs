@@ -114,11 +114,9 @@ impl Drive {
         } else {
             None
         };
-        for (referring_type, index, binding) in preallocation_bindings_targeting(
-            contract,
-            document_and_contract_info.document_type,
-            |_| true,
-        ) {
+        for (referring_type, index, binding) in
+            preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
+        {
             self.add_preallocated_index_tree_operations_for_binding(
                 document_and_contract_info,
                 referring_type,

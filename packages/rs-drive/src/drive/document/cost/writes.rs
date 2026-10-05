@@ -826,9 +826,7 @@ impl Context<'_> {
             .document_flags
             .clone()
             .filter(|_| contract.config().can_be_deleted());
-        for (referring, index, binding) in
-            preallocation_bindings_targeting(contract, target, |_| true)
-        {
+        for (referring, index, binding) in preallocation_bindings_targeting(contract, target) {
             self.referring_type = Some(referring.name().clone());
             let result = self.preallocation(referring, index, &binding.key_sources, flags.as_ref());
             self.referring_type = None;

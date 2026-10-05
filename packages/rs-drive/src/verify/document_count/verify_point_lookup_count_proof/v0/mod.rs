@@ -106,8 +106,9 @@ impl DriveDocumentCountQuery<'_> {
         // `self.index` changes the decode only on a `summableOffCountIndex`
         // index, which only meta-schema v3 (protocol version 14) admits, and
         // the decode looks through a wrapped element on every index, where
-        // no element a count read reaches before protocol version 14 is
-        // wrapped (see `point_lookup_count_entries`).
+        // the only wrapper a count read reaches before protocol version 14 is
+        // `NotSummed`, whose count grovedb passes through, so the count is
+        // the same (see `point_lookup_count_entries`).
         let out = point_lookup_count_entries(self.index, base_path_len, has_in_clause, elements);
         Ok((root_hash, out))
     }

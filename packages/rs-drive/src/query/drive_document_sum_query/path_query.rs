@@ -26,7 +26,6 @@ use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSum
 use crate::query::ResolvedTimeRange;
 use crate::query::{
     pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
-    RangeTotalAdmitted,
 };
 use crate::query::{WhereClause, WhereOperator};
 // `serialize_value_for_key` is a `DocumentTypeV0Methods` method, NOT
@@ -271,25 +270,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let admitted = self.refuse_a_range_sum_total()?;
-        self.admitted_aggregate_sum_path_query(admitted, platform_version)
-    }
-
-    /// Refuses an index whose path passes through a ranked level, which no
-    /// range total can be read through (see
-    /// [`refuse_a_range_total_through_a_ranked_index`]). It depends on the
-    /// index alone, so a per-`In` fan-out runs it once, not per value.
-    pub(crate) fn refuse_a_range_sum_total(&self) -> Result<RangeTotalAdmitted, Error> {
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
-    }
-
-    /// [`Self::aggregate_sum_path_query`] over an index
-    /// [`Self::refuse_a_range_sum_total`] already admitted.
-    pub(crate) fn admitted_aggregate_sum_path_query(
-        &self,
-        _admitted: RangeTotalAdmitted,
-        platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_sum_total()?;
         // Bind the range clause to the index's *terminator* property so a
         // request with multiple range-like clauses (e.g. `prefix > x AND
         // terminator > y`) picks the right one. The previous predicate
@@ -369,6 +350,13 @@ impl<'a> DriveDocumentSumQuery<'a> {
         Ok(PathQuery::new(path, SizedQuery::new(query, None, None)))
     }
 
+    /// Refuses an index whose path passes through a ranked level, which no
+    /// range total can be read through (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]).
+    pub(crate) fn refuse_a_range_sum_total(&self) -> Result<(), Error> {
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
+    }
+
     /// Instance-method form: builds the combined PCPS
     /// `AggregateCountAndSumOnRange` path query against `self.index`.
     /// Requires the index to declare BOTH `rangeCountable: true` AND
@@ -377,17 +365,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let admitted = self.refuse_a_range_sum_total()?;
-        self.admitted_aggregate_count_and_sum_path_query(admitted, platform_version)
-    }
-
-    /// [`Self::aggregate_count_and_sum_path_query`] over an index
-    /// [`Self::refuse_a_range_sum_total`] already admitted.
-    pub(crate) fn admitted_aggregate_count_and_sum_path_query(
-        &self,
-        _admitted: RangeTotalAdmitted,
-        platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_sum_total()?;
         if !self.index.range_countable {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "aggregate_count_and_sum_path_query: index must declare BOTH \

@@ -32,7 +32,7 @@ use super::{counter_sum_entry_as_count_entry, DriveDocumentCountQuery, SplitCoun
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{aggregate_or_zero_when_absent, index_keeps_empty_groups};
+use crate::query::{aggregate_or_zero_when_absent, index_keeps_empty_groups, is_absent_path};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -179,9 +179,6 @@ impl DriveDocumentCountQuery<'_> {
         // classic request-amplification surface on a public DAPI
         // endpoint. The per-In fan-out closes that surface.
         if !options.distinct {
-            // Once for every aggregate read below: it depends on the index
-            // alone.
-            let admitted = self.refuse_a_range_count_total()?;
             if has_in_on_prefix {
                 let in_clause = self
                     .where_clauses
@@ -246,8 +243,8 @@ impl DriveDocumentCountQuery<'_> {
                         index: self.index,
                         where_clauses: clauses_for_value,
                     };
-                    let path_query = per_value_query
-                        .admitted_aggregate_count_path_query(admitted, platform_version)?;
+                    let path_query =
+                        per_value_query.aggregate_count_path_query(platform_version)?;
                     // Destructure the `CostContext` explicitly rather than
                     // calling `.unwrap()` on it: `CostContext::unwrap` is
                     // infallible (it just drops the cost field), but the
@@ -261,7 +258,13 @@ impl DriveDocumentCountQuery<'_> {
                         transaction,
                         &drive_version.grove_version,
                     );
-                    let count = aggregate_or_zero_when_absent(value)?;
+                    let count = aggregate_or_zero_when_absent(
+                        drive,
+                        &path_query.path,
+                        value,
+                        transaction,
+                        platform_version,
+                    )?;
                     total = total.saturating_add(count);
                 }
                 return Ok(vec![SplitCountEntry {
@@ -273,15 +276,20 @@ impl DriveDocumentCountQuery<'_> {
                 }]);
             }
             // Flat summed (no In on prefix): single aggregate read.
-            let path_query =
-                self.admitted_aggregate_count_path_query(admitted, platform_version)?;
+            let path_query = self.aggregate_count_path_query(platform_version)?;
             // See In-fan-out branch above for the destructure rationale.
             let CostContext { value, cost: _ } = drive.grove.query_aggregate_count(
                 &path_query,
                 transaction,
                 &drive_version.grove_version,
             );
-            let count = aggregate_or_zero_when_absent(value)?;
+            let count = aggregate_or_zero_when_absent(
+                drive,
+                &path_query.path,
+                value,
+                transaction,
+                platform_version,
+            )?;
             return Ok(vec![SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
@@ -330,14 +338,7 @@ impl DriveDocumentCountQuery<'_> {
         );
         let elements = match result {
             Ok((elements, _)) => elements,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
+            Err(error) if is_absent_path(&error) => {
                 // No matching prefix path — distinct mode returns
                 // an empty entry list. (Summed modes returned earlier
                 // via the aggregate fast path, so the empty case is

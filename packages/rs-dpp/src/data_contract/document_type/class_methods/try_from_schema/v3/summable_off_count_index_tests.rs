@@ -158,6 +158,12 @@ fn assert_refused(result: Result<BTreeMap<String, DocumentType>, ProtocolError>,
         error.to_string().contains(fragment),
         "expected {fragment:?} in: {error}"
     );
+    // A paid refusal needs the consensus variant: a bare data contract error
+    // would surface as an internal error in a block
+    assert!(
+        matches!(error, ProtocolError::ConsensusError(_)),
+        "expected a consensus error, got {error:?}"
+    );
 }
 
 fn with(mut index: Value, key: &str, value: Value) -> Value {
@@ -605,6 +611,114 @@ fn should_refuse_a_source_that_skips_documents() {
         parse(post(), like(vec![by_post(), tagged, index]), false),
         "must hold every document exactly once",
     );
+}
+
+#[test]
+fn should_refuse_index_shapes_a_counter_cannot_keep() {
+    let window = platform_value!({ "on": "$createdAt", "range": 86400, "step": 86400 });
+    for (indices, fragment) in [
+        (
+            vec![
+                by_post(),
+                with(
+                    author_post(),
+                    "countable",
+                    Value::Text("countableAllowingOffset".into()),
+                ),
+            ],
+            "cannot be countableAllowingOffset",
+        ),
+        (
+            vec![
+                by_post(),
+                with(
+                    with(
+                        author_post(),
+                        "properties",
+                        platform_value!([
+                            { "$createdAt": "asc" },
+                            { "postAuthor": "asc" },
+                            { "postId": "asc" },
+                        ]),
+                    ),
+                    "timeRange",
+                    window,
+                ),
+            ],
+            "cannot declare timeRange or integerRange",
+        ),
+        (
+            vec![
+                by_post(),
+                with(author_post(), "outlivesDelete", Value::Bool(true)),
+            ],
+            "cannot outlive deletes",
+        ),
+        (
+            vec![
+                by_post(),
+                platform_value!({
+                    "name": "byAuthorPost",
+                    "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }],
+                    "summableOffCountIndex": "byPost",
+                    "rangeSummable": true,
+                    "unique": true,
+                }),
+            ],
+            "cannot be unique or contested",
+        ),
+        (
+            vec![with(author_post(), "name", Value::Text("byPost".into()))],
+            "cannot name itself",
+        ),
+        (
+            vec![
+                by_post(),
+                platform_value!({
+                    "name": "byNothing",
+                    "summableOffCountIndex": "byPost",
+                    "rangeSummable": true,
+                }),
+            ],
+            "needs properties",
+        ),
+    ] {
+        assert_refused(parse(post(), like(indices), false), fragment);
+    }
+}
+
+#[test]
+fn should_refuse_a_source_that_outlives_deletes_or_involves_created_at() {
+    let timed = platform_value!({
+        "name": "byPostTime",
+        "properties": [{ "postId": "asc" }, { "$createdAt": "asc" }],
+        "terminal": "$ownerId",
+    });
+    let outliving = platform_value!({
+        "name": "byTrendPost",
+        "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+        "terminal": "$ownerId",
+        "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+        "outlivesDelete": true,
+    });
+    for (source_name, source) in [("byPostTime", timed), ("byTrendPost", outliving)] {
+        let index = with(
+            author_post(),
+            "summableOffCountIndex",
+            Value::Text(source_name.into()),
+        );
+        let mut schema = like(vec![by_post(), source, index]);
+        schema
+            .set_value(
+                "required",
+                platform_value!(["postId", "postAuthor", "$createdAt"]),
+            )
+            .expect("required applies");
+        assert_refused(
+            parse(post(), schema, false),
+            "must hold every document exactly once",
+        );
+    }
 }
 
 #[test]

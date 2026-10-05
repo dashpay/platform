@@ -188,16 +188,14 @@ pub(crate) fn index_only_member_key(
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
-/// Every preallocated index that `admits` and whose binding targets
-/// `target_document_type`, with the indexOnly referring type holding it and
-/// the binding: what an insert of a `target_document_type` document
-/// preallocates (with `admits` taking every index), in the order it does.
-/// Shared by the preallocation path, the batch methods' counter refusal and
-/// `drive::document::cost`.
+/// Every preallocated index whose binding targets `target_document_type`,
+/// with the indexOnly referring type holding it and the binding: what an
+/// insert of a `target_document_type` document preallocates, in the order it
+/// does. Shared by the preallocation path, the batch methods' counter refusal
+/// and `drive::document::cost`.
 pub(crate) fn preallocation_bindings_targeting<'a>(
     contract: &'a DataContract,
     target_document_type: DocumentTypeRef<'a>,
-    admits: impl Fn(&Index) -> bool + Copy + 'a,
 ) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
     contract
         .document_types()
@@ -210,7 +208,7 @@ pub(crate) fn preallocation_bindings_targeting<'a>(
             referring_type
                 .indexes()
                 .values()
-                .filter(move |index| index.preallocated && admits(index))
+                .filter(|index| index.preallocated)
                 .flat_map(move |index| {
                     // Target-filtered derivation: candidates naming other
                     // target types are rejected before any binding plan is

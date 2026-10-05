@@ -340,12 +340,16 @@ struct ExpandableIndexRowView: View {
                         }
                     }
 
+                    // Read once: each keyword accessor parses the document
+                    // type's whole persisted schema.
+                    let keywords = index.authoredKeywords
+
                     // An omitted terminal on an indexOnly type means
                     // $ownerId per DPP; the SDK persists verbatim, so the
                     // display default is applied here. A
                     // summableOffCountIndex index keeps one counter per
                     // group instead of entries, so it has no terminal.
-                    let displayTerminal: String? = index.summableOffCountIndex != nil
+                    let displayTerminal: String? = keywords.summableOffCountIndex != nil
                         ? nil
                         : index.terminal ?? (index.documentType?.indexOnly == true ? "$ownerId" : nil)
                     if let terminal = displayTerminal {
@@ -392,25 +396,18 @@ struct ExpandableIndexRowView: View {
                         if let summable = index.summable ?? index.averageable {
                             labels.append("Summable (\(summable))")
                         }
-                        if let source = index.summableOffCountIndex {
+                        if let source = keywords.summableOffCountIndex {
                             labels.append("Counter of \(source)")
                         }
                         if index.rangeSummable || index.rangeAverageable { labels.append("Range Sum") }
-                        if let ranked = Self.rankingLabel(
-                            "Ranked by Count", declared: index.rankedCountable, at: index.rankedCountableAt
-                        ) {
-                            labels.append(ranked)
-                        }
-                        if let ranked = Self.rankingLabel(
-                            "Ranked by Sum", declared: index.rankedSummable, at: index.rankedSummableAt
-                        ) {
-                            labels.append(ranked)
-                        }
-                        if let ranked = Self.rankingLabel(
-                            "Ranked by Average", declared: index.rankedAverageable, at: index.rankedAverageableAt
-                        ) {
-                            labels.append(ranked)
-                        }
+                        let rankings: [(label: String, declared: Bool, at: [String])] = [
+                            ("Ranked by Count", index.rankedCountable, keywords.rankedCountableAt),
+                            ("Ranked by Sum", index.rankedSummable, keywords.rankedSummableAt),
+                            ("Ranked by Average", index.rankedAverageable, keywords.rankedAverageableAt)
+                        ]
+                        labels.append(contentsOf: rankings.compactMap {
+                            Self.rankingLabel($0.label, declared: $0.declared, at: $0.at)
+                        })
                         return labels
                     }()
                     if !axisLabels.isEmpty {

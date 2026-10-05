@@ -25,7 +25,6 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
     pins_reach_chain, prefix_to_last_path_query, refuse_a_range_total_through_a_ranked_index,
-    RangeTotalAdmitted,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
@@ -183,6 +182,15 @@ impl DriveDocumentCountQuery<'_> {
         })
     }
 
+    /// Refuses an index a range count total cannot be read through: a
+    /// `summableOffCountIndex` index ([`Self::refuse_a_counter_index`]) and
+    /// one whose path passes through a ranked level (see
+    /// [`refuse_a_range_total_through_a_ranked_index`]).
+    pub(crate) fn refuse_a_range_count_total(&self) -> Result<(), Error> {
+        self.refuse_a_counter_index()?;
+        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
+    }
+
     /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
     /// query against this count query's `range_countable` index.
     ///
@@ -210,27 +218,7 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let admitted = self.refuse_a_range_count_total()?;
-        self.admitted_aggregate_count_path_query(admitted, platform_version)
-    }
-
-    /// Refuses an index a range count total cannot be read through: a
-    /// `summableOffCountIndex` index ([`Self::refuse_a_counter_index`]) and
-    /// one whose path passes through a ranked level (see
-    /// [`refuse_a_range_total_through_a_ranked_index`]). It depends on the
-    /// index alone, so a per-`In` fan-out runs it once, not per value.
-    pub(crate) fn refuse_a_range_count_total(&self) -> Result<RangeTotalAdmitted, Error> {
-        self.refuse_a_counter_index()?;
-        refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
-    }
-
-    /// [`Self::aggregate_count_path_query`] over an index
-    /// [`Self::refuse_a_range_count_total`] already admitted.
-    pub(crate) fn admitted_aggregate_count_path_query(
-        &self,
-        _admitted: RangeTotalAdmitted,
-        platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
+        self.refuse_a_range_count_total()?;
         let range_clause = self
             .where_clauses
             .iter()

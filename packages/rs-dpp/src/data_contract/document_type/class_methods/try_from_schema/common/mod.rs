@@ -3396,8 +3396,9 @@ fn summable_off_count_index_error(
         return Some(format!(
             "{prefix} has \"{property}\", which is neither a property of its source \
              \"{source_name}\" nor fixed by it: it must be a referring value of a `where` on a \
-             same-contract permanentDocument or moderatedDocument reference held by a property \
-             of \"{source_name}\", or one source group would spread over several groups"
+             same-contract permanentDocument or moderatedDocument reference by id (no findBy or \
+             inList) held by a property of \"{source_name}\", or one source group would spread \
+             over several groups"
         ));
     }
     let depth = index.properties.len();

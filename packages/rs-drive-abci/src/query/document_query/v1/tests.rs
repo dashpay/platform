@@ -717,9 +717,9 @@ fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
     // `group_by=[in_field]` with an additional range clause is
     // valid: drive's `detect_mode` picks
     // `RangeAggregateCarrierProof` (grovedb #663) on the prove
-    // path and `RangeNoProof` per-In-branch on the no-prove path —
-    // both produce entries that line up with the caller's
-    // single-field GROUP BY shape.
+    // path, one entry per `In` value, and `RangeNoProof` on the
+    // no-prove path, which folds the per-In-branch totals into one
+    // entry.
     let request = GetDocumentsRequestV1 {
         selects: select_count_star(),
         group_by: vec!["brand".to_string()],

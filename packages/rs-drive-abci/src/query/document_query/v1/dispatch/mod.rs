@@ -15,9 +15,13 @@ mod ranked;
 mod sum;
 
 use crate::error::query::QueryError;
+use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     ranked_entry, RankedEntry,
 };
+use dpp::data_contract::errors::DataContractError;
+use dpp::ProtocolError;
+use drive::error::query::QuerySyntaxError;
 use drive::query::{RankedEntry as DriveRankedEntry, RankedEntryValue};
 
 /// Translate an rs-drive `RankedEntry` into the wire `RankedEntry`.
@@ -111,4 +115,42 @@ fn empty_ranking_proof_rejection(error: &drive::error::Error) -> Option<QueryErr
          index holds at least one document, the proved form works."
             .to_string(),
     ))
+}
+
+/// A failure serializing a document a non-proof chained or composite read
+/// returns. A document an indexOnly index synthesizes lacks every property no
+/// entry-keeping index holds (one a `summableOffCountIndex` index's source
+/// fixes), and a required one cannot be serialized: that is the query's
+/// doing, refused with a query error as a plain documents query through such
+/// an index is, not an internal one. Anything else stays an internal error.
+fn document_serialization_failure(error: ProtocolError) -> Result<QueryError, Error> {
+    match error {
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_)) => {
+            Ok(QueryError::Query(QuerySyntaxError::Unsupported(
+                "this indexOnly query's index does not cover every required property, so the \
+                 documents it synthesizes cannot be serialized into a non-proof response; query \
+                 through an index covering all properties, or use a proved query"
+                    .to_string(),
+            )))
+        }
+        other => Err(Error::Protocol(other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_answer_a_missing_required_property_with_a_query_error() {
+        let refused = document_serialization_failure(ProtocolError::DataContractError(
+            DataContractError::MissingRequiredKey("postAuthor".to_string()),
+        ));
+        assert!(matches!(
+            refused,
+            Ok(QueryError::Query(QuerySyntaxError::Unsupported(_)))
+        ));
+        let internal = document_serialization_failure(ProtocolError::Generic("other".to_string()));
+        assert!(matches!(internal, Err(Error::Protocol(_))));
+    }
 }

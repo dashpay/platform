@@ -17,6 +17,7 @@
 
 use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
 use crate::drive::Drive;
+use crate::drive::RootTree;
 use crate::query::drive_document_count_query::{
     CountMode, DocumentCountRequest, DocumentCountResponse,
 };
@@ -1118,16 +1119,178 @@ fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
 }
 
 /// A brand no widget carries has no subtree under the index, and a range
-/// total without a proof counts it as zero, as the proof's carrier drops it:
-/// across an `IN` its branch adds nothing, and a range of that brand alone
-/// totals zero.
+/// total counts it as zero, without a proof and with one alike, at the last
+/// shipped protocol version and the latest: across an `IN` its branch adds
+/// nothing, and a range of that brand alone totals zero, its proof verifying
+/// the brand absent against the live root.
 #[test]
 fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
     use crate::query::RangeCountOptions;
 
-    let drive = setup_drive_with_initial_state_structure(None);
-    let pv = PlatformVersion::latest();
-    let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
+    for pv in [
+        PlatformVersion::get(13).expect("protocol version 13 exists"),
+        PlatformVersion::latest(),
+    ] {
+        let drive = setup_drive_with_initial_state_structure(Some(pv));
+        let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        insert_brand_color_widgets(
+            &drive,
+            &contract,
+            &[("acme", "red"), ("acme", "red"), ("acme", "blue")],
+            pv,
+        );
+        let live_root = drive
+            .grove
+            .root_hash(None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable");
+
+        let brand = |operator: WhereOperator, value: Value| WhereClause {
+            field: "brand".to_string(),
+            operator,
+            value,
+        };
+        let after_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+        let nobrand = vec![
+            brand(WhereOperator::Equal, Value::Text("nobrand".to_string())),
+            after_blue.clone(),
+        ];
+        for (where_clauses, expected) in [
+            (
+                vec![
+                    brand(
+                        WhereOperator::In,
+                        Value::Array(vec![
+                            Value::Text("acme".to_string()),
+                            Value::Text("nobrand".to_string()),
+                        ]),
+                    ),
+                    after_blue.clone(),
+                ],
+                2,
+            ),
+            (nobrand.clone(), 0),
+        ] {
+            let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                document_type.indexes(),
+                &where_clauses,
+                &[],
+            )
+            .expect("byBrandColor answers the range");
+            let total = DriveDocumentCountQuery {
+                document_type,
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "widget".to_string(),
+                index,
+                where_clauses: where_clauses.clone(),
+            }
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: false,
+                    limit: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("the range total executes");
+            assert_eq!(total.len(), 1, "{where_clauses:?}");
+            assert_eq!(total[0].count, Some(expected), "{where_clauses:?}");
+        }
+
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &nobrand,
+            &[],
+        )
+        .expect("byBrandColor answers the range");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: nobrand.clone(),
+        };
+        let proof = query
+            .execute_aggregate_count_with_proof(&drive, None, pv)
+            .expect("the range total proves");
+        let (root_hash, count) = query
+            .verify_aggregate_count_proof(&proof, pv)
+            .expect("the proof of an absent brand verifies");
+        assert_eq!(
+            root_hash, live_root,
+            "protocol version {}",
+            pv.protocol_version
+        );
+        assert_eq!(count, 0, "protocol version {}", pv.protocol_version);
+    }
+}
+
+/// At the last shipped protocol version a count read can reach a wrapped
+/// tree: `byBrand` sums under each brand's value tree, so `byBrandColor`'s
+/// `color` tree below it is stored `NotSummed`, and `count(*)` pinned on the
+/// brand reads that tree whole. The proof returns it wrapped; the point count
+/// decoder looks through the wrapper (edited in place) and verifies the same
+/// count as the unproven read, against the live root.
+#[test]
+fn should_count_through_a_wrapped_tree_unchanged_at_protocol_version_13() {
+    let pv = PlatformVersion::get(13).expect("protocol version 13 exists");
+    let contract = DataContractFactory::new(pv.protocol_version)
+        .expect("expected to create factory")
+        .create_with_value_config(
+            Identifier::from([9; 32]),
+            0,
+            platform_value!({
+                "widget": {
+                    "type": "object",
+                    "properties": {
+                        "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                        "color": { "type": "string", "position": 1, "maxLength": 32 },
+                        "amount": { "type": "integer", "position": 2, "minimum": 0, "maximum": 1000 },
+                    },
+                    "required": ["brand", "color", "amount"],
+                    "indices": [
+                        {
+                            "name": "byBrand",
+                            "properties": [{"brand": "asc"}],
+                            "summable": "amount",
+                        },
+                        {
+                            "name": "byBrandColor",
+                            "properties": [{"brand": "asc"}, {"color": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "summable": "amount",
+                            "rangeSummable": true,
+                        },
+                    ],
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .expect("create contract")
+        .data_contract_owned();
+    let drive = setup_drive_with_initial_state_structure(Some(pv));
     drive
         .apply_contract(
             &contract,
@@ -1141,72 +1304,119 @@ fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
     let document_type = contract
         .document_type_for_name("widget")
         .expect("widget exists");
-    insert_brand_color_widgets(
-        &drive,
-        &contract,
-        &[("acme", "red"), ("acme", "red"), ("acme", "blue")],
-        pv,
+    for (i, (brand, color, amount)) in [
+        ("acme", "red", 5u64),
+        ("acme", "blue", 7),
+        ("contoso", "red", 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut doc = document_type
+            .random_document(Some((i + 1) as u64), pv)
+            .expect("random document");
+        doc.set_properties(BTreeMap::from([
+            ("brand".to_string(), Value::Text(brand.to_string())),
+            ("color".to_string(), Value::Text(color.to_string())),
+            ("amount".to_string(), Value::U64(amount)),
+        ]));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to insert document");
+    }
+    let acme_path = vec![
+        vec![RootTree::DataContractDocuments as u8],
+        contract.id().to_buffer().to_vec(),
+        vec![1u8],
+        b"widget".to_vec(),
+        b"brand".to_vec(),
+        b"acme".to_vec(),
+    ];
+    assert!(
+        matches!(
+            read_grove_element(&drive, &acme_path, b"color"),
+            Some(Element::NotSummed(_))
+        ),
+        "the color tree under a summing brand value tree is stored NotSummed"
     );
 
-    let brand = |operator: WhereOperator, value: Value| WhereClause {
+    let acme = vec![WhereClause {
         field: "brand".to_string(),
-        operator,
-        value,
+        operator: WhereOperator::Equal,
+        value: Value::Text("acme".to_string()),
+    }];
+    let drive_config = DriveConfig::default();
+    let count = |prove: bool| {
+        drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses: acme.clone(),
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode: CountMode::Aggregate,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+            .expect("the count executes at protocol version 13")
     };
-    let after_blue = WhereClause {
-        field: "color".to_string(),
-        operator: WhereOperator::GreaterThan,
-        value: Value::Text("blue".to_string()),
-    };
-    for (where_clauses, expected) in [
-        (
-            vec![
-                brand(
-                    WhereOperator::In,
-                    Value::Array(vec![
-                        Value::Text("acme".to_string()),
-                        Value::Text("nobrand".to_string()),
-                    ]),
-                ),
-                after_blue.clone(),
-            ],
-            2,
-        ),
-        (
-            vec![
-                brand(WhereOperator::Equal, Value::Text("nobrand".to_string())),
-                after_blue.clone(),
-            ],
-            0,
-        ),
-    ] {
-        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
-            document_type.indexes(),
-            &where_clauses,
-            &[],
-        )
-        .expect("byBrandColor answers the range");
-        let total = DriveDocumentCountQuery {
-            document_type,
-            contract_id: contract.id().to_buffer(),
-            document_type_name: "widget".to_string(),
-            index,
-            where_clauses: where_clauses.clone(),
-        }
-        .execute_range_count_no_proof(
-            &drive,
-            &RangeCountOptions {
-                distinct: false,
-                limit: None,
-                order_by_ascending: true,
-            },
-            None,
-            pv,
-        )
-        .expect("the range total executes");
-        assert_eq!(total.len(), 1, "{where_clauses:?}");
-        assert_eq!(total[0].count, Some(expected), "{where_clauses:?}");
+    match count(false) {
+        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 2, "acme's widgets"),
+        other => panic!("expected an aggregate count, got {other:?}"),
     }
+    let proof = match count(true) {
+        DocumentCountResponse::Proof(proof) => proof,
+        other => panic!("expected a proof, got {other:?}"),
+    };
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &acme,
+        &[],
+    )
+    .expect("byBrandColor answers the count");
+    assert_eq!(index.name, "byBrandColor");
+    let (root_hash, entries) = DriveDocumentCountQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "widget".to_string(),
+        index,
+        where_clauses: acme.clone(),
+    }
+    .verify_point_lookup_count_proof(&proof, pv)
+    .expect("the count proof verifies at protocol version 13");
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable")
+    );
+    assert_eq!(
+        entries.iter().filter_map(|entry| entry.count).sum::<u64>(),
+        2,
+        "proved and unproved counts agree"
+    );
 }
 
 /// `StartsWith "r"` is encoded as `Range(serialize("r")..

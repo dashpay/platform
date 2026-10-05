@@ -85,7 +85,12 @@ pub fn find_summable_index_with_counts_for_where_clauses<'b>(
 /// reads and that `accepts`: exactly covering, else through its last
 /// property's tree ([`prefix_to_last_sum_reads`]), else through a sum chain
 /// (the deepest pin's value tree), in the order count's picker and the sum
-/// builder try them.
+/// builder try them. The order is the same but not the test: an average needs
+/// the last tree to carry counts, so `prefix_to_last_sum_reads` refuses an
+/// index whose last tree does not count (not `rangeCountable`) when its pins
+/// reach a sum chain, which count's picker accepts. A `count(*)` and a sum
+/// with the same pins may then read different indexes; both totals are the
+/// counters' sums under the pins.
 fn find_summable_index_accepted_by<'b>(
     indexes: &'b BTreeMap<String, Index>,
     where_clauses: &[WhereClause],
@@ -151,7 +156,7 @@ fn find_summable_index_accepted_by<'b>(
     // `summableOffCountIndex` index pinned on every property but its last
     // reads the tree of its last property, which sums the counters below the
     // pins ([`prefix_to_last_sum_reads`]), the element a `count(*)` with the
-    // same pins reads.
+    // same pins reads when both pick that index (see the function doc).
     //
     // Sum-chain value-tree form, the sum counterpart of count's at-chain
     // fallback: on a `summableOffCountIndex` index ranking by sum or average

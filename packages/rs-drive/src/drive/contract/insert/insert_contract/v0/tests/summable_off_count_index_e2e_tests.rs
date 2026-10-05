@@ -12,8 +12,8 @@
 //! (average), and each author's or hashtag's posts rank by likes.
 
 use super::index_only_e2e_tests::{
-    assert_grovedb_is_consistent, delete_like, doctype_path, insert_like, platform_version,
-    read_grove_element, sum_top_k,
+    assert_grovedb_is_consistent, assert_live_root_hash, delete_like, doctype_path, insert_like,
+    platform_version, read_grove_element, sum_top_k,
 };
 use super::index_only_scalar_terminal_e2e_tests::equal;
 use super::ranked_index_e2e_tests::avg_top_k;
@@ -270,19 +270,6 @@ const PAGE: RankedPaginationInputs = RankedPaginationInputs {
     offset: None,
     has_start_at: false,
 };
-
-/// A verified proof's root hash must be the live grovedb root.
-fn assert_live_root_hash(drive: &Drive, root_hash: [u8; 32]) {
-    assert_eq!(
-        root_hash,
-        drive
-            .grove
-            .root_hash(None, &platform_version().drive.grove_version)
-            .unwrap()
-            .expect("root hash must be readable"),
-        "the proof must reconstruct the live grovedb root hash"
-    );
-}
 
 /// A ranked read over likes, its proof verified as the SDK verifies it
 /// (through the shared resolver, against the live root): the unproven page,
@@ -1206,7 +1193,12 @@ fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
         };
         assert_eq!(page.len(), 1);
         after = entry.key.clone().try_into().expect("a post id");
-        paged.push((entry.key.clone(), entry.count.unwrap_or(0)));
+        paged.push((
+            entry.key.clone(),
+            entry
+                .count
+                .expect("a range walk counts each entry it returns"),
+        ));
     }
     assert_eq!(paged, a_posts.to_vec(), "every page of one");
 
@@ -1242,7 +1234,9 @@ fn should_count_likes_over_a_range_of_posts_from_the_counters_sums() {
                 .map(|entry| (
                     entry.in_key.clone(),
                     entry.key.clone(),
-                    entry.count.unwrap_or(0)
+                    entry
+                        .count
+                        .expect("a range walk counts each entry it returns")
                 ))
                 .collect::<Vec<_>>(),
             expected,
@@ -1438,11 +1432,11 @@ fn should_total_the_likes_of_a_range_of_posts_from_the_counters_sums() {
 }
 
 /// An author without posts has no subtree under a counter index, and a range
-/// total without a proof counts it as zero, as the proof's carrier drops it:
-/// across an `IN` the author's branch adds no likes, posts or sums, and a
-/// range of that author alone totals zero.
+/// total counts it as zero: across an `IN` the author's branch adds no likes,
+/// posts or sums (the carrier proof drops it), and a range of that author
+/// alone totals zero, its count and sum proofs verifying the author absent.
 #[test]
-fn should_total_an_author_without_posts_as_zero_without_a_proof() {
+fn should_total_an_author_without_posts_as_zero() {
     const AUTHOR_Z: [u8; 32] = [0xCC; 32];
     let (drive, contract) = setup_with(|index| {
         index.remove("rankedSummable");
@@ -1529,6 +1523,47 @@ fn should_total_an_author_without_posts_as_zero_without_a_proof() {
             "{clauses:?}"
         );
     }
+
+    let z_range = vec![
+        equal("postAuthor", Value::Identifier(AUTHOR_Z)),
+        every_post(),
+    ];
+    let proof = match count_likes(
+        &drive,
+        &contract,
+        z_range.clone(),
+        CountMode::Aggregate,
+        None,
+        true,
+    )
+    .expect("the range count proves")
+    {
+        DocumentCountResponse::Proof(proof) => proof,
+        other => panic!("expected a proof, got {other:?}"),
+    };
+    let (root_hash, total) = like_count_query(&contract, &z_range)
+        .verify_aggregate_count_proof(&proof, pv)
+        .expect("the count proof of an author without posts verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(total, 0, "Z's likes, proved");
+    let proof = match sum_likes(
+        &drive,
+        &contract,
+        z_range.clone(),
+        SumMode::Aggregate,
+        None,
+        true,
+    )
+    .expect("the range sum proves")
+    {
+        DocumentSumResponse::Proof(proof) => proof,
+        other => panic!("expected a proof, got {other:?}"),
+    };
+    let (root_hash, total) = like_sum_query(&contract, &z_range)
+        .verify_aggregate_sum_proof(&proof, pv)
+        .expect("the sum proof of an author without posts verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(total, 0, "Z's likes summed, proved");
 
     let a_and_z_range = vec![a_and_z, every_post()];
     let proof = match count_likes(

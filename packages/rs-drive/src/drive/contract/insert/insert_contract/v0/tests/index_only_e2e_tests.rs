@@ -109,6 +109,19 @@ pub(super) fn assert_grovedb_is_consistent(drive: &Drive) {
     );
 }
 
+/// A verified proof's root hash must be the live grovedb root.
+pub(super) fn assert_live_root_hash(drive: &Drive, root_hash: [u8; 32]) {
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable"),
+        "the proof must reconstruct the live grovedb root hash"
+    );
+}
+
 /// A like on `post` under `hashtag` by `owner`.
 pub(super) fn build_like(
     contract: &DataContract,

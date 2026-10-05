@@ -18,7 +18,7 @@ final class DataContractParserIndexTests: XCTestCase {
 
     private let contractId = Data(repeating: 0xC3, count: 32)
 
-    func testCounterIndexKeepsItsSourceAndAtRankings() throws {
+    func testShouldKeepACounterIndexSourceAndAtRankings() throws {
         let (context, indices) = try parse(indices: [
             [
                 "name": "byPost",
@@ -51,12 +51,21 @@ final class DataContractParserIndexTests: XCTestCase {
         XCTAssertEqual(counter.rankedSummableAt, ["postAuthor", "postId"])
         XCTAssertTrue(counter.rankedAverageable)
         XCTAssertEqual(counter.rankedAverageableAt, ["postAuthor"])
+        XCTAssertEqual(
+            counter.authoredKeywords,
+            AuthoredIndexKeywords(
+                summableOffCountIndex: counter.summableOffCountIndex,
+                rankedCountableAt: counter.rankedCountableAt,
+                rankedSummableAt: counter.rankedSummableAt,
+                rankedAverageableAt: counter.rankedAverageableAt
+            )
+        )
 
         let source = try XCTUnwrap(indices["byPost"])
         XCTAssertNil(source.summableOffCountIndex)
     }
 
-    func testRankingsInTheBooleanAndSingleLevelFormsAreRead() throws {
+    func testShouldReadRankingsInTheBooleanAndSingleLevelForms() throws {
         let (context, indices) = try parse(indices: [
             [
                 "name": "byTagPost",
@@ -79,7 +88,7 @@ final class DataContractParserIndexTests: XCTestCase {
         XCTAssertNil(index.summableOffCountIndex)
     }
 
-    func testIndexWithoutADocumentTypeReadsNoAuthoredKeywords() {
+    func testShouldReadNoAuthoredKeywordsWithoutADocumentType() {
         let index = PersistentIndex(
             contractId: contractId,
             documentTypeName: "like",

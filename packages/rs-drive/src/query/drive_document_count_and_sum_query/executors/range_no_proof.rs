@@ -42,8 +42,7 @@ use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
-    aggregate_or_zero_when_absent, index_keeps_empty_groups,
-    refuse_a_range_total_through_a_ranked_index, RangeTotalAdmitted, ResolvedTimeRange,
+    aggregate_or_zero_when_absent, index_keeps_empty_groups, is_absent_path, ResolvedTimeRange,
 };
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -149,14 +148,7 @@ impl Drive {
         );
         let elements = match result {
             Ok((elements, _)) => elements,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
+            Err(error) if is_absent_path(&error) => {
                 return Ok(DocumentAverageResponse::Entries(Vec::new()));
             }
             Err(e) => return Err(e),
@@ -219,9 +211,6 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
         let drive_version = &platform_version.drive;
-        // Once for every aggregate read below (the flat one, or one per `In`
-        // branch): it depends on the index alone.
-        let admitted = refuse_a_range_total_through_a_ranked_index(document_type, index)?;
 
         // Open a shared read transaction across per-In branches in
         // the compound shape so each branch's accumulator call sees
@@ -245,7 +234,6 @@ impl Drive {
                 index,
                 where_clauses,
                 sum_property,
-                admitted,
                 effective_transaction,
                 drive_version,
                 platform_version,
@@ -305,7 +293,6 @@ impl Drive {
                 index,
                 clauses_for_value,
                 sum_property.clone(),
-                admitted,
                 effective_transaction,
                 drive_version,
                 platform_version,
@@ -341,8 +328,7 @@ impl Drive {
     /// Flat (no In on prefix) aggregate count + sum: one
     /// `query_aggregate_count_and_sum` call against the PCPS path
     /// query — a single O(log n) merk-internal accumulator yielding
-    /// both metrics from one traversal, over an index the caller's
-    /// range-total refusal `admitted`.
+    /// both metrics from one traversal.
     #[allow(clippy::too_many_arguments)]
     fn flat_aggregate_count_and_sum(
         &self,
@@ -352,7 +338,6 @@ impl Drive {
         index: &dpp::data_contract::document_type::Index,
         where_clauses: Vec<WhereClause>,
         sum_property: String,
-        admitted: RangeTotalAdmitted,
         transaction: TransactionArg,
         drive_version: &dpp::version::drive_versions::DriveVersion,
         platform_version: &PlatformVersion,
@@ -365,13 +350,12 @@ impl Drive {
             where_clauses,
             sum_property,
         };
-        let path_query =
-            sum_query.admitted_aggregate_count_and_sum_path_query(admitted, platform_version)?;
+        let path_query = sum_query.aggregate_count_and_sum_path_query(platform_version)?;
         let CostContext { value, cost: _ } = self.grove.query_aggregate_count_and_sum(
             &path_query,
             transaction,
             &drive_version.grove_version,
         );
-        aggregate_or_zero_when_absent(value)
+        aggregate_or_zero_when_absent(self, &path_query.path, value, transaction, platform_version)
     }
 }

@@ -954,11 +954,11 @@ mod limit_policy_regression {
         );
     }
 
-    /// The average point verifier is edited in place to look through a
-    /// wrapped element; at the last shipped protocol version, over a regular
-    /// `[brand, color]` index counting and summing, no element it reads is
-    /// wrapped, so an exact and a per-`IN` average prove and verify against
-    /// the live root to the unproven answer.
+    /// The average and sum point verifiers are edited in place to look
+    /// through a wrapped element; at the last shipped protocol version, over a
+    /// regular `[brand, color]` index counting and summing, no element they
+    /// read is wrapped, so an exact and a per-`IN` average and sum prove and
+    /// verify against the live root to the unproven answer.
     #[test]
     fn should_verify_an_average_point_proof_unchanged_at_protocol_version_13() {
         use crate::query::drive_document_average_query::{
@@ -1121,6 +1121,56 @@ mod limit_policy_regression {
                     )
                     .collect::<Vec<_>>(),
                 expected,
+                "{where_clauses:?}"
+            );
+
+            // The point sum verifier, edited in place the same way, reads the
+            // same sums
+            let sum_mode = match mode {
+                AverageMode::GroupByIn => SumMode::GroupByIn,
+                _ => SumMode::Aggregate,
+            };
+            let proof = match drive
+                .execute_document_sum_request(
+                    DocumentSumRequest {
+                        contract: &data_contract,
+                        document_type,
+                        sum_property: "amount".to_string(),
+                        where_clauses: where_clauses.clone(),
+                        order_clauses: Vec::new(),
+                        mode: sum_mode,
+                        limit: None,
+                        prove: true,
+                        drive_config: &drive_config,
+                        resolved_time_ranges: vec![],
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("the sum proves at protocol version 13")
+            {
+                DocumentSumResponse::Proof(proof) => proof,
+                other => panic!("expected a proof, got {other:?}"),
+            };
+            let (root_hash, sums) = DriveDocumentSumQuery {
+                document_type,
+                contract_id: data_contract.id().to_buffer(),
+                document_type_name: "widget".to_string(),
+                index,
+                where_clauses: where_clauses.clone(),
+                sum_property: "amount".to_string(),
+            }
+            .verify_point_lookup_sum_proof(&proof, platform_version)
+            .expect("the sum proof verifies at protocol version 13");
+            assert_eq!(root_hash, live_root, "{where_clauses:?}");
+            assert_eq!(
+                sums.into_iter()
+                    .map(|entry| (entry.key, entry.sum))
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|(key, _, sum)| (key.clone(), *sum))
+                    .collect::<Vec<_>>(),
                 "{where_clauses:?}"
             );
         }

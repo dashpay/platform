@@ -238,9 +238,12 @@ pub fn point_lookup_count_entries(
             // A proof returns a tree element as stored, wrapper included,
             // while the unproven read unwraps it: a prefix-to-last read's
             // tree sits wrapped to contribute nothing under an aggregating
-            // value tree, so the decode looks through the wrapper. No
-            // element a count read reaches before protocol version 14 is
-            // wrapped, so those decode as before.
+            // value tree, so the decode looks through the wrapper. Before
+            // protocol version 14 the only wrapper a count read can reach is
+            // `NotSummed` (a summing index ending at the pinned level, the
+            // read's tree continuing below it), whose count grovedb passes
+            // through, so those decode as before
+            // (`should_count_through_a_wrapped_tree_unchanged_at_protocol_version_13`).
             SplitCountEntry {
                 in_key: None,
                 key,
@@ -407,13 +410,10 @@ pub struct SplitCountEntry {
     ///   summed entry whose value can be 0), by the no-proof range
     ///   executors when their walk returns nothing, by the per-`In`
     ///   no-proof fan-out for a branch matching nothing, and, on an
-    ///   index that can hold an empty group (preallocated, or ending
-    ///   at a level a preallocated index passes through,
-    ///   `index_keeps_empty_groups`), for each empty
-    ///   group a range walk or a point lookup reads (a group created
-    ///   with a referenced document before any entry, or a
-    ///   `summableOffCountIndex` counter at zero), proved or not, per
-    ///   `In` branch included.
+    ///   index that can hold an empty group (see
+    ///   `index_keeps_empty_groups`), for each empty group a range
+    ///   walk or a point lookup reads, proved or not, per `In` branch
+    ///   included.
     /// - `None` — reserved for a future absence-proof variant. The
     ///   current `point_lookup_count_path_query` doesn't set
     ///   `absence_proofs_for_non_existing_searched_keys: true`, so
@@ -483,8 +483,10 @@ pub enum CountMode {
     ///   `RangeAggregateCarrierProof` on the prove path
     ///   (grovedb #663 carrier-ACOR — one verified `u64` per
     ///   In branch, range collapsed) and `RangeNoProof` on the
-    ///   no-prove path (per-In-branch range walk). Both produce
-    ///   entries that line up with the caller's GROUP BY shape.
+    ///   no-prove path, which runs the per-In-branch fan-out and
+    ///   folds the branches into ONE entry (`in_key: None`, the
+    ///   total), as the sum and average dispatchers do: only the
+    ///   proved answer carries one entry per `In` value.
     ///
     /// `limit` is rejected upstream when set. The In array is
     /// already capped at 100 entries by `WhereClause::in_values()`,

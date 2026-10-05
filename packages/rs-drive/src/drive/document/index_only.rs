@@ -104,6 +104,10 @@ impl Drive {
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Result<IndexOnlyEntryPathsAndKey, Error> {
+        // Unversioned, so every caller's protocol version reaches it (document
+        // create state validation 1 from protocol version 2): inert before
+        // protocol version 14, since only meta-schema v3 admits a
+        // `summableOffCountIndex` index (or indexOnly types at all).
         if index.is_summable_off_count_index() {
             return Ok((Vec::new(), Vec::new()));
         }

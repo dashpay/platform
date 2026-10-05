@@ -8,6 +8,7 @@
 //! grovedb proves committed state only) with the join-value bootstrap
 //! hint riding beside the envelope.
 
+use super::document_serialization_failure;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -218,19 +219,31 @@ impl<C> Platform<C> {
             let serialize_all =
                 |documents: &[dpp::document::Document],
                  document_type: dpp::data_contract::document_type::DocumentTypeRef|
-                 -> Result<Vec<Vec<u8>>, Error> {
+                 -> Result<Vec<Vec<u8>>, dpp::ProtocolError> {
                     documents
                         .iter()
                         .map(|document| {
-                            document
-                                .serialize(document_type, contract_ref, platform_version)
-                                .map_err(Error::Protocol)
+                            document.serialize(document_type, contract_ref, platform_version)
                         })
                         .collect()
                 };
             let inner_documents =
-                serialize_all(&outcome.result.inner_documents, chained_query.document_type)?;
-            let outer_documents = serialize_all(&outcome.result.outer_documents, outer_type)?;
+                match serialize_all(&outcome.result.inner_documents, chained_query.document_type) {
+                    Ok(documents) => documents,
+                    Err(error) => {
+                        return Ok(QueryValidationResult::new_with_error(
+                            document_serialization_failure(error)?,
+                        ))
+                    }
+                };
+            let outer_documents = match serialize_all(&outcome.result.outer_documents, outer_type) {
+                Ok(documents) => documents,
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        document_serialization_failure(error)?,
+                    ))
+                }
+            };
             let missing_outer_ids = outcome
                 .result
                 .missing_outer_ids
