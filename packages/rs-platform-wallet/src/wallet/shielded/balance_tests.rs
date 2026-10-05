@@ -568,3 +568,182 @@ async fn should_reject_restored_local_balance_overflow() {
         u64::MAX
     );
 }
+
+// ── Sync passes superseded by a concurrent lifecycle change ─────────────
+//
+// A pass no longer holds the store lock across its download, so a
+// lifecycle change can land mid-pass. These drive `coordinator.sync` over
+// the mock SDK and inject the change from the tree-progress hook, which
+// fires inside the pass between store-lock holds.
+
+/// Install a tree-progress hook that runs `on_batch(call_index)` inside the
+/// pass (once per streamed batch), blocking on the lifecycle future.
+/// Nothing in the pass holds a coordinator or store lock while the hook
+/// runs, so the future completes without contention. It is driven on the
+/// runtime via `block_in_place` (the tests use the multi-thread flavor),
+/// `unconstrained` (the pass's task may have spent its coop budget) and
+/// under a timeout, so a regression that fires the hook while holding a
+/// lock the future needs fails the test instead of hanging it. Returns the
+/// call counter.
+fn hook_tree_progress<F, Fut>(
+    coordinator: &Arc<NetworkShieldedCoordinator>,
+    on_batch: F,
+) -> Arc<std::sync::atomic::AtomicUsize>
+where
+    F: Fn(Arc<NetworkShieldedCoordinator>, usize) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send,
+{
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let weak = Arc::downgrade(coordinator);
+    let counter = Arc::clone(&calls);
+    coordinator.install_tree_progress_handler(Some(Arc::new(move |_, _| {
+        let call = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Some(coordinator) = weak.upgrade() {
+            let lifecycle_change = tokio::task::unconstrained(tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                on_batch(coordinator, call),
+            ));
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(lifecycle_change)
+                    .expect("lifecycle change blocked inside the sync pass")
+            });
+        }
+    })));
+    calls
+}
+
+/// Coordinator over the empty mock pool, plus how many batches (hook calls)
+/// one uninterrupted pass over it streams — the unit the tests below count
+/// scan attempts in.
+async fn empty_pool_coordinator() -> (Arc<NetworkShieldedCoordinator>, usize) {
+    let path = tree_path();
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        Arc::new(empty_pool_sdk().await),
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+    ));
+    register(&coordinator, [0x30; 32], &[0]).await;
+    let calls = hook_tree_progress(&coordinator, |_, _| async {});
+    assert_eq!(coordinator.sync(true).await.success_count(), 1);
+    let batches_per_pass = calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(batches_per_pass > 0);
+    coordinator.unregister_wallet([0x30; 32]).await;
+    (coordinator, batches_per_pass)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_retry_sync_superseded_by_wallet_removal_without_resurrecting_it() {
+    let (coordinator, batches_per_pass) = empty_pool_coordinator().await;
+    let kept = [0x31; 32];
+    let removed = [0x32; 32];
+    register(&coordinator, kept, &[0]).await;
+    register(&coordinator, removed, &[0]).await;
+    let calls = hook_tree_progress(&coordinator, move |coordinator, call| async move {
+        if call == 0 {
+            coordinator.unregister_wallet(removed).await;
+        }
+    });
+
+    let outcome = coordinator.sync(true).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    assert!(outcome.wallet_results.contains_key(&kept));
+    assert!(!outcome.wallet_results.contains_key(&removed));
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::SeqCst),
+        2 * batches_per_pass,
+        "the superseded scan was retried once"
+    );
+    let store = coordinator.store().read().await;
+    assert_eq!(
+        store
+            .local_account_balance(SubwalletId::new(kept, 0))
+            .unwrap()
+            .source,
+        ShieldedBalanceSource::ScannedThisSession
+    );
+    assert_eq!(
+        store
+            .local_account_balance(SubwalletId::new(removed, 0))
+            .unwrap()
+            .source,
+        ShieldedBalanceSource::NoHistory,
+        "the superseded pass must not write sync state for the removed wallet"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_fail_sync_after_repeated_supersession() {
+    let (coordinator, batches_per_pass) = empty_pool_coordinator().await;
+    let wallet = [0x33; 32];
+    register(&coordinator, wallet, &[0]).await;
+    // Every attempt is superseded by a restore of the wallet it scans.
+    let calls = hook_tree_progress(&coordinator, move |coordinator, _| async move {
+        let snapshot = ShieldedSyncStartState {
+            per_subwallet: BTreeMap::from([(
+                SubwalletId::new(wallet, 0),
+                ShieldedSubwalletStartState {
+                    has_sync_state: true,
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        coordinator
+            .restore_for_wallet(wallet, &snapshot)
+            .await
+            .unwrap();
+    });
+
+    let outcome = coordinator.sync(true).await;
+    assert_eq!(outcome.success_count(), 0, "{outcome:?}");
+    assert!(
+        matches!(&outcome.wallet_results[&wallet],
+            crate::manager::shielded_sync::WalletShieldedOutcome::Err(message)
+                if message.contains("superseded")),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::SeqCst),
+        3 * batches_per_pass,
+        "one attempt plus two retries"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_not_supersede_sync_for_a_wallet_bound_mid_pass() {
+    let (coordinator, batches_per_pass) = empty_pool_coordinator().await;
+    let scanning = [0x34; 32];
+    let late = [0x35; 32];
+    register(&coordinator, scanning, &[0]).await;
+    // A second wallet binds (register + restore) while the pass runs.
+    let calls = hook_tree_progress(&coordinator, move |coordinator, call| async move {
+        if call == 0 {
+            register(&coordinator, late, &[0]).await;
+            let snapshot = ShieldedSyncStartState {
+                per_subwallet: BTreeMap::from([(
+                    SubwalletId::new(late, 0),
+                    ShieldedSubwalletStartState {
+                        has_sync_state: true,
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            };
+            coordinator
+                .restore_for_wallet(late, &snapshot)
+                .await
+                .unwrap();
+        }
+    });
+
+    let outcome = coordinator.sync(true).await;
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+    assert!(outcome.wallet_results.contains_key(&scanning));
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::SeqCst),
+        batches_per_pass,
+        "binding another wallet must not discard the in-flight scan"
+    );
+}
