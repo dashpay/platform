@@ -628,6 +628,7 @@ impl DriveDocumentQueryFilter<'_> {
                     value.to_integer::<u64>().ok().map(Value::U64)
                 } else {
                     canonical_value_for_key(document_type, key, value, platform_version)
+                        .map(Cow::into_owned)
                 }
             })?;
         }
@@ -829,6 +830,7 @@ pub fn canonicalize_where_clause(
     }
     clause.value = canonical_operand(clause.operator, &clause.value, |value| {
         canonical_value_for_key(document_type, &clause.field, value, platform_version)
+            .map(Cow::into_owned)
     })?;
     Ok(())
 }
@@ -842,12 +844,12 @@ pub fn canonicalize_where_clause(
 /// `serialize_value_for_key`, which refuses values longer than an index key may be: a filter
 /// may read a field no index covers, and a long value must still compare.
 #[cfg(any(feature = "server", feature = "verify"))]
-fn canonical_value_for_key(
+fn canonical_value_for_key<'v>(
     document_type: DocumentTypeRef,
     key: &str,
-    value: &Value,
+    value: &'v Value,
     platform_version: &PlatformVersion,
-) -> Option<Value> {
+) -> Option<Cow<'v, Value>> {
     match document_type
         .flattened_properties()
         .get(key)
@@ -867,25 +869,31 @@ fn canonical_value_for_key(
             document_type
                 .deserialize_value_for_key(key, &serialized, platform_version)
                 .ok()
+                .map(Cow::Owned)
         }
         None => None,
     }
 }
 
-/// `value` as a property of `property_type` is stored.
+/// `value` as a property of `property_type` is stored, borrowed when it already is.
 #[cfg(any(feature = "server", feature = "verify"))]
-fn canonical_property_value(property_type: &DocumentPropertyType, value: &Value) -> Option<Value> {
+fn canonical_property_value<'v>(
+    property_type: &DocumentPropertyType,
+    value: &'v Value,
+) -> Option<Cow<'v, Value>> {
     match property_type {
         // Text is already canonical, and the index-key form would conflate `""` with `"\0"`.
-        DocumentPropertyType::String(_) => matches!(value, Value::Text(_)).then(|| value.clone()),
-        // Floats compare as floats: the index-key form turns -0.0 into NaN.
-        DocumentPropertyType::F64 => {
-            if value.is_null() {
-                Some(Value::Null)
-            } else {
-                value.to_float().ok().map(Value::Float)
-            }
+        DocumentPropertyType::String(_) => {
+            matches!(value, Value::Text(_)).then_some(Cow::Borrowed(value))
         }
+        // Floats compare as floats: the index-key form turns -0.0 into NaN.
+        DocumentPropertyType::F64 => match value {
+            Value::Float(_) | Value::Null => Some(Cow::Borrowed(value)),
+            _ => value
+                .to_float()
+                .ok()
+                .map(|float| Cow::Owned(Value::Float(float))),
+        },
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
             if exceeds_identifier_text(value) =>
         {
@@ -896,11 +904,14 @@ fn canonical_property_value(property_type: &DocumentPropertyType, value: &Value)
             // The index-key form of an empty byte array is empty, which decodes as null.
             if encoded.is_empty() && !value.is_null() {
                 return match property_type {
-                    DocumentPropertyType::ByteArray(_) => Some(Value::Bytes(vec![])),
+                    DocumentPropertyType::ByteArray(_) => Some(Cow::Owned(Value::Bytes(vec![]))),
                     _ => None,
                 };
             }
-            property_type.decode_value_for_tree_keys(&encoded).ok()
+            property_type
+                .decode_value_for_tree_keys(&encoded)
+                .ok()
+                .map(Cow::Owned)
         }
     }
 }

@@ -46,6 +46,9 @@ use std::time::Duration;
 const MAX_CONSECUTIVE_FAILURES: u32 = 5;
 /// Wait before the first retry; doubles per consecutive failure.
 const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
+/// How long a stream may stay silent before it counts as stalled. The node checkpoints every
+/// 10 seconds while idle; this leaves room for slow block reads on its side.
+const MESSAGE_IDLE_DEADLINE: Duration = Duration::from_secs(90);
 
 /// A committed state transition that matched the subscription's filters.
 #[derive(Debug, Clone)]
@@ -101,6 +104,8 @@ pub struct StateTransitionSubscription {
     /// Bound data contracts a delivered update changed; re-read with proofs before the next
     /// message is checked.
     contracts_to_refresh: BTreeSet<Identifier>,
+    /// Why the subscription ended, once it has: later calls fail rather than read on.
+    terminated: Option<String>,
 }
 
 impl Sdk {
@@ -170,6 +175,7 @@ impl Sdk {
             resume_from: from_block_height,
             consecutive_failures: 0,
             contracts_to_refresh: BTreeSet::new(),
+            terminated: None,
         };
         // Open the first stream now, so a refused request fails here rather than on `next`.
         subscription.stream = Some(subscription.open(false).await?);
@@ -179,64 +185,97 @@ impl Sdk {
 
 impl StateTransitionSubscription {
     /// The next matching transition or checkpoint. Resumes broken streams by itself; an error
-    /// means the subscription cannot continue (the request was refused, or too many attempts
-    /// in a row failed).
+    /// means the subscription cannot continue (the request was refused, a response could not
+    /// be interpreted, or too many attempts in a row failed), and every later call returns an
+    /// error too. Only a failed proved re-read of an updated contract may be retried.
     pub async fn next(&mut self) -> Result<SubscriptionEvent, Error> {
+        if let Some(reason) = &self.terminated {
+            return Err(Error::Generic(format!(
+                "the subscription has ended: {reason}"
+            )));
+        }
         loop {
             self.refresh_contracts().await?;
-            let stream = match self.stream.as_mut() {
-                Some(stream) => stream,
-                None => {
-                    let stream = self.reopen().await?;
-                    self.stream_messages = 0;
-                    self.stream.insert(stream)
+            match self.step().await {
+                Ok(Some(event)) => return Ok(event),
+                Ok(None) => continue,
+                Err(error) => {
+                    self.terminated = Some(error.to_string());
+                    self.stream = None;
+                    return Err(error);
                 }
-            };
-            let failure = match stream.message().await {
-                Ok(Some(response)) => {
-                    self.stream_messages += 1;
-                    // A stream that got past its opening checkpoint was healthy; a node that
-                    // fails right after every start is not retried forever.
-                    if self.stream_messages > 1 {
-                        self.consecutive_failures = 0;
-                    }
-                    if let Some(event) = self.accept(response)? {
-                        return Ok(event);
-                    }
-                    continue;
-                }
-                // The node or a proxy ended the stream (its lifetime elapsed): continue.
-                Ok(None) => None,
-                Err(status) if resumable(&status) => Some(status),
-                Err(status) => return Err(status_error(status)),
-            };
-            if let Some(status) = &failure {
-                tracing::debug!(code = ?status.code(), message = status.message(), "state transition stream broke; resuming");
-                // Resume elsewhere when the node itself is at fault, rather than reconnecting
-                // to it; a stream ended by its lifetime or the client says nothing of the node.
-                if node_at_fault(status) {
-                    if let Some(address) = &self.stream_address {
-                        self.sdk.address_list().ban_with_reason(
-                            address,
-                            Some(format!(
-                                "state transition stream failed: {}",
-                                status.message()
-                            )),
-                        );
-                    }
-                }
-            }
-            self.stream = None;
-            self.consecutive_failures += 1;
-            if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                return Err(match failure {
-                    Some(status) => status_error(status),
-                    None => Error::Generic(
-                        "state transition streams keep ending right after they start".to_string(),
-                    ),
-                });
             }
         }
+    }
+
+    /// Read one message, reopening the stream first if it broke. `None` when the message is
+    /// skipped or the stream broke and will be reopened.
+    async fn step(&mut self) -> Result<Option<SubscriptionEvent>, Error> {
+        let stream = match self.stream.as_mut() {
+            Some(stream) => stream,
+            None => {
+                let stream = self.reopen().await?;
+                self.stream_messages = 0;
+                self.stream.insert(stream)
+            }
+        };
+        // The node checkpoints at least every few seconds; a stream quiet for much longer is
+        // stalled, even if its connection still answers, and is resumed elsewhere.
+        let message = {
+            let message = stream.message();
+            futures::pin_mut!(message);
+            let idle = sleep(MESSAGE_IDLE_DEADLINE);
+            futures::pin_mut!(idle);
+            match futures::future::select(message, idle).await {
+                futures::future::Either::Left((message, _)) => message,
+                futures::future::Either::Right(_) => Err(Status::unavailable(format!(
+                    "no message for {}s",
+                    MESSAGE_IDLE_DEADLINE.as_secs()
+                ))),
+            }
+        };
+        let failure = match message {
+            Ok(Some(response)) => {
+                self.stream_messages += 1;
+                // A stream that got past its opening checkpoint was healthy; a node that
+                // fails right after every start is not retried forever.
+                if self.stream_messages > 1 {
+                    self.consecutive_failures = 0;
+                }
+                return self.accept(response);
+            }
+            // The node or a proxy ended the stream (its lifetime elapsed): continue.
+            Ok(None) => None,
+            Err(status) if resumable(&status) => Some(status),
+            Err(status) => return Err(status_error(status)),
+        };
+        if let Some(status) = &failure {
+            tracing::debug!(code = ?status.code(), message = status.message(), "state transition stream broke; resuming");
+            // Resume elsewhere when the node itself is at fault, rather than reconnecting
+            // to it; a stream ended by its lifetime or the client says nothing of the node.
+            if node_at_fault(status) {
+                if let Some(address) = &self.stream_address {
+                    self.sdk.address_list().ban_with_reason(
+                        address,
+                        Some(format!(
+                            "state transition stream failed: {}",
+                            status.message()
+                        )),
+                    );
+                }
+            }
+        }
+        self.stream = None;
+        self.consecutive_failures += 1;
+        if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+            return Err(match failure {
+                Some(status) => status_error(status),
+                None => Error::Generic(
+                    "state transition streams keep ending right after they start".to_string(),
+                ),
+            });
+        }
+        Ok(None)
     }
 
     /// The height the subscription resumes from if its stream breaks now.
@@ -500,6 +539,7 @@ mod tests {
             resume_from: None,
             consecutive_failures: 0,
             contracts_to_refresh: BTreeSet::new(),
+            terminated: None,
         }
     }
 
@@ -839,5 +879,21 @@ mod tests {
         ] {
             assert!(!node_at_fault(&Status::new(code, "")), "{code:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn should_keep_failing_after_the_subscription_ended() {
+        let mut subscription = subscription();
+        subscription
+            .accept(response(Responses::Checkpoint(Checkpoint {
+                block_height: 41,
+            })))
+            .expect("accepted");
+        subscription.terminated = Some("a response could not be interpreted".to_string());
+        // No stream is read or reopened, and the cursor stays where it was.
+        assert!(subscription.next().await.is_err());
+        assert!(subscription.next().await.is_err());
+        assert_eq!(subscription.resume_height(), Some(42));
+        assert!(subscription.stream.is_none());
     }
 }
