@@ -4,7 +4,7 @@ use crate::platform::encrypted_for::encrypt_property_for;
 use crate::platform::{DataContract, Document, Fetch, Identity};
 use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::SeedableRng;
+use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
@@ -240,14 +240,14 @@ impl Sdk {
 }
 
 fn fresh_entropy() -> Bytes32 {
-    Bytes32::random_with_rng(&mut StdRng::from_entropy())
+    Bytes32::new(StdRng::from_os_rng().random())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::platform::encrypted_for::{decrypt_property, EncryptedPropertyEnvelope};
-    use dpp::dashcore::secp256k1::{PublicKey, Secp256k1};
+    use dpp::dashcore::secp256k1::PublicKey;
     use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::identity::contract_bounds::ContractBounds;
@@ -260,8 +260,8 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     fn key_pair(scalar: u8) -> (SecretKey, PublicKey) {
-        let secret_key = SecretKey::from_slice(&[scalar; 32]).expect("a valid scalar");
-        let public_key = PublicKey::from_secret_key(&Secp256k1::signing_only(), &secret_key);
+        let secret_key = SecretKey::from_secret_bytes([scalar; 32]).expect("a valid scalar");
+        let public_key = PublicKey::from_secret_key(&secret_key);
         (secret_key, public_key)
     }
 
