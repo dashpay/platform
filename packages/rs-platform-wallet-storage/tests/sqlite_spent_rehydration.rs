@@ -689,6 +689,33 @@ async fn should_preserve_a_recordless_winners_placeholder_during_replay() {
 }
 
 #[tokio::test]
+async fn should_preserve_unknown_materialized_claim_during_startup_conflict_repair() {
+    for height in [None, Some(102)] {
+        assert_conflict_restart(ConflictCase::UnknownClaim {
+            placeholder: false,
+            height,
+        })
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn should_preserve_unknown_placeholder_claim_during_startup_conflict_repair() {
+    for height in [None, Some(102)] {
+        assert_conflict_restart(ConflictCase::UnknownClaim {
+            placeholder: true,
+            height,
+        })
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn should_reject_malformed_claimant_during_startup_conflict_repair() {
+    assert_conflict_restart(ConflictCase::MalformedClaim).await;
+}
+
+#[tokio::test]
 async fn should_roll_back_a_failed_replay_repair() {
     assert_conflict_restart(ConflictCase::FailedRepair).await;
 }
@@ -707,6 +734,11 @@ enum ConflictCase {
     Recovery,
     RecordlessClaim,
     RecordlessPlaceholder,
+    UnknownClaim {
+        placeholder: bool,
+        height: Option<u32>,
+    },
+    MalformedClaim,
     FailedRepair,
     Assets,
     AssetsRecovery,
@@ -729,7 +761,8 @@ async fn assert_conflict_restart(case: ConflictCase) {
         case,
         ConflictCase::RecordlessClaim | ConflictCase::RecordlessPlaceholder
     );
-    let expect_released = !surviving_claim && !recordless_claim;
+    let unknown_claim = matches!(case, ConflictCase::UnknownClaim { .. });
+    let expect_released = !surviving_claim && !recordless_claim && !unknown_claim;
     let recovery = matches!(case, ConflictCase::Recovery | ConflictCase::AssetsRecovery);
     let assets = matches!(
         case,
@@ -934,6 +967,41 @@ async fn assert_conflict_restart(case: ConflictCase) {
             |row| row.get(0),
         )
         .unwrap();
+    // Release controls carry a known loser claim; an unknown durable claim must stay held.
+    if expect_released {
+        persister
+            .lock_conn_for_test()
+            .execute(
+                "UPDATE core_utxos SET spent_in_txid = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
+                rusqlite::params![
+                    loser.txid().as_byte_array().as_slice(),
+                    wallet.wallet_id.as_slice(),
+                    &extra_key
+                ],
+            )
+            .unwrap();
+    }
+    if let ConflictCase::UnknownClaim { height, .. } = case {
+        persister.lock_conn_for_test().execute(
+            "UPDATE core_utxos SET spent_in_txid = NULL, winner_mined_height = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
+            rusqlite::params![height, wallet.wallet_id.as_slice(), &extra_key],
+        ).unwrap();
+    }
+    if matches!(case, ConflictCase::MalformedClaim) {
+        persister.lock_conn_for_test().execute(
+            "UPDATE core_utxos SET spent_in_txid = zeroblob(31) WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
+        ).unwrap();
+        assert!(matches!(
+            typed_error(persister.load().unwrap_err()),
+            platform_wallet_storage::WalletStorageError::BlobDecode { .. }
+        ));
+        assert!(persister
+            .get_core_tx_record(wallet.wallet_id, &loser.txid())
+            .unwrap()
+            .is_some());
+        return;
+    }
     let missing_winner = Txid::from_byte_array([72; 32]);
     if recordless_claim {
         let conn = persister.lock_conn_for_test();
@@ -948,7 +1016,14 @@ async fn assert_conflict_restart(case: ConflictCase) {
         )
         .unwrap();
     }
-    if matches!(case, ConflictCase::RecordlessPlaceholder) {
+    if matches!(
+        case,
+        ConflictCase::RecordlessPlaceholder
+            | ConflictCase::UnknownClaim {
+                placeholder: true,
+                ..
+            }
+    ) {
         persister.lock_conn_for_test().execute(
             "UPDATE core_utxos SET value = 0, script = X'', is_sweep_placeholder = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
             rusqlite::params![wallet.wallet_id.as_slice(), &extra_key]).unwrap();
@@ -1154,7 +1229,7 @@ async fn assert_conflict_restart(case: ConflictCase) {
         } else {
             assert_eq!(selection.unwrap().selected[0].outpoint, coins[1].outpoint);
         }
-        if recordless_claim {
+        if recordless_claim || unknown_claim {
             let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
             loaded
                 .wallet_info
@@ -1167,6 +1242,22 @@ async fn assert_conflict_restart(case: ConflictCase) {
                 "recordless claim must survive funding redelivery"
             );
             assert_eq!(loaded.wallet_info.balance.total(), 0);
+        }
+        if let ConflictCase::UnknownClaim {
+            placeholder,
+            height,
+        } = case
+        {
+            let persisted: (bool, Option<Vec<u8>>, Option<u32>, bool) = persister.lock_conn_for_test().query_row(
+                "SELECT spent, spent_in_txid, winner_mined_height, is_sweep_placeholder FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            ).expect("unknown claim must survive repair and reopen");
+            assert_eq!(
+                persisted,
+                (true, None, height, placeholder),
+                "repair must retain nullable provenance through reload and funding redelivery"
+            );
         }
     }
 }

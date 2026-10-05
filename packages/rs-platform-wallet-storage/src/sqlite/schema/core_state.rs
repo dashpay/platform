@@ -507,7 +507,7 @@ fn surviving_stored_input_claims(
     Ok(claims)
 }
 
-/// Apply replay settlement without releasing a recordless winner's durable claim.
+/// Apply replay settlement without releasing surviving or unknown durable claims.
 pub fn apply_replay_sweeps(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -526,17 +526,25 @@ pub fn apply_replay_sweeps(
     let mut held = HashMap::new();
     for outpoint in candidates {
         let key = blob::encode_outpoint(&outpoint)?;
-        let length: Option<i64> = tx.query_row(
+        let length: Option<Option<i64>> = tx.query_row(
             "SELECT length(spent_in_txid) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1",
             params![wallet_id.as_slice(), &key[..]], |row| row.get(0),
-        ).optional()?.flatten();
+        ).optional()?;
         let Some(length) = length else { continue };
-        blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
-        let (claim, height): (Vec<u8>, Option<i64>) = tx.query_row(
+        if let Some(length) = length {
+            blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
+        }
+        let (claim, height): (Option<Vec<u8>>, Option<i64>) = tx.query_row(
             "SELECT spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
             params![wallet_id.as_slice(), &key[..]], |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !removed.contains(&dashcore::Txid::from_slice(&claim)?) {
+        // A NULL claimant is an unknown durable spend, not evidence that the coin is free.
+        if claim
+            .as_deref()
+            .map(Txid::from_slice)
+            .transpose()?
+            .is_none_or(|claimant| !removed.contains(&claimant))
+        {
             held.insert(outpoint, (claim, height));
         }
     }
@@ -554,7 +562,7 @@ pub fn apply_replay_sweeps(
             ..Default::default()
         },
     )?;
-    // The generic sweep attributes held inputs to its winner; retain other winners' provenance.
+    // The generic sweep attributes held inputs to its winner; retain the original provenance.
     for (outpoint, (claim, height)) in held {
         let key = blob::encode_outpoint(&outpoint)?;
         tx.execute(
