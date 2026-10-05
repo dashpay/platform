@@ -48,6 +48,12 @@ use super::{prove_output_only_bundle, ProvedOutputOnlyBundle};
 /// transitions assembled from one proved bundle never hash alike — a client resubmitting after a
 /// rejection relies on that, as Tenderdash caches the hashes of rejected transitions and drops an
 /// identical resubmission.
+///
+/// Being re-signable, the value holds the bundle's signing secrets — the binding signing key and
+/// the padding spends' spend authorizing keys and randomizers — until it is dropped (see
+/// `ProvedOutputOnlyBundle`). They are never serialized, persisted or logged, but anyone who
+/// obtains them can re-bind the proof to another asset lock, so drop the value as soon as the
+/// transition has landed or been abandoned.
 #[cfg(feature = "core_key_wallet")]
 pub struct ProvedShieldFromAssetLockBundle {
     bundle: ProvedOutputOnlyBundle,
