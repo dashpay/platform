@@ -419,10 +419,14 @@ fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
 }
 
 /// One node per request: the probe decides whether to ask another, and it has
-/// to know which node each answer came from.
+/// to know which node each answer came from. A probe never bans the address
+/// it reached: it runs exactly when the network is flaky, and the SDK's
+/// shared address list would carry its bans to every other caller — and to
+/// the probe's own retries.
 fn single_node() -> RequestSettings {
     RequestSettings {
         retries: Some(0),
+        ban_failed_address: Some(false),
         ..RequestSettings::default()
     }
 }
