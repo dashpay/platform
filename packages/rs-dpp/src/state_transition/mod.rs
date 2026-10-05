@@ -2290,33 +2290,73 @@ impl StateTransition {
         Ok(())
     }
 
-    #[cfg(feature = "state-transition-validation")]
-    fn verify_by_raw_public_key<T: BlsModule>(
-        &self,
-        public_key: &[u8],
-        public_key_type: KeyType,
-        bls: &T,
-    ) -> Result<(), ProtocolError> {
-        match public_key_type {
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key),
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
-            }
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(public_key_type),
-                ))
-            }
-        }
-    }
-
+    /// Verifies the transition's signature with `public_key`, the identity key it names.
+    ///
+    /// Generation 0 (protocol versions 1 to 13) accepts a BLS12_381 signature that is well
+    /// formed but does not verify: it fails only when the BLS module errors, never on its
+    /// `Ok(false)`. Generation 1 refuses that signature too.
     #[cfg(feature = "state-transition-validation")]
     pub fn verify_identity_signed_signature(
         &self,
         public_key: &IdentityPublicKey,
         bls: &impl BlsModule,
+        platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transition_method_versions
+            .verify_identity_signed_signature
+        {
+            0 => self.verify_identity_signed_signature_v0(public_key, bls),
+            1 => self.verify_identity_signed_signature_v1(public_key, bls),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "StateTransition::verify_identity_signed_signature".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// Kept as is for replay: the BLS verdict is dropped, so a BLS12_381 signature that does
+    /// not verify passes.
+    #[cfg(feature = "state-transition-validation")]
+    fn verify_identity_signed_signature_v0(
+        &self,
+        public_key: &IdentityPublicKey,
+        bls: &impl BlsModule,
+    ) -> Result<(), ProtocolError> {
+        self.identity_signed_signature_verdict(public_key, bls)
+            .map(|_| ())
+    }
+
+    #[cfg(feature = "state-transition-validation")]
+    fn verify_identity_signed_signature_v1(
+        &self,
+        public_key: &IdentityPublicKey,
+        bls: &impl BlsModule,
+    ) -> Result<(), ProtocolError> {
+        if self.identity_signed_signature_verdict(public_key, bls)? {
+            Ok(())
+        } else {
+            Err(ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(
+                        "bls signature does not verify".to_string(),
+                    ),
+                ),
+            )))
+        }
+    }
+
+    /// The checks every generation of [`Self::verify_identity_signed_signature`] runs, returning
+    /// whether the signature verifies. A failed ECDSA check is an error, so `Ok(false)` only
+    /// comes from a BLS12_381 signature that is well formed but does not verify.
+    #[cfg(feature = "state-transition-validation")]
+    fn identity_signed_signature_verdict(
+        &self,
+        public_key: &IdentityPublicKey,
+        bls: &impl BlsModule,
+    ) -> Result<bool, ProtocolError> {
         // self.verify_public_key_level_and_purpose(public_key)?;
         if public_key.disabled_at().is_some() {
             return Err(ProtocolError::PublicKeyIsDisabledError(
@@ -2341,16 +2381,18 @@ impl StateTransition {
 
         let public_key_bytes = public_key.data().as_slice();
         match public_key.key_type() {
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
-            }
+            KeyType::ECDSA_HASH160 => self
+                .verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
+                .map(|()| true),
 
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key_bytes),
+            KeyType::ECDSA_SECP256K1 => self
+                .verify_ecdsa_signature_by_public_key(public_key_bytes)
+                .map(|()| true),
 
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
 
             // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(()),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(true),
         }
     }
 
@@ -2412,12 +2454,13 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-validation")]
-    /// Verifies a BLS signature with the public key
+    /// Verifies a BLS signature with the public key: `Ok(false)` when the signature is well
+    /// formed but does not verify, an error when the key or the signature cannot be read
     fn verify_bls_signature_by_public_key<T: BlsModule>(
         &self,
         public_key: &[u8],
         bls: &T,
-    ) -> Result<(), ProtocolError> {
+    ) -> Result<bool, ProtocolError> {
         let Some(signature) = self.signature() else {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
                 needed: self.required_number_of_private_keys(),
@@ -2434,7 +2477,6 @@ impl StateTransition {
         let data = self.signable_bytes()?;
 
         bls.verify_signature(signature.as_slice(), &data, public_key)
-            .map(|_| ())
             .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
@@ -3146,6 +3188,70 @@ mod tests {
         sample_batch_st_with_delete()
             .sign(&key.into(), &private_key, &bls)
             .expect("unbounded keys must still sign");
+    }
+
+    // Generation 1 of `verify_identity_signed_signature` (protocol version 14) refuses a
+    // BLS12_381 signature that does not verify; generation 0 keeps accepting it for replay.
+    #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
+    #[test]
+    fn should_refuse_a_bls_signature_that_does_not_verify_from_protocol_version_14() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [7; 32];
+        let key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 11,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            key_type: KeyType::BLS12_381,
+            data: bls
+                .private_key_to_public_key(&private_key)
+                .expect("a valid BLS private key")
+                .into(),
+            ..Default::default()
+        }
+        .into();
+
+        let mut signed = sample_transfer_st();
+        signed
+            .sign(&key, &private_key, &bls)
+            .expect("the key signs the transfer");
+
+        // The same transfer signed by another BLS key, and 96 bytes that are not a compressed
+        // curve point
+        let mut by_another_key = signed.clone();
+        by_another_key
+            .sign_by_private_key(&[8; 32], KeyType::BLS12_381, &bls)
+            .expect("another key signs the transfer");
+        let mut not_a_point = signed.clone();
+        not_a_point.set_signature(BinaryData::new(vec![0; 96]));
+
+        let latest = PlatformVersion::latest();
+        let last_without_the_check = PlatformVersion::get(13).expect("protocol version 13");
+        for platform_version in [latest, last_without_the_check] {
+            signed
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect("a signature by the key verifies");
+        }
+
+        for (transition, label) in [
+            (by_another_key, "signed by another key"),
+            (not_a_point, "not a curve point"),
+        ] {
+            let error = transition
+                .verify_identity_signed_signature(&key, &bls, latest)
+                .expect_err(label);
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_)
+                ))),
+                "{label}: {error:?}"
+            );
+            transition
+                .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                .expect("protocol version 13 replays as it ran");
+        }
     }
 
     fn sample_batch_st_with_delete() -> StateTransition {

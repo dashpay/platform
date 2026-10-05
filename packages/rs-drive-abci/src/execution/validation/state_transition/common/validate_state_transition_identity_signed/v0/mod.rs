@@ -203,8 +203,10 @@ impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
         let operation = SignatureVerificationOperation::new(public_key.key_type());
         execution_context.add_operation(ValidationOperation::SignatureVerification(operation));
 
+        // In place: before protocol version 14 the dpp tables select generation 0 of the check,
+        // the code this called before it took a platform version.
         let signature_is_valid =
-            self.verify_identity_signed_signature(public_key, &NativeBlsModule);
+            self.verify_identity_signed_signature(public_key, &NativeBlsModule, platform_version);
 
         if let Err(err) = signature_is_valid {
             let consensus_error = convert_to_consensus_signature_error(err)?;

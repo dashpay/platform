@@ -1968,6 +1968,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract). Inert before this version: only parser generation 3 admits
 ///     an indexOnly document type.
 ///
+/// 76. **A BLS12_381 signature must verify**: `verify_identity_signed_signature`
+///     1 (`STATE_TRANSITION_METHOD_VERSIONS_V2`), the signature check that
+///     identity-signature validation runs for every identity-signed
+///     transition, refuses a signature by a BLS12_381 key that does not verify
+///     (`InvalidStateTransitionSignatureError`, unpaid, as for ECDSA keys).
+///     Generation 0 refused one only when the key or the signature could not be
+///     read, and earlier versions replay through it. Identity-signature
+///     validation v0, in place, passes the platform version to the check; the
+///     tables of every earlier version select generation 0, the code it called
+///     before.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -2063,7 +2074,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
