@@ -22,7 +22,7 @@ impl Drive {
     /// [`StateTransitionProofOutcome::ExecutionProved`]. For the transition
     /// families whose proof format cannot establish request-specific
     /// completion (balance top-ups, credit transfers and withdrawals,
-    /// address funds movements, shields, and no-history token
+    /// address funds movements, shields, shielded credit spends, and no-history token
     /// burn/mint/transfer), the proof only authenticates the affected keys'
     /// state at the committed block, and the outcome is
     /// [`StateTransitionProofOutcome::AffectedState`]: a height-pinned

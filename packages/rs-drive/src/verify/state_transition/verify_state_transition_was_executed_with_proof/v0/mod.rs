@@ -3204,14 +3204,14 @@ impl Drive {
             StateTransition::AddressFundingFromAssetLock(_) => false,
             StateTransition::AddressCreditWithdrawal(_) => false,
             StateTransition::Shield(_) => false,
-            // A withdrawal's document id derives from its first nullifier and its output
-            // script, so that one binds its destination. The two beneath it rest on the
-            // nullifiers alone, which name the notes spent and not the outputs that replace
-            // them; they are classified the way the token families they mirror are not only
-            // because they are reached from released protocol versions.
-            StateTransition::Unshield(_) => true,
-            StateTransition::ShieldedTransfer(_) => true,
-            StateTransition::ShieldedWithdrawal(_) => true,
+            // Spent nullifiers name the consumed notes, not the requested outputs.
+            // Unshield also proves a current address-balance snapshot. A withdrawal's
+            // document id binds its destination through the first nullifier and output
+            // script, but verification does not bind the requested amount or change
+            // outputs. None of these results identifies the complete requested spend.
+            StateTransition::Unshield(_) => false,
+            StateTransition::ShieldedTransfer(_) => false,
+            StateTransition::ShieldedWithdrawal(_) => false,
             // Only the consumed outpoint (and current surplus-address state)
             // is proven; competing shields over the same outpoint share the
             // same query and result.
@@ -3611,6 +3611,9 @@ fn verify_contract_document_change_execution(
     }
 }
 
+#[cfg(all(test, feature = "full"))]
+mod credit_pool_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3629,7 +3632,9 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::prelude::DataContract;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-    use dpp::state_transition::proof_result::StateTransitionProofResult;
+    use dpp::state_transition::proof_result::{
+        StateTransitionProofGuarantee, StateTransitionProofResult,
+    };
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -6050,7 +6055,12 @@ mod tests {
             &|_id| Ok(None),
             platform_version,
         );
-        assert!(matching_result.is_ok());
+        let (_, matching_outcome) =
+            matching_result.expect("expected matching public keys to verify");
+        assert_eq!(
+            matching_outcome.guarantee(),
+            StateTransitionProofGuarantee::ExecutionProved
+        );
 
         let mismatched = StateTransition::IdentityCreateFromAddresses(
             IdentityCreateFromAddressesTransition::V0(IdentityCreateFromAddressesTransitionV0 {
