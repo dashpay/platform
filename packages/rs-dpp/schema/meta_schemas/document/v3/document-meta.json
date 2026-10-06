@@ -643,7 +643,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
+              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl; canBeDeleted: \"onlyWhenConsumed\" is not false); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -809,7 +809,7 @@
               "maximum": 4294967295
             },
             "consume": {
-              "description": "Beside a findBy function, only: the create deletes the document findBy finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose where compares \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
+              "description": "Beside a findBy function, only: the create deletes the document findBy finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose where compares \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true) or that only a consume removes (canBeDeleted: \"onlyWhenConsumed\"), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
               "const": true
             }
           },
@@ -2235,8 +2235,8 @@
       "description": "True if the documents are mutable, default is true"
     },
     "canBeDeleted": {
-      "type": "boolean",
-      "description": "True if the documents can be deleted, default is true"
+      "enum": [true, false, "onlyWhenConsumed"],
+      "description": "True if the documents' owners can delete them, default is the contract config's documentsCanBeDeletedContractDefault. \"onlyWhenConsumed\": the owner can not delete a document, but a create of the same contract whose refersTo declares consume deletes it, so the documents can still leave state and the type is a deletableDocument target, never a permanentDocument or moderatedDocument one. Refused on a type that keeps history or is indexOnly, whose documents nothing can consume. Fixed: an update may not change it. \"onlyWhenConsumed\" is available from protocol version 14."
     },
     "transferable": {
       "type": "integer",

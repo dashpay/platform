@@ -402,6 +402,8 @@ fn parse_generation_3(
     let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
     let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable = common::parse_immutable_keyword(&schema, name)?;
+    let deleted_only_when_consumed =
+        common::parse_can_be_deleted_only_when_consumed_keyword(&schema);
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -418,6 +420,10 @@ fn parse_generation_3(
         // born normalized (`apply_index_only` below validates the
         // already-normalized set).
         index_only,
+        // Lets the core read the owner's delete as refused for
+        // `canBeDeleted: "onlyWhenConsumed"` instead of reading a boolean;
+        // `apply_deleted_only_when_consumed` below records the consumption.
+        deleted_only_when_consumed,
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
@@ -540,6 +546,8 @@ fn parse_generation_3(
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name, platform_version)?;
+    // After `apply_index_only`: an indexOnly type has nothing a reference could consume.
+    common::apply_deleted_only_when_consumed(&mut v2, deleted_only_when_consumed, name)?;
     // After the core parse: the lints read the resolved `documentsMutable`
     // flag (contract default applied) and the parsed top-level properties,
     // and each condition's reads are checked against the parsed properties.
@@ -1738,6 +1746,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(test)]
+mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]

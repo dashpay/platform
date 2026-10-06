@@ -178,6 +178,11 @@ public struct DataContractParser {
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
+            } else if (typeDict["canBeDeleted"] as? String) == "onlyWhenConsumed" {
+                // Protocol version 14: only a create that consumes the document
+                // (a `refersTo` with `consume`) deletes it. Its owner cannot, so
+                // for the app this is `false`; offering a delete would be refused.
+                docType.documentsCanBeDeleted = false
             }
 
             // The actual field name is "transferable" and it can be an integer (0 = false, non-zero = true)

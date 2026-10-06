@@ -9,7 +9,9 @@
 
 use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceLookup, HashFunction,
     LookupHashKey, LookupKeyParam, LookupKeySource, PropertyReference,
@@ -600,6 +602,32 @@ fn should_refuse_consuming_a_commitment_its_owner_may_not_delete() {
         )),
         "canBeDeleted: false",
     );
+}
+
+#[test]
+fn should_consume_a_commitment_only_a_consume_deletes() {
+    // `canBeDeleted: "onlyWhenConsumed"`: its owner can not withdraw the preorder with a
+    // delete, and the reveal consumes it
+    let parsed = contract(dpns_contract_with(
+        dpns_salt_reveal(),
+        json!({}),
+        json!({ "canBeDeleted": "onlyWhenConsumed" }),
+    ))
+    .expect("a reveal consuming a commitment only a consume deletes should parse");
+    assert_eq!(
+        salt_reference(&parsed),
+        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id: None,
+            document_type_name: "preorder".to_string(),
+            property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
+            lookup: dpns_lookup(Some(1), true),
+        }
+    );
+    let preorder = parsed
+        .document_type_for_name("preorder")
+        .expect("the preorder");
+    assert!(!preorder.documents_can_be_deleted());
+    assert!(preorder.documents_deleted_only_when_consumed());
 }
 
 #[test]

@@ -1939,6 +1939,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
 ///
+/// 71. **Documents deleted only when consumed (`canBeDeleted:
+///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
+///     and parser generation 3, in place
+///     (`parse_can_be_deleted_only_when_consumed_keyword`, passed to the core
+///     parse as `indexOnly` is, `false` for generations 1 and 2;
+///     `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). The
+///     owner's delete reads it as `false` (document delete advanced structure
+///     validation refuses it, 10404), and a `refersTo` with `consume` may
+///     target the type (`DocumentReferenceLookup::referenced_side_error`,
+///     which refused every type its owner can not delete). Its documents can
+///     leave state, so the type is a `deletableDocument` target, never a
+///     `permanentDocument` or `moderatedDocument` one
+///     (`documents_can_disappear`, `document_reference_kind`). A consumed
+///     document is deleted without its owner's `canBeDeleted` guard
+///     (`ForceDeleteDocument` beside a contested create,
+///     `force_delete_document_for_contract_operations` in
+///     `AddDocumentAndDeleteConsumed`), so Drive's delete guard stays strict
+///     for the owner's delete. Refused on a type that keeps history or is
+///     indexOnly (10231), and fixed on update (`validate_update` v1, 40212).
+///     Inert for every contract without the value, which every earlier grammar
+///     refuses.
+///
 /// 72. **A barred author may still retract (`retractedWhen`)**: a document
 ///     type of meta-schema v3 and parser generation 3, in place, may declare
 ///     `retractedWhen`, one condition in the grammar of an `immutable` entry's

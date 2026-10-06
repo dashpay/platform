@@ -5723,6 +5723,42 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_reject_a_permanent_reference_to_a_type_whose_documents_a_consume_deletes() {
+            // The target forbids its owners to delete, but `"onlyWhenConsumed"` lets a create
+            // consume its documents, so a permanentDocument reference could dangle.
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-consumed.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_a_deletable_reference_to_a_type_whose_documents_a_consume_deletes()
+        {
+            // `canBeDeleted: false` alone would refuse a deletableDocument reference;
+            // `"onlyWhenConsumed"` makes the target deletable, so it is accepted.
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-consumed.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
         async fn should_reject_contract_referencing_unknown_own_document_type() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-unknown-type.json",

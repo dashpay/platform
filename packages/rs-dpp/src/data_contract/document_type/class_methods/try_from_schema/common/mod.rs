@@ -45,10 +45,11 @@ use crate::data_contract::document_type::property_names::moderator_abilities::{
     DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES,
-    RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CREATION_RESTRICTION_MODE,
+    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
+    DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -459,6 +460,13 @@ struct CoreParseContext<'a> {
     /// generation admitting the keyword can ever pass `true` (the caller
     /// reads it off the schema); generations 1 and 2 always pass `false`.
     index_only: bool,
+    /// Whether the document type being parsed declared `canBeDeleted: "onlyWhenConsumed"`,
+    /// which [`parse_document_type_flags`] reads as `false` for the owner's delete instead of
+    /// reading `canBeDeleted` as a boolean. Only a generation admitting the value can ever pass
+    /// `true` (the caller reads it off the schema with
+    /// [`parse_can_be_deleted_only_when_consumed_keyword`]); generations 1 and 2 always pass
+    /// `false`.
+    deleted_only_when_consumed: bool,
     generation: &'a ParserGeneration,
     platform_version: &'a PlatformVersion,
 }
@@ -519,6 +527,7 @@ pub(super) fn parse_document_type_core(
     data_contact_config: &DataContractConfig,
     full_validation: bool, // we don't need to validate if loaded from state
     index_only: bool,
+    deleted_only_when_consumed: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
@@ -532,6 +541,7 @@ pub(super) fn parse_document_type_core(
         data_contact_config,
         full_validation,
         index_only,
+        deleted_only_when_consumed,
         generation,
         platform_version,
     };
@@ -709,14 +719,18 @@ fn parse_document_type_flags(
         .map_err(consensus_or_protocol_value_error)?
         .unwrap_or(ctx.data_contact_config.documents_mutable_contract_default());
 
-    // Can documents of this type be deleted? (Overrides contract value)
-    let documents_can_be_deleted: bool =
+    // Can documents of this type be deleted by their owners? (Overrides contract value)
+    // `"onlyWhenConsumed"` says they can not: only a `refersTo` with `consume` deletes them
+    let documents_can_be_deleted: bool = if ctx.deleted_only_when_consumed {
+        false
+    } else {
         Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
             .map_err(consensus_or_protocol_value_error)?
             .unwrap_or(
                 ctx.data_contact_config
                     .documents_can_be_deleted_contract_default(),
-            );
+            )
+    };
 
     // Are documents of this type transferable?
     let documents_transferable_u8: u8 =
@@ -3081,6 +3095,58 @@ pub(super) fn apply_documents_ttl(
     }
 
     document_type.documents_ttl_seconds = Some(seconds);
+    Ok(())
+}
+
+/// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`, read before the
+/// core parser consumes `schema`, through the map accessor every doctype keyword is read with
+/// (the first entry under the key), same shape as [`parse_index_only_keyword`]. Only the
+/// generation-3 driver calls this: it passes the answer to the core parse, which then reads
+/// the owner's delete as `false`, and records it on the parsed type
+/// ([`apply_deleted_only_when_consumed`]). Any other value is left to the core parse, which
+/// reads `canBeDeleted` as a boolean.
+pub(super) fn parse_can_be_deleted_only_when_consumed_keyword(schema: &Value) -> bool {
+    schema.to_map().ok().is_some_and(|schema_map| {
+        Value::get_optional_from_map(schema_map, CAN_BE_DELETED).and_then(Value::as_text)
+            == Some(CAN_BE_DELETED_ONLY_WHEN_CONSUMED)
+    })
+}
+
+/// Records `canBeDeleted: "onlyWhenConsumed"` on a generation-3 type: its owner can not delete
+/// a document (the core parse read `documents_can_be_deleted` as `false`), and a create whose
+/// `refersTo` declares `consume` can. Its documents can then leave state, so the type is a
+/// `deletableDocument` target. Runs after `apply_index_only`, and refuses, on every parse as
+/// `ttl` does, a type whose documents nothing could consume: one that keeps history, which
+/// the storage layer never deletes from, and an indexOnly one, which has no stored row a
+/// reference finds.
+pub(super) fn apply_deleted_only_when_consumed(
+    document_type: &mut DocumentTypeV2,
+    deleted_only_when_consumed: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !deleted_only_when_consumed {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeleted: \"onlyWhenConsumed\"`, but the storage layer refuses to delete a \
+             document whose type keeps history, so nothing could consume one: set \
+             `canBeDeleted` to false",
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{name}\" must not set `canBeDeleted: \"onlyWhenConsumed\"`: \
+             there is no stored row a reference could find and consume",
+        )));
+    }
+    document_type.documents_deleted_only_when_consumed = true;
     Ok(())
 }
 

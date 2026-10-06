@@ -471,6 +471,42 @@ fn should_split_the_storage_into_primary_storage_and_each_index() {
 }
 
 #[test]
+fn should_refund_a_document_only_a_consume_deletes_as_one_its_owner_deletes() {
+    // A consume refunds the owner as the owner's delete would, so the estimate is the same;
+    // a type whose documents nothing deletes refunds nothing
+    let platform_version = PlatformVersion::latest();
+    let refunds = |can_be_deleted: Value| {
+        let mut schema = note_schema();
+        schema
+            .insert("canBeDeleted".to_string(), can_be_deleted)
+            .expect("expected to set canBeDeleted");
+        let contract = contract_with(platform_value!({ "note": schema }));
+        let note = contract.document_type_for_name("note").expect("note");
+        let cost = document_create_cost(
+            &contract,
+            note,
+            &note_document(&contract),
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        (cost.refund_same_epoch, cost.refund_after_one_year)
+    };
+
+    let (same_epoch, after_one_year) = refunds(Value::Bool(true));
+    assert!(same_epoch.expect("a refund").new_values > 0);
+    assert!(after_one_year.expect("a refund").new_values > 0);
+    assert_eq!(
+        refunds(Value::Text("onlyWhenConsumed".to_string())),
+        (same_epoch, after_one_year)
+    );
+    assert_eq!(
+        refunds(Value::Bool(false)),
+        (Some(Scenarios::default()), Some(Scenarios::default()))
+    );
+}
+
+#[test]
 fn should_charge_no_layer_to_a_skip_index_that_skips_the_document() {
     let platform_version = PlatformVersion::latest();
     let contract = contract_with(platform_value!({ "post": {

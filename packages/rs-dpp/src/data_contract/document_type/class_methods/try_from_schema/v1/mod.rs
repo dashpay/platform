@@ -91,6 +91,9 @@ impl DocumentTypeV1 {
             // indexOnly is a generation-3 doctype keyword; below generation 3
             // no document type can be index-only.
             false,
+            // So is `canBeDeleted: "onlyWhenConsumed"`: below generation 3 the
+            // core reads `canBeDeleted` as a boolean.
+            false,
             validation_operations,
             &common::ParserGeneration {
                 document_type_schema_version,
