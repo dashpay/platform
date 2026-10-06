@@ -1,7 +1,6 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
 use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -53,28 +52,10 @@ pub struct SpvRuntime {
     client: RwLock<Option<SpvClient>>,
     last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
-    /// Blocks startup while stop transfers ownership to the teardown task.
-    stops_in_progress: AtomicUsize,
-    /// Serializes client construction and stop calls.
-    stop_serial: tokio::sync::Mutex<()>,
+    /// Teardown state. Held across client construction, run-loop spawning and
+    /// each stop call, so the three never interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
     peer_tracker: Arc<PeerTracker>,
-}
-
-/// Counts one running [`SpvRuntime::stop`] for as long as it lives.
-struct StopInProgress<'a>(&'a AtomicUsize);
-
-impl<'a> StopInProgress<'a> {
-    fn begin(count: &'a AtomicUsize) -> Self {
-        count.fetch_add(1, Ordering::SeqCst);
-        Self(count)
-    }
-}
-
-impl Drop for StopInProgress<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 /// Classify a failure from the SPV acceptance-check path
@@ -113,8 +94,6 @@ impl SpvRuntime {
             client: RwLock::new(None),
             last_config: RwLock::new(None),
             task: Mutex::new(None),
-            stops_in_progress: AtomicUsize::new(0),
-            stop_serial: tokio::sync::Mutex::new(()),
             shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
             peer_tracker: Arc::new(PeerTracker::default()),
         }
@@ -125,15 +104,16 @@ impl SpvRuntime {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
         }
+        // Fail fast instead of queueing behind a stop that is still joining.
         self.ensure_no_live_run_loop()?;
-        let _serial = self.stop_serial.lock().await;
+        let shutdown = self.shutdown.lock().await;
         {
             let running = self.client.read().await;
             if running.is_some() {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
-        self.ensure_no_live_run_loop()?;
+        self.ensure_joined(&shutdown)?;
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
@@ -171,23 +151,24 @@ impl SpvRuntime {
 
     /// Refuse restart until all previous startup and shutdown work is joined.
     fn ensure_no_live_run_loop(&self) -> Result<(), PlatformWalletError> {
-        // Lock `task` before reading the counter. A stop counts itself before
-        // it takes the handle under this lock, so a start either still sees
-        // the handle or already sees the stop.
-        let task = self.task.lock().expect("spv task mutex poisoned");
-        if self.stops_in_progress.load(Ordering::SeqCst) > 0 {
-            return Err(PlatformWalletError::SpvError(
-                "an SPV stop is still in progress; wait for it before starting SPV".to_string(),
-            ));
-        }
         let shutdown = self.shutdown.try_lock().map_err(|_| {
-            PlatformWalletError::SpvError("SPV teardown is still in progress".to_string())
+            PlatformWalletError::SpvError(
+                "an SPV start or stop is still in progress; wait for it before starting SPV"
+                    .to_string(),
+            )
         })?;
-        if !matches!(*shutdown, Shutdown::Idle) {
+        self.ensure_joined(&shutdown)
+    }
+
+    /// Check that nothing is left to join. Takes the locked `shutdown` state:
+    /// `task` only changes under that lock, so the answer cannot go stale.
+    fn ensure_joined(&self, shutdown: &Shutdown) -> Result<(), PlatformWalletError> {
+        if !matches!(shutdown, Shutdown::Idle) {
             return Err(PlatformWalletError::SpvError(
                 "SPV teardown is incomplete; stop SPV again before starting it".to_string(),
             ));
         }
+        let task = self.task.lock().expect("spv task mutex poisoned");
         if task.is_some() {
             return Err(PlatformWalletError::SpvError(
                 "SPV startup has not been joined; stop SPV before restarting it".to_string(),
@@ -346,8 +327,6 @@ impl SpvRuntime {
         F: FnOnce(SpvClient) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let _stopping = StopInProgress::begin(&self.stops_in_progress);
-        let _serial = self.stop_serial.lock().await;
         let mut shutdown = self.shutdown.lock().await;
         if matches!(*shutdown, Shutdown::Idle) {
             let client = self.client.write().await.take();
@@ -391,17 +370,14 @@ impl SpvRuntime {
     ///
     /// Call [`Self::stop`] to stop it.
     pub fn spawn_run_loop(self: &Arc<Self>) {
-        let mut task = self.task.lock().expect("spv task mutex poisoned");
-        if task.is_some() || self.stops_in_progress.load(Ordering::SeqCst) > 0 {
-            return;
-        }
         let Ok(shutdown) = self.shutdown.try_lock() else {
             return;
         };
-        if !matches!(*shutdown, Shutdown::Idle) {
+        if self.ensure_joined(&shutdown).is_err() {
             return;
         }
         let this = Arc::clone(self);
+        let mut task = self.task.lock().expect("spv task mutex poisoned");
         *task = Some(tokio::spawn(async move {
             if let Err(e) = this.run().await {
                 tracing::warn!("SpvRuntime background startup failed: {}", e);
@@ -1193,11 +1169,8 @@ mod tests {
             let runtime = Arc::clone(&runtime);
             tokio::spawn(async move { runtime.stop().await })
         };
-        while runtime
-            .stops_in_progress
-            .load(std::sync::atomic::Ordering::SeqCst)
-            == 0
-        {
+        // Stop takes `shutdown` and then parks on the client write lock.
+        while runtime.shutdown.try_lock().is_ok() {
             tokio::task::yield_now().await;
         }
         stopping.abort();
