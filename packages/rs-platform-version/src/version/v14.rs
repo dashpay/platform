@@ -226,14 +226,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   lookups are ever needed. Reads dispatch on the byte prefix, so
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
-/// 7. **Client-side GroveDB proof envelope floor**:
-///    `SYSTEM_LIMITS_V4.minimum_grovedb_proof_envelope_version` becomes 1, so
-///    a client verifying with v14 tables rejects the legacy V0 proof
-///    envelope before its bytes reach Drive (`drive-proof-verifier`,
-///    `wasm-drive-verify`, and the nested compacted address proofs). V0's
-///    item binding lets a prover return different item bytes under the same
-///    authenticated root; every live network has emitted V1 envelopes since
-///    v13 (grove version 3), so no honest response is affected.
+/// 7. **Client-side GroveDB proof envelope floor (not a version-table
+///    entry)**: clients refuse the legacy V0 proof envelope at every protocol
+///    version through
+///    `drive::verify::grovedb_proof_envelope::MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`,
+///    so nothing about it is gated on v14. The note keeps its number so the
+///    later notes keep theirs.
 /// 8. **Epoch-based perpetual distribution claims stop wrapping**:
 ///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
 ///    may redeem, selected by
@@ -2010,7 +2008,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///
-/// 78. **An authenticated Shield proof failure pays from its address inputs.**
+/// 80. **A BLS12_381 signature must verify**: `verify_identity_signed_signature`
+///     1 (`STATE_TRANSITION_METHOD_VERSIONS_V2`), the signature check that
+///     identity-signature validation runs for every identity-signed
+///     transition, refuses a signature by a BLS12_381 key that does not verify
+///     (`InvalidStateTransitionSignatureError`, unpaid, as for ECDSA keys).
+///     Generation 0 refused one only when the key or the signature could not be
+///     read, and earlier versions replay through it. Identity-signature
+///     validation v0, in place, passes the platform version to the check; the
+///     tables of every earlier version select generation 0, the code it called
+///     before.
+///
+/// 81. **An authenticated Shield proof failure pays from its address inputs.**
 ///     Processor generation 1 defers Shield proof verification to transform generation 2.
 ///     A failed proof restores the input principal, consumes the input nonces, and charges
 ///     the ordinary metered failure fee plus the configured proof-failure penalty, capped
@@ -2116,7 +2125,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; Shield and ShieldFromAssetLock move to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
@@ -2132,7 +2141,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

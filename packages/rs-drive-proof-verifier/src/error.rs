@@ -45,18 +45,17 @@ pub enum Error {
     #[error("no proof in result")]
     NoProofInResult,
 
-    /// GroveDB proof envelope older than the floor the protocol version sets in
-    /// `SystemLimits::minimum_grovedb_proof_envelope_version`; the payload is
-    /// refused before Drive verifies it.
+    /// GroveDB proof envelope older than Drive's
+    /// `MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`; the payload is refused before
+    /// Drive verifies it.
     #[error(
-        "unsupported GroveDB proof envelope version {version} in the {proof}: protocol version {protocol_version} requires at least version {minimum}"
+        "unsupported GroveDB proof envelope version {version} in the {proof}: at least version {minimum} is required"
     )]
     UnsupportedGroveDBProofVersion {
         /// Which proof was being read: "proof", "predecessor proof", "forward proof"
         proof: &'static str,
         version: u32,
         minimum: u32,
-        protocol_version: u32,
     },
 
     /// Requested object not found
@@ -119,12 +118,10 @@ impl From<drive::error::Error> for Error {
                 proof,
                 version,
                 minimum,
-                protocol_version,
             }) => Self::UnsupportedGroveDBProofVersion {
                 proof,
                 version,
                 minimum,
-                protocol_version,
             },
             error => Self::DriveError {
                 error: error.to_string(),
