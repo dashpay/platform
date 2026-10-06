@@ -17,7 +17,7 @@ use futures::StreamExt;
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
 use rand::rngs::OsRng;
 use rand::RngCore;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tokio::task::JoinHandle;
 
 use super::{sync_notes_from_source, NoteSyncOutcome, StoreEpoch};
@@ -32,6 +32,25 @@ const STREAM_STALL: Duration = Duration::from_millis(1500);
 /// Bound on a store-lock wait while the pass is stalled on the network.
 /// Before the fix the wait was the whole stall.
 const LOCK_WAIT_BOUND: Duration = Duration::from_millis(250);
+
+/// Bound on taking the store lock while a pass is parked on the network,
+/// where the lock should be free. A pass holding it across `stream.next()`
+/// would otherwise deadlock the test feeding that stream instead of failing.
+const MID_PASS_LOCK_BOUND: Duration = Duration::from_secs(5);
+
+type Store = Arc<RwLock<FileBackedShieldedStore>>;
+
+async fn mid_pass_write(store: &Store) -> RwLockWriteGuard<'_, FileBackedShieldedStore> {
+    tokio::time::timeout(MID_PASS_LOCK_BOUND, store.write())
+        .await
+        .expect("sync held the store lock while waiting for the next batch")
+}
+
+async fn mid_pass_read(store: &Store) -> RwLockReadGuard<'_, FileBackedShieldedStore> {
+    tokio::time::timeout(MID_PASS_LOCK_BOUND, store.read())
+        .await
+        .expect("sync held the store lock while waiting for the next batch")
+}
 
 type BatchSender = mpsc::UnboundedSender<Result<ShieldedChunkBatch, dash_sdk::Error>>;
 type PassHandle = JoinHandle<Result<NoteSyncOutcome, PlatformWalletError>>;
@@ -317,7 +336,7 @@ async fn should_keep_spend_witnesses_stable_while_a_pass_is_mid_download() {
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
     {
-        let guard = store.read().await;
+        let guard = mid_pass_read(&store).await;
         assert_eq!(guard.tree_size().unwrap(), 2048, "batch appended mid-pass");
         let mid_pass = guard
             .witness_at_depth(0, 0)
@@ -360,7 +379,7 @@ async fn should_supersede_pass_when_a_lifecycle_change_lands_mid_download() {
     assert_eq!(progress.next().await, Some(2048));
 
     {
-        let mut guard = store.write().await;
+        let mut guard = mid_pass_write(&store).await;
         epoch.bump_wallet(&mut guard, WALLET);
         guard.purge_wallet(WALLET).unwrap();
     }
@@ -396,7 +415,7 @@ async fn should_supersede_pass_when_tree_is_reset_before_commit() {
     assert_eq!(progress.next().await, Some(2048));
 
     {
-        let mut guard = store.write().await;
+        let mut guard = mid_pass_write(&store).await;
         epoch.bump_all(&mut guard);
         guard.reset_commitment_tree().unwrap();
         guard.purge_all_subwallets().unwrap();
@@ -420,8 +439,7 @@ async fn should_supersede_pass_when_another_writer_moves_the_tree() {
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
 
-    store
-        .write()
+    mid_pass_write(&store)
         .await
         .append_commitment(&cmx(9_999), true)
         .unwrap();
@@ -443,7 +461,7 @@ async fn should_not_supersede_pass_for_another_wallets_lifecycle_change() {
     tx.unbounded_send(Ok(batch(0, 2048))).unwrap();
     assert_eq!(progress.next().await, Some(2048));
     {
-        let mut guard = store.write().await;
+        let mut guard = mid_pass_write(&store).await;
         epoch.bump_wallet(&mut guard, [0x77; 32]);
         guard.purge_wallet([0x77; 32]).unwrap();
     }
@@ -473,7 +491,7 @@ async fn should_checkpoint_leaves_left_by_a_superseded_pass_on_retry() {
     assert_eq!(progress.next().await, Some(2048));
     {
         // E.g. a host snapshot restore of the wallet being scanned.
-        let mut guard = store.write().await;
+        let mut guard = mid_pass_write(&store).await;
         epoch.bump_wallet(&mut guard, WALLET);
     }
     drop(tx);
@@ -589,7 +607,7 @@ async fn should_keep_a_spend_confirmed_mid_download_when_rescanning_its_note() {
 
     {
         // The send's reservation and its confirmation (`mark_notes_spent`).
-        let mut guard = store.write().await;
+        let mut guard = mid_pass_write(&store).await;
         guard.mark_pending(subwallet(), &nullifier).unwrap();
         assert!(guard.mark_spent(subwallet(), &nullifier).unwrap());
     }
