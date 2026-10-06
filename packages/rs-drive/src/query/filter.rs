@@ -898,6 +898,34 @@ fn canonical_value_for_key<'v>(
     }
 }
 
+/// `value` as an integer property built by `variant` stores it: borrowed when it already has
+/// that variant (or is null), `None` when it is not an integer that fits.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_integer<'v, T>(value: &'v Value, variant: fn(T) -> Value) -> Option<Cow<'v, Value>>
+where
+    T: TryFrom<i128>
+        + TryFrom<u128>
+        + TryFrom<i64>
+        + TryFrom<u64>
+        + TryFrom<i32>
+        + TryFrom<u32>
+        + TryFrom<i16>
+        + TryFrom<u16>
+        + TryFrom<i8>
+        + TryFrom<u8>,
+{
+    if value.is_null() {
+        return Some(Cow::Borrowed(value));
+    }
+    let integer = value.to_integer::<T>().ok()?;
+    let canonical = variant(integer);
+    if std::mem::discriminant(&canonical) == std::mem::discriminant(value) {
+        Some(Cow::Borrowed(value))
+    } else {
+        Some(Cow::Owned(canonical))
+    }
+}
+
 /// `value` as a property of `property_type` is stored, borrowed when it already is.
 #[cfg(any(feature = "server", feature = "verify"))]
 fn canonical_property_value<'v>(
@@ -922,6 +950,18 @@ fn canonical_property_value<'v>(
         {
             None
         }
+        // Integers convert directly, as the codec would (both read the value with
+        // `to_integer`, and null stays null), without its two allocations.
+        DocumentPropertyType::U128 => canonical_integer(value, Value::U128),
+        DocumentPropertyType::I128 => canonical_integer(value, Value::I128),
+        DocumentPropertyType::U64 => canonical_integer(value, Value::U64),
+        DocumentPropertyType::I64 => canonical_integer(value, Value::I64),
+        DocumentPropertyType::U32 => canonical_integer(value, Value::U32),
+        DocumentPropertyType::I32 => canonical_integer(value, Value::I32),
+        DocumentPropertyType::U16 => canonical_integer(value, Value::U16),
+        DocumentPropertyType::I16 => canonical_integer(value, Value::I16),
+        DocumentPropertyType::U8 => canonical_integer(value, Value::U8),
+        DocumentPropertyType::I8 => canonical_integer(value, Value::I8),
         // Bytes are already in the form the codec would produce; skip its two copies.
         DocumentPropertyType::ByteArray(_) if matches!(value, Value::Bytes(_)) => {
             Some(Cow::Borrowed(value))
@@ -3526,6 +3566,43 @@ mod tests {
                     "{field}"
                 );
             }
+        }
+
+        #[test]
+        fn should_convert_integers_directly_as_the_index_key_codec_would() {
+            let cases = [
+                (DocumentPropertyType::U8, Value::U8(7)),
+                (DocumentPropertyType::U8, Value::U64(7)),
+                (DocumentPropertyType::U8, Value::I32(-1)),
+                (DocumentPropertyType::U8, Value::U64(300)),
+                (DocumentPropertyType::U16, Value::U16(300)),
+                (DocumentPropertyType::U16, Value::I64(300)),
+                (DocumentPropertyType::I64, Value::U128(1 << 64)),
+                (DocumentPropertyType::I64, Value::I8(-3)),
+                (DocumentPropertyType::U128, Value::U64(u64::MAX)),
+                (DocumentPropertyType::I8, Value::Null),
+                (DocumentPropertyType::U32, Value::Text("7".to_string())),
+                (DocumentPropertyType::U32, Value::Float(7.0)),
+            ];
+            for (property_type, value) in cases {
+                let direct = canonical_property_value(&property_type, &value);
+                // What the index-key round trip gives.
+                let codec = property_type
+                    .encode_value_for_tree_keys(&value)
+                    .ok()
+                    .map(|encoded| property_type.decode_value_for_tree_keys(&encoded).unwrap());
+                assert_eq!(
+                    direct.as_deref(),
+                    codec.as_ref(),
+                    "{property_type:?} {value:?}"
+                );
+            }
+            // A value already in its field's variant is not copied.
+            let canonical = Value::U16(300);
+            assert!(matches!(
+                canonical_property_value(&DocumentPropertyType::U16, &canonical),
+                Some(Cow::Borrowed(_))
+            ));
         }
 
         #[test]

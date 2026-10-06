@@ -24,8 +24,8 @@ use base64::prelude::BASE64_STANDARD;
 use dpp::platform_value::Value;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use quick_cache::Weighter;
-use quick_cache::sync::Cache;
+use quick_cache::sync::{Cache, DefaultLifecycle};
+use quick_cache::{DefaultHashBuilder, OptionsBuilder, Weighter};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -38,6 +38,11 @@ pub const META_PAGE: u64 = 20;
 /// Bytes of decoded blocks kept for subscriptions reading the same heights, as weighed by
 /// [`BlockWeighter`].
 const BLOCK_CACHE_BYTES: u64 = 128 * 1024 * 1024;
+/// The block cache keeps its whole budget in one shard: quick_cache keeps an entry only if it
+/// fits a shard's hot share, and its default of four shards per core leaves a few MiB each,
+/// too little for a block with a few hundred KiB of transitions under `BlockWeighter`. Reads
+/// take the lock only briefly, so one shard is not contended.
+const BLOCK_CACHE_SHARDS: usize = 1;
 /// Block metas pages kept.
 const META_PAGE_CACHE_PAGES: usize = 256;
 
@@ -160,7 +165,17 @@ impl BlockSource {
     pub fn new(tenderdash: Arc<dyn TenderdashBlocks>) -> Self {
         Self {
             tenderdash,
-            blocks: Cache::with_weighter(4096, BLOCK_CACHE_BYTES, BlockWeighter),
+            blocks: Cache::with_options(
+                OptionsBuilder::new()
+                    .estimated_items_capacity(4096)
+                    .weight_capacity(BLOCK_CACHE_BYTES)
+                    .shards(BLOCK_CACHE_SHARDS)
+                    .build()
+                    .expect("the block cache options are valid"),
+                BlockWeighter,
+                DefaultHashBuilder::default(),
+                DefaultLifecycle::default(),
+            ),
             meta_pages: Cache::new(META_PAGE_CACHE_PAGES),
             not_yet_until: Mutex::new(HashMap::new()),
         }

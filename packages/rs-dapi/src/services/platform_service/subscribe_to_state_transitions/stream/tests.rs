@@ -832,3 +832,23 @@ async fn should_share_a_height_not_readable_yet_between_readers() {
     ));
     assert_eq!(reads(), 3);
 }
+
+#[tokio::test]
+async fn should_keep_a_block_with_hundreds_of_kib_of_transitions_cached() {
+    let harness = harness(SubscriptionLimits::default());
+    let transfer = credit_transfer(7);
+    let height = harness.commit(vec![transfer.clone(); 256 * 1024 / transfer.len() + 1]);
+    let reads = || harness.chain.block_reads.load(Ordering::SeqCst);
+
+    assert!(matches!(
+        harness.blocks.read(height).await,
+        Ok(BlockRead::Block(_))
+    ));
+    assert_eq!(reads(), 1);
+    // Read again after the first load completed: served from the cache.
+    assert!(matches!(
+        harness.blocks.read(height).await,
+        Ok(BlockRead::Block(_))
+    ));
+    assert_eq!(reads(), 1, "the block was kept");
+}
