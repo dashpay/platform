@@ -33,6 +33,7 @@ use crate::batch_transition::batched_transition::BatchedTransitionWasm;
 use crate::batch_transition::document_transition::DocumentTransitionWasm;
 use crate::batch_transition::token_transition::TokenTransitionWasm;
 use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::version::PlatformVersion;
 
 pub mod batched_transition;
 pub mod document_transition;
@@ -340,7 +341,11 @@ impl BatchTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         let verification_result = StateTransition::Batch(self.0.clone())
-            .verify_identity_signed_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+            .verify_identity_signed_signature(
+                &identity_public_key.to_owned().into(),
+                &bls_adapter,
+                PlatformVersion::latest(),
+            );
 
         match verification_result {
             Ok(()) => Ok(true),
