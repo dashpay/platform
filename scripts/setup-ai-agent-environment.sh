@@ -77,16 +77,16 @@ run_apt install -y --no-install-recommends \
   xz-utils \
   zip
 
-log "Ensuring Node.js 20 LTS via NodeSource"
+log "Ensuring Node.js 22 LTS via NodeSource"
 NODE_MAJOR=0
 if command -v node >/dev/null 2>&1; then
   NODE_MAJOR=$(node --version | sed 's/v\([0-9]*\).*/\1/')
 fi
-if (( NODE_MAJOR < 20 )); then
+if (( NODE_MAJOR < 22 )); then
   if [[ -n "${SUDO}" ]]; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | ${SUDO} -E bash -
+    curl -fsSL https://deb.nodesource.com/setup_22.x | ${SUDO} -E bash -
   else
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   fi
   run_apt install -y --no-install-recommends nodejs
 else

@@ -3,6 +3,9 @@
   "private": true,
   "version": "5.0.0-beta.2",
   "description": "Dash Platform benchmark tool",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "bench": "node ./bin/bench.js",
     "lint": "eslint ."

@@ -199,7 +199,7 @@ Leave `testCase` as OwnerOnly so the canonical catalog stays curated.
 ## Install & run
 
 The scripts use the recommended **`@dashevo/evo-sdk`** (js-evo-sdk) in trusted
-mode (required so state-transition responses are proof-verified). Node ≥ 18.18.
+mode (required so state-transition responses are proof-verified). Node ≥ 22.
 
 **Option A — standalone (published SDK):**
 
