@@ -759,55 +759,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
-/// 31. **Token shielded pools**: a token configuration in format version 1
-///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
-///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
-///     gives the token its own Orchard pool under
-///     `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
-///     pool. A pooled token must leave its freeze, unfreeze and destroy-frozen-
-///     funds rules unassigned, since notes have no owner to freeze. Seven batch
-///     token transitions (`TokenShield`, `TokenUnshield`,
-///     `TokenShieldedTransfer`, `TokenMintToPool`, `TokenBurnFromPool`,
-///     `TokenClaimToPool` and `TokenDirectPurchaseToPool`, validated through
-///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
-///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
-///     identity balance, the supply and the pool or inside it; the identity
-///     signs and pays the fee in credits, and every bundle binds its pool into
-///     the Orchard sighash, since all pools share the empty-tree anchor an
-///     unbound bundle would verify against: a spend bundle binds the token id
-///     and the batch owner (a burn binds the burner: the batch owner, or the
-///     proposer of a group action), plus the recipient and amount where tokens
-///     leave the pool; an outputs-only bundle (`TokenShield`,
-///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
-///     whose anchor is never checked against a pool, binds a per-kind tag,
-///     the token id and the batch owner (for a group action mint, the
-///     proposer).
-///     A batch carrying any of these bundles, or a document whose token cost
-///     is paid out of a pool, has to hold the compute fee the bundles will be
-///     charged (`compute_shielded_verification_fee` per bundle-carrying
-///     sub-transition): the batch minimum balance pre-check v1
-///     (`identity_minimum_balance_pre_check`) reserves it on top of the flat
-///     per-sub-transition minimum, which is orders of magnitude smaller. A
-///     batch without a bundle is asked for the flat minimum, unchanged, and
-///     one that asks the contract owner to pay its gas is asked for its
-///     principal alone as in item 11, the compute fee being gas. The floor
-///     refuses only what fee validation would refuse later, but it refuses it
-///     before the Halo 2 work: `TokenClaimToPool`'s proof is skipped in check
-///     tx, since its claimable amount is only known against state, so without
-///     the floor a signer between the two numbers cleared the mempool with no
-///     verification run and every validator then did the verification inside
-///     block validation, only to refuse the batch unpaid, leaving the same
-///     bytes replayable. The same holds for the bundle of a group action's
-///     non-proposing signer, whose proof check tx also skips.
-///     The pool balances are a term of the token conservation check
-///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
-///     `record_token_shielded_pool_anchors`
-///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
-///     pools a block touched. The pools root tree is inserted by
-///     `transition_to_version_14` and by `create_initial_state_structure` v4;
-///     the six shielded queries accept an optional `token_id` to target a token
-///     pool.
-///
 /// 32. **Document references resolved through a unique index**: a
 ///     `permanentDocument` `refersTo`, on an identifier property or on the
 ///     elements of a typed array (item 31), may carry a `lookup`
@@ -2018,6 +1969,55 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation v0, in place, passes the platform version to the check; the
 ///     tables of every earlier version select generation 0, the code it called
 ///     before.
+///
+/// 82. **Token shielded pools**: a token configuration in format version 1
+///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
+///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
+///     gives the token its own Orchard pool under
+///     `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
+///     pool. A pooled token must leave its freeze, unfreeze and destroy-frozen-
+///     funds rules unassigned, since notes have no owner to freeze. Seven batch
+///     token transitions (`TokenShield`, `TokenUnshield`,
+///     `TokenShieldedTransfer`, `TokenMintToPool`, `TokenBurnFromPool`,
+///     `TokenClaimToPool` and `TokenDirectPurchaseToPool`, validated through
+///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
+///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
+///     identity balance, the supply and the pool or inside it; the identity
+///     signs and pays the fee in credits, and every bundle binds its pool into
+///     the Orchard sighash, since all pools share the empty-tree anchor an
+///     unbound bundle would verify against: a spend bundle binds the token id
+///     and the batch owner (a burn binds the burner: the batch owner, or the
+///     proposer of a group action), plus the recipient and amount where tokens
+///     leave the pool; an outputs-only bundle (`TokenShield`,
+///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
+///     whose anchor is never checked against a pool, binds a per-kind tag,
+///     the token id and the batch owner (for a group action mint, the
+///     proposer).
+///     A batch carrying any of these bundles, or a document whose token cost
+///     is paid out of a pool, has to hold the compute fee the bundles will be
+///     charged (`compute_shielded_verification_fee` per bundle-carrying
+///     sub-transition): the batch minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) reserves it on top of the flat
+///     per-sub-transition minimum, which is orders of magnitude smaller. A
+///     batch without a bundle is asked for the flat minimum, unchanged, and
+///     one that asks the contract owner to pay its gas is asked for its
+///     principal alone as in item 11, the compute fee being gas. The floor
+///     refuses only what fee validation would refuse later, but it refuses it
+///     before the Halo 2 work: `TokenClaimToPool`'s proof is skipped in check
+///     tx, since its claimable amount is only known against state, so without
+///     the floor a signer between the two numbers cleared the mempool with no
+///     verification run and every validator then did the verification inside
+///     block validation, only to refuse the batch unpaid, leaving the same
+///     bytes replayable. The same holds for the bundle of a group action's
+///     non-proposing signer, whose proof check tx also skips.
+///     The pool balances are a term of the token conservation check
+///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
+///     `record_token_shielded_pool_anchors`
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
+///     pools a block touched. The pools root tree is inserted by
+///     `transition_to_version_14` and by `create_initial_state_structure` v4;
+///     the six shielded queries accept an optional `token_id` to target a token
+///     pool.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
