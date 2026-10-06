@@ -27,8 +27,9 @@ use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
 };
 use crate::data_contract::document_type::index::{
-    parse_derived_index_property_name, DerivedIndexField, DerivedIndexProperty,
-    DerivedIndexPropertyName, Index, IndexGrammarAdmissions, PreallocationBinding,
+    parse_derived_index_property_name, referenced_value_kept_on_removal, DerivedIndexField,
+    DerivedIndexProperty, DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
+    PreallocationBinding,
 };
 #[cfg(feature = "validation")]
 #[cfg(feature = "validation")]
@@ -41,7 +42,7 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::{
-    owner_can_change, schema_property_is_fixed_once_written,
+    owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
 };
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
@@ -51,7 +52,7 @@ use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
@@ -106,21 +107,28 @@ const MAX_RANKED_AVG_INDEX_KEY_LENGTH: u16 = 239;
 #[cfg(feature = "validation")]
 const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 
-/// The strictest item-key ceiling the index's declared ranking axes impose,
-/// or `None` when the index declares no ranking axis at all (in which case
-/// only the generic index-key limits apply).
+/// The item-key ceiling of the indexed tree at `index_property_name`: the
+/// strictest of the axes the index ranks at that level, or `None` when it
+/// ranks none there (the property is then an ordinary path segment, bound
+/// only by the generic index-key limits).
 ///
-/// Avg wins when present because its wider sort key leaves the least room;
-/// the three flags are independent, so an index may carry Avg alongside
-/// Count and/or Sum and still has to satisfy the tightest of them.
+/// Each ranked level is its own indexed tree carrying only the axes ranked
+/// at it: the last property those of the boolean forms, any property those
+/// of the `at` lists naming it. Grovedb checks each tree's item keys against
+/// its own axes, so Avg, whose wider sort key leaves the least room, wins at
+/// a level that carries it, and an Avg ranking at another level of the index
+/// does not tighten this one.
 #[cfg(feature = "validation")]
-fn ranked_index_key_length_limit(index: &Index) -> Option<u16> {
-    if index.ranked_averageable {
+fn ranked_level_key_length_limit(index: &Index, index_property_name: &str) -> Option<u16> {
+    let is_last = index.properties.last().map(|p| p.name.as_str()) == Some(index_property_name);
+    let names_it = |at_levels: &[String]| at_levels.iter().any(|at| at == index_property_name);
+    let average = (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at);
+    let count_or_sum = (is_last && (index.ranked_countable || index.ranked_summable))
+        || names_it(&index.ranked_countable_at)
+        || names_it(&index.ranked_summable_at);
+    if average {
         Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
-    } else if index.ranked_countable
-        || !index.ranked_countable_at.is_empty()
-        || index.ranked_summable
-    {
+    } else if count_or_sum {
         Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
     } else {
         None
@@ -160,18 +168,7 @@ fn validate_ranked_index_property_key_length(
     // that is where the tightened ceiling comes from. Every other property
     // of a ranked index is an ordinary grovedb path segment, bound by the
     // generic limits checked after this.
-    let is_at_level = index
-        .ranked_countable_at
-        .iter()
-        .any(|at| at == index_property_name);
-    let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
-        == Some(index_property_name)
-        && (index.ranked_countable || index.ranked_summable || index.ranked_averageable);
-    if !is_at_level && !is_ranked_terminal {
-        return Ok(());
-    }
-
-    let Some(limit) = ranked_index_key_length_limit(index) else {
+    let Some(limit) = ranked_level_key_length_limit(index, index_property_name) else {
         return Ok(());
     };
 
@@ -405,6 +402,8 @@ fn parse_generation_3(
     let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
     let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable = common::parse_immutable_keyword(&schema, name)?;
+    let deleted_only_when_consumed =
+        common::parse_can_be_deleted_only_when_consumed_keyword(&schema);
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -421,6 +420,10 @@ fn parse_generation_3(
         // born normalized (`apply_index_only` below validates the
         // already-normalized set).
         index_only,
+        // Lets the core read the owner's delete as refused for
+        // `canBeDeleted: "onlyWhenConsumed"` instead of reading a boolean;
+        // `apply_deleted_only_when_consumed` below records the consumption.
+        deleted_only_when_consumed,
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
@@ -460,6 +463,10 @@ fn parse_generation_3(
             // same shared mapping.
             admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
                 .skip_if_absent,
+            // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
+            // shared mapping.
+            admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
+                .summable_off_count_index,
             // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
             // rather than a keyword, read from the same shared mapping so the
             // registration-cost re-parse and the validator agree on it.
@@ -539,6 +546,8 @@ fn parse_generation_3(
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
     common::apply_index_only(&mut v2, index_only, name, platform_version)?;
+    // After `apply_index_only`: an indexOnly type has nothing a reference could consume.
+    common::apply_deleted_only_when_consumed(&mut v2, deleted_only_when_consumed, name)?;
     // After the core parse: the lints read the resolved `documentsMutable`
     // flag (contract default applied) and the parsed top-level properties,
     // and each condition's reads are checked against the parsed properties.
@@ -1011,6 +1020,106 @@ pub(in crate::data_contract) fn validate_preallocated_indexes_kept_on_removal(
                     index.name, binding.referring_property
                 )),
             ));
+        }
+    }
+    Ok(())
+}
+
+/// Refuses, once every document type of the contract is parsed, a
+/// `summableOffCountIndex` index whose groups its source fixes through a
+/// referenced value that can change, or that a moderator's removal drops.
+/// The parse of the declaring type checked that every property the source
+/// lacks is a `where` referring value of a reference a source property holds
+/// ([`Index::count_index_derivations`]); the count is lossless only if that value
+/// is the same for every document ever written against one referenced
+/// document, so it must be the referenced document's `$id` or `$creatorId`,
+/// an `$ownerId` no transfer or purchase changes, or a schema property fixed
+/// once written. Through a `moderatedDocument` reference the value must also
+/// stay on record when a moderator removes the document (its `$id`, its
+/// `$ownerId` or a field its type keeps under
+/// `moderatorAbilities.deleteKeepsFields`), so a client can still read back
+/// what an unlike must carry. A derivation whose referenced type the contract
+/// does not have, or which admits another kind of reference, is left to the
+/// reference check, which refuses it.
+///
+/// Full validation only (registration and update), like the preallocation
+/// check: a contract read back from state passed it. Inert before protocol
+/// version 14: only parser generation 3 admits `summableOffCountIndex`.
+pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
+    document_types: &BTreeMap<String, DocumentType>,
+) -> Result<(), ProtocolError> {
+    for (name, document_type) in document_types {
+        let document_type = document_type.as_ref();
+        for index in document_type.indexes().values() {
+            let Some(source) = index
+                .summable_off_count_index
+                .as_deref()
+                .and_then(|source| document_type.indexes().get(source))
+            else {
+                continue;
+            };
+            let Ok(derivations) = index.count_index_derivations(
+                source,
+                document_type.flattened_properties(),
+                document_type.data_contract_id(),
+            ) else {
+                continue;
+            };
+            // A property may be fixed through several source references: it
+            // is lossless when any of them reads a value that never changes
+            // and survives a removal. Refused only when none does, naming the
+            // first one that fails.
+            let mut lossless: BTreeSet<&str> = BTreeSet::new();
+            let mut refusals = Vec::new();
+            for derivation in &derivations {
+                let Some(referenced_type) = document_types
+                    .get(derivation.target_document_type_name)
+                    .filter(|referenced| referenced.document_reference_kind() == derivation.kind)
+                else {
+                    continue;
+                };
+                let referenced_type = referenced_type.as_ref();
+                let referenced = derivation.referenced;
+                let kept = referenced_value_kept_on_removal(
+                    derivation.kind,
+                    referenced,
+                    referenced_type.moderator_deletion_kept_fields(),
+                );
+                let reason = if let Some(why) = why_value_can_change(referenced_type, referenced) {
+                    format!(
+                        ", which {why}, can change after a document is written, so the \
+                         documents of one source group would spread over several groups"
+                    )
+                } else if !kept {
+                    " is not kept by a moderator's removal, which replaces the document with a \
+                     record keeping its id, its owner and only the fields its type lists under \
+                     `moderatorAbilities.deleteKeepsFields`, so a removed document's value could \
+                     no longer be read back"
+                        .to_string()
+                } else {
+                    lossless.insert(derivation.property);
+                    continue;
+                };
+                refusals.push((derivation, reason));
+            }
+            let refused = refusals
+                .into_iter()
+                .find(|(derivation, _)| !lossless.contains(derivation.property));
+            if let Some((derivation, reason)) = refused {
+                let referenced = derivation.referenced;
+                let target = derivation.target_document_type_name;
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "summableOffCountIndex index \"{}\" of document type \"{name}\" groups by \"{}\", \
+                         which its source \"{}\" fixes through the reference \"{}\" to \
+                         \"{referenced}\" of \"{target}\", but \"{referenced}\"{reason}",
+                        index.name,
+                        derivation.property,
+                        source.name,
+                        derivation.referring_property
+                    )),
+                ));
+            }
         }
     }
     Ok(())
@@ -1618,6 +1727,10 @@ mod index_only_tests;
 mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]
 mod outlives_delete_tests;
+#[cfg(all(test, feature = "validation"))]
+mod refusal_test_support;
+#[cfg(all(test, feature = "validation"))]
+mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
@@ -1633,6 +1746,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(test)]
+mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -2381,7 +2496,7 @@ mod tests {
 
     /// Avg is strictly tighter than Count/Sum, and an index carrying Avg
     /// *alongside* the other axes has to satisfy the tightest of them: the
-    /// 60-character string that a count-only ranked index accepts is refused
+    /// 60-character string that a count-ranked index accepts is refused
     /// the moment the Avg axis joins.
     #[test]
     fn the_avg_axis_bound_wins_when_several_ranking_axes_are_declared() {

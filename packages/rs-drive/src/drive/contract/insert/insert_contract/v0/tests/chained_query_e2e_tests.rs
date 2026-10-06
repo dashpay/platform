@@ -10,8 +10,13 @@
 //! validation rejections, and the verifier's root-equality check (two
 //! proofs straddling a state change are refused).
 
-use super::index_only_e2e_tests::{build_like, insert_like, platform_version, setup_likes};
+use super::index_only_e2e_tests::{
+    assert_live_root_hash, build_like as build_tagged_like, insert_like, platform_version,
+    setup_likes as setup_tagged_likes,
+};
 use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::moderated_join::removals_path_query;
 use crate::query::{DriveDocumentQuery, OrderClause, WhereClause, WhereOperator};
@@ -22,6 +27,7 @@ use crate::util::object_size_info::{
 };
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use crate::util::test_helpers::with_likes_read_whole_through_by_liker;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
@@ -29,7 +35,7 @@ use dpp::data_contract::config::moderation::{
 };
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
@@ -43,10 +49,46 @@ const OWNER_1: [u8; 32] = [0x11; 32];
 const OWNER_2: [u8; 32] = [0x22; 32];
 const OWNER_3: [u8; 32] = [0x33; 32];
 
+const LIKES_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
+
+/// A drive with the likes contract, its `like` read whole through `byLiker`.
+fn setup_likes() -> (Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = with_likes_read_whole_through_by_liker(
+        json_document_to_contract(LIKES_CONTRACT, false, pv)
+            .expect("expected to parse the yappr-likes contract"),
+        pv,
+    );
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the yappr-likes contract");
+    (drive, contract)
+}
+
+/// A like of `post` by `owner`, of a `like` read whole through `byLiker`
+/// (no hashtag).
+fn build_like(contract: &DataContract, post: [u8; 32], owner: [u8; 32], seed: u64) -> Document {
+    let mut like = build_tagged_like(contract, "", post, owner, seed);
+    like.set_properties(BTreeMap::from([(
+        "postId".to_string(),
+        Value::Identifier(post),
+    )]));
+    like
+}
+
 /// Inserts a `post` document (regular, non-indexOnly type) with an
 /// explicit id so likes can reference it.
 fn insert_post(
-    drive: &crate::drive::Drive,
+    drive: &Drive,
     contract: &DataContract,
     id: [u8; 32],
     hashtag: &str,
@@ -161,12 +203,12 @@ fn should_return_liked_posts_with_proof_parity() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
     insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
     insert_post(&drive, &contract, POST_C, "btc", "post c", 12);
-    for (post, hashtag, owner, seed) in [
-        (POST_A, "dash", OWNER_1, 1u64),
-        (POST_B, "dash", OWNER_1, 2),
-        (POST_C, "btc", OWNER_2, 3),
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_B, OWNER_1, 2),
+        (POST_C, OWNER_2, 3),
     ] {
-        let like = build_like(&contract, hashtag, post, owner, seed);
+        let like = build_like(&contract, post, owner, seed);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
@@ -239,6 +281,135 @@ fn should_return_liked_posts_with_proof_parity() {
     assert!(verified.missing_outer_ids.is_empty());
 }
 
+/// A `documentsSummable` post is stored as an item carrying a sum: the
+/// chained verifier reads it as the outer document it is, and both halves
+/// verify to the live root.
+#[test]
+fn should_verify_liked_posts_that_carry_a_sum() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let mut contract = with_likes_read_whole_through_by_liker(
+        json_document_to_contract(LIKES_CONTRACT, false, pv)
+            .expect("expected to parse the yappr-likes contract"),
+        pv,
+    );
+    let mut schemas = BTreeMap::new();
+    for (name, schema) in contract.document_schemas() {
+        let mut json: serde_json::Value = schema.clone().try_into().expect("a JSON schema");
+        if name == "post" {
+            json["properties"]["boost"] = serde_json::json!({ "type": "integer", "minimum": 0, "maximum": 1000, "position": 2 });
+            json["required"] = serde_json::json!(["boost"]);
+            json["documentsSummable"] = "boost".into();
+        }
+        schemas.insert(name, Value::from(json));
+    }
+    let defs = contract.schema_defs().cloned();
+    contract
+        .set_document_schemas(schemas, defs, true, &mut vec![], pv)
+        .expect("expected summable posts to parse");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract
+        .document_type_for_name("post")
+        .expect("post doctype exists");
+    for (id, boost, seed) in [(POST_A, 3u64, 10u64), (POST_B, 5, 11)] {
+        let mut post = post_type
+            .random_document(Some(seed), pv)
+            .expect("random post");
+        post.set_properties(BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("dash".to_string())),
+            ("message".to_string(), Value::Text(format!("post {seed}"))),
+            ("boost".to_string(), Value::U64(boost)),
+        ]));
+        post.set_id(Identifier::from(id));
+        post.set_owner_id(Identifier::from(OWNER_1));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&post, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: post_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("insert post");
+        let like = build_like(&contract, id, OWNER_1, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let outcome = drive
+        .query_chained_documents(&chained, None, None, pv)
+        .expect("chained query executes");
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (root_hash, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("a chained proof over summable posts verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(verified.outer_documents, outcome.result.outer_documents);
+    assert_eq!(
+        verified
+            .outer_documents
+            .iter()
+            .map(|post| post.id().to_buffer())
+            .collect::<Vec<_>>(),
+        vec![POST_A, POST_B]
+    );
+}
+
+/// The fixture's like keeps an optional hashtag in `byHashtagPost` alone, so
+/// `byLiker` cannot say whether a like has one: without a proof the chained
+/// read is refused before any read, as a documents query through `byLiker`
+/// is, while the proved read returns the liked posts.
+#[test]
+fn should_refuse_a_chained_read_without_a_proof_through_an_index_lacking_a_property() {
+    let (drive, contract) = setup_tagged_likes();
+    let pv = platform_version();
+    insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
+    let like = build_tagged_like(&contract, "dash", POST_A, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+
+    let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let refused = drive.query_chained_documents(&chained, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+        "got {refused:?}"
+    );
+    let (proof, _) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let (root_hash, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .expect("chained proof verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(
+        verified
+            .outer_documents
+            .iter()
+            .map(|post| post.id().to_buffer())
+            .collect::<Vec<_>>(),
+        vec![POST_A]
+    );
+}
+
 /// An empty inner page proves alone: the bootstrap pass finds no join
 /// values and the merged query degenerates to the inner component.
 #[test]
@@ -269,7 +440,7 @@ fn should_paginate_through_the_inner_cursor() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
     insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
     for (post, seed) in [(POST_A, 1u64), (POST_B, 2)] {
-        let like = build_like(&contract, "dash", post, OWNER_1, seed);
+        let like = build_like(&contract, post, OWNER_1, seed);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
@@ -367,7 +538,7 @@ fn should_refuse_a_dangling_reference() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     // A like referencing POST_A — which was never inserted.
-    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
+    let like = build_like(&contract, POST_A, OWNER_1, 1);
     insert_like(&drive, &contract, &like, true).expect("insert like");
 
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
@@ -391,7 +562,7 @@ fn should_reject_an_inner_only_proof() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
     insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
     for (post, seed) in [(POST_A, 1u64), (POST_B, 2)] {
-        let like = build_like(&contract, "dash", post, OWNER_1, seed);
+        let like = build_like(&contract, post, OWNER_1, seed);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
@@ -429,13 +600,13 @@ const POSTS: [[u8; 32]; 7] = [
 
 /// Inserts every post of [`POSTS`] except `missing`, and OWNER_1's like
 /// of every post of [`POSTS`], the missing ones included.
-fn setup_liked_posts(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+fn setup_liked_posts(missing: &[[u8; 32]]) -> (Drive, DataContract) {
     let (drive, contract) = setup_likes();
     for (i, post) in POSTS.iter().enumerate() {
         if !missing.contains(post) {
             insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
         }
-        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
     (drive, contract)
@@ -556,11 +727,14 @@ fn should_reject_a_proof_withholding_an_existing_referenced_post() {
 const DELETABLE_POSTS_CONTRACT: &str =
     "tests/supporting_files/contract/yappr-likes/yappr-likes-deletable-posts-contract.json";
 
-fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
+fn setup_likes_with_deletable_posts() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
-    let contract = json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
-        .expect("expected to parse the deletable posts contract");
+    let contract = with_likes_read_whole_through_by_liker(
+        json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
+            .expect("expected to parse the deletable posts contract"),
+        pv,
+    );
     drive
         .apply_contract(
             &contract,
@@ -574,7 +748,7 @@ fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
     (drive, contract)
 }
 
-fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+fn delete_post(drive: &Drive, contract: &DataContract, id: [u8; 32]) {
     drive
         .delete_document_for_contract(
             Identifier::from(id),
@@ -606,7 +780,7 @@ fn should_leave_out_a_deleted_post_of_a_deletable_document_join() {
         let (drive, contract) = setup_likes_with_deletable_posts();
         for (i, post) in POSTS.iter().enumerate() {
             insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-            let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+            let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
             insert_like(&drive, &contract, &like, true).expect("insert like");
         }
         for post in &deleted {
@@ -667,7 +841,7 @@ fn should_reject_a_proof_withholding_an_existing_post_of_a_deletable_document_jo
     let (drive, contract) = setup_likes_with_deletable_posts();
     for (i, post) in POSTS.iter().enumerate() {
         insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
     // One post really is deleted, so honest holes and withheld posts mix.
@@ -775,13 +949,14 @@ pub(super) fn with_moderated_posts(mut contract: DataContract) -> DataContract {
     contract
 }
 
-fn setup_likes_with_moderated_posts() -> (crate::drive::Drive, DataContract) {
+fn setup_likes_with_moderated_posts() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
-    let contract = with_moderated_posts(
+    let contract = with_moderated_posts(with_likes_read_whole_through_by_liker(
         json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
             .expect("expected to parse the deletable posts contract"),
-    );
+        pv,
+    ));
     drive
         .apply_contract(
             &contract,
@@ -811,7 +986,7 @@ pub(super) fn removal_of(id: [u8; 32]) -> ContractDocumentRemoval {
 /// A moderator's removal of the post `id`, as the moderation transition writes it: the post
 /// deleted past `canBeDeleted: false`, and, when given, its removal record.
 pub(super) fn remove_post(
-    drive: &crate::drive::Drive,
+    drive: &Drive,
     contract: &DataContract,
     id: [u8; 32],
     record: Option<ContractDocumentRemoval>,
@@ -867,7 +1042,7 @@ fn should_report_a_removed_post_of_a_moderated_document_join_by_its_record() {
         let (drive, contract) = setup_likes_with_moderated_posts();
         for (i, post) in POSTS.iter().enumerate() {
             insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-            let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+            let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
             insert_like(&drive, &contract, &like, true).expect("insert like");
         }
         for post in &removed {
@@ -933,7 +1108,7 @@ fn should_refuse_a_moderated_document_join_whose_post_left_without_a_record() {
     let (drive, contract) = setup_likes_with_moderated_posts();
     for (i, post) in POSTS.iter().enumerate() {
         insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
     remove_post(&drive, &contract, POSTS[1], Some(removal_of(POSTS[1])));
@@ -965,7 +1140,7 @@ fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_jo
     let (drive, contract) = setup_likes_with_moderated_posts();
     for (i, post) in POSTS.iter().enumerate() {
         insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
-        let like = build_like(&contract, "dash", *post, OWNER_1, 1 + i as u64);
+        let like = build_like(&contract, *post, OWNER_1, 1 + i as u64);
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
     remove_post(&drive, &contract, POSTS[2], Some(removal_of(POSTS[2])));

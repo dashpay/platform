@@ -16,9 +16,14 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// `record_total_credits_history_for_withdrawals` (`Some(0)`), the per-block record of the total
 /// credits in Platform that the day-lagged daily withdrawal limit reads, and bumps
 /// `cleanup_expired_locks_of_withdrawal_amounts` to 1 so the per-block cleanup also prunes the
-/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads, and
+/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads and the
+/// Core credit pool balances older than the Core-anchored limit's window, and
 /// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
 /// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
+/// `pool_withdrawals_into_transactions_queue` 2 pools only what also fits the Core-anchored
+/// withdrawal limit (`calculate_core_anchored_withdrawal_limit`, `Some(0)`), fed by
+/// `scan_core_blocks_for_withdrawals` (`Some(0)`), which records Core's credit pool balance per
+/// Core block.
 /// `decode_raw_state_transitions` 1 refuses bytes left over after a raw state transition.
 /// `add_distribute_storage_fee_to_epochs_operations` 1 claws each pending storage refund back
 /// from the epochs it was priced for.
@@ -45,7 +50,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 0,
-        update_masternode_list: 0,
+        update_masternode_list: 1, // resolves nested platform ports before storing masternodes
         update_quorum_info: 0,
         masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
             get_voter_identity_key: 0,
@@ -102,14 +107,16 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         build_untied_withdrawal_transactions_from_documents: 0,
         dequeue_and_build_unsigned_withdrawal_transactions: 0,
         fetch_transactions_block_inclusion_status: 0,
-        pool_withdrawals_into_transactions_queue: 1,
+        pool_withdrawals_into_transactions_queue: 2, // changed in v14: pools only what also fits the Core-anchored limit
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 2, // changed in v14: an expired withdrawal whose payout is Core dust is marked FAILED instead of re-signed
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         has_pending_withdrawal_work: 0,
-        cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
+        cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree and old Core credit pool balances
         record_credit_inflows_for_withdrawals: Some(0), // new in v14: the block's credit mints recorded as an inflow for the net daily withdrawal limit
         record_total_credits_history_for_withdrawals: Some(0), // changed in v14: per-block total credits history for the day-lagged daily withdrawal limit
+        scan_core_blocks_for_withdrawals: Some(0), // new in v14: Core credit pool balances for the Core-anchored withdrawal limit
+        calculate_core_anchored_withdrawal_limit: Some(0), // new in v14: withdrawals also fit a stricter copy of Core's unlock limit
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
