@@ -2831,7 +2831,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wasm-sdk", "workspace:packages/wasm-sdk"],\
           ["@types/chai", "npm:4.3.20"],\
           ["@types/mocha", "npm:10.0.10"],\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["@types/sinon", "npm:9.0.11"],\
           ["@types/sinon-chai", "npm:3.2.5"],\
           ["assert", "npm:2.0.0"],\
@@ -3158,7 +3158,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@types/bs58", "npm:4.0.4"],\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
           ["ajv", "npm:8.18.0"],\
           ["assert", "npm:2.0.0"],\
@@ -3211,7 +3211,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wasm-dpp2", "workspace:packages/wasm-dpp2"],\
           ["@types/chai", "npm:4.3.20"],\
           ["@types/mocha", "npm:10.0.10"],\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["assert", "npm:2.0.0"],\
           ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
@@ -3249,7 +3249,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wasm-sdk", "workspace:packages/wasm-sdk"],\
           ["@types/chai", "npm:4.3.20"],\
           ["@types/mocha", "npm:10.0.10"],\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["assert", "npm:2.0.0"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
@@ -5263,10 +5263,10 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:20.19.30", {\
-        "packageLocation": "./.yarn/cache/@types-node-npm-20.19.30-e3d3d7af6e-4a25e5cbcd.zip/node_modules/@types/node/",\
+      ["npm:22.20.5", {\
+        "packageLocation": "./.yarn/cache/@types-node-npm-22.20.5-998a48d6f3-a223a73e00.zip/node_modules/@types/node/",\
         "packageDependencies": [\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["undici-types", "npm:6.21.0"]\
         ],\
         "linkType": "HARD"\
@@ -9640,7 +9640,7 @@ const RAW_RUNTIME_STATE =
           ["@types/chai", "npm:4.3.20"],\
           ["@types/dirty-chai", "npm:2.0.2"],\
           ["@types/mocha", "npm:10.0.10"],\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["@types/sinon", "npm:9.0.11"],\
           ["@types/sinon-chai", "npm:3.2.5"],\
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
@@ -21613,7 +21613,7 @@ const RAW_RUNTIME_STATE =
           ["@tsconfig/node12", "npm:1.0.9"],\
           ["@tsconfig/node14", "npm:1.0.1"],\
           ["@tsconfig/node16", "npm:1.0.2"],\
-          ["@types/node", "npm:20.19.30"],\
+          ["@types/node", "npm:22.20.5"],\
           ["@types/swc__core", null],\
           ["@types/swc__wasm", null],\
           ["@types/typescript", null],\
