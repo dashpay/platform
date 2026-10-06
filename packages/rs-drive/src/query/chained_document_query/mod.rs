@@ -602,6 +602,9 @@ impl DriveDocumentQuery<'_> {
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 
         self.validate_chained(platform_version)?;
+        // The inner documents are serialized whole, as a documents query's
+        // are: refused before any read when the inner index lacks a property.
+        self.refuse_an_uncovered_index_only_projection(platform_version)?;
 
         let (inner_documents, _skipped) = self.execute_index_only_documents_no_proof_internal(
             drive,

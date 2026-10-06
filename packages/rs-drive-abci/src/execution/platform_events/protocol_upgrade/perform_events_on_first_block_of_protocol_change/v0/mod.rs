@@ -191,8 +191,15 @@ impl<C> Platform<C> {
                 .max()
                 .expect("there must be keys, we already checked");
 
+            let owner_address = masternode.state.owner_address.ok_or_else(|| {
+                Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                    "masternode {} has no owner address",
+                    masternode.pro_tx_hash
+                )))
+            })?;
+
             let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
+                owner_address,
                 last_key_id + 1,
                 platform_version,
             )?;
@@ -835,6 +842,19 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
+        // Token shielded pools root: the BigSumTree under the Tokens tree that holds one Orchard
+        // pool per token opting in (`TokenConfigurationV1::has_shielded_pool`).
+        // CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v4`) calls
+        // the same helper, so a chain born at this version and one upgraded to it build a
+        // byte-identical `[Tokens]` subtree.
+        //
+        // Earlier protocol versions select this generation too, directly or through the later
+        // ones that delegate to it, but they cannot reach this insert: the enclosing
+        // `transition_to_version_14` is called only under the
+        // `platform_version.protocol_version >= 14` guard in
+        // `perform_events_on_first_block_of_protocol_change_v0`.
+        self.drive
+            .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
         // The document time to live trees: the documents expirations tree under `Misc`, which
         // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
         // introduces) by when it expires, and the lifetime storage fee pools sum tree under
@@ -862,6 +882,7 @@ mod tests {
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::drive::tokens::paths::TOKEN_SHIELDED_POOLS_KEY;
     use drive::util::grove_operations::DirectQueryType;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
@@ -1034,6 +1055,138 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    /// Version 4 gives every owner identity the OWNER key of its masternode's owner address,
+    /// after the keys it has. A masternode without an owner identity is skipped before its
+    /// owner address is read. One with an owner identity but no owner address (a shared
+    /// masternode) has no key to give, so the transition fails with `DashCoreBadResponseError`
+    /// instead of leaving the identity without an OWNER key.
+    #[test]
+    fn should_fail_transition_to_version_4_for_an_owner_identity_whose_masternode_has_no_owner_address(
+    ) {
+        use dpp::dashcore::{ProTxHash, Txid};
+        use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::{Identity, KeyID, Purpose};
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::get(4).expect("expected protocol version 4");
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A masternode as Core lists it; a shared one has no owner, payout or collateral
+        // address.
+        let masternode =
+            |pro_tx_hash: [u8; 32], owner_address: Option<[u8; 20]>| MasternodeListItem {
+                node_type: MasternodeType::Regular,
+                pro_tx_hash: ProTxHash::from_byte_array(pro_tx_hash),
+                collateral_hash: Txid::from_byte_array([0x41; 32]),
+                collateral_index: 0,
+                collateral_address: owner_address.map(|_| [0x42; 20]),
+                operator_reward: 0.0,
+                state: DMNState {
+                    service: "1.2.3.4:9999".parse().expect("socket address"),
+                    registered_height: 0,
+                    pose_revived_height: None,
+                    pose_ban_height: None,
+                    revocation_reason: 0,
+                    owner_address,
+                    voting_address: [0x43; 20],
+                    payout_address: owner_address.map(|_| [0x44; 20]),
+                    payouts: None,
+                    pub_key_operator: vec![0x45; 48],
+                    operator_payout_address: None,
+                    platform_node_id: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
+                },
+            };
+        let owner_address = [0x46; 20];
+        let with_owner_address = [0x47; 32];
+        let shared_without_owner_identity = [0x48; 32];
+        let shared_with_owner_identity = [0x49; 32];
+
+        // Owner identities as created before version 4: only the TRANSFER key id 0.
+        for pro_tx_hash in [with_owner_address, shared_with_owner_identity] {
+            let mut identity =
+                Identity::create_basic_identity(pro_tx_hash.into(), platform_version)
+                    .expect("expected an identity");
+            identity.add_public_keys([
+                Platform::<MockCoreRPCLike>::get_owner_identity_withdrawal_key(
+                    [0x44; 20],
+                    0,
+                    platform_version,
+                )
+                .expect("expected a withdrawal key"),
+            ]);
+            platform
+                .drive
+                .add_new_identity(
+                    identity,
+                    true,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the owner identity");
+        }
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state_with = |masternodes: Vec<MasternodeListItem>| {
+            let mut platform_state = platform.state.load().as_ref().clone();
+            for masternode in masternodes {
+                platform_state.insert_masternode(masternode);
+            }
+            platform_state
+        };
+
+        platform
+            .transition_to_version_4(
+                &platform_state_with(vec![
+                    masternode(with_owner_address, Some(owner_address)),
+                    masternode(shared_without_owner_identity, None),
+                ]),
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected a masternode without an owner identity to be skipped");
+        assert_eq!(
+            platform
+                .drive
+                .fetch_full_identity(with_owner_address, Some(&transaction), platform_version)
+                .expect("expected to fetch the owner identity")
+                .expect("expected the owner identity to exist")
+                .public_keys()
+                .iter()
+                .map(|(key_id, key)| (*key_id, (key.purpose(), key.data().to_vec())))
+                .collect::<BTreeMap<KeyID, (Purpose, Vec<u8>)>>(),
+            BTreeMap::from([
+                (0, (Purpose::TRANSFER, vec![0x44; 20])),
+                (1, (Purpose::OWNER, owner_address.to_vec())),
+            ])
+        );
+
+        match platform.transition_to_version_4(
+            &platform_state_with(vec![masternode(shared_with_owner_identity, None)]),
+            &BlockInfo::default(),
+            &transaction,
+            platform_version,
+        ) {
+            Err(Error::Execution(ExecutionError::DashCoreBadResponseError(message))) => assert!(
+                message.ends_with("has no owner address"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("expected DashCoreBadResponseError, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3326,6 +3479,87 @@ mod tests {
         );
     }
 
+    /// The token shielded pools root is built by two paths that must coincide byte for byte:
+    /// `Drive::create_initial_state_structure_v4` at a v14 genesis and
+    /// `transition_to_version_14` on a chain upgraded from v13.
+    #[test]
+    fn test_genesis_v14_and_upgrade_to_v14_build_identical_token_shielded_pools_root() {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected v14");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v13 genesis must not contain the pools root yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            let tokens_path: [&[u8]; 1] = [&[RootTree::Tokens as u8]];
+            let pools_root_pre = platform_b.drive.grove.get(
+                SubtreePath::from(&tokens_path[..]),
+                &[TOKEN_SHIELDED_POOLS_KEY],
+                Some(&txn),
+                &platform_version_14.drive.grove_version,
+            );
+            assert!(
+                pools_root_pre.value.is_err(),
+                "v13 genesis must not contain the token shielded pools root before the upgrade; got {:?}",
+                pools_root_pre.value
+            );
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_14(&BlockInfo::default(), &txn_b, platform_version_14)
+            .expect("upgrade: transition_to_version_14 should succeed");
+
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::Tokens as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] subtree differs between a fresh genesis-v14 node and an \
+             in-place-upgraded v14 node.\n{}",
+            diffs.join("\n"),
+        );
+
+        // `collect_subtree_diffs` walks the children AT `[Tokens]` and below, so it cannot see
+        // the shape of the `[Tokens]` Merk itself — and a new root-level key is inserted exactly
+        // there. Two lineages can therefore agree on every child and still carry different
+        // `root_key`s, which is a different app hash. Read the element that holds it.
+        let root_element = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            txn: drive::grovedb::TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get_raw(
+                    drive::grovedb_path::SubtreePath::empty(),
+                    &[RootTree::Tokens as u8],
+                    txn,
+                    &platform_version_14.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to read the [Tokens] root element")
+        };
+        assert_eq!(
+            root_element(&platform_a, None),
+            root_element(&platform_b, Some(&txn_b)),
+            "CONSENSUS FORK: the [Tokens] Merk itself is shaped differently on a fresh genesis-v14 \
+             node and an in-place-upgraded one, so their root hashes differ even though every \
+             child matches"
+        );
+    }
+
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
     ///
     /// The `[ShieldedBalances]` subtree is built two ways that MUST be
@@ -3336,12 +3570,12 @@ mod tests {
     ///  * UPGRADE path — a node already on v11 runs the real
     ///    `Platform::transition_to_version_12` at the activation block.
     ///
-    /// Before the fix these diverged: genesis built the pool via a sorted
-    /// `GroveDbOpBatch`, which roots the parent Merk at the batch's median key
-    /// `[160]`; the upgrade built it with sequential breadth-first inserts, which
-    /// root it at `[128]` (the intended NOTES-at-root layout). Two different
-    /// subtree shapes ⇒ a state-synced v12 node and an in-place-upgraded v12 node
-    /// would compute different app hashes at the boundary block and fork.
+    /// Genesis builds the pool through a sorted `GroveDbOpBatch`, which roots the parent
+    /// Merk at the batch's median key `[160]`; sequential breadth-first inserts root it at
+    /// `[128]`, the intended NOTES-at-root layout. Two different subtree shapes mean a
+    /// state-synced node and an in-place-upgraded node compute different app hashes at the
+    /// boundary block and fork, so both paths go through the shared
+    /// `Drive::insert_shielded_pool_structure`.
     ///
     /// This test drives the REAL production functions (not a hand-rebuilt batch)
     /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
@@ -3358,11 +3592,6 @@ mod tests {
     /// the shielded pool is constructed and would pollute a whole-DB comparison.
     /// The diagnostic that localized the original bug confirmed the shielded
     /// subtree was the ONLY construction-driven divergence.
-    ///
-    /// RED before the fix (genesis pool root `[160]` ≠ upgrade pool root `[128]`,
-    /// plus a cascade of differing child hashes), GREEN after (both `[128]`,
-    /// because both paths now call the shared
-    /// `Drive::insert_shielded_pool_structure`).
     #[test]
     fn test_genesis_v12_and_upgrade_to_v12_build_identical_shielded_pool() {
         let platform_version_12 = PlatformVersion::get(12).expect("expected v12");

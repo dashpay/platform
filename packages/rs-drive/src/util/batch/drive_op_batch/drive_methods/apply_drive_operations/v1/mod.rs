@@ -58,10 +58,10 @@ impl Drive {
     /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
     /// computes the new value from the one committed before the batch, so a second write in the
     /// same batch would replace the first and the credits would no longer add up. Token writes
-    /// cannot be merged the same way, so a batch that writes one token balance or token supply
-    /// twice is refused ([`DriveOperation::refuse_repeated_token_balance_writes`]); no state
-    /// transition makes one. A batch that writes each key once is applied exactly as by
-    /// generation 0.
+    /// cannot be merged the same way, so a batch that writes one token balance, one token
+    /// supply or one token shielded pool total twice is refused
+    /// ([`DriveOperation::refuse_repeated_token_balance_writes`]); no state transition makes
+    /// one. A batch that writes each key once is applied exactly as by generation 0.
     ///
     /// An estimate is merged the same way, so it prices the batch execution applies. It reads
     /// no balance and lets a merged removal take up to the largest balance there can be; fee
@@ -88,6 +88,7 @@ impl Drive {
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
+        self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
         let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());

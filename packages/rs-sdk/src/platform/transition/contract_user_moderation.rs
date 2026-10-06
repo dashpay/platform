@@ -412,8 +412,11 @@ pub trait ModerateContractUser: Waitable {
     /// last modified longer ago than the type's `moderatorAbilities.deleteWithin` window, within
     /// which a moderator deletes it alone. The type must say who of the team must approve
     /// (`moderatorAbilities.deleteSettled`), and `reason` must name a reason document the
-    /// team's proposal lists. The proposal is this member's approval, kept under the contract
-    /// as a team action with the document's last modification and revision and `reason`.
+    /// team's proposal lists. A member the leader added proposes only the deletion of documents
+    /// created after its addition, unless the type's rule sets `approversPredateDocument: false`
+    /// (`ContractTeamMemberAddedAfterDocumentError`). The proposal is this member's approval,
+    /// kept under the contract as a team action with the document's last modification and
+    /// revision and `reason`.
     ///
     /// Resolves with the action's id and its status. The id is what the other members approve
     /// with [`approve_contract_team_action`](Self::approve_contract_team_action), and what
@@ -451,14 +454,17 @@ pub trait ModerateContractUser: Waitable {
     /// while the approvals still fall short of the rule, and `ActionClosed` once the action ran,
     /// the leader among the approvals when the rule says so, whether this approval met the rule
     /// or a later one did before the proof was taken: the document is gone. The approvals of
-    /// members who left the team since no longer count and are dropped, and a dropped approval
-    /// no longer proves: the proof of this one fails once this identity left the team and a
-    /// later approval dropped it. An approval of an action that does not exist
-    /// (`ContractTeamActionDoesNotExistError`), one this member already approved
-    /// (`ContractTeamActionAlreadySignedError`), one already closed
-    /// (`ContractTeamActionAlreadyCompletedError`), or one whose document changed since the
-    /// proposal (`ContractTeamActionDocumentChangedError`) is refused. The proof is verified
-    /// without the contract.
+    /// members who left the team since no longer count and are dropped, as are those of members
+    /// the leader took off and added again after the document was created when the rule admits
+    /// only members from before it, and a dropped approval no longer proves: the proof of this
+    /// one fails once this identity left the team and a later approval dropped it. An approval
+    /// of an action that does not exist (`ContractTeamActionDoesNotExistError`), one this
+    /// member already approved (`ContractTeamActionAlreadySignedError`), one already closed
+    /// (`ContractTeamActionAlreadyCompletedError`), one whose document changed since the
+    /// proposal (`ContractTeamActionDocumentChangedError`), or one by a member the leader added
+    /// no earlier than the document was created, under a rule admitting only members from
+    /// before it (`ContractTeamMemberAddedAfterDocumentError`), is refused. The proof is
+    /// verified without the contract.
     async fn approve_contract_team_action<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,

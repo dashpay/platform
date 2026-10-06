@@ -623,6 +623,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_token_redemption_cycles: 128,
         max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,
+        max_token_pool_notes_for_outgoing: 250,
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,
         min_time_range_ttl_drop_operations_per_write: None,
@@ -630,7 +631,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_document_ttl_seconds: None,
         max_document_expirations_per_block: 0,
         max_document_expiration_weight_per_block: 0,
-        minimum_grovedb_proof_envelope_version: 0,
         max_contested_summed_value_magnitude: None,
     },
     consensus: ConsensusVersions {

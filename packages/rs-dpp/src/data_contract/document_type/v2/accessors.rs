@@ -315,6 +315,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.immutable_field_conditions
     }
 
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        self.retracted_when.as_ref()
+    }
+
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         self.action_fees.as_ref()
     }

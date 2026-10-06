@@ -1326,10 +1326,12 @@ fn elected_config(platform_version: &PlatformVersion) -> DataContractConfig {
         }))
 }
 
-/// A windowed `post` whose settled documents a seated team deletes by `rule`.
+/// A windowed `post` whose settled documents a seated team deletes by `rule`, recording when
+/// each was created.
 fn settled_schema(rule: Value) -> Value {
     windowed_schema(platform_value!({
         "moderatorAbilities": { "delete": true, "deleteWithin": 86400, "deleteSettled": rule },
+        "required": ["$createdAt", "$updatedAt"],
     }))
 }
 
@@ -1346,11 +1348,13 @@ fn parse_elected(schema: Value, full_validation: bool) -> Result<DocumentType, P
 #[test]
 fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
     for (rule, expected) in [
+        // One approval: the leader meets it alone, so added members are not dated by default.
         (
             platform_value!({ "leader": true }),
             SettledDeletionRule {
                 leader: true,
                 approvals: 1,
+                approvers_predate_document: false,
             },
         ),
         (
@@ -1358,6 +1362,7 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
             SettledDeletionRule {
                 leader: true,
                 approvals: 3,
+                approvers_predate_document: true,
             },
         ),
         (
@@ -1365,6 +1370,23 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
             SettledDeletionRule {
                 leader: false,
                 approvals: 2,
+                approvers_predate_document: true,
+            },
+        ),
+        (
+            platform_value!({ "approvals": 2, "approversPredateDocument": false }),
+            SettledDeletionRule {
+                leader: false,
+                approvals: 2,
+                approvers_predate_document: false,
+            },
+        ),
+        (
+            platform_value!({ "approversPredateDocument": true }),
+            SettledDeletionRule {
+                leader: false,
+                approvals: 1,
+                approvers_predate_document: true,
             },
         ),
     ] {
@@ -1375,6 +1397,66 @@ fn should_parse_who_must_approve_the_deletion_of_a_settled_document() {
                 document_type.moderator_settled_deletion(),
                 Some(expected),
                 "{rule:?} (full validation: {full_validation})"
+            );
+        }
+    }
+}
+
+#[test]
+fn should_need_the_creation_time_while_added_members_must_predate_the_document() {
+    // Measured from `$updatedAt` alone, the window parses; who of the team predates a document
+    // is read from `$createdAt`, which the type must then record.
+    let without_creation = |rule: Value| {
+        windowed_schema(platform_value!({
+            "moderatorAbilities": { "delete": true, "deleteWithin": 86400, "deleteSettled": rule },
+        }))
+    };
+    let dated = |approvals: u16| SettledDeletionRule {
+        leader: true,
+        approvals,
+        approvers_predate_document: true,
+    };
+    for (rule, expected) in [
+        (
+            platform_value!({ "leader": true, "approvals": 2 }),
+            dated(2),
+        ),
+        (
+            platform_value!({ "leader": true, "approversPredateDocument": true }),
+            dated(1),
+        ),
+    ] {
+        assert_refused_naming(
+            parse_elected(without_creation(rule.clone()), true),
+            &["deleteSettled", "approversPredateDocument", "$createdAt"],
+        );
+        // A registration rule: a stored type is read back whatever its schema lists, and a
+        // document of it without `$createdAt` admits no added member.
+        let stored = parse_elected(without_creation(rule), false).expect("a stored type is read");
+        assert_eq!(stored.moderator_settled_deletion(), Some(expected));
+    }
+    for full_validation in [true, false] {
+        for (rule, approvals) in [
+            (
+                platform_value!({
+                    "leader": true,
+                    "approvals": 2,
+                    "approversPredateDocument": false,
+                }),
+                2,
+            ),
+            // One approval dates nobody by default: the leader meets it alone.
+            (platform_value!({ "leader": true }), 1),
+        ] {
+            let any_addition = parse_elected(without_creation(rule), full_validation)
+                .expect("a rule admitting every added member reads no creation time");
+            assert_eq!(
+                any_addition.moderator_settled_deletion(),
+                Some(SettledDeletionRule {
+                    leader: true,
+                    approvals,
+                    approvers_predate_document: false,
+                })
             );
         }
     }
@@ -1444,6 +1526,7 @@ fn should_refuse_a_number_of_approvals_the_declared_team_can_not_give() {
         Some(SettledDeletionRule {
             leader: false,
             approvals: team + 1,
+            approvers_predate_document: true,
         })
     );
     // No approvals at all is no rule, on both paths; the meta-schema speaks first under full
@@ -1463,6 +1546,7 @@ fn should_refuse_a_malformed_settled_deletion_on_the_stored_path_too() {
         (platform_value!({ "leaders": true }), "has no key"),
         (platform_value!({ "leader": "yes" }), ""),
         (platform_value!({ "approvals": -1 }), ""),
+        (platform_value!({ "approversPredateDocument": "yes" }), ""),
     ] {
         for full_validation in [true, false] {
             let error = parse_elected(settled_schema(rule.clone()), full_validation)

@@ -150,6 +150,13 @@ pub trait DocumentTypeV2Getters {
     /// predate the keyword.
     fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint>;
 
+    /// The `retractedWhen` condition: a replace whose written document meets
+    /// it is a retraction, the one replace a banned or suspended owner may
+    /// still make on a moderated contract. Judged as an
+    /// [`Self::immutable_field_conditions`] condition is. `None` on document
+    /// types that declare none and on those that predate the keyword.
+    fn retracted_when(&self) -> Option<&PropertyConstraint>;
+
     /// The fixed fees in credits this document type charges for actions on its documents
     /// (the `actionFees` keyword, protocol version 14). `None` on document types that
     /// declare none and on those that predate the keyword.

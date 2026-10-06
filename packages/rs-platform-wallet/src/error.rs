@@ -1276,6 +1276,26 @@ pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformW
                 actual: e.actual_price(),
             })
         }
+        ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_)) => {
+            promote_identity_insufficient_balance(error)
+        }
+        _ => None,
+    }
+}
+
+/// Promote Platform's `IdentityInsufficientBalanceError` — the identity's
+/// balance cannot cover the amount plus the transition's minimum fee — to
+/// the typed [`PlatformWalletError::InsufficientIdentityCredits`], carrying
+/// Platform's own `required` / `available` figures.
+///
+/// Returns `None` for anything else, leaving the caller's fallback mapping
+/// in charge.
+pub fn promote_identity_insufficient_balance(
+    error: &dash_sdk::Error,
+) -> Option<PlatformWalletError> {
+    use dpp::consensus::state::state_error::StateError;
+
+    match consensus_error_of(error)? {
         ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
             Some(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *e.identity_id(),
@@ -1285,6 +1305,20 @@ pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformW
         }
         _ => None,
     }
+}
+
+/// Map an identity-funded credit transition's SDK error (withdrawal,
+/// transfer to addresses) to a [`PlatformWalletError`]: a balance refusal
+/// first ([`promote_identity_insufficient_balance`]), then the structured
+/// signer-key-unavailable preservation, then the caller's `wrap` fallback.
+pub fn promote_identity_insufficient_balance_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if let Some(promoted) = promote_identity_insufficient_balance(&error) {
+        return promoted;
+    }
+    preserve_signer_key_unavailable_or(error, wrap)
 }
 
 /// Map a document-trade transition's SDK error to a [`PlatformWalletError`]:
@@ -1783,5 +1817,95 @@ mod asset_lock_already_consumed_tests {
             &unrelated_broadcast,
             &out_point()
         ));
+    }
+}
+
+#[cfg(test)]
+mod identity_insufficient_balance_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+
+    const IDENTITY: [u8; 32] = [9u8; 32];
+
+    /// The refusal a Max identity withdrawal met on testnet: the amount plus
+    /// the 0.004 DASH minimum withdrawal fee against a balance 0.002 above it.
+    fn insufficient_balance() -> ConsensusError {
+        IdentityInsufficientBalanceError::new(
+            Identifier::from(IDENTITY),
+            24_818_360_000,
+            25_018_360_000,
+        )
+        .into()
+    }
+
+    fn assert_promoted(error: PlatformWalletError) {
+        match error {
+            PlatformWalletError::InsufficientIdentityCredits {
+                identity_id,
+                required,
+                available,
+            } => {
+                assert_eq!(identity_id, Identifier::from(IDENTITY));
+                assert_eq!(required, 25_018_360_000);
+                assert_eq!(available, 24_818_360_000);
+            }
+            other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn promotes_the_check_tx_shape() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            insufficient_balance(),
+        )));
+        assert_promoted(promote_identity_insufficient_balance(&err).expect("must promote"));
+    }
+
+    #[test]
+    fn promotes_the_wait_stream_shape_through_the_or_wrapper() {
+        let cause = insufficient_balance();
+        let err = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: cause.code(),
+            message: cause.to_string(),
+            cause: Some(cause),
+        });
+        assert_promoted(promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a balance refusal must not reach the fallback")
+        }));
+    }
+
+    #[test]
+    fn leaves_other_errors_to_the_fallback() {
+        let err = dash_sdk::Error::Generic("boom".to_string());
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let wrapped = promote_identity_insufficient_balance_or(err, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("Failed to withdraw credits: {e}"))
+        });
+        assert!(matches!(
+            wrapped,
+            PlatformWalletError::InvalidIdentityData(_)
+        ));
+    }
+
+    /// The withdrawal and transfer-to-addresses call sites reach code 31
+    /// through this wrapper, so a key-unavailable signer failure must come
+    /// back under `Sdk`, not promoted and not handed to the fallback.
+    #[test]
+    fn keeps_a_key_unavailable_signer_failure_under_sdk() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let mapped = promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a key-unavailable signer failure must not reach the fallback")
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
     }
 }

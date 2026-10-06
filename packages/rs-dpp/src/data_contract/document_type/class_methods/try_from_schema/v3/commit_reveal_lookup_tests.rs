@@ -778,6 +778,56 @@ fn should_refuse_a_carrier_or_stored_param_a_replace_could_change() {
     .expect("stored params listed under immutable, and the transient salt, are fixed");
 }
 
+/// A stored param that is an immutable `deletableDocument` reference by id is
+/// fixed only when required: a replace may clear an optional one once its
+/// document is deleted, and the stored reveal would then no longer hold the
+/// value its commitment was revealed for.
+#[test]
+fn should_refuse_a_param_a_replace_can_clear_once_its_document_is_deleted() {
+    let option_reveal = |required: bool| {
+        let mut domain_extra = json!({
+            "documentsMutable": true,
+            "immutable": ["normalizedLabel", "parentDomainName", "optionId"]
+        });
+        if required {
+            domain_extra["required"] = json!([
+                "label",
+                "normalizedLabel",
+                "parentDomainName",
+                "preorderSalt",
+                "optionId"
+            ]);
+        }
+        let mut contract_value = dpns_contract_with(
+            reveal_with(
+                json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "optionId"] }),
+                json!({}),
+                json!({}),
+                json!({}),
+            ),
+            domain_extra,
+            json!({}),
+        );
+        contract_value["documentSchemas"]["domain"]["properties"]["optionId"] = json!({
+            "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier", "position": 6,
+            "refersTo": { "type": "deletableDocument", "documentType": "option" }
+        });
+        contract_value["documentSchemas"]["option"] = json!({
+            "type": "object",
+            "canBeDeleted": true,
+            "properties": { "name": { "type": "string", "maxLength": 63, "position": 0 } },
+            "additionalProperties": false
+        });
+        contract(contract_value)
+    };
+    assert_refused(
+        option_reveal(false),
+        "param \"optionId\" is an optional `deletableDocument` reference a replace can clear",
+    );
+    option_reveal(true).expect("a required reference is never cleared");
+}
+
 /// A contract whose domain's `committerId` identifier refers to a
 /// `committed` document unique on (`committerId`, `hash`), found by `keys`
 /// with `function` merged in, with `domain_extra` merged into the domain.

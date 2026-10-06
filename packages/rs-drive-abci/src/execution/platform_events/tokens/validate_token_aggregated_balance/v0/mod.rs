@@ -20,12 +20,19 @@ impl<C> Platform<C> {
                 .map_err(Error::Drive)?;
 
             if !token_balance.ok()? {
+                // The balance side of the conservation equation includes the token shielded
+                // pools. Every protocol version selects this generation, and that is inert at
+                // the ones that predate those pools: below the token pool protocol version
+                // `calculate_total_tokens_balance` reports a pool total of zero, so
+                // `total_balances` is the identity balance total it always was. The line is on
+                // the diagnostic of an already-failed invariant in any case; the accept or
+                // reject decision is `TotalTokensBalance::ok`.
                 return Err(Error::Execution(
                     ExecutionError::CorruptedTokensNotBalanced(format!(
                         "tokens are not balanced after block execution {:?} off by {}",
                         token_balance,
                         token_balance
-                            .total_identity_token_balances
+                            .total_balances()?
                             .abs_diff(token_balance.total_tokens_in_platform)
                     )),
                 ));

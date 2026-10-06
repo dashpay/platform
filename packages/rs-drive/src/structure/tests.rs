@@ -919,7 +919,7 @@ mod fixtures {
                             "properties": {
                                 "text": { "type": "string", "maxLength": 50, "position": 0 },
                             },
-                            "required": ["$updatedAt"],
+                            "required": ["$createdAt", "$updatedAt"],
                             "additionalProperties": false,
                             "moderatorAbilities": {
                                 "delete": true,
@@ -1687,6 +1687,53 @@ mod fixtures {
         conformance_of(&drive, "spent_nullifiers", run);
     }
 
+    fn token_shielded_pool(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [7; 32];
+        let operations = drive
+            .create_token_shielded_pool_trees_operations(
+                token_id,
+                false,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the token pool operations");
+        apply_operations(&drive, operations);
+        apply_operations(
+            &drive,
+            Drive::insert_token_pool_note_op(
+                token_id,
+                [1; 32],
+                [2; 32],
+                [3; 32],
+                vec![1; 216],
+                platform_version,
+            )
+            .expect("expected the token note operations"),
+        );
+        apply_operations(
+            &drive,
+            Drive::insert_token_pool_nullifiers(token_id, &[[4; 32]], platform_version)
+                .expect("expected the token nullifier operations"),
+        );
+        let transaction = drive.grove.start_transaction();
+        drive
+            .record_token_shielded_pool_anchor_if_changed(
+                token_id,
+                1,
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to record the token pool anchor");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the token anchor");
+        conformance_of(&drive, "token_shielded_pool", run);
+    }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
     /// in the documents expirations tree under the time it expires, and a lifetime storage fee
     /// pool. Two of them expire together, created in the same block.
@@ -1798,6 +1845,7 @@ mod fixtures {
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
+        token_shielded_pool(&mut run);
         run
     }
 

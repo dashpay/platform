@@ -61,6 +61,12 @@ pub struct DocumentTypeV2 {
     /// replace writes, with the stored one read through `$old.`. None is also
     /// in `immutable_fields`.
     pub(in crate::data_contract) immutable_field_conditions: BTreeMap<String, PropertyConstraint>,
+    /// The `retractedWhen` condition (protocol version 14): a replace whose
+    /// written document meets it is a retraction, which a banned or suspended
+    /// owner may still make. Judged as an `immutable` condition is, on the
+    /// document the replace writes with the stored one under `$old.`. `None`
+    /// on a type that declares none.
+    pub(in crate::data_contract) retracted_when: Option<PropertyConstraint>,
     /// The dotted paths of the properties that declare `distinctFrom`
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
@@ -330,6 +336,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_field_conditions: BTreeMap::new(),
+            retracted_when: None,
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -391,6 +398,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
             immutable_field_conditions: BTreeMap::new(),
+            retracted_when: None,
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),

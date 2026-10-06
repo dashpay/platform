@@ -649,6 +649,24 @@ fn path_height(entries: u64) -> u64 {
         .max(u64::from(entries > 0))
 }
 
+/// The writes that cost processing, given `written`, those that write an
+/// element: those, and also every ranked row and counter. A known value's
+/// ranked row adds no storage, but it still moves in its secondary tree (a
+/// delete and an insert), which costs processing. A `summableOffCountIndex`
+/// counter (the one sum item written) is rewritten in place on every create
+/// of its group: no storage, but a put.
+fn processed_writes(writes: &[Write], written: &[bool]) -> Vec<bool> {
+    writes
+        .iter()
+        .zip(written)
+        .map(|(write, written)| {
+            *written
+                || write.ranking.is_some()
+                || matches!(write.element, PricedElement::SumItem { .. })
+        })
+        .collect()
+}
+
 /// The processing fee, part by part.
 #[allow(clippy::too_many_arguments)]
 fn processing_costs(
@@ -669,13 +687,7 @@ fn processing_costs(
         new_values: credits,
         known_values: credits,
     };
-    // A known value's ranked row adds no storage, but it still moves in its
-    // secondary tree (a delete and an insert), which costs processing.
-    let known_with_row_moves: Vec<bool> = writes
-        .iter()
-        .zip(known)
-        .map(|(write, known)| *known || write.ranking.is_some())
-        .collect();
+    let known_with_row_moves = processed_writes(writes, known);
     let mut parts = vec![
         ProcessingCost {
             code: "signature",
