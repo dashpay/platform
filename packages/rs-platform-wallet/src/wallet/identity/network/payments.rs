@@ -3139,6 +3139,7 @@ mod tests {
         );
 
         let event = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             height: 1_499_050,
             chain_lock: None,
@@ -3259,6 +3260,7 @@ mod tests {
             -7_000,
         );
         let matured_event = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             height: 1_499_060,
             chain_lock: None,
@@ -3420,6 +3422,7 @@ mod tests {
             "precondition: an InstantSend record is not block-confirmed"
         );
         let event = WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             record: Box::new(record),
             balance: WalletCoreBalance::default(),

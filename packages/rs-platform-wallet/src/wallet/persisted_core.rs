@@ -42,7 +42,7 @@ pub enum CoreRestoreError {
 /// Backends retain their decoding, recovery and address-pool policies. All coin
 /// owners are validated before mutation. Claims exclude coins even if a backend
 /// supplied both rows. Record/proof restoration remains the caller's responsibility;
-/// reapply claims with [`restore_spent_claims`] after any history repair/replay.
+/// restore claims before replaying any funding transactions.
 ///
 /// # Errors
 /// Returns an error before mutation for missing coin owners or conflicting claims.
@@ -85,7 +85,7 @@ pub fn restore_core_wallet(
     Ok(())
 }
 
-/// Restore durable guards after coins and history, without inventing transaction records.
+/// Restore durable guards after coins but before replay, without inventing transaction records.
 ///
 /// All funds accounts must already exist; reapply after adding another account.
 /// Known claimants must be actual spending transaction IDs, not sweep winner stamps.

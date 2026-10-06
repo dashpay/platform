@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Eleven tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), and the `core_transaction_inputs` / `core_transaction_record_originals` pair (V019) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Twelve tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), and the `core_transaction_inputs` / `core_transaction_record_originals` pair (V019), and `core_spent_claims` (V020) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -396,14 +396,36 @@ row.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_transactions_height(wallet_id, height)`.
 
+### `core_spent_claims`
+
+V020 stores the engine's authoritative outpoint/optional-claimant pairs, keyed
+by `(wallet_id, outpoint)`, including claims without a funding or spending body.
+The wallet foreign key cascades on deletion; there is deliberately no transaction
+foreign key. Each emitted batch upserts `claimed`, then deletes `released`, in
+emission order and in the same transaction as its causing event. Claim releases
+are distinct from sweep outputs eligible for re-credit.
+
+`wallets.spent_claims_complete` defaults to false for pre-V020 rows. Only inserting
+a new wallet's registration metadata initializes a complete empty mirror; neither
+metadata updates nor partial claim batches certify an existing wallet. Loading a
+pre-format wallet fails with `SpentClaimsUnavailable` and requires a fresh store
+and rescan. No claim is inferred from historical sweep stamps. This marker names
+the persistence format, not a guarantee that all upstream event paths emit deltas:
+the tracked-transaction late-InstantSend sweep gap remains upstream (#976/#1106).
+
+The restore planner seeds its scratch engine with these claims, reconciles retained
+records, and installs the engine's resulting claims in the real account skeleton
+before funding replay. Claim changes from reconstruction commit atomically with
+history repairs; recovery mode rolls both back. Unknown claimants remain sticky.
+
 ### `core_utxos`
 
 One row per UTXO, spent or unspent. Owning-account identity is derived from
 `core_address_pool` while loading wallet state, and confirmation height is
 derived from `core_transactions.height`.
 
-`spent_in_txid` names the transaction that claims the row. Three writers set
-it:
+`spent_in_txid` is a history/UI link; a sweep winner stamp need not identify
+the actual spender. Three writers set it:
 
 - `apply_sweep`, naming the winner that took an input a swept loser claimed
   but this store had no released record for;
@@ -427,10 +449,8 @@ outputs disappear and genuinely released materialized inputs become available.
 Replay preserves a surviving `spent_in_txid` claim even when its winner has
 no stored transaction body. Strict loads commit this repair; Recovery loads
 return the repaired projection but roll back all database changes.
-After replay, every remaining spent row restores an in-memory guard with its
-optional claimant, including unmaterialized placeholders. Funding redelivery
-cannot credit it; later conflict removal releases a restored guard only when
-its known claimant is removed. Unknown claims remain protected.
+Engine guards are restored from `core_spent_claims` before funding replay.
+History links and sweep placeholders do not supply claimant provenance.
 
 What gates the funding UTXO's own later upsert (`execute_upsert_utxo`) is
 the row's shape, not that link: a never-materialised held row (`is_sweep_placeholder = 1`, `spent = 1` — the placeholder `apply_sweep` writes for an input whose
@@ -901,3 +921,4 @@ table-rebuild migration, as V004 does.
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
 | V019 | `V019__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). A data repair (`legacy_v019::repair_history`) then runs once over every stored record: it backfills the input index, rewrites `core_transactions.record_blob` with corrected input details and direction (archiving the original first), and marks spent the owned outputs that non-mempool records spend, recording the spender in `spent_in_txid` unless another claim stands. A confirmed record whose blob cannot be decoded (or exceeds the blob size limit) is dropped along with its index rows and `core_sync_state.synced_height` is lowered to just below the wallet's birth height, so the next SPV start rescans it; an undecodable unconfirmed record fails the migration instead. |
+| V020 | `V020__authoritative_spent_claims.rs` | Adds `core_spent_claims` and the per-wallet format marker; existing wallet rows remain incompatible until a fresh store/rescan. |

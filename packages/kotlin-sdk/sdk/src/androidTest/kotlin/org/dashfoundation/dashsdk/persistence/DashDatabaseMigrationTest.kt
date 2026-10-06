@@ -28,6 +28,34 @@ class DashDatabaseMigrationTest {
 
     private val dbName = "migration-test.db"
 
+    @Test
+    fun migrate14To15PreservesLegacyIncompleteWalletAndCreatesEmptyClaims() {
+        helper.createDatabase(dbName, 14).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 0, 123, 0, 0, 0, 0)",
+            )
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(dbName, 15, true, DashDatabase.MIGRATION_14_15)
+        db.query("SELECT spentClaimsComplete, syncedHeight FROM wallets").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(0, it.getInt(0))
+            assertEquals(123, it.getInt(1))
+        }
+        db.query("SELECT COUNT(*) FROM core_spent_claims").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(0, it.getInt(0))
+        }
+        db.execSQL("INSERT INTO core_spent_claims VALUES (x'01', x'03', 0, NULL)")
+        db.query("SELECT claimant FROM core_spent_claims").use {
+            assertTrue(it.moveToFirst())
+            assertTrue(it.isNull(0))
+        }
+        db.close()
+    }
+
     /**
      * v2 → v3 adds the `dashpay_contact_profiles` and `dashpay_payments`
      * tables (additive — no reshapes). Pre-existing v2 data must survive

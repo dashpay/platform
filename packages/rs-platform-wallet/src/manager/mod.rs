@@ -1570,6 +1570,7 @@ mod tests {
         // Deliver the balance-bearing event while the write is in flight.
         let corrected = WalletCoreBalance::new(1_234, 0, 0, 0);
         handler.on_wallet_event(&crate::events::WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             height: 1_000,
             chain_lock: None,

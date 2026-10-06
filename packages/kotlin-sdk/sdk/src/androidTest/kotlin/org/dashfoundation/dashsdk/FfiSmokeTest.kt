@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
@@ -115,6 +116,14 @@ class FfiSmokeTest {
         val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
         try {
             val handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+            val claimsMethod = handler.javaClass.getMethod(
+                "onPersistSpentClaims", ByteArray::class.java, ByteArray::class.java,
+                ByteArray::class.java, ByteArray::class.java, ByteArray::class.java,
+            )
+            assertEquals(Int::class.javaPrimitiveType, claimsMethod.returnType)
+            assertNotEquals(0, object : NativePersistenceBridge() {}.onPersistSpentClaims(
+                ByteArray(32), ByteArray(0), ByteArray(0), ByteArray(0), ByteArray(0),
+            ))
             val firstMismatch =
                 WalletManagerNative.nativeVerifyPersistenceBridgeDescriptors(handler)
             assertNull(

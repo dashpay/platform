@@ -10,7 +10,7 @@ use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
     LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
+    PersistSpentClaimsFn, PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
@@ -247,6 +247,7 @@ unsafe fn persistence_extension_callbacks(
     }
 
     PersistenceExtensionCallbacks {
+        persist_spent_claims: slot!(on_persist_spent_claims_fn, PersistSpentClaimsFn),
         dpns_name_states: slot!(on_persist_dpns_name_states_fn, PersistDpnsNameStatesFn),
         persist_tracked_masternodes: slot!(
             on_persist_tracked_masternodes_fn,
@@ -1261,6 +1262,32 @@ mod tests {
         assert!(read_unknown.wallet_changeset_sweeps.is_none());
         assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
         assert!(read_unknown.wallet_changeset_utxo_verdicts.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_authoritative_claim_callback() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const crate::wallet_restore_types::SpentClaimRestoreFFI,
+            _: usize,
+            _: *const crate::core_wallet_types::OutPointFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let mut extension = PersistenceCallbacksExtension {
+            on_persist_spent_claims_fn: Some(persist),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_callbacks(&extension) }
+            .persist_spent_claims
+            .is_some());
+        extension.struct_size =
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_persist_spent_claims_fn);
+        assert!(unsafe { persistence_extension_callbacks(&extension) }
+            .persist_spent_claims
+            .is_none());
     }
 
     #[test]

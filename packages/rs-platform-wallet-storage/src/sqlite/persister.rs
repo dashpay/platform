@@ -10,7 +10,7 @@ use dpp::prelude::Identifier;
 use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    PlatformWalletChangeSet, PlatformWalletPersistence, SpentClaimBatch,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -1691,12 +1691,14 @@ fn load_one_wallet(
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
-    let (mut state, sweeps) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    let (mut state, sweeps, claims) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    schema::spent_claims::apply(&tx, &wallet_id, &[claims]).map_err(PersistenceError::from)?;
     if !sweeps.is_empty() {
         schema::core_state::apply_replay_sweeps(&tx, &wallet_id, sweeps)
             .map_err(PersistenceError::from)?;
         // Rebuild from the repaired projection, including released materialized inputs.
-        let (repaired, remaining) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+        let (repaired, remaining, claims) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+        schema::spent_claims::apply(&tx, &wallet_id, &[claims]).map_err(PersistenceError::from)?;
         if !remaining.is_empty() {
             return Err(PersistenceError::from(
                 WalletStorageError::WalletRehydrationFailed {
@@ -1726,17 +1728,22 @@ fn load_wallet_snapshot(
     (
         platform_wallet::changeset::ClientWalletStartState,
         Vec<SweepBatch>,
+        SpentClaimBatch,
     ),
     PersistenceError,
 > {
-    let (network_str, birth_height) = schema::wallets::fetch(conn, &wallet_id)
-        .map_err(PersistenceError::from)?
-        .ok_or_else(|| {
-            PersistenceError::backend(format!(
-                "wallets row vanished mid-load for {}",
-                hex::encode(wallet_id)
-            ))
-        })?;
+    let (network_str, birth_height, spent_claims_complete) =
+        schema::wallets::fetch(conn, &wallet_id)
+            .map_err(PersistenceError::from)?
+            .ok_or_else(|| {
+                PersistenceError::backend(format!(
+                    "wallets row vanished mid-load for {}",
+                    hex::encode(wallet_id)
+                ))
+            })?;
+    if !spent_claims_complete {
+        return Err(WalletStorageError::SpentClaimsUnavailable { wallet_id }.into());
+    }
     let network = schema::wallets::parse_network(&network_str).ok_or_else(|| {
         PersistenceError::backend(format!(
             "unknown persisted network {:?} for wallet {}",
@@ -1894,18 +1901,30 @@ fn load_wallet_snapshot(
                 ))
             })?;
     }
+    let spent = schema::spent_claims::load(conn, &wallet_id).map_err(PersistenceError::from)?;
     let mut wallet = wallet;
     let sweeps = restore_recorded_transactions(
         &mut wallet_info,
         &mut wallet,
         core_state.records,
         &core_state.instant_locks_for_non_final_records,
+        &spent,
     )
     .map_err(PersistenceError::from)?;
-    // Restore durable claims after replay/finality, including claims with no spend body.
-    let spent =
-        schema::core_state::load_spent_claims(conn, &wallet_id).map_err(PersistenceError::from)?;
-    wallet_info.restore_spent_outpoints(&spent);
+    let restored: BTreeMap<_, _> = spent.into_iter().collect();
+    let current = wallet_info.spent_outpoint_claims();
+    let claim_changes = SpentClaimBatch {
+        claimed: current
+            .iter()
+            .filter(|(outpoint, claimant)| restored.get(outpoint) != Some(claimant))
+            .map(|(outpoint, claimant)| (*outpoint, *claimant))
+            .collect(),
+        released: restored
+            .keys()
+            .filter(|outpoint| !current.contains_key(outpoint))
+            .copied()
+            .collect(),
+    };
     Ok((
         platform_wallet::changeset::ClientWalletStartState {
             wallet,
@@ -1917,8 +1936,10 @@ fn load_wallet_snapshot(
             // replay inert here, which is the behaviour this path had before the
             // field existed.
             unconfirmed_outgoing_txs: Vec::new(),
+            unconfirmed_outgoing_inputs: Vec::new(),
         },
         sweeps,
+        claim_changes,
     ))
 }
 
@@ -2255,6 +2276,7 @@ fn apply_changeset_to_tx(
     }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
+        schema::spent_claims::apply(tx, wallet_id, &core.spent_claim_batches)?;
     }
     #[cfg(feature = "shielded")]
     if let Some(shielded) = cs.shielded.as_ref() {

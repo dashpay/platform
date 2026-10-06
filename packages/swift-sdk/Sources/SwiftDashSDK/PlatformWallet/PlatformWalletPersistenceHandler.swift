@@ -1487,6 +1487,54 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    func persistSpentClaims(
+        walletId: Data,
+        claimed: UnsafePointer<SpentClaimRestoreFFI>?, claimedCount: UInt,
+        released: UnsafePointer<OutPointFFI>?, releasedCount: UInt
+    ) -> Bool {
+        onQueue {
+            guard inChangeset,
+                  claimedCount == 0 || claimed != nil,
+                  releasedCount == 0 || released != nil else { return false }
+            switch roundWalletLookup(walletId: walletId, callback: "spent_claims") {
+            case .failed: return false
+            case .absent: return true
+            case .found: break
+            }
+            do {
+                let descriptor = FetchDescriptor<PersistentSpentClaim>(
+                    predicate: #Predicate { $0.walletId == walletId })
+                let rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
+                var byOutpoint: [Data: PersistentSpentClaim] = [:]
+                for row in rows where !row.isDeleted {
+                    guard byOutpoint.updateValue(row, forKey: row.outpoint) == nil else { return false }
+                }
+                for index in 0..<Int(claimedCount) {
+                    guard let entry = claimed?[index] else { return false }
+                    let outpoint = PersistentTxo.makeOutpoint(txid: hashData(entry.txid), vout: entry.vout)
+                    let claimant = entry.has_claimant ? hashData(entry.claimant) : nil
+                    if let row = byOutpoint[outpoint] {
+                        row.claimant = claimant
+                    } else {
+                        let row = PersistentSpentClaim(walletId: walletId, outpoint: outpoint, claimant: claimant)
+                        backgroundContext.insert(row)
+                        byOutpoint[outpoint] = row
+                    }
+                }
+                for index in 0..<Int(releasedCount) {
+                    guard let entry = released?[index] else { return false }
+                    let outpoint = PersistentTxo.makeOutpoint(txid: hashData(entry.txid), vout: entry.vout)
+                    if let row = byOutpoint.removeValue(forKey: outpoint) { backgroundContext.delete(row) }
+                }
+                return true
+            } catch {
+                SDKLogger.event("persistence_spent_claims_failed", category: .persistence,
+                                severity: .error, fields: [:], error: error)
+                return false
+            }
+        }
+    }
+
     func persistWalletChangesetSweeps(
         walletId: Data,
         sweeps: UnsafePointer<SweepBatchFFI>?,
@@ -2132,11 +2180,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Used only by `persistWalletMetadata`; every other write path
     /// fetches via `findWalletRecord` and drops on missing so that
     /// stale post-deletion callbacks can't resurrect a wiped wallet.
-    private func ensureWalletRecord(walletId: Data) -> PersistentWallet {
+    private func ensureWalletRecord(walletId: Data) throws -> PersistentWallet {
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: walletRecordPredicate(walletId: walletId)
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = try backgroundContext.fetch(descriptor).first {
             return existing
         }
         let record = PersistentWallet(walletId: walletId, network: self.network)
@@ -3210,6 +3258,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // library that this slot exists, and proves to this build that an
         // older library will simply never call it — rather than either side
         // reading memory the other never allocated.
+        extensionCallbacks.on_persist_spent_claims_fn = persistSpentClaimsCallback
         extensionCallbacks.on_persist_wallet_changeset_sweeps_fn =
             persistWalletChangesetSweepsCallback
         // The numeric chainlock height rides its own slot for the same
@@ -6275,21 +6324,29 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// tip at creation). `walletGroupId` ties this row to its
     /// sibling-network rows for the same seed; it is left empty only if
     /// Rust handed back no bytes.
+    @discardableResult
     func persistWalletMetadata(
         walletId: Data,
         network: Network,
         walletGroupId: Data,
         birthHeight: UInt32
-    ) {
+    ) -> Bool {
         onQueue {
-            let wallet = ensureWalletRecord(walletId: walletId)
-            wallet.network = network
-            if !walletGroupId.isEmpty {
-                wallet.walletGroupId = walletGroupId
+            do {
+                let wallet = try ensureWalletRecord(walletId: walletId)
+                wallet.network = network
+                if !walletGroupId.isEmpty {
+                    wallet.walletGroupId = walletGroupId
+                }
+                wallet.birthHeight = birthHeight
+                wallet.lastUpdated = Date()
+                saveBackgroundContextIfNeeded(operation: "wallet_metadata", walletId: walletId)
+                return true
+            } catch {
+                SDKLogger.event("persistence_wallet_metadata_failed", category: .persistence, severity: .error,
+                                fields: [:], error: error)
+                return false
             }
-            wallet.birthHeight = birthHeight
-            wallet.lastUpdated = Date()
-            saveBackgroundContextIfNeeded(operation: "wallet_metadata", walletId: walletId)
         }
     }
 
@@ -6414,6 +6471,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
+
+                let claims = FetchDescriptor<PersistentSpentClaim>(predicate: #Predicate { $0.walletId == walletId })
+                for claim in try backgroundContext.fetch(claims) { backgroundContext.delete(claim) }
 
                 if let walletRow = walletRow {
                     // Shared scalars must be scoped while the departing wallet's TXOs still exist.
@@ -6953,6 +7013,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             return (nil, 0, true)
         }
+        guard wallets.allSatisfy(\.spentClaimsComplete) else {
+            SDKLogger.event("persistence_wallet_load_failed", category: .persistence, severity: .error,
+                            fields: ["phase": .publicText("authoritative_claims_unavailable_requires_fresh_store")])
+            return (nil, 0, true)
+        }
+        let claimBuckets: [Data: [PersistentSpentClaim]]
+        do {
+            let claims = try modelFetcher.fetch(FetchDescriptor<PersistentSpentClaim>(), in: backgroundContext)
+            claimBuckets = Dictionary(grouping: claims, by: \.walletId)
+        } catch {
+            SDKLogger.event("persistence_wallet_load_failed", category: .persistence, severity: .error,
+                            fields: ["phase": .publicText("spent_claim_fetch")], error: error)
+            return (nil, 0, true)
+        }
         // Mid-round the context holds another round's staged writes: saving
         // would commit half of it and rolling back would silently drop it.
         // That round reconciles its own dirty rows; the next load repairs the rest.
@@ -7447,6 +7521,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
             entry.provider_special_txs = providerTxBuf.map { UnsafePointer($0) }
             entry.provider_special_txs_count = UInt(providerTxCount)
+
+            let claimRows = claimBuckets[w.walletId] ?? []
+            if !claimRows.isEmpty {
+                var claims: [SpentClaimRestoreFFI] = []
+                for row in claimRows {
+                    guard row.outpoint.count == 36,
+                          row.claimant == nil || row.claimant?.count == 32 else {
+                        allocation.release()
+                        SDKLogger.event("persistence_wallet_load_failed", category: .persistence, severity: .error,
+                                        fields: ["phase": .publicText("malformed_spent_claim")])
+                        return (nil, 0, true)
+                    }
+                    var claim = SpentClaimRestoreFFI()
+                    copyBytes(Data(row.outpoint.prefix(32)), into: &claim.txid)
+                    claim.vout = row.outpoint.suffix(4).enumerated().reduce(UInt32(0)) {
+                        $0 | UInt32($1.element) << (8 * $1.offset)
+                    }
+                    claim.has_claimant = row.claimant != nil
+                    if let claimant = row.claimant { copyBytes(claimant, into: &claim.claimant) }
+                    claims.append(claim)
+                }
+                let buffer = UnsafeMutablePointer<SpentClaimRestoreFFI>.allocate(capacity: claims.count)
+                buffer.initialize(from: claims, count: claims.count)
+                allocation.spentClaimArrays.append((buffer, claims.count))
+                entry.spent_claims = UnsafePointer(buffer)
+                entry.spent_claims_count = UInt(claims.count)
+            }
 
             // Primary-identity selection + gap-limit scan watermark
             // were dropped from the FFI shape — both moved off the
@@ -9174,6 +9275,7 @@ private final class LoadAllocation {
     var entriesInitialized: Int = 0
     /// `AccountSpecFFI` arrays per wallet.
     var accountArrays: [(UnsafeMutablePointer<AccountSpecFFI>, Int)] = []
+    var spentClaimArrays: [(UnsafeMutablePointer<SpentClaimRestoreFFI>, Int)] = []
     /// `AddressBalanceEntryFFI` arrays per wallet.
     var addressBalanceArrays: [(UnsafeMutablePointer<AddressBalanceEntryFFI>, Int)] = []
     /// `IdentityRestoreEntryFFI` arrays per wallet.
@@ -9260,6 +9362,10 @@ private final class LoadAllocation {
                 entries.deinitialize(count: entriesInitialized)
             }
             entries.deallocate()
+        }
+        for (ptr, count) in spentClaimArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
         }
         for (ptr, count) in accountArrays {
             ptr.deinitialize(count: count)
@@ -9519,6 +9625,19 @@ private func persistWalletChangesetCallback(
     // staged writes back and Rust keeps its in-memory state instead of
     // treating a partly-applied changeset as durable.
     return handler.persistWalletChangeset(walletId: walletId, changeset: changesetPtr) ? 0 : 1
+}
+
+/// Persist one ordered authoritative claim batch within the active changeset round.
+private func persistSpentClaimsCallback(
+    context: UnsafeMutableRawPointer?, walletIdPtr: UnsafePointer<UInt8>?,
+    claimed: UnsafePointer<SpentClaimRestoreFFI>?, claimedCount: UInt,
+    released: UnsafePointer<OutPointFFI>?, releasedCount: UInt
+) -> Int32 {
+    guard let context, let walletIdPtr else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    return handler.persistSpentClaims(walletId: Data(bytes: walletIdPtr, count: 32),
+                                      claimed: claimed, claimedCount: claimedCount,
+                                      released: released, releasedCount: releasedCount) ? 0 : 1
 }
 
 /// C shim for the extension's `on_persist_wallet_changeset_sweeps_fn` —
@@ -10640,13 +10759,12 @@ private func persistWalletMetadataCallback(
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
     let walletGroupId = walletGroupIdPtr.map { Data(bytes: $0, count: 32) } ?? Data()
-    handler.persistWalletMetadata(
+    return handler.persistWalletMetadata(
         walletId: walletId,
         network: Network(ffiNetwork: network),
         walletGroupId: walletGroupId,
         birthHeight: birthHeight
-    )
-    return 0
+    ) ? 0 : 1
 }
 
 // MARK: - Shielded persistence (Orchard)
