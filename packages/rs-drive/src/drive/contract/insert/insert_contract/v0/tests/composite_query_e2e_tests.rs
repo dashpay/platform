@@ -13,7 +13,9 @@
 //! the primary tree.
 
 use super::chained_query_e2e_tests::{removal_of, remove_post, with_moderated_posts};
+use super::index_only_e2e_tests::assert_live_root_hash;
 use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::moderated_join::removals_path_query;
 use crate::query::{
@@ -768,6 +770,104 @@ fn should_preserve_descending_documents_and_key_ordered_counts() {
     );
 }
 
+/// Documents of a `documentsSummable` type are stored as items carrying a
+/// sum: the composite verifier from version 1 (protocol version 14) reads them
+/// as documents, page and sub-query alike, against the live root, where
+/// version 0, as released, reads them as counts no component selected and
+/// refuses the proof. Version 0 is reached through the dispatcher on a
+/// version table selecting it: protocol version 13's grovedb serves no
+/// per-instance limit, so a composite with a bounded sub-query proves only
+/// from 14.
+#[test]
+fn should_verify_a_composition_over_documents_that_carry_a_sum() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
+        false,
+        pv,
+    )
+    .expect("expected to parse the tip jar contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the contract");
+    let mut tip_ids = Vec::new();
+    for (seed, amount) in [(1u64, 5u64), (2, 7)] {
+        let mut tip = build(&contract, "tip", seed);
+        tip.set("recipient", Value::Identifier(OWNER_1));
+        tip.set("amount", Value::U64(amount));
+        tip.set("sentAt", Value::U64(seed));
+        tip_ids.push(tip.id().to_buffer());
+        insert(&drive, &contract, "tip", &tip);
+    }
+
+    let page = DriveDocumentQuery {
+        contract: &contract,
+        document_type: contract.document_type_for_name("tip").expect("tip"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(tip_ids.iter().copied().map(Value::Identifier).collect()),
+            }],
+            pv,
+        )
+        .expect("by-id page"),
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let query = page.with_sub_queries(vec![bound(
+        &contract,
+        "tip",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "recipient",
+        "recipient",
+        Some(10),
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(materialized.page_documents.len(), 2);
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (root_hash, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("a composition over sum-carrying documents verifies");
+    assert_live_root_hash(&drive, root_hash);
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+
+    let mut version_0 = pv.clone();
+    version_0
+        .drive
+        .methods
+        .verify
+        .composite_document
+        .verify_composite_documents_proof = 0;
+    assert!(
+        query
+            .verify_composite_documents_proof(&proof, &version_0)
+            .is_err(),
+        "the composite verifier's version 0 refuses the sum-carrying documents"
+    );
+}
+
 /// The full round trip: the server's materialized result and the
 /// verifier's composed result agree component for component.
 #[test]
@@ -787,6 +887,23 @@ fn should_answer_the_feed_composition_with_proof_parity() {
     let (_root, verified) = query
         .verify_composite_documents_proof(&proof, pv)
         .expect("the merged proof verifies");
+    // The composite verifier's version 0, as released, classifies the feed's
+    // items as version 1 does: none of them carries a sum
+    let mut version_0 = pv.clone();
+    version_0
+        .drive
+        .methods
+        .verify
+        .composite_document
+        .verify_composite_documents_proof = 0;
+    let (_root, verified_by_version_0) = query
+        .verify_composite_documents_proof(&proof, &version_0)
+        .expect("version 0 verifies the merged proof");
+    assert_eq!(
+        verified_by_version_0.page_documents,
+        verified.page_documents
+    );
+    assert_eq!(verified_by_version_0.sub_results, verified.sub_results);
 
     // The page: the three `dash` posts, in index order.
     assert_eq!(
@@ -868,7 +985,10 @@ fn should_prove_the_viewers_marks_as_an_index_only_lookup() {
 }
 
 /// An empty page derives nothing: every sub-query is empty and the proof
-/// is the page's alone.
+/// is the page's alone. Without a proof the viewer's composition is refused
+/// before any read, empty page or not: the viewer's likes are read through
+/// `byLiker`, which lacks the like's hashtag, as a documents query through
+/// that index is; the composition without them reads an empty page.
 #[test]
 fn should_prove_an_empty_page_alone() {
     let (drive, feed, dashpay) = setup();
@@ -878,8 +998,19 @@ fn should_prove_an_empty_page_alone() {
     let sub_queries = std::mem::take(&mut query.sub_queries);
     query = page_by_hashtag(&feed, "nothing", Some(10)).with_sub_queries(sub_queries);
 
+    let refused = drive.query_composite_documents(&query, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+        "got {refused:?}"
+    );
+
+    // Without the viewer's likes the composition reads without a proof, and
+    // the empty page derives nothing for any sub-query, the count included
+    let mut anonymous = feed_query(&feed, &dashpay, None);
+    let anonymous_sub_queries = std::mem::take(&mut anonymous.sub_queries);
+    anonymous = page_by_hashtag(&feed, "nothing", Some(10)).with_sub_queries(anonymous_sub_queries);
     let materialized = drive
-        .query_composite_documents(&query, None, None, pv)
+        .query_composite_documents(&anonymous, None, None, pv)
         .expect("executes")
         .result;
     assert!(materialized.page_documents.is_empty());
@@ -1377,7 +1508,19 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
         viewer_likes,
         like_counts(),
     ]);
-    let result = round_trip(&feed_shape, "the descending feed shape");
+    // The viewer's likes are read through `byLiker`, which lacks the like's
+    // required hashtag: refused without a proof, so this shape is read proved.
+    assert!(matches!(
+        drive.query_composite_documents(&feed_shape, None, None, pv),
+        Err(Error::Query(QuerySyntaxError::Unsupported(_)))
+    ));
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&feed_shape, pv)
+        .expect("the descending feed shape proves");
+    let (_, result) = feed_shape
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the descending feed shape verifies");
+    assert_eq!(ids(&result.page_documents), vec![POST_C, POST_B, POST_A]);
     // The lookups inherited the page's direction: descending by their
     // bound field.
     assert_eq!(

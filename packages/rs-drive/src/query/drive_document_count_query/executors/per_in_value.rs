@@ -103,7 +103,7 @@ impl Drive {
             )
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                    "count query requires a countable index on the document type that \
+                    "count query requires a countable (or summableOffCountIndex) index on the document type that \
                      matches the where clause properties"
                         .to_string(),
                 ))

@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
     axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
+use crate::query::drive_document_ranked_query::present_entries_on_axis;
 use crate::query::{DriveDocumentHavingQuery, RankedEntry};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -57,8 +58,13 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let axis = self.bounds.axis();
-            let (lo, hi) = self.bounds.inclusive_bounds_i128();
+            // Edited in place in this shipped generation: `self.read_bounds()` differs from
+            // `self.bounds` only on a `summableOffCountIndex` index, which only
+            // meta-schema v3 (protocol version 14) admits, so every earlier
+            // version reads and presents exactly as before.
+            let read_bounds = self.read_bounds();
+            let axis = read_bounds.axis();
+            let (lo, hi) = read_bounds.inclusive_bounds_i128();
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys.clone(),
@@ -114,7 +120,10 @@ impl DriveDocumentHavingQuery<'_> {
                 self.descending,
                 self.limit as usize,
             )?;
-            return Ok((root_hash, entries));
+            return Ok((
+                root_hash,
+                present_entries_on_axis(self.bounds.axis(), entries),
+            ));
         }
         self.verify_having_range_proof_v0_branch(0, proof, platform_version)
     }
@@ -128,8 +137,13 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
-        let axis = self.bounds.axis();
-        let (lo, hi) = self.bounds.inclusive_bounds_i128();
+        // Edited in place in this shipped generation: `self.read_bounds()` differs from
+        // `self.bounds` only on a `summableOffCountIndex` index, which only
+        // meta-schema v3 (protocol version 14) admits, so every earlier
+        // version reads and presents exactly as before.
+        let read_bounds = self.read_bounds();
+        let axis = read_bounds.axis();
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
         let path_query =
             PathQuery::new_axis_bounded(path, axis.into(), lo, hi, self.limit, self.descending);
         let verified =
@@ -153,6 +167,9 @@ impl DriveDocumentHavingQuery<'_> {
                 self.limit
             ))));
         }
-        Ok((root_hash, entries))
+        Ok((
+            root_hash,
+            present_entries_on_axis(self.bounds.axis(), entries),
+        ))
     }
 }

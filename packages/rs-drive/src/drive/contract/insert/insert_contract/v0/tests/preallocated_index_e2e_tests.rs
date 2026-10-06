@@ -27,8 +27,8 @@
 
 use super::chained_query_e2e_tests::remove_post;
 use super::index_only_e2e_tests::{
-    assert_grovedb_is_consistent, build_like, count_top_k, delete_like, doctype_path, insert_like,
-    likes_query, platform_version, read_grove_element,
+    assert_grovedb_is_consistent, assert_live_root_hash, build_like, count_top_k, delete_like,
+    doctype_path, insert_like, likes_query, platform_version, read_grove_element,
 };
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -1184,4 +1184,387 @@ fn should_not_preallocate_through_a_moderated_reference_whose_record_drops_a_key
     );
 
     assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// Range reads over empty groups
+// ---------------------------------------------------------------------------
+
+/// A range read grouped by the last property of a preallocated index keeps a
+/// post nobody tipped, an empty group created with the post, as a count of
+/// zero, a sum of zero and an average of `(0, 0)`, unproved and proved alike:
+/// the walk's limit counted it, so a page of one returns it and paging one
+/// post at a time walks every post.
+#[test]
+fn should_keep_an_empty_preallocated_group_on_a_page_of_range_reads() {
+    use super::index_only_e2e_tests::{build_tip, insert_tip};
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_average_query::{
+        AverageEntry, AverageMode, DocumentAverageRequest, DocumentAverageResponse,
+    };
+    use crate::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse, SplitCountEntry,
+    };
+    use crate::query::drive_document_sum_query::index_picker::{
+        find_range_summable_index_for_where_clauses,
+        find_range_summable_index_with_counts_for_where_clauses,
+    };
+    use crate::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumEntry, SumMode,
+    };
+    use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+    let (drive, contract) = setup_preallocated_likes();
+    let mut posts: Vec<[u8; 32]> = (1..=3)
+        .map(|seed| {
+            let post = build_post(&contract, "dash", seed);
+            insert_post(&drive, &contract, &post, true).expect("insert post");
+            post.id().to_buffer()
+        })
+        .collect();
+    posts.sort();
+    let tip = build_tip(&contract, posts[2], OWNER_1, 250, 1);
+    insert_tip(&drive, &contract, &tip, true).expect("insert tip");
+
+    let pv = platform_version();
+    let drive_config = DriveConfig::default();
+    let tip_type = contract
+        .document_type_for_name("tip")
+        .expect("tip doctype exists");
+    let tip_indexes = contract
+        .document_types()
+        .get("tip")
+        .expect("tip doctype exists")
+        .indexes();
+    let after = |post: [u8; 32]| {
+        vec![WhereClause {
+            field: "postId".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Identifier(post),
+        }]
+    };
+    // One page of one per kind of read, unproved and proved: (post, count, sum).
+    let page = |where_clauses: Vec<WhereClause>, kind: &str| -> Vec<(Vec<u8>, u64, i64)> {
+        let count_request = |prove| DocumentCountRequest {
+            contract: &contract,
+            document_type: tip_type,
+            where_clauses: where_clauses.clone(),
+            resolved_time_ranges: vec![],
+            order_clauses: vec![],
+            mode: CountMode::GroupByRange,
+            limit: Some(1),
+            prove,
+            drive_config: &drive_config,
+        };
+        let sum_request = |prove| DocumentSumRequest {
+            contract: &contract,
+            document_type: tip_type,
+            sum_property: "amount".to_string(),
+            where_clauses: where_clauses.clone(),
+            resolved_time_ranges: vec![],
+            order_clauses: vec![],
+            mode: SumMode::GroupByRange,
+            limit: Some(1),
+            prove,
+            drive_config: &drive_config,
+        };
+        let average_request = |prove| DocumentAverageRequest {
+            contract: &contract,
+            document_type: tip_type,
+            sum_property: "amount".to_string(),
+            where_clauses: where_clauses.clone(),
+            resolved_time_ranges: vec![],
+            order_clauses: vec![],
+            mode: AverageMode::GroupByRange,
+            limit: Some(1),
+            prove,
+            drive_config: &drive_config,
+        };
+        let sum_query = |index| DriveDocumentSumQuery {
+            document_type: tip_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "tip".to_string(),
+            index,
+            where_clauses: where_clauses.clone(),
+            sum_property: "amount".to_string(),
+        };
+        let (unproved, proved) = match kind {
+            "count" => {
+                let DocumentCountResponse::Entries(unproved) = drive
+                    .execute_document_count_request(count_request(false), None, pv)
+                    .expect("the count page executes")
+                else {
+                    panic!("expected count entries");
+                };
+                let DocumentCountResponse::Proof(proof) = drive
+                    .execute_document_count_request(count_request(true), None, pv)
+                    .expect("the count page proves")
+                else {
+                    panic!("expected a count proof");
+                };
+                let query = DriveDocumentCountQuery {
+                    document_type: tip_type,
+                    contract_id: contract.id().to_buffer(),
+                    document_type_name: "tip".to_string(),
+                    index: DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                        tip_indexes,
+                        &where_clauses,
+                        &[],
+                    )
+                    .expect("byPost answers the range count"),
+                    where_clauses: where_clauses.clone(),
+                };
+                let (root_hash, proved) = query
+                    .verify_distinct_count_proof(&proof, 1, true, pv)
+                    .expect("the count page's proof verifies");
+                assert_live_root_hash(&drive, root_hash);
+                let rows = |entries: Vec<SplitCountEntry>| {
+                    entries
+                        .into_iter()
+                        .map(|entry| (entry.key, entry.count.expect("a verified count"), 0))
+                        .collect::<Vec<_>>()
+                };
+                (rows(unproved), rows(proved))
+            }
+            "sum" => {
+                let DocumentSumResponse::Entries(unproved) = drive
+                    .execute_document_sum_request(sum_request(false), None, pv)
+                    .expect("the sum page executes")
+                else {
+                    panic!("expected sum entries");
+                };
+                let DocumentSumResponse::Proof(proof) = drive
+                    .execute_document_sum_request(sum_request(true), None, pv)
+                    .expect("the sum page proves")
+                else {
+                    panic!("expected a sum proof");
+                };
+                let index = find_range_summable_index_for_where_clauses(
+                    tip_indexes,
+                    &where_clauses,
+                    "amount",
+                    &[],
+                )
+                .expect("byPost answers the range sum");
+                let (root_hash, proved) = sum_query(index)
+                    .verify_distinct_sum_proof(&proof, 1, true, pv)
+                    .expect("the sum page's proof verifies");
+                assert_live_root_hash(&drive, root_hash);
+                let rows = |entries: Vec<SumEntry>| {
+                    entries
+                        .into_iter()
+                        .map(|entry| (entry.key, 0, entry.sum.expect("a verified sum")))
+                        .collect::<Vec<_>>()
+                };
+                (rows(unproved), rows(proved))
+            }
+            _ => {
+                let DocumentAverageResponse::Entries(unproved) = drive
+                    .execute_document_average_request(average_request(false), None, pv)
+                    .expect("the average page executes")
+                else {
+                    panic!("expected average entries");
+                };
+                let DocumentAverageResponse::Proof(proof) = drive
+                    .execute_document_average_request(average_request(true), None, pv)
+                    .expect("the average page proves")
+                else {
+                    panic!("expected an average proof");
+                };
+                let index = find_range_summable_index_with_counts_for_where_clauses(
+                    tip_indexes,
+                    &where_clauses,
+                    "amount",
+                    &[],
+                )
+                .expect("byPost answers the range average");
+                let (root_hash, proved) = sum_query(index)
+                    .verify_distinct_count_and_sum_proof(&proof, 1, true, pv)
+                    .expect("the average page's proof verifies");
+                assert_live_root_hash(&drive, root_hash);
+                let rows = |entries: Vec<AverageEntry>| {
+                    entries
+                        .into_iter()
+                        .map(|entry| {
+                            (
+                                entry.key,
+                                entry.count.expect("a verified count"),
+                                entry.sum.expect("a verified sum"),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                };
+                (rows(unproved), rows(proved))
+            }
+        };
+        assert_eq!(proved, unproved, "a proved {kind} page");
+        unproved
+    };
+
+    for (kind, tipped) in [("count", (1, 0)), ("sum", (0, 250)), ("average", (1, 250))] {
+        let mut paged = Vec::new();
+        let mut last = [0u8; 32];
+        loop {
+            let entries = page(after(last), kind);
+            let Some((post, count, sum)) = entries.first().cloned() else {
+                break;
+            };
+            assert_eq!(entries.len(), 1, "a {kind} page of one");
+            last = post.clone().try_into().expect("a post id");
+            paged.push((post, count, sum));
+        }
+        assert_eq!(
+            paged,
+            vec![
+                (posts[0].to_vec(), 0, 0),
+                (posts[1].to_vec(), 0, 0),
+                (posts[2].to_vec(), tipped.0, tipped.1),
+            ],
+            "paging one {kind} at a time walks every post, the untipped ones at zero"
+        );
+    }
+}
+
+/// A range count over an index a preallocated sibling passes through keeps
+/// the empty groups that sibling's preallocation creates: `byHashtag`, not
+/// preallocated, ends at the `hashtag` level `byHashtagPost` preallocates, so
+/// a post's hashtag is a group of zero there until liked. A page of one
+/// returns it, proved and unproved alike, and paging walks every hashtag.
+#[test]
+fn should_keep_an_empty_group_a_preallocated_sibling_creates() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse,
+    };
+    use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+    let pv = platform_version();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let mut schema = json_document_to_json_value(
+        "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
+    )
+    .expect("read contract fixture");
+    let indices = schema["documentSchemas"]["like"]["indices"]
+        .as_array_mut()
+        .expect("like indices");
+    // A ranked `byHashtagPost` refuses a countable index ending at its prefix
+    indices[0]
+        .as_object_mut()
+        .expect("byHashtagPost")
+        .remove("rankedCountable");
+    indices.push(json!({
+        "name": "byHashtag",
+        "properties": [{ "hashtag": "asc" }],
+        "countable": "countable",
+        "rangeCountable": true,
+        "skipIfAbsent": true,
+    }));
+    let contract = DataContract::try_from_platform_versioned(
+        serde_json::from_value(schema).expect("contract serialization format"),
+        true,
+        &mut vec![],
+        pv,
+    )
+    .expect("parse the contract");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the contract");
+
+    // Posts tagged "a", "b" and "c"; only the "c" post is liked
+    let mut last_post = [0u8; 32];
+    for (seed, hashtag) in ["a", "b", "c"].into_iter().enumerate() {
+        let post = build_post(&contract, hashtag, seed as u64 + 1);
+        insert_post(&drive, &contract, &post, true).expect("insert post");
+        last_post = post.id().to_buffer();
+    }
+    let like = build_like(&contract, "c", last_post, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+
+    let drive_config = DriveConfig::default();
+    let like_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let like_indexes = contract
+        .document_types()
+        .get("like")
+        .expect("like doctype exists")
+        .indexes();
+    let page = |after: &str| -> Vec<(Vec<u8>, u64)> {
+        let where_clauses = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text(after.to_string()),
+        }];
+        let request = |prove| DocumentCountRequest {
+            contract: &contract,
+            document_type: like_type,
+            where_clauses: where_clauses.clone(),
+            resolved_time_ranges: vec![],
+            order_clauses: vec![],
+            mode: CountMode::GroupByRange,
+            limit: Some(1),
+            prove,
+            drive_config: &drive_config,
+        };
+        let DocumentCountResponse::Entries(unproved) = drive
+            .execute_document_count_request(request(false), None, pv)
+            .expect("the page executes")
+        else {
+            panic!("expected count entries");
+        };
+        let DocumentCountResponse::Proof(proof) = drive
+            .execute_document_count_request(request(true), None, pv)
+            .expect("the page proves")
+        else {
+            panic!("expected a count proof");
+        };
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            like_indexes,
+            &where_clauses,
+            &[],
+        )
+        .expect("an index answers the range count");
+        assert_eq!(index.name, "byHashtag");
+        let (root_hash, proved) = DriveDocumentCountQuery {
+            document_type: like_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "like".to_string(),
+            index,
+            where_clauses: where_clauses.clone(),
+        }
+        .verify_distinct_count_proof(&proof, 1, true, pv)
+        .expect("the page's proof verifies");
+        assert_live_root_hash(&drive, root_hash);
+        assert_eq!(proved, unproved, "proved page after {after:?}");
+        unproved
+            .into_iter()
+            .map(|entry| (entry.key, entry.count.expect("a count")))
+            .collect()
+    };
+
+    let mut paged = Vec::new();
+    let mut after = "0".to_string();
+    loop {
+        let entries = page(&after);
+        let Some((key, count)) = entries.first().cloned() else {
+            break;
+        };
+        assert_eq!(entries.len(), 1, "a page of one");
+        after = String::from_utf8(key.clone()).expect("a hashtag");
+        paged.push((key, count));
+    }
+    assert_eq!(
+        paged,
+        vec![(b"a".to_vec(), 0), (b"b".to_vec(), 0), (b"c".to_vec(), 1)],
+        "paging one hashtag at a time walks every one, the unliked ones at zero"
+    );
 }

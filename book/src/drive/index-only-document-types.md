@@ -154,7 +154,13 @@ amount is one of the committed properties.
 **Governing principle: only what is in the indexes exists and is
 recoverable.** Prefix property values live in the path, the terminal id in
 the member key, `$ownerId` and `$createdAt` wherever an index carries them.
-There is no document beyond that.
+There is no document beyond that. One kind of property may sit in no
+entry-keeping index: one a `summableOffCountIndex` index's source fixes
+through a reference's `where` (a like's `postAuthor`, kept only by
+`byAuthorPost`'s counters). Such a property, when no entry-keeping index
+holds it, is lacking from a document read back, and its value is the
+referenced document's, so a client rebuilding the row for a delete reads it
+from there.
 
 ## The row commitment
 
@@ -200,6 +206,7 @@ aggregate keywords follow:
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
 | `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
 | a skip property is an optional, top-level schema property; no ranking sits above the index's deepest skip property | see [Conditional participation](#conditional-participation-skipifabsent) |
+| a `summableOffCountIndex` index sums a source holding every document once, holds every source property, and fixes its other properties through unchanging `where` values | see [Counters (summableOffCountIndex)](#counters-summableoffcountindex) |
 
 `indexOnly` and the index set (terminals included, `preallocated` and
 `skipIfAbsent` flags included) are immutable across contract updates — a
@@ -484,6 +491,72 @@ Not supported on the read surface: by-`$id` fetches (no primary tree —
 rejected with guidance) and `startAt` cursors (rejected with the keyset
 guidance above); ranked / count / range-aggregate queries work unchanged
 since they never open value trees.
+
+## Counters (summableOffCountIndex)
+
+A `summableOffCountIndex` index keeps no entry per document. At the value
+position of its last property, where another index grows a value tree, a
+`0` bucket and one entry per document, it keeps one `Element::SumItem`
+holding the number of entries its source index keeps for that group:
+
+```text
+before: byAuthorPost → postAuthor → <author> → postId → <post> → 0 → <liker> = Item(commitment)
+after:  byAuthorPost → postAuthor → <author> → postId → <post> = SumItem(likes)
+```
+
+The tree of the last property is a count-and-sum tree (`rangeSummable`,
+plus `rangeCountable` for the group count an average divides by), so each
+counter counts one group and adds its value to the sum. A level a `{ "at": ... }` ranking
+names, and every level between it and the counters, carries those totals
+up: its value trees are `CountSumTree`s from the shallowest average
+ranking down and `SumTree`s above it (a `rankedCountable` on such an index
+is its sum ranking, so no count-only chain arises). The property-name tree
+of a level a ranking names is the indexed tree for the axes ranked at it,
+`ProvableCountProvableSumIndexedTree` for `[Sum, Avg]`; a level between two
+ranked levels keeps a plain count-and-sum or sum tree. Grovedb admits a bare
+`SumItem` under that indexed tree from grove version 4.
+
+The write path (`add_summable_off_count_counter_operations`):
+
+- **Create**: reads the counter and writes it back one higher, or inserts
+  it at one for the first document of the group. The create is refused
+  before it gets here when the source already holds the entry, so the
+  counter equals the source group's entry count.
+- **Delete**: writes it back one lower once the entries of the indexes
+  that keep them matched the row commitment. A preallocated index keeps
+  the counter at zero; any other removes it with its last document and
+  prunes the trees it leaves empty, up to the document type.
+- **Once per batch**: a counter is written at most once per batch, because
+  a documents batch carries one transition. A source keyed by more than its
+  owner (a terminal such as `["$ownerId", "emoji"]`) holds several entries
+  of one owner in one group, and each document is converted on its own, so
+  raising that cap needs the counter moves folded across documents first.
+  A second write within one conversion is refused as corrupted code
+  execution.
+- **Storage**: a `SumItem` is charged a fixed 11 bytes plus flags whatever
+  its value, so a rewrite stores nothing new, and it keeps the flags of the
+  first document that paid for it.
+- **Preallocation**: creating the referenced document creates the counter
+  at zero, in place of the value tree and its empty `0` bucket.
+
+The state probes and the duplicate check skip the index (it decides
+nothing about a create), it is never the proof index, and document
+queries never read it. The count, sum, average and ranked queries do: a
+sum query names the source index (`sum(byPost)`), a count query takes a
+counter's sum (its group's documents) where another index's read takes a
+count (a ranked or `HAVING` count walks the Sum secondaries, and its
+entries come back as counts), and a point query may stop at a level
+carrying the sums, reading that value tree's element. A range count reads
+the range sums (`DriveDocumentCountQuery::counter_sums_query`): every range
+count executor and verifier hands the same index and clauses to the sum
+surface's counterpart, summing the source index, and reads the sums back as
+counts, since grovedb's range count over the counters would count them, one
+per group. A range total over an index whose path passes through a ranked
+level (its own, or one another index ranks at a shared level) is refused with
+a hint to group by the last property, as everywhere: a ranked level's tree is
+indexed, and grovedb neither totals a range over an indexed tree nor proves a
+range total through one, so the unproven read refuses it too and the two
+agree.
 
 ## What it costs and what it saves
 

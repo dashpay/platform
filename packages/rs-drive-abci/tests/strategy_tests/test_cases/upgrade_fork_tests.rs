@@ -3,16 +3,20 @@ mod tests {
     use crate::addresses_with_balance::AddressesWithBalance;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::strategy::{
-        ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
-        UpgradingInfo,
+        ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy,
+        StrategyRandomness, UpgradingInfo,
     };
     use dash_platform_macros::stack_size;
     use dpp::block::epoch::Epoch;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+    use dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Network::Regtest;
-    use dpp::dashcore::{BlockHash, ChainLock};
+    use dpp::dashcore::{BlockHash, ChainLock, ProTxHash};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{
+        DMNStateDiff, MasternodeAddresses, MasternodeListDiff,
+    };
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contracts::SystemDataContract;
@@ -26,6 +30,7 @@ mod tests {
         ValidatorSetConfig,
     };
     use drive_abci::logging::LogLevel;
+    use drive_abci::platform_types::masternode::v0::MasternodeV0;
     use drive_abci::platform_types::platform::Platform;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::rpc::core::MockCoreRPCLike;
@@ -34,6 +39,8 @@ mod tests {
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
     use platform_version::version::INITIAL_PROTOCOL_VERSION;
     use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[stack_size(4 * 1024 * 1024)]
@@ -1488,6 +1495,296 @@ mod tests {
             warm_at_activation,
             "the reopened node must activate the same protocol version with the same app hash as the warm node"
         );
+    }
+
+    /// Nested addresses in an old node's memory are absent from its persisted masternode
+    /// entries. Activation and subsequent partial address diffs must therefore start from
+    /// the same stored ports whether the node kept running or restarted before activation.
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn should_preserve_masternode_ports_across_activation_and_restart() {
+        const BLOCKS_PER_EPOCH: u64 = 60;
+        const NEW_P2P_PORT: u16 = 29999;
+        let previous_version = PlatformVersion::get(13).expect("protocol version 13");
+        let latest_version = PlatformVersion::latest();
+        let strategy = NetworkStrategy {
+            total_hpmns: 50,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: previous_version.protocol_version,
+                proposed_protocol_versions_with_weight: vec![(latest_version.protocol_version, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            // Allocate mock Core block hashes through height 2; the explicit chain-lock
+            // expectation below controls when that second height becomes visible.
+            core_height_increase: CoreHeightIncrease::KnownCoreHeightIncreases(vec![1, 2]),
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                epoch_time_length_s: BLOCKS_PER_EPOCH,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+        let mut observations = Vec::new();
+        for restart_before_activation in [false, true] {
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(config.clone())
+                .with_initial_protocol_version(previous_version.protocol_version)
+                .build_with_mock_rpc();
+            let core_height = Arc::new(AtomicU32::new(1));
+            let reported_core_height = Arc::clone(&core_height);
+            platform
+                .core_rpc
+                .expect_get_best_chain_lock()
+                .returning(move || {
+                    Ok(ChainLock {
+                        block_height: reported_core_height.load(Ordering::SeqCst),
+                        block_hash: BlockHash::from_byte_array([1; 32]),
+                        signature: [2; 96].into(),
+                    })
+                });
+            let updated_masternode = Arc::new(Mutex::new(None::<ProTxHash>));
+            let rpc_updated_masternode = Arc::clone(&updated_masternode);
+            platform
+                .core_rpc
+                .expect_get_protx_diff_with_masternodes()
+                .withf(|base_height, height| *base_height == Some(1) && *height == 2)
+                .returning(move |_, _| {
+                    let pro_tx_hash = rpc_updated_masternode
+                        .lock()
+                        .expect("masternode fixture lock")
+                        .expect("masternode fixture selected before Core advances");
+                    let state_diff: DMNStateDiff = serde_json::from_value(serde_json::json!({
+                        "addresses": { "platform_p2p": [format!("1.2.3.4:{NEW_P2P_PORT}")] }
+                    }))
+                    .expect("Core address diff");
+                    Ok(MasternodeListDiff {
+                        base_height: 1,
+                        block_height: 2,
+                        added_mns: vec![],
+                        removed_mns: vec![],
+                        updated_mns: vec![(pro_tx_hash, state_diff)],
+                    })
+                });
+
+            let before_activation = run_chain_for_strategy(
+                &mut platform,
+                2 * BLOCKS_PER_EPOCH,
+                strategy.clone(),
+                config.clone(),
+                13,
+                &mut None,
+                &mut None,
+            )
+            .await;
+            let committed_before_activation =
+                committed_upgrade_state(before_activation.abci_app.platform);
+            assert_eq!(committed_before_activation.epoch_index, 1);
+            assert_eq!(committed_before_activation.current_protocol_version, 13);
+            assert_eq!(
+                committed_before_activation.next_epoch_protocol_version,
+                latest_version.protocol_version
+            );
+            let activation_parameters = continuation_parameters(&before_activation, 1);
+            let quorum_hash = before_activation.current_validator_quorum_hash;
+            let current_platform = before_activation.abci_app.platform;
+            let mut state = current_platform.state.load().as_ref().clone();
+            let pro_tx_hash = *state.validator_sets()[&quorum_hash]
+                .members()
+                .keys()
+                .next()
+                .expect("populated validator set");
+            *updated_masternode.lock().expect("masternode fixture lock") = Some(pro_tx_hash);
+            #[allow(deprecated)]
+            let original_ports = {
+                let masternode = &state.full_masternode_list()[&pro_tx_hash];
+                (
+                    masternode
+                        .state
+                        .legacy_platform_p2p_port
+                        .expect("legacy P2P port") as u16,
+                    masternode
+                        .state
+                        .legacy_platform_http_port
+                        .expect("legacy HTTPS port") as u16,
+                )
+            };
+            let transient_addresses = Some(MasternodeAddresses {
+                core_p2p: vec!["1.2.3.4:9999".to_string()],
+                platform_p2p: vec!["1.2.3.4:36656".to_string()],
+                platform_https: vec!["1.2.3.4:8443".to_string()],
+            });
+            assert_ne!(original_ports, (36656, 8443));
+            // Populate the raw old-protocol state deliberately: its RPC representation
+            // retains nested addresses, while the historical stored representation does not.
+            state
+                .full_masternode_list_mut()
+                .get_mut(&pro_tx_hash)
+                .expect("masternode")
+                .state
+                .addresses = transient_addresses.clone();
+            state
+                .hpmn_masternode_list_mut()
+                .get_mut(&pro_tx_hash)
+                .expect("evonode")
+                .state
+                .addresses = transient_addresses;
+            let root_before_fixture = current_platform
+                .drive
+                .grove
+                .root_hash(None, &previous_version.drive.grove_version)
+                .unwrap()
+                .expect("stored root");
+            current_platform
+                .store_platform_state(&state, None, previous_version)
+                .expect("persist old-protocol masternode fixture");
+            assert_eq!(
+                current_platform
+                    .drive
+                    .grove
+                    .root_hash(None, &previous_version.drive.grove_version)
+                    .unwrap()
+                    .expect("stored root after fixture"),
+                root_before_fixture,
+                "transient old-protocol addresses must not change persisted state"
+            );
+            current_platform.state.store(Arc::new(state));
+            drop(before_activation);
+
+            if restart_before_activation {
+                let TempPlatform {
+                    platform: mut old_platform,
+                    tempdir,
+                } = platform;
+                let core_rpc = std::mem::take(&mut old_platform.core_rpc);
+                drop(old_platform);
+                platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+                platform.platform.core_rpc = core_rpc;
+                assert!(platform.state.load().full_masternode_list()[&pro_tx_hash]
+                    .state
+                    .addresses
+                    .is_none());
+            }
+            assert_eq!(
+                committed_upgrade_state(&platform),
+                committed_before_activation
+            );
+
+            let activation = continue_chain_for_strategy(
+                FullAbciApplication::new(&platform),
+                activation_parameters,
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(18),
+            )
+            .await;
+            let activated = committed_upgrade_state(&platform);
+            assert_eq!(activated.epoch_index, 2);
+            assert_eq!(
+                activated.current_protocol_version,
+                latest_version.protocol_version
+            );
+            assert_eq!(
+                activated.next_epoch_protocol_version,
+                latest_version.protocol_version
+            );
+            assert_eq!(
+                platform.state.load().last_committed_core_height(),
+                1,
+                "activation must also work without a Core-height advance"
+            );
+            let ports = |platform: &Platform<MockCoreRPCLike>| {
+                let state = platform.state.load();
+                let validator = &state.validator_sets()[&quorum_hash].members()[&pro_tx_hash];
+                (validator.platform_p2p_port, validator.platform_http_port)
+            };
+            assert_eq!(ports(&platform), original_ports);
+            let after_activation_parameters = continuation_parameters(&activation, 1);
+            drop(activation);
+            core_height.store(2, Ordering::SeqCst);
+            let after_update = continue_chain_for_strategy(
+                FullAbciApplication::new(&platform),
+                after_activation_parameters,
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(19),
+            )
+            .await;
+            assert_eq!(platform.state.load().last_committed_core_height(), 2);
+            assert_eq!(
+                ports(&platform),
+                (NEW_P2P_PORT, original_ports.1),
+                "a partial new-protocol diff must not restore transient pre-upgrade HTTPS ports"
+            );
+            let state = platform.state.load();
+            #[allow(deprecated)]
+            let stored_ports = {
+                let masternode = &state.full_masternode_list()[&pro_tx_hash];
+                (
+                    masternode.state.legacy_platform_p2p_port,
+                    masternode.state.legacy_platform_http_port,
+                )
+            };
+            assert_eq!(
+                stored_ports,
+                (
+                    Some(u32::from(NEW_P2P_PORT)),
+                    Some(u32::from(original_ports.1))
+                )
+            );
+            observations.push((
+                committed_before_activation,
+                activated,
+                committed_upgrade_state(&platform),
+                state
+                    .full_masternode_list()
+                    .values()
+                    .cloned()
+                    .map(MasternodeV0::from)
+                    .collect::<Vec<_>>(),
+                state.validator_sets().clone(),
+            ));
+            drop(state);
+            drop(after_update);
+            let TempPlatform {
+                platform: old_platform,
+                tempdir,
+            } = platform;
+            drop(old_platform);
+            let reopened = TempPlatform::open_with_tempdir(tempdir, config.clone());
+            let observed = observations.last().expect("recorded committed state");
+            assert_eq!(committed_upgrade_state(&reopened), observed.2);
+            assert_eq!(ports(&reopened), (NEW_P2P_PORT, original_ports.1));
+            let state = reopened.state.load();
+            assert_eq!(
+                state
+                    .full_masternode_list()
+                    .values()
+                    .cloned()
+                    .map(MasternodeV0::from)
+                    .collect::<Vec<_>>(),
+                observed.3,
+                "post-activation restart must preserve all stored masternodes"
+            );
+            assert_eq!(state.validator_sets(), &observed.4);
+        }
+        assert_eq!(observations[0], observations[1],
+            "live and restarted nodes must commit equal roots, stored masternodes and validator sets");
     }
 
     #[stack_size(4 * 1024 * 1024)]
