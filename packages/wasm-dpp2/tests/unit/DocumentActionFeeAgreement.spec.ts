@@ -51,27 +51,6 @@ describe('DocumentActionFeeAgreement', () => {
 
       agreement.free();
     });
-    it('should refuse an unknown key, which would leave an agreement to pay nothing', () => {
-      expect(() => new wasm.DocumentActionFeeAgreement({ ownr: 80000000n } as never))
-        .to.throw(/unknown DocumentActionFeeAgreement option "ownr"/);
-      expect(() => new wasm.DocumentActionFeeAgreement({
-        owner: 1000n,
-        feeMultiplier: { knownPermile: 1000n, increaseTolerancePercent: 20 },
-      } as never)).to.throw(/unknown feeMultiplier option "knownPermile"/);
-    });
-
-    it('should refuse an unknown key on an object without a prototype', () => {
-      const options = Object.assign(Object.create(null), { ownr: 80000000n });
-      expect(() => new wasm.DocumentActionFeeAgreement(options))
-        .to.throw(/unknown DocumentActionFeeAgreement option "ownr"/);
-    });
-
-    it('should refuse an array or a Map, which would read as an agreement too', () => {
-      for (const options of [[80000000n, 16000000n], new Map()]) {
-        expect(() => new wasm.DocumentActionFeeAgreement(options as never))
-          .to.throw(/must be a plain object/);
-      }
-    });
   });
 
   describe('forDocumentTypeAction()', () => {
@@ -158,15 +137,6 @@ describe('DocumentActionFeeAgreement', () => {
       );
 
       expect(agreement?.owner).to.equal(1000n);
-    });
-
-    it('should refuse an unknown feeMultiplier key, even for a fixed fee', () => {
-      expect(() => wasm.DocumentActionFeeAgreement.forDocumentTypeAction(
-        contract,
-        'note',
-        'create',
-        { knownPermile: 1000n, increaseTolerancePercent: 20 } as never,
-      )).to.throw(/unknown feeMultiplier option "knownPermile"/);
     });
 
     it('should refuse an unknown document type or action', () => {

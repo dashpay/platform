@@ -24,12 +24,9 @@ use js_sys::Reflect;
 use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_dpp2::data_contract::document::DocumentWasm;
-use wasm_dpp2::error::WasmDppError;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::state_transitions::batch::action_fee_agreement::{
-    DocumentActionFeeAgreementOptionsJs, DocumentActionFeeAgreementWasm,
-};
+use wasm_dpp2::state_transitions::batch::action_fee_agreement::DocumentActionFeeAgreementWasm;
 use wasm_dpp2::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
@@ -108,26 +105,8 @@ fn apply_action_fee_agreement_option(
     options: &JsValue,
     settings: &mut Option<PutSettings>,
 ) -> Result<(), WasmSdkError> {
-    let Some(agreement) = try_from_options_optional_with(options, "actionFeeAgreement", |v| {
-        let refused = |what: &str| {
-            WasmDppError::invalid_argument(format!(
-                "actionFeeAgreement must be a DocumentActionFeeAgreement or its options, not {}",
-                what
-            ))
-        };
-        if !v.is_object() {
-            return Err(refused("a primitive value"));
-        }
-        match get_class_type(v)?.as_str() {
-            "DocumentActionFeeAgreement" => DocumentActionFeeAgreementWasm::try_from(v),
-            // Any other class would parse as an agreement to pay nothing
-            "" => DocumentActionFeeAgreementWasm::constructor(
-                v.clone()
-                    .unchecked_into::<DocumentActionFeeAgreementOptionsJs>(),
-            ),
-            other => Err(refused(&format!("an instance of {}", other))),
-        }
-    })?
+    let Some(agreement) =
+        try_from_options_optional::<DocumentActionFeeAgreementWasm>(options, "actionFeeAgreement")?
     else {
         return Ok(());
     };
@@ -187,7 +166,7 @@ export interface DocumentCreateOptions {
    * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
    * builds it from that contract.
    */
-  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+  actionFeeAgreement?: DocumentActionFeeAgreement;
 
   /**
    * Optional settings for the broadcast operation.
@@ -423,7 +402,7 @@ export interface DocumentReplaceOptions {
    * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
    * builds it from that contract.
    */
-  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+  actionFeeAgreement?: DocumentActionFeeAgreement;
 
   /**
    * Optional settings for the broadcast operation.
@@ -551,7 +530,7 @@ export interface DocumentDeleteOptions {
    * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
    * builds it from that contract.
    */
-  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+  actionFeeAgreement?: DocumentActionFeeAgreement;
 
   /**
    * Optional settings for the broadcast operation.
@@ -767,7 +746,7 @@ export interface DocumentTransferOptions {
    * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
    * builds it from that contract.
    */
-  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+  actionFeeAgreement?: DocumentActionFeeAgreement;
 
   /**
    * Optional settings for the broadcast operation.
@@ -906,7 +885,7 @@ export interface DocumentPurchaseOptions {
    * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
    * builds it from that contract.
    */
-  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+  actionFeeAgreement?: DocumentActionFeeAgreement;
 
   /**
    * Optional settings for the broadcast operation.
@@ -1035,7 +1014,7 @@ export interface DocumentSetPriceOptions {
    * action (protocol version 14+). `DocumentActionFeeAgreement.forDocumentTypeAction`
    * builds it from that contract.
    */
-  actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
+  actionFeeAgreement?: DocumentActionFeeAgreement;
 
   /**
    * Optional settings for the broadcast operation.
@@ -1209,9 +1188,7 @@ mod tests {
 mod wasm_tests {
     use super::*;
     use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::v0::DocumentActionFeeAgreementV0;
-    use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::{
-        AgreedFeeMultiplier, DocumentActionFeeAgreement,
-    };
+    use dash_sdk::dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
     use wasm_bindgen_test::wasm_bindgen_test;
 
     fn object(entries: &[(&str, JsValue)]) -> JsValue {
@@ -1281,36 +1258,27 @@ mod wasm_tests {
     }
 
     #[wasm_bindgen_test]
-    fn agreement_options_are_stored_beside_the_other_creation_options() {
+    fn agreement_options_instead_of_an_instance_are_refused() {
         let options = object(&[(
             "actionFeeAgreement",
-            object(&[
-                ("owner", JsValue::from(1_000u64)),
-                ("moderators", JsValue::from(500u64)),
-                (
-                    "feeMultiplier",
-                    object(&[
-                        ("knownPermille", JsValue::from(1_000u64)),
-                        ("increaseTolerancePercent", JsValue::from(20u16)),
-                    ]),
-                ),
-            ]),
+            object(&[("owner", JsValue::from(1_000u64))]),
         )]);
+        let mut settings = settings_with_other_options();
 
-        let (_, creation_options) = stored_agreement(&options);
+        let error = apply_action_fee_agreement_option(&options, &mut settings)
+            .expect_err("options are not an agreement");
+        assert!(
+            error
+                .to_string()
+                .contains("Expected DocumentActionFeeAgreement"),
+            "unexpected error: {error}"
+        );
 
         assert_eq!(
-            creation_options.action_fee_agreement,
-            Some(DocumentActionFeeAgreement::from(
-                DocumentActionFeeAgreementV0 {
-                    owner: 1_000,
-                    moderators: 500,
-                    fee_multiplier: Some(AgreedFeeMultiplier {
-                        known_permille: 1_000,
-                        increase_tolerance_percent: 20,
-                    }),
-                }
-            ))
+            settings
+                .and_then(|settings| settings.state_transition_creation_options)
+                .and_then(|creation_options| creation_options.action_fee_agreement),
+            None
         );
     }
 

@@ -44,46 +44,47 @@ describe('actionFeeAgreement option', () => {
     client?.free();
   });
 
-  const malformed = { owner: 'eighty million' };
-  const MALFORMED = /invalid type: string "eighty million", expected u64/;
+  // The options to build an agreement are not one: it is passed as a DocumentActionFeeAgreement
+  const notAnInstance = { owner: BigInt(80000000) };
+  const NOT_AN_INSTANCE = /Expected DocumentActionFeeAgreement, provided /;
 
-  it('should refuse a malformed agreement on a create before reading anything', async () => {
+  it('should refuse agreement options on a create before reading anything', async () => {
     await expect(
       client.documentCreate({
-        document, identityKey, signer, actionFeeAgreement: malformed as never,
+        document, identityKey, signer, actionFeeAgreement: notAnInstance as never,
       }),
-    ).to.be.rejectedWith(MALFORMED);
+    ).to.be.rejectedWith(NOT_AN_INSTANCE);
   });
 
-  it('should refuse a malformed agreement on a replace before reading anything', async () => {
+  it('should refuse agreement options on a replace before reading anything', async () => {
     await expect(
       client.documentReplace({
-        document, identityKey, signer, actionFeeAgreement: malformed as never,
+        document, identityKey, signer, actionFeeAgreement: notAnInstance as never,
       }),
-    ).to.be.rejectedWith(MALFORMED);
+    ).to.be.rejectedWith(NOT_AN_INSTANCE);
   });
 
-  it('should refuse a malformed agreement on a delete before reading anything', async () => {
+  it('should refuse agreement options on a delete before reading anything', async () => {
     await expect(
       client.documentDelete({
-        document, identityKey, signer, actionFeeAgreement: malformed as never,
+        document, identityKey, signer, actionFeeAgreement: notAnInstance as never,
       }),
-    ).to.be.rejectedWith(MALFORMED);
+    ).to.be.rejectedWith(NOT_AN_INSTANCE);
   });
 
-  it('should refuse a malformed agreement on a transfer before reading anything', async () => {
+  it('should refuse agreement options on a transfer before reading anything', async () => {
     await expect(
       client.documentTransfer({
         document,
         recipientId: new Uint8Array(32).fill(5) as never,
         identityKey,
         signer,
-        actionFeeAgreement: malformed as never,
+        actionFeeAgreement: notAnInstance as never,
       }),
-    ).to.be.rejectedWith(MALFORMED);
+    ).to.be.rejectedWith(NOT_AN_INSTANCE);
   });
 
-  it('should refuse a malformed agreement on a purchase before reading anything', async () => {
+  it('should refuse agreement options on a purchase before reading anything', async () => {
     await expect(
       client.documentPurchase({
         document,
@@ -91,37 +92,29 @@ describe('actionFeeAgreement option', () => {
         price: BigInt(10),
         identityKey,
         signer,
-        actionFeeAgreement: malformed as never,
+        actionFeeAgreement: notAnInstance as never,
       }),
-    ).to.be.rejectedWith(MALFORMED);
+    ).to.be.rejectedWith(NOT_AN_INSTANCE);
   });
 
-  it('should refuse a malformed agreement on a price update before reading anything', async () => {
+  it('should refuse agreement options on a price update before reading anything', async () => {
     await expect(
       client.documentSetPrice({
         document,
         price: BigInt(10),
         identityKey,
         signer,
-        actionFeeAgreement: malformed as never,
+        actionFeeAgreement: notAnInstance as never,
       }),
-    ).to.be.rejectedWith(MALFORMED);
+    ).to.be.rejectedWith(NOT_AN_INSTANCE);
   });
 
-  it('should refuse another wasm class, which would read as an agreement to pay nothing', async () => {
+  it('should refuse another wasm class', async () => {
     await expect(
       client.documentReplace({
         document, identityKey, signer, actionFeeAgreement: identityKey as never,
       }),
-    ).to.be.rejectedWith(/must be a DocumentActionFeeAgreement or its options, not an instance of IdentityPublicKey/);
-  });
-
-  it('should refuse an agreement naming an unknown key before reading anything', async () => {
-    await expect(
-      client.documentCreate({
-        document, identityKey, signer, actionFeeAgreement: { ownr: BigInt(80000000) } as never,
-      }),
-    ).to.be.rejectedWith(/unknown DocumentActionFeeAgreement option "ownr"/);
+    ).to.be.rejectedWith(/Expected DocumentActionFeeAgreement, provided IdentityPublicKey/);
   });
 
   it('should refuse a primitive value', async () => {
@@ -129,30 +122,24 @@ describe('actionFeeAgreement option', () => {
       client.documentReplace({
         document, identityKey, signer, actionFeeAgreement: 80000000 as never,
       }),
-    ).to.be.rejectedWith(/must be a DocumentActionFeeAgreement or its options, not a primitive value/);
+    ).to.be.rejectedWith(/Value supplied as DocumentActionFeeAgreement is not an object/);
   });
 
-  it('should read a well-formed agreement, as an instance or as options', async () => {
+  it('should read a DocumentActionFeeAgreement', async () => {
     // `tokenPaymentInfo` is parsed after the agreement, so reaching its error means the
     // agreement was accepted
-    const agreements = [
-      new sdk.DocumentActionFeeAgreement({ owner: BigInt(80000000), moderators: BigInt(16000000) }),
-      {
-        owner: BigInt(80000000),
-        moderators: BigInt(16000000),
-        feeMultiplier: { knownPermille: BigInt(1000), increaseTolerancePercent: 20 },
-      },
-    ];
-    for (const actionFeeAgreement of agreements) {
-      await expect(
-        client.documentReplace({
-          document,
-          identityKey,
-          signer,
-          actionFeeAgreement,
-          tokenPaymentInfo: { tokenContractPosition: 'first' } as never,
+    await expect(
+      client.documentReplace({
+        document,
+        identityKey,
+        signer,
+        actionFeeAgreement: new sdk.DocumentActionFeeAgreement({
+          owner: BigInt(80000000),
+          moderators: BigInt(16000000),
+          feeMultiplier: { knownPermille: BigInt(1000), increaseTolerancePercent: 20 },
         }),
-      ).to.be.rejectedWith(/invalid type: string "first"/);
-    }
+        tokenPaymentInfo: { tokenContractPosition: 'first' } as never,
+      }),
+    ).to.be.rejectedWith(/invalid type: string "first"/);
   });
 });

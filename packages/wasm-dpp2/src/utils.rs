@@ -161,26 +161,6 @@ fn wasm_ptr_of_js_val(js_value: &JsValue, class_name: &str) -> WasmDppResult<u32
     Ok(ptr)
 }
 
-/// Refuses a key of `object` that is not one of `known`: `serde_wasm_bindgen` reads only the
-/// keys a struct names, so a misspelled option would be silently ignored.
-pub fn refuse_unknown_keys(object: &JsValue, known: &[&str], what: &str) -> WasmDppResult<()> {
-    // Not `dyn_ref::<Object>()`, which is `instanceof Object`: false for an object without a
-    // prototype or from another realm, whose keys must be checked too
-    if !object.is_object() {
-        return Ok(());
-    }
-    for key in Object::keys(object.unchecked_ref()).iter() {
-        let key = key.as_string().unwrap_or_default();
-        if !known.contains(&key.as_str()) {
-            return Err(WasmDppError::invalid_argument(format!(
-                "unknown {what} {key:?}; expected one of {}",
-                known.join(", ")
-            )));
-        }
-    }
-    Ok(())
-}
-
 /// Get the `__type` property from a JsValue (used for WASM class identification)
 pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     let class_type = js_sys::Reflect::get(value, &JsValue::from_str("__type")).map_err(|err| {

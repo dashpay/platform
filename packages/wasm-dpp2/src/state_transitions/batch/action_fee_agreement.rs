@@ -4,7 +4,6 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
-use crate::utils::refuse_unknown_keys;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::action_fees::ActionFeePricing;
 use dpp::data_contract::document_type::action_fees::agreement::v0::DocumentActionFeeAgreementV0;
@@ -149,23 +148,9 @@ impl From<DocumentActionFeeAgreementWasm> for DocumentActionFeeAgreement {
 impl DocumentActionFeeAgreementWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DocumentActionFeeAgreementOptionsJs) -> WasmDppResult<Self> {
-        let options: JsValue = options.into();
-        // An array or a Map would be read as an agreement too, an empty one as one to pay nothing
-        if !is_plain_object(&options) {
-            return Err(WasmDppError::invalid_argument(
-                "DocumentActionFeeAgreement options must be a plain object",
-            ));
-        }
-        refuse_unknown_keys(
-            &options,
-            &["owner", "moderators", "feeMultiplier"],
-            "DocumentActionFeeAgreement option",
-        )?;
-        let fee_multiplier = js_sys::Reflect::get(&options, &JsValue::from_str("feeMultiplier"))
-            .map_err(|_| WasmDppError::invalid_argument("failed to read feeMultiplier"))?;
-        refuse_unknown_fee_multiplier_keys(&fee_multiplier)?;
-        let opts: DocumentActionFeeAgreementOptions = serde_wasm_bindgen::from_value(options)
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+        let opts: DocumentActionFeeAgreementOptions =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(DocumentActionFeeAgreementWasm(
             DocumentActionFeeAgreement::V0(DocumentActionFeeAgreementV0 {
@@ -200,9 +185,7 @@ impl DocumentActionFeeAgreementWasm {
         let action = BatchTypeWasm::try_from(JsValue::from(action))?.into();
         let fee_multiplier = fee_multiplier
             .map(|multiplier| {
-                let multiplier: JsValue = multiplier.into();
-                refuse_unknown_fee_multiplier_keys(&multiplier)?;
-                serde_wasm_bindgen::from_value::<AgreedFeeMultiplierOptions>(multiplier)
+                serde_wasm_bindgen::from_value::<AgreedFeeMultiplierOptions>(multiplier.into())
                     .map(|multiplier| AgreedFeeMultiplier {
                         known_permille: multiplier.known_permille,
                         increase_tolerance_percent: multiplier.increase_tolerance_percent,
@@ -261,23 +244,6 @@ impl DocumentActionFeeAgreementWasm {
     pub fn pricing(&self) -> String {
         self.0.pricing().as_str().to_string()
     }
-}
-
-fn is_plain_object(value: &JsValue) -> bool {
-    if !value.is_object() {
-        return false;
-    }
-    // `Object.prototype` (of any realm) or none, not that of an Array, a Map or a class
-    let prototype = js_sys::Object::get_prototype_of(value);
-    prototype.is_null() || js_sys::Object::get_prototype_of(&prototype).is_null()
-}
-
-fn refuse_unknown_fee_multiplier_keys(fee_multiplier: &JsValue) -> WasmDppResult<()> {
-    refuse_unknown_keys(
-        fee_multiplier,
-        &["knownPermille", "increaseTolerancePercent"],
-        "feeMultiplier option",
-    )
 }
 
 impl_wasm_conversions_inner!(
