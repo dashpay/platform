@@ -236,8 +236,10 @@ fn slow_client() -> Status {
 }
 
 /// IPv4 addresses count individually; IPv6 addresses by /64, the smallest block a client
-/// usually controls.
+/// usually controls. An IPv4 client seen through a dual-stack listener (`::ffff:a.b.c.d`) is
+/// counted as that IPv4 address, not in the one /64 all such clients share.
 fn per_ip_key(ip: IpAddr) -> IpAddr {
+    let ip = ip.to_canonical();
     match ip {
         IpAddr::V4(_) => ip,
         IpAddr::V6(v6) => {

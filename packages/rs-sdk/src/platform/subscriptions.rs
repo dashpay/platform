@@ -47,9 +47,10 @@ use std::time::Duration;
 const MAX_CONSECUTIVE_FAILURES: u32 = 5;
 /// Wait before the first retry; doubles per consecutive failure.
 const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
-/// How long a stream may stay silent before it counts as stalled. The node checkpoints every
-/// 10 seconds while idle; this leaves room for slow block reads on its side.
-const MESSAGE_IDLE_DEADLINE: Duration = Duration::from_secs(90);
+/// A stream that sends nothing for a whole window of this length counts as stalled, so after
+/// 60 to 120 seconds of silence. The node checkpoints every 10 seconds while idle; this leaves
+/// room for slow block reads on its side.
+const IDLE_WINDOW: Duration = Duration::from_secs(60);
 
 /// A committed state transition that matched the subscription's filters.
 #[derive(Debug, Clone)]
@@ -102,26 +103,53 @@ pub struct StateTransitionSubscription {
     /// Where the next stream starts; `None` until the first checkpoint of a live-only start.
     resume_from: Option<u64>,
     consecutive_failures: u32,
+    /// The wait before the next stream is opened, after a failure. Kept here, like `idle`, so
+    /// a caller cancelling `next()` does not restart it.
+    retry: Option<Timer>,
     /// Bound data contracts a delivered update changed; re-read with proofs before the next
     /// message is checked.
     contracts_to_refresh: BTreeSet<Identifier>,
     /// Why the subscription ended, once it has: later calls fail rather than read on.
     terminated: Option<String>,
-    /// Fires when the current stream has been silent for `MESSAGE_IDLE_DEADLINE`; armed by
-    /// the first read after a message or a new stream.
-    idle: Option<IdleTimer>,
+    /// Notices the current stream going silent.
+    idle: IdleWatch,
 }
 
-/// A deadline kept across reads.
-type IdleTimer = Pin<Box<dyn Future<Output = ()> + Send>>;
+/// The deepest value nesting the SDK decodes, whatever the protocol version a node reports.
+const MAX_VALUE_DEPTH: usize = dpp::platform_value::DEFAULT_MAX_VALUE_DECODE_DEPTH;
 
-/// `read`'s output, or `None` if `idle` fires first. `idle` is kept by the caller, so a read
-/// that is cancelled and started again does not restart the deadline.
-async fn read_or_idle<F: Future>(idle: &mut IdleTimer, read: F) -> Option<F::Output> {
-    futures::pin_mut!(read);
-    match futures::future::select(read, idle.as_mut()).await {
-        futures::future::Either::Left((output, _)) => Some(output),
-        futures::future::Either::Right(_) => None,
+/// A pending wait, kept across reads.
+type Timer = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// Notices a stream that sent nothing for a whole `IDLE_WINDOW`, with one timer per
+/// subscription however many messages arrive: a message is noted rather than restarting the
+/// timer, since on wasm a timer that is dropped keeps running until it fires.
+#[derive(Default)]
+struct IdleWatch {
+    /// The current window; kept across reads, so cancelling a read does not restart it.
+    window: Option<Timer>,
+    /// Whether a message arrived (or a stream opened) during the current window.
+    heard: bool,
+}
+
+impl IdleWatch {
+    /// Note a message, or a new stream, which starts out not silent.
+    fn heard(&mut self) {
+        self.heard = true;
+    }
+
+    /// Completes once a whole window passes in which nothing was heard.
+    async fn silent(&mut self) {
+        loop {
+            self.window
+                .get_or_insert_with(|| Box::pin(sleep(IDLE_WINDOW)))
+                .as_mut()
+                .await;
+            self.window = None;
+            if !std::mem::take(&mut self.heard) {
+                return;
+            }
+        }
     }
 }
 
@@ -191,9 +219,10 @@ impl Sdk {
             stream_address: None,
             resume_from: from_block_height,
             consecutive_failures: 0,
+            retry: None,
             contracts_to_refresh: BTreeSet::new(),
             terminated: None,
-            idle: None,
+            idle: IdleWatch::default(),
         };
         // Open the first stream now, so a refused request fails here rather than on `next`.
         subscription.stream = Some(subscription.open(false).await?);
@@ -234,27 +263,28 @@ impl StateTransitionSubscription {
             None => {
                 let stream = self.reopen().await?;
                 self.stream_messages = 0;
-                self.idle = None;
+                self.idle.heard();
                 self.stream.insert(stream)
             }
         };
         // The node checkpoints at least every few seconds; a stream quiet for much longer is
-        // stalled, even if its connection still answers, and is resumed elsewhere. The timer
-        // lives in the subscription, so a caller cancelling `next()` does not restart it.
-        let idle = self
-            .idle
-            .get_or_insert_with(|| Box::pin(sleep(MESSAGE_IDLE_DEADLINE)));
-        let message = read_or_idle(idle, stream.message())
-            .await
-            .unwrap_or_else(|| {
-                Err(Status::unavailable(format!(
-                    "no message for {}s",
-                    MESSAGE_IDLE_DEADLINE.as_secs()
-                )))
-            });
+        // stalled, even if its connection still answers, and is resumed elsewhere.
+        let message = {
+            let message = stream.message();
+            futures::pin_mut!(message);
+            let silent = self.idle.silent();
+            futures::pin_mut!(silent);
+            match futures::future::select(message, silent).await {
+                futures::future::Either::Left((message, _)) => message,
+                futures::future::Either::Right(_) => Err(Status::unavailable(format!(
+                    "no message for over {}s",
+                    IDLE_WINDOW.as_secs()
+                ))),
+            }
+        };
         let failure = match message {
             Ok(Some(response)) => {
-                self.idle = None;
+                self.idle.heard();
                 self.stream_messages += 1;
                 // A stream that got past its opening checkpoint was healthy; a node that
                 // fails right after every start is not retried forever.
@@ -286,6 +316,7 @@ impl StateTransitionSubscription {
         }
         self.stream = None;
         self.consecutive_failures += 1;
+        self.back_off();
         if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
             return Err(match failure {
                 Some(status) => status_error(status),
@@ -352,16 +383,24 @@ impl StateTransitionSubscription {
         }
     }
 
-    /// Open a new stream after a break, backing off after consecutive failures.
+    /// Wait before the next attempt, doubling per consecutive failure.
+    fn back_off(&mut self) {
+        let delay = FIRST_RETRY_DELAY * 2u32.pow(self.consecutive_failures.saturating_sub(1));
+        self.retry = Some(Box::pin(sleep(delay)));
+    }
+
+    /// Open a new stream after a break, once the wait after the last failure has passed.
     async fn reopen(&mut self) -> Result<Streaming<SubscribeToStateTransitionsResponse>, Error> {
         loop {
-            if self.consecutive_failures > 0 {
-                sleep(FIRST_RETRY_DELAY * 2u32.pow(self.consecutive_failures - 1)).await;
+            if let Some(retry) = self.retry.as_mut() {
+                retry.await;
+                self.retry = None;
             }
             match self.open(true).await {
                 Ok(stream) => return Ok(stream),
                 Err(error) => {
                     self.consecutive_failures += 1;
+                    self.back_off();
                     if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES
                         || !error_is_resumable(&error)
                     {
@@ -438,11 +477,15 @@ impl StateTransitionSubscription {
                 }
                 let platform_version = PlatformVersion::get(matched.protocol_version)
                     .map_err(|e| Error::Protocol(e.into()))?;
-                // Decoded under the rules of the block's version, as consensus decoded it.
+                // Decoded under the rules of the block's version, as consensus decoded it, except
+                // that the version is the node's word: values are never nested deeper than the
+                // current limit, even under an early version that set none, since such a tree
+                // could exhaust the stack when it is dropped.
                 let state_transition =
-                    StateTransition::deserialize_from_bytes_untrusted_in_version(
+                    StateTransition::deserialize_from_bytes_untrusted_in_version_with_max_value_depth(
                         &matched.state_transition,
                         platform_version,
+                        MAX_VALUE_DEPTH,
                     )?;
                 let local_match = self.resolved.matches(&state_transition, platform_version);
                 if let Some(data_contract_id) =
@@ -539,6 +582,7 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use tokio::time::timeout;
 
     /// A subscription to transfers received by identity 7, plus an internal filter on identity
     /// 9 standing in for the contract-update filter the SDK adds for itself.
@@ -561,9 +605,10 @@ mod tests {
             stream_address: None,
             resume_from: None,
             consecutive_failures: 0,
+            retry: None,
             contracts_to_refresh: BTreeSet::new(),
             terminated: None,
-            idle: None,
+            idle: IdleWatch::default(),
         }
     }
 
@@ -657,6 +702,119 @@ mod tests {
                 0xff, 0, 0x13
             ]))))
             .is_err());
+    }
+
+    /// A batch creating a `niceDocument` of `data_contract_id` whose data nests `depth` arrays,
+    /// encoded without building the nested value: a fabricated response deeper than the stack
+    /// could drop.
+    fn nested_document_batch(data_contract_id: Identifier, depth: usize) -> Vec<u8> {
+        use dpp::platform_value::Value;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+
+        let encode = |depth: usize| {
+            let nested = (0..depth).fold(Value::Null, |value, _| Value::Array(vec![value]));
+            StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Identifier::from([1u8; 32]),
+                transitions: vec![BatchedTransition::Document(DocumentTransition::Create(
+                    DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                        base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                            id: Identifier::from([2u8; 32]),
+                            identity_contract_nonce: 1,
+                            document_type_name: "niceDocument".to_string(),
+                            data_contract_id,
+                        }),
+                        entropy: [0; 32],
+                        data: [("nested".to_string(), nested)].into(),
+                        prefunded_voting_balance: None,
+                    }),
+                ))],
+                ..Default::default()
+            }))
+            .serialize_to_bytes()
+            .expect("serializable")
+        };
+        // One more level of nesting inserts the same bytes where the innermost value starts.
+        let (shallow, deeper) = (encode(2), encode(3));
+        let at = shallow
+            .iter()
+            .zip(&deeper)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let level = &deeper[at..at + deeper.len() - shallow.len()];
+        let mut bytes = shallow[..at].to_vec();
+        for _ in 2..depth {
+            bytes.extend_from_slice(level);
+        }
+        bytes.extend_from_slice(&shallow[at..]);
+        if depth == 3 {
+            assert_eq!(
+                bytes, deeper,
+                "the nesting level is spliced where it belongs"
+            );
+        }
+        bytes
+    }
+
+    #[test]
+    fn should_refuse_values_nested_too_deep_whatever_version_the_node_reports() {
+        use dash_platform_queries::subscriptions::DocumentFilter;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        // An early version the node may claim, under which consensus set no depth limit.
+        let unlimited = (1..=PlatformVersion::latest().protocol_version)
+            .rev()
+            .filter_map(|version| PlatformVersion::get(version).ok())
+            .find(|version| version.system_limits.max_document_value_depth.is_none())
+            .expect("an early protocol version sets no value depth limit");
+        let contract = Arc::new(
+            get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+                .data_contract_owned(),
+        );
+        let documents = vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(contract.id()).with_document_type("niceDocument"),
+        )];
+        let matching = || StateTransitionSubscription {
+            resolved: ResolvedFilters::resolve(
+                documents.clone(),
+                |_| Some(contract.clone()),
+                PlatformVersion::latest(),
+            )
+            .expect("filters resolve"),
+            filters: documents.clone(),
+            ..subscription()
+        };
+        let claimed = |bytes: Vec<u8>| {
+            let mut matched = matched(bytes);
+            matched.protocol_version = unlimited.protocol_version;
+            response(Responses::StateTransition(matched))
+        };
+
+        // Shallow nesting decodes under that version: reported by a matching subscription,
+        // skipped by one that does not match it.
+        let shallow = nested_document_batch(contract.id(), 16);
+        assert!(matches!(
+            matching().accept(claimed(shallow.clone())),
+            Ok(Some(SubscriptionEvent::StateTransition(_)))
+        ));
+        assert!(matches!(subscription().accept(claimed(shallow)), Ok(None)));
+
+        // Nesting far past what the stack could drop is refused while decoding, by matching and
+        // non-matching subscriptions alike, rather than built and then disposed of.
+        let deep = nested_document_batch(contract.id(), 40_000);
+        assert!(deep.len() <= 100_000, "within the transition size limit");
+        for mut subscription in [matching(), subscription()] {
+            let error = subscription
+                .accept(claimed(deep.clone()))
+                .expect_err("too deep to decode");
+            assert!(error.to_string().contains("exceeds maximum 256"), "{error}");
+        }
     }
 
     #[test]
@@ -922,25 +1080,48 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn should_keep_the_idle_deadline_across_cancelled_reads() {
-        let mut idle: IdleTimer = Box::pin(sleep(MESSAGE_IDLE_DEADLINE));
-        // A read that never completes, cancelled twice before the deadline, as a caller
-        // multiplexing `next()` with other work would.
+    async fn should_keep_the_idle_window_across_cancelled_reads() {
+        let mut idle = IdleWatch::default();
+        // A read cancelled before the window ends, as by a caller multiplexing `next()` with
+        // other work, does not restart it: the next read sees it end 20 seconds in.
+        assert!(timeout(Duration::from_secs(40), idle.silent())
+            .await
+            .is_err());
+        assert!(timeout(Duration::from_secs(40), idle.silent())
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_count_silence_from_a_window_without_messages() {
+        let mut idle = IdleWatch::default();
+        // A message during the first window carries the stream into a second one, on the same
+        // timer: silence is reported once a whole window passes without a message.
+        idle.heard();
+        assert!(timeout(Duration::from_secs(110), idle.silent())
+            .await
+            .is_err());
+        assert!(timeout(Duration::from_secs(10), idle.silent())
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_the_reconnect_wait_across_cancelled_calls() {
+        let mut subscription = subscription();
+        // A stream just failed: the next one opens after a second.
+        subscription.consecutive_failures = 1;
+        subscription.back_off();
+        // Calls cancelled before then do not restart the wait; the third reaches the open
+        // (which the mock SDK, expecting no request, refuses).
         for _ in 0..2 {
-            let cancelled = tokio::time::timeout(
-                Duration::from_secs(40),
-                read_or_idle(&mut idle, std::future::pending::<()>()),
-            )
-            .await;
-            assert!(cancelled.is_err(), "still within the deadline");
+            assert!(timeout(Duration::from_millis(400), subscription.next())
+                .await
+                .is_err());
         }
-        // 80 seconds in: the original deadline fires 10 seconds into the next read, rather
-        // than a fresh 90 seconds.
-        let expired = tokio::time::timeout(
-            Duration::from_secs(40),
-            read_or_idle(&mut idle, std::future::pending::<()>()),
-        )
-        .await;
-        assert_eq!(expired.ok(), Some(None), "the silence deadline expires");
+        assert!(timeout(Duration::from_millis(400), subscription.next())
+            .await
+            .expect("the wait ended and the stream was opened")
+            .is_err());
     }
 }

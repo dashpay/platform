@@ -333,6 +333,17 @@ fn should_bucket_ipv6_clients_by_64_bit_prefix() {
     assert_ne!(per_ip_key(a), per_ip_key(c));
 }
 
+#[test]
+fn should_count_ipv4_clients_of_a_dual_stack_listener_by_their_ipv4_address() {
+    let mapped = |ip: &str| -> IpAddr { format!("::ffff:{ip}").parse().unwrap() };
+    let native: IpAddr = "198.51.100.1".parse().unwrap();
+    assert_ne!(
+        per_ip_key(mapped("198.51.100.1")),
+        per_ip_key(mapped("203.0.113.7"))
+    );
+    assert_eq!(per_ip_key(mapped("198.51.100.1")), per_ip_key(native));
+}
+
 #[tokio::test]
 async fn should_end_the_stream_on_a_transaction_this_node_cannot_decode() {
     let harness = harness(SubscriptionLimits::default());
