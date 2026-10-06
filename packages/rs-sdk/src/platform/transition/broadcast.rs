@@ -45,9 +45,10 @@ pub trait BroadcastStateTransition {
     /// transition executed. For the transition families whose proofs can
     /// only authenticate the affected state (balance top-ups, credit
     /// transfers and withdrawals, address funds movements, shields,
-    /// no-history token operations, key limits updates, contract updates,
-    /// contract moderation and fee claims, and creates and deletes of
-    /// indexOnly documents), this returns
+    /// shielded credit spends (Unshield, ShieldedTransfer, and
+    /// ShieldedWithdrawal), no-history token operations, key limits updates,
+    /// contract updates, contract moderation and fee claims, and creates
+    /// and deletes of indexOnly documents), this returns
     /// [`Error::ExecutionNotProved`] — use
     /// [`wait_for_affected_state`](Self::wait_for_affected_state) for those
     /// flows and treat the result as a height-pinned snapshot.
