@@ -13,7 +13,7 @@ full type definitions included. In CommonJS projects use a dynamic `import()`:
 const { EvoSDK } = await import('@dashevo/evo-sdk');
 ```
 
-Requirements: Node.js ≥ 18.18 or any modern browser with WebAssembly support.
+Requirements: Node.js ≥ 22 or any modern browser with WebAssembly support.
 
 ## Quick start
 

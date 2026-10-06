@@ -3,6 +3,9 @@
   "private": true,
   "version": "5.0.0-beta.2",
   "description": "A decentralized API for the Dash network",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "api": "node scripts/api.js",
     "core-streams": "node scripts/core-streams.js",

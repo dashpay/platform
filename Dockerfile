@@ -72,7 +72,7 @@ ARG DEPS_IMAGE=deps-${DEPS_IMAGE:-base}
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM node:20-alpine${ALPINE_VERSION} AS deps-base
+FROM node:22-alpine${ALPINE_VERSION} AS deps-base
 
 #
 # Install some dependencies
@@ -828,7 +828,10 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:20-alpine${ALPINE_VERSION} AS dashmate-helper
+# Node 24 is the newest usable LTS line: on Node 26 `cbor` (through
+# nofilter 3.1.0) fails every decode with "Insufficient data", which breaks
+# js-dapi-client, and the image ships neither Yarn nor Corepack.
+FROM node:24-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 
@@ -880,7 +883,7 @@ RUN yarn workspaces focus --production @dashevo/platform-test-suite
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:20-alpine${ALPINE_VERSION} AS test-suite
+FROM node:22-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
