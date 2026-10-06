@@ -2,7 +2,7 @@ use crate::error::*;
 use crate::{check_ptr, unwrap_result_or_return};
 use std::os::raw::{c_char, c_uchar};
 
-/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_slice`
+/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_secret_bytes`
 /// allocates a 32-byte scalar copy of the caller's private key, and `SecretKey`
 /// has no `Drop` wipe of its own — so without this the copy would survive on the
 /// stack after the call returns. Mirrors `WipingSecretKey` in
@@ -202,19 +202,21 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
         return -1;
     }
     use dashcore::hashes::Hash;
-    use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use dashcore::secp256k1::{PublicKey, SecretKey};
 
     let sk_bytes = std::slice::from_raw_parts(private_key, 32);
-    let secp = Secp256k1::new();
-    // `WipingSecretKey` scrubs the `from_slice`-allocated scalar copy on every
+    // `WipingSecretKey` scrubs the `from_secret_bytes`-allocated scalar copy on every
     // exit path (the success return below, the `Err` early return, and any
     // panic) — the caller's `private_key` bytes are theirs to manage, but this
     // copy must not linger.
-    let secret_key = match SecretKey::from_slice(sk_bytes) {
+    let secret_key = match <[u8; 32]>::try_from(sk_bytes)
+        .map_err(|_| dashcore::secp256k1::Error::InvalidSecretKey)
+        .and_then(SecretKey::from_secret_bytes)
+    {
         Ok(sk) => WipingSecretKey(sk),
         Err(_) => return -1,
     };
-    let pubkey = PublicKey::from_secret_key(&secp, &secret_key.0).serialize();
+    let pubkey = PublicKey::from_secret_key(&secret_key.0).serialize();
     let hash = dashcore::hashes::hash160::Hash::hash(&pubkey);
     let h: [u8; 20] = hash.to_byte_array();
     std::ptr::copy_nonoverlapping(h.as_ptr(), out_hash, 20);
@@ -263,7 +265,7 @@ mod tests {
     #[test]
     fn test_pubkey_hash_from_private_key_matches_canonical_derivation() {
         use dashcore::hashes::Hash;
-        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use dashcore::secp256k1::{PublicKey, SecretKey};
 
         // A fixed, in-range scalar.
         let mut scalar = [0u8; 32];
@@ -275,9 +277,8 @@ mod tests {
         };
         assert_eq!(rc, 0);
 
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&scalar).expect("in-range scalar");
-        let pubkey = PublicKey::from_secret_key(&secp, &sk).serialize();
+        let sk = SecretKey::from_secret_bytes(scalar).expect("in-range scalar");
+        let pubkey = PublicKey::from_secret_key(&sk).serialize();
         let expected: [u8; 20] = dashcore::hashes::hash160::Hash::hash(&pubkey).to_byte_array();
         assert_eq!(out, expected);
     }

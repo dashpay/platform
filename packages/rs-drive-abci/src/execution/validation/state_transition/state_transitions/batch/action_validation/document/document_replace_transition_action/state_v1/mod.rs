@@ -163,9 +163,11 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
     }
 }
 
-/// What the condition of an `immutable` entry is judged against during a
-/// replace.
-trait ImmutableConditionInputs {
+/// What a condition judging a replace is judged against: the `when` of an
+/// `immutable` entry, here, and a type's `retractedWhen`, which the batch
+/// transformer judges a barred owner's replace on.
+pub(in crate::execution::validation::state_transition::state_transitions::batch) trait ReplaceConditionInputs
+{
     /// The properties the replace writes, with the stored document's under
     /// `$old` for a condition reading them through `$old.`: the written ones,
     /// each changed one set back to its stored value, and an added one, which
@@ -178,7 +180,7 @@ trait ImmutableConditionInputs {
     fn condition_system_values(&self, owner_id: Identifier) -> DocumentSystemValues;
 }
 
-impl ImmutableConditionInputs for DocumentReplaceTransitionAction {
+impl ReplaceConditionInputs for DocumentReplaceTransitionAction {
     fn condition_data(&self) -> Value {
         let written = self.data();
         let stored_changed = self.stored_changed_values();

@@ -100,7 +100,6 @@ async fn private_reveal_is_internally_consistent() {
 
     let wallet = platform_wallet().await;
     let network = wallet_network(&wallet).await;
-    let secp = dashcore::key::Secp256k1::new();
 
     for kind in [ProviderKeyKind::Owner, ProviderKeyKind::Voting] {
         for index in [0u32, 1, 19] {
@@ -115,21 +114,21 @@ async fn private_reveal_is_internally_consistent() {
             // WIF and raw scalar must be the same key.
             let from_wif = PrivateKey::from_wif(wif).expect("valid WIF");
             assert_eq!(
-                from_wif.inner.secret_bytes().to_vec(),
+                from_wif.inner.to_secret_bytes().to_vec(),
                 **scalar,
                 "{kind:?}#{index}: WIF and raw scalar disagree"
             );
 
             // The reported public key must be this private key's.
             assert_eq!(
-                from_wif.public_key(&secp).to_bytes(),
+                from_wif.public_key().to_bytes(),
                 derived.public_key_bytes,
                 "{kind:?}#{index}: public key does not belong to the returned private key"
             );
 
             // ...and the reported address must be that public key's P2PKH on
             // this wallet's own network, not a hardcoded chain.
-            let expected = dashcore::Address::p2pkh(&from_wif.public_key(&secp), network);
+            let expected = dashcore::Address::p2pkh(&from_wif.public_key(), network);
             assert_eq!(
                 address,
                 &expected.to_string(),

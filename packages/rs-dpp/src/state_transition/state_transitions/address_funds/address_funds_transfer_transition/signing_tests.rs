@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, HashMap};
 use dashcore::blockdata::opcodes::all::*;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
+use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dashcore::PublicKey;
 use platform_value::BinaryData;
 
@@ -64,16 +64,15 @@ impl TestAddressSigner {
 
     /// Creates a keypair from a 32-byte seed
     fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
-        let secp = Secp256k1::new();
-        let secret_key = RawSecretKey::from_byte_array(&seed).expect("valid secret key");
-        let raw_public_key = RawPublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key = RawSecretKey::from_secret_bytes(seed).expect("valid secret key");
+        let raw_public_key = RawPublicKey::from_secret_key(&secret_key);
         let public_key = PublicKey::new(raw_public_key);
         (secret_key, public_key)
     }
 
     /// Signs data with a secret key
     fn sign_data(data: &[u8], secret_key: &RawSecretKey) -> Vec<u8> {
-        dashcore::signer::sign(data, secret_key.as_ref())
+        dashcore::signer::sign(data, secret_key.as_secret_bytes())
             .expect("signing should succeed")
             .to_vec()
     }

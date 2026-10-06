@@ -1,3 +1,4 @@
+use crate::bls_signatures::Bls12381G2Impl;
 use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 #[cfg(feature = "core-types-serialization")]
@@ -8,7 +9,6 @@ use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{BorrowDecode, Decode, Encode};
-use dashcore::blsful::Bls12381G2Impl;
 #[cfg(feature = "core-types-serialization")]
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
@@ -309,8 +309,8 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls_signatures::SecretKey;
     use bincode::config;
-    use dashcore::blsful::SecretKey;
     use dashcore::PubkeyHash;
     use rand::rngs::StdRng;
     use rand::SeedableRng;

@@ -403,10 +403,14 @@ impl ExtendedDocumentV0 {
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(self.data_contract_id.to_buffer()),
         );
-        if let Some(token_payment_info) = self.token_payment_info {
+        // Borrowing and cloning the payment info rather than moving it out of `self` is forced
+        // by the type no longer being `Copy`; every protocol version selects this generation and
+        // the cloned value is the one that was previously copied, so the object this builds is
+        // unchanged.
+        if let Some(token_payment_info) = &self.token_payment_info {
             object.insert(
                 property_names::TOKEN_PAYMENT_INFO.to_string(),
-                token_payment_info.try_into()?,
+                token_payment_info.clone().try_into()?,
             );
         }
         Ok(object)

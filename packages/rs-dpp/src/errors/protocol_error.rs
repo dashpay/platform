@@ -290,7 +290,7 @@ pub enum ProtocolError {
     /// BLS signature error
     #[cfg(feature = "bls-signatures")]
     #[error(transparent)]
-    BlsError(#[from] dashcore::blsful::BlsError),
+    BlsError(#[from] crate::bls_signatures::BlsError),
 
     #[error("Private key wrong size: expected 32, got {got}")]
     PrivateKeySizeError { got: u32 },

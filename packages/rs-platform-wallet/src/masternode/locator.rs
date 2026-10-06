@@ -26,19 +26,22 @@
 //! `Unverifiable` when the reference (owner key hash, payout hash) isn't known
 //! yet — never a false pass.
 
+use dashcore::base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use dashcore::base64::{alphabet, Engine};
+use dashcore::eddsa::EddsaPkBytes;
 use std::collections::{BTreeSet, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 use dash_sdk::platform::Fetch;
-use dashcore::blsful::{
+use dashcore::hashes::{hash160, Hash};
+use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
+use dashcore::{Network, PrivateKey};
+use dpp::bls_signatures::{
     Bls12381G2Impl, PublicKey as BlsPublicKey, SecretKey as BlsSecretKey, SerializationFormat,
 };
-use dashcore::ed25519_dalek::SigningKey;
-use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::{PublicKey as SecpPublicKey, Secp256k1, SecretKey as SecpSecretKey};
-use dashcore::{Network, PlatformNodeId, PrivateKey};
+use dpp::ed25519_dalek::SigningKey;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -223,7 +226,7 @@ fn is_mainnet(network: Network) -> bool {
 /// only when below the group order; ed25519 accepts any 32 bytes as a seed.
 fn secret_candidates(bytes: &[u8; 32]) -> Vec<MasternodeLocatorInput> {
     let mut out = Vec::with_capacity(3);
-    if SecpSecretKey::from_slice(bytes).is_ok() {
+    if SecpSecretKey::from_secret_bytes(*bytes).is_ok() {
         out.push(MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
             secret: Zeroizing::new(*bytes),
             compressed: true,
@@ -314,7 +317,7 @@ pub fn parse_locator_input(
         }
         return Ok(ParsedLocatorInput {
             candidates: vec![MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
-                secret: Zeroizing::new(key.inner.secret_bytes()),
+                secret: Zeroizing::new(key.inner.to_secret_bytes()),
                 compressed: key.compressed,
             })],
         });
@@ -322,7 +325,11 @@ pub fn parse_locator_input(
 
     // base64: dashmate's 64-byte node key, or a bare 32-byte secret.
     {
-        if let Ok(bytes) = dashcore::base64::decode(trimmed) {
+        let decoder = GeneralPurpose::new(
+            &alphabet::STANDARD,
+            GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+        );
+        if let Ok(bytes) = decoder.decode(trimmed) {
             match bytes.len() {
                 64 => {
                     let seed = ed25519_seed_from_node_key(&bytes)?;
@@ -353,8 +360,8 @@ pub fn parse_locator_input(
 /// hash160 of the secp256k1 public key for `secret`, or `None` when the
 /// scalar is out of range.
 pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
-    let sk = SecpSecretKey::from_slice(secret).ok()?;
-    let pk = SecpPublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+    let sk = SecpSecretKey::from_secret_bytes(*secret).ok()?;
+    let pk = SecpPublicKey::from_secret_key(&sk);
     let bytes: Vec<u8> = if compressed {
         pk.serialize().to_vec()
     } else {
@@ -381,7 +388,7 @@ pub fn bls_public_keys(secret: &[u8; 32]) -> Option<([u8; 48], [u8; 48])> {
 /// Tenderdash node id for an ed25519 `seed`.
 pub fn ed25519_node_id(seed: &[u8; 32]) -> [u8; 20] {
     let public = SigningKey::from_bytes(seed).verifying_key().to_bytes();
-    PlatformNodeId::from_ed25519_public_key(&public).to_byte_array()
+    EddsaPkBytes::from_bytes(public).hash().to_canonical_bytes()
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,12 +1108,32 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_unpadded_base64_secrets_and_node_keys() {
+        let seed = [0x42u8; 32];
+        let mut node_key = seed.to_vec();
+        node_key.extend_from_slice(&SigningKey::from_bytes(&seed).verifying_key().to_bytes());
+        for bytes in [seed.as_slice(), node_key.as_slice()] {
+            let unpadded = dashcore::base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes);
+            let padded = dashcore::base64::engine::general_purpose::STANDARD.encode(bytes);
+            let parsed = parse_locator_input(&unpadded, Network::Mainnet).expect("unpadded key");
+            assert_eq!(
+                parsed.candidates.len(),
+                parse_locator_input(&padded, Network::Mainnet)
+                    .unwrap()
+                    .candidates
+                    .len()
+            );
+            assert!(parsed.candidates.iter().any(|candidate| matches!(candidate, MasternodeLocatorInput::Secret(LocatorSecret::Ed25519(s)) if **s == seed)));
+        }
+    }
+
+    #[test]
     fn dashmate_node_key_parses_when_consistent() {
         let seed = [0x42u8; 32];
         let public = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
         let mut node_key = seed.to_vec();
         node_key.extend_from_slice(&public);
-        let b64 = dashcore::base64::encode(&node_key);
+        let b64 = dashcore::base64::engine::general_purpose::STANDARD.encode(&node_key);
 
         let parsed = parse_locator_input(&b64, Network::Mainnet).unwrap();
         assert_eq!(parsed.candidates.len(), 1);
@@ -1124,8 +1151,11 @@ mod tests {
         // A corrupted public half is rejected, not silently accepted.
         node_key[40] ^= 0x01;
         assert_eq!(
-            parse_locator_input(&dashcore::base64::encode(&node_key), Network::Mainnet)
-                .unwrap_err(),
+            parse_locator_input(
+                &dashcore::base64::engine::general_purpose::STANDARD.encode(&node_key),
+                Network::Mainnet
+            )
+            .unwrap_err(),
             LocatorParseError::NodeKeyMismatch
         );
     }
@@ -1135,10 +1165,7 @@ mod tests {
     #[test]
     fn ecdsa_key_id_matches_dashcore_address_hash() {
         let key = PrivateKey::from_byte_array(&SECP_SECRET, Network::Mainnet).unwrap();
-        let expected: [u8; 20] = key
-            .public_key(&Secp256k1::new())
-            .pubkey_hash()
-            .to_byte_array();
+        let expected: [u8; 20] = key.public_key().pubkey_hash().to_byte_array();
         assert_eq!(secp_key_id(), expected);
         assert_ne!(
             ecdsa_key_id(&SECP_SECRET, false).unwrap(),

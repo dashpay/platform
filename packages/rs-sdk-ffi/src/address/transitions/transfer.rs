@@ -59,8 +59,9 @@ impl Signer<PlatformAddress> for AddressSigner {
         })?;
 
         // Sign the data using dashcore signer
-        let signature = dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.as_ref())
-            .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
+        let signature =
+            dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.as_secret_bytes())
+                .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
 
         Ok(BinaryData::new(signature.to_vec()))
     }
@@ -83,8 +84,9 @@ impl Signer<PlatformAddress> for AddressSigner {
         })?;
 
         // Sign the data
-        let signature = dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.as_ref())
-            .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
+        let signature =
+            dash_sdk::dpp::dashcore::signer::sign(data, private_key.inner.as_secret_bytes())
+                .map_err(|e| ProtocolError::Generic(format!("Signing failed: {}", e)))?;
 
         // Create P2PKH witness (most common for single key)
         Ok(AddressWitness::P2pkh {
@@ -236,7 +238,10 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
 
         // Parse private key (32 bytes)
         let pk_bytes = std::slice::from_raw_parts(input.private_key, 32);
-        let secret_key = match SecretKey::from_slice(pk_bytes) {
+        let secret_key = match <[u8; 32]>::try_from(pk_bytes)
+            .map_err(|_| dash_sdk::dpp::dashcore::secp256k1::Error::InvalidSecretKey)
+            .and_then(SecretKey::from_secret_bytes)
+        {
             Ok(sk) => sk,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(
