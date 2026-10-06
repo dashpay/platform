@@ -374,12 +374,16 @@ impl SpvRuntime {
 
     /// Start upstream background sync on the current Tokio runtime.
     ///
-    /// Call [`Self::stop`] to stop it.
+    /// Skipped with a warning while a start or stop is in progress, or while
+    /// earlier startup or teardown is still unjoined. Call [`Self::stop`] to
+    /// stop it.
     pub fn spawn_run_loop(self: &Arc<Self>) {
         let Ok(shutdown) = self.shutdown.try_lock() else {
+            tracing::warn!("SPV background sync not spawned: an SPV start or stop is in progress");
             return;
         };
-        if self.ensure_joined(&shutdown).is_err() {
+        if let Err(error) = self.ensure_joined(&shutdown) {
+            tracing::warn!(%error, "SPV background sync not spawned: earlier SPV work is unjoined");
             return;
         }
         let this = Arc::clone(self);
@@ -806,6 +810,17 @@ mod tests {
         SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])))
     }
 
+    /// Poll until `ready` holds, failing the test instead of hanging it.
+    async fn wait_until(what: &str, ready: impl Fn() -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !ready() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+    }
+
     /// An outstanding startup must remain owned until stop joins it.
     #[tokio::test]
     async fn should_refuse_a_start_while_a_parked_run_loop_is_live() {
@@ -1003,9 +1018,10 @@ mod tests {
             let runtime = Arc::clone(&runtime);
             tokio::spawn(async move { runtime.stop().await })
         };
-        while runtime.task.lock().unwrap().is_some() {
-            tokio::task::yield_now().await;
-        }
+        wait_until("stop to take the startup task", || {
+            runtime.task.lock().unwrap().is_none()
+        })
+        .await;
         stopping.abort();
         let _ = stopping.await;
         let blocked = runtime.ensure_no_live_run_loop().is_err();
@@ -1125,9 +1141,10 @@ mod tests {
                     .await
             })
         };
-        while runtime.task.lock().unwrap().is_some() {
-            tokio::task::yield_now().await;
-        }
+        wait_until("stop to take the startup task", || {
+            runtime.task.lock().unwrap().is_none()
+        })
+        .await;
         assert!(!stopping.is_finished());
         runtime.spawn_run_loop();
         assert!(
@@ -1138,20 +1155,44 @@ mod tests {
         stopping.await.unwrap().unwrap();
     }
 
+    /// Failed-startup cleanup runs inside the startup task, whose finished
+    /// handle stays owned until stop joins it.
     #[tokio::test]
-    async fn should_clean_up_failed_startup_and_allow_restart() {
+    async fn should_clean_up_failed_startup_and_allow_restart_after_stop() {
         let (runtime, storage) = offline_runtime().await;
-        let failure = PlatformWalletError::SpvError("mock startup failure".into());
-        assert!(runtime.finish_startup(Err(failure)).await.is_err());
-        assert!(!runtime.is_started());
+        let config = || {
+            ClientConfig::testnet()
+                .with_storage_path(storage.path())
+                .with_restrict_to_configured_peers(true)
+        };
+        let startup = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move {
+                let failure = PlatformWalletError::SpvError("mock startup failure".into());
+                assert!(runtime.finish_startup(Err(failure)).await.is_err());
+            })
+        };
+        *runtime.task.lock().unwrap() = Some(startup);
+        wait_until("the failed startup to finish its cleanup", || {
+            runtime
+                .task
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|task| task.is_finished())
+        })
+        .await;
+
+        assert!(!runtime.is_started(), "failed startup must drop its client");
+        assert!(
+            runtime.start(config()).await.is_err(),
+            "an unjoined startup must block restart"
+        );
+        runtime.stop().await.unwrap();
         runtime
-            .start(
-                ClientConfig::testnet()
-                    .with_storage_path(storage.path())
-                    .with_restrict_to_configured_peers(true),
-            )
+            .start(config())
             .await
-            .unwrap();
+            .expect("restart after stop joins the failed startup");
         runtime.stop().await.unwrap();
     }
 
@@ -1176,9 +1217,10 @@ mod tests {
             tokio::spawn(async move { runtime.stop().await })
         };
         // Stop takes `shutdown` and then parks on the client write lock.
-        while runtime.shutdown.try_lock().is_ok() {
-            tokio::task::yield_now().await;
-        }
+        wait_until("stop to take the shutdown lock", || {
+            runtime.shutdown.try_lock().is_err()
+        })
+        .await;
         stopping.abort();
         let _ = stopping.await;
         assert!(
