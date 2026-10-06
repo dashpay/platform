@@ -5,9 +5,12 @@
 //! shape, returning `None` if no index can serve the query.
 
 use super::super::conditions::WhereClause;
-use super::DriveDocumentCountQuery;
+use super::{
+    document_count_chain_position, point_count_reads_documents,
+    prefix_to_last_count_reads_documents, terminal_reads_documents, DriveDocumentCountQuery,
+};
 use crate::query::ResolvedTimeRange;
-use crate::query::{index_admissible_for_query, SkipIfAbsentBinding};
+use crate::query::{index_admissible_for_query, pins_reach_chain, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,6 +35,10 @@ impl DriveDocumentCountQuery<'_> {
     /// a walk — the same shape as the exact form, one level up. Any other
     /// partial coverage stays rejected: intermediate levels carry no
     /// aggregates, so there is nothing cheap to read.
+    ///
+    /// A `summableOffCountIndex` index is a candidate in all three forms
+    /// through its sums, its document counts: countable or not, its counters'
+    /// trees always sum ([`document_count_chain_position`] for the chain).
     ///
     /// Returns `None` if:
     /// - Any where clause uses an operator other than `Equal` / `In`.
@@ -85,7 +92,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.countable.is_countable() {
+            if !point_count_reads_documents(index) {
                 continue;
             }
             if index.properties.len() != indexable_fields.len() {
@@ -116,18 +123,13 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !index.countable.is_countable() {
-                continue;
-            }
-            // A ranked axis makes the terminal property-name tree an
-            // INDEXED tree, which grovedb's query dispatch refuses to
-            // return as a result element ("path_queries can not refer to
-            // trees") — the element read this form performs would have
-            // nothing legal to select. Skipped until that dispatch admits
-            // indexed elements; a prefix-level ranking
-            // (`rankedCountable: { at }`) keeps its terminal non-indexed
-            // and stays servable.
-            if index.ranked_countable || index.ranked_summable || index.ranked_averageable {
+            // The terminal property-name tree's own element: its count on a
+            // range-countable index, its sum on a `summableOffCountIndex`
+            // index (where every index is sum-bearing). A ranked terminal is
+            // skipped until grovedb's dispatch admits indexed elements; a
+            // prefix-level ranking (`rankedCountable: { at }`) keeps its
+            // terminal non-indexed and stays servable.
+            if !prefix_to_last_count_reads_documents(index) {
                 continue;
             }
             let Some(leading_len) = index.properties.len().checked_sub(1) else {
@@ -159,24 +161,13 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.countable.is_countable() {
+            if !point_count_reads_documents(index) {
                 continue;
             }
             let pin_depth = indexable_fields.len();
-            if pin_depth == 0 || pin_depth >= index.properties.len() {
-                continue;
-            }
-            let Some(min_at_position) = index
-                .ranked_countable_at
-                .iter()
-                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
-                .min()
-            else {
-                continue;
-            };
-            // The deepest pinned property (position pin_depth - 1) must
-            // sit at or below the shallowest ranked level.
-            if min_at_position > pin_depth - 1 {
+            // An average ranking's chain carries the counts as well, and a
+            // `summableOffCountIndex` index's sum chain its document counts.
+            if !pins_reach_chain(index, pin_depth, document_count_chain_position(index)) {
                 continue;
             }
             let leading_covered = index.properties[..pin_depth]
@@ -198,7 +189,9 @@ impl DriveDocumentCountQuery<'_> {
     /// - There is exactly one range-operator where-clause, on a property
     ///   that is the *last* property of the index (the IndexLevel
     ///   terminator). This is the property whose values get walked.
-    /// - The index has `range_countable = true` and `countable.is_countable()`.
+    /// - The index has `range_countable = true` and `countable.is_countable()`,
+    ///   or is a `summableOffCountIndex` index, read through its range sums
+    ///   ([`Self::counter_sums_query`]) since its count trees count groups.
     ///
     /// Returns `None` if no such index exists or if there's more than one
     /// range operator in the where clauses (which would require nested range
@@ -279,7 +272,7 @@ impl DriveDocumentCountQuery<'_> {
             if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !index.countable.is_countable() {
+            if !terminal_reads_documents(index) {
                 continue;
             }
 

@@ -834,8 +834,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     no `timeRange` and is not on an indexOnly type, the keys cover it
 ///     exactly, every source shares its index property's value kind, and the
 ///     key cannot move off the document it found: its schema properties are
-///     immutable, and `$ownerId` is only a part on a type that is neither
-///     transferable nor tradeable), and the contract reference validation
+///     immutable, none an optional `deletableDocument` reference by id, which
+///     a replace may clear once its document is deleted (item 73), and
+///     `$ownerId` is only a part on a type that is neither transferable nor
+///     tradeable), and the contract reference validation
 ///     checks one into another contract, refusing it with
 ///     `ReferencedDocumentLookupInvalidError` (40137). The document
 ///     reference validation (generation 0, reached only from this version)
@@ -1953,6 +1955,64 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     author whose documents can not be deleted can still take one back. Inert
 ///     before this version: the gate and the keyword exist only here.
 ///
+/// 73. **An index that counts another index's entries
+///     (`summableOffCountIndex`)**: an index keyword of meta-schema v3 and
+///     parser generation 3, in place (`Index::summable_off_count_index`,
+///     `IndexLevelTypeInfo::summable_off_count_index`), admitted only on an
+///     indexOnly type with `rangeSummable`, naming a source index of the type
+///     that holds every document once; its other properties must be fixed by
+///     the source through unchanging `where` values of same-contract
+///     `permanentDocument` or `moderatedDocument` references
+///     (`validate_summable_off_count_indexes_lossless`, judging a value as a
+///     lookup's key part is judged, `why_value_can_change`: an optional
+///     `deletableDocument` reference by id a replace may clear once its
+///     document is deleted is not fixed, and from this version neither is a
+///     findBy key part, a findBy function's param or a `where` value beside
+///     one), and one summed value per type is kept. Such an index keeps one `Element::SumItem` per group
+///     in place of a value tree and entries: the index walkers (insert and
+///     delete index level 2) move it by one per document, preallocation
+///     creates it at zero, and document create state validation 1, document index-only delete
+///     state validation 0, the within-batch collision tracker and the proof
+///     index never use it. `rankedSummable` and `rankedAverageable` gain the
+///     `{ "at": ... }` form on such an index only, stamped on the index
+///     levels (`IndexLevel::ranked_sum_grouping`, `ranked_average_grouping`,
+///     `sum_propagating`) and laid out by Drive as sum chains, count-and-sum
+///     chains where an average ranking or `rangeCountable` adds counts
+///     (`property_name_tree_type_and_ranked_axes_for_level`,
+///     `ranked_chain_value_tree_type`); its `rankedCountable` is parsed into
+///     that Sum ranking, since a document count there is its sums (no
+///     `rangeCountable` needed). Sum, average and ranked queries name
+///     the source index for the summed value, and a count query reads such
+///     an index's sums, its document counts: a point read
+///     (`document_count_of_element`), and a ranked or having-range read on
+///     its Sum secondaries (`read_axis_for`), and a range read through the
+///     sum surface's range forms (`counter_sums_query`). A range total
+///     through any index whose path passes through a ranked level (its own,
+///     or one another index ranks at a shared level) is refused cleanly
+///     (`refuse_a_range_total_through_a_ranked_index`). Drive's batch methods,
+///     `apply_drive_operations` and `convert_drive_operations_to_grove_operations`
+///     at version 1, refuse a batch moving one document type's counters for
+///     more than one document (`refuse_repeated_counter_moves`). Needs
+///     grovedb's `GROVE_V4`, which admits a bare `SumItem` under a
+///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
+///     the keyword, which every earlier grammar refuses. For any index, the
+///     range-total verifiers at version 1 (`DRIVE_VERIFY_METHOD_VERSIONS_V3`:
+///     `verify_aggregate_count_proof`, `verify_carrier_aggregate_count_proof`,
+///     `verify_aggregate_sum_proof`, `verify_carrier_aggregate_sum_proof`,
+///     `verify_aggregate_count_and_sum_proof` and
+///     `verify_carrier_aggregate_count_and_sum_proof`) verify a proof showing
+///     the range holds nothing (an equality value no document holds, or an
+///     empty tree of a kind the read does not aggregate), which grovedb's
+///     aggregate verifiers refuse, as a zero total or no carrier branch
+///     (`or_empty_range_total`), and the unproven range totals, keyed on the
+///     same verifier versions, read an absent value as zero
+///     (`aggregate_or_zero_when_absent`); and
+///     `verify_composite_documents_proof` 1 reads the sum-bearing items of a
+///     `documentsSummable` type as documents. Their
+///     version 0, which every earlier protocol version selects, refuses both
+///     proofs, and the unproven total fails, as released; the prover is
+///     unchanged.
+///
 /// 75. **No reference by id to an indexOnly document type**: the contract
 ///     reference validation 0 (`validate_data_contract_references`), in place,
 ///     refuses a `permanentDocument`, `deletableDocument` or
@@ -2110,7 +2170,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; a batch moving one document type's summableOffCountIndex counters for more than one document refused; repaid identity debt credited to the processing fee pool); convert_drive_operations_to_grove_operations 1 (refuses that counter batch too, then converts as before); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list

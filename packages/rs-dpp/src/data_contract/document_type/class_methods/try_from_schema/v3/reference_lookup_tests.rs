@@ -350,6 +350,35 @@ fn should_refuse_find_by_into_a_document_type_that_can_move_the_key() {
     contract(frozen).expect("an immutable key property holds the key");
 }
 
+/// A key part that is an immutable `deletableDocument` reference by id moves
+/// when it is optional, since a replace may clear it once its document is
+/// deleted, and holds when it is required, since no replace can drop it.
+#[test]
+fn should_refuse_find_by_keyed_by_an_optional_deletable_reference_only() {
+    let mut required = charter_contract(permanent_join_request(members_find_by()));
+    required["documentSchemas"]["charter"] = json!({
+        "type": "object",
+        "canBeDeleted": true,
+        "properties": { "name": { "type": "string", "maxLength": 63, "position": 0 } },
+        "additionalProperties": false
+    });
+    let join_request = &mut required["documentSchemas"]["joinRequest"];
+    join_request["documentsMutable"] = json!(true);
+    join_request["immutable"] = json!(["submittedCharterId"]);
+    join_request["properties"]["submittedCharterId"]["refersTo"] =
+        json!({ "type": "deletableDocument", "documentType": "charter" });
+
+    let mut optional = required.clone();
+    optional["documentSchemas"]["joinRequest"]["required"] = json!(["message"]);
+    assert_refused(
+        contract(optional),
+        "findBy names \"submittedCharterId\" of \"joinRequest\", which a replace can clear once \
+         its document is deleted",
+    );
+
+    contract(required).expect("a required reference is never cleared, so the key holds");
+}
+
 #[test]
 fn should_refuse_find_by_reading_the_writer_on_a_type_that_can_change_owner() {
     let reads_the_writer = charter_contract(permanent_join_request(json!({

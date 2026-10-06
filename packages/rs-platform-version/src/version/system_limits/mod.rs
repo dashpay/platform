@@ -97,7 +97,7 @@ pub struct SystemLimits {
     /// proofs attest the wrong ranking against the live root hash.
     ///
     /// The cap is not the only thing standing between that machinery and a live path, and a
-    /// reader raising it needs to know what the other two are:
+    /// reader raising it needs to know what the others are:
     ///
     /// * `Drive::update_contract_keywords_operations` puts N blind document deletes and M adds
     ///   in one batch over a single shared index group. Every batch it actually emits refills
@@ -110,6 +110,19 @@ pub struct SystemLimits {
     ///   the accumulated operations through, so document operations in *that* variant do see
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
     ///   not a drop-in for batch transitions: it carries no delete variant.
+    /// * A `summableOffCountIndex` counter is read and rewritten by each document conversion
+    ///   (`Drive::add_summable_off_count_counter_operations`). Two documents of one batch in one
+    ///   counter group, which a source keyed by more than its owner admits (a terminal such as
+    ///   `["$ownerId", "emoji"]`), would each read the stored count and write the same next
+    ///   value, losing one move; the group's last delete would then find the counter at zero
+    ///   and fail. Protocol version 14's batch methods refuse such a batch instead
+    ///   (`Drive::refuse_repeated_counter_moves`), but per document type, not per group, and
+    ///   as an internal error: with the cap raised, two likes of different posts, or two posts
+    ///   each preallocating their own counters, would pass validation (the within-batch entry
+    ///   tracker does not claim counter groups) and then fail as an internal error, dropping a
+    ///   valid transition unpaid. Raising the cap therefore needs the counter moves folded
+    ///   across the documents of a batch (one read and one write per counter) in place of
+    ///   that refusal.
     ///
     /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
     ///   own code. Its balance write is absolute rather than a delta, so two pool operations in

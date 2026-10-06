@@ -181,7 +181,9 @@ impl Drive {
             let expected_commitment =
                 index_only_row_commitment(&document, document_type, platform_version)?;
             // An index whose entries outlive the delete is neither checked
-            // nor cleared: its entries stay to expire with their window.
+            // nor cleared: its entries stay to expire with their window. A
+            // summableOffCountIndex index keeps no entry to check (it yields no
+            // paths): its counter moves once these entries matched.
             for index in document_type
                 .indexes()
                 .values()

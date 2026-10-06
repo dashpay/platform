@@ -218,6 +218,42 @@ impl DocumentOperationType<'_> {
         {
             return Ok(());
         }
+        // Each document earns a drainage budget, but all budgets are spent
+        // before the first document's low-level ops are queued.
+        self.for_each_document_type(
+            drive,
+            block_info,
+            transaction,
+            |contract, document_type, _| {
+                drive.prepare_document_time_range_ttl(
+                    contract,
+                    document_type,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            },
+            platform_version,
+        )
+    }
+
+    /// Calls `visit` with the contract and document type of every document
+    /// this operation writes or deletes, once per document, the consumed
+    /// documents of an `AddDocumentAndDeleteConsumed` included, and whether
+    /// the write may preallocate referring types' trees: a plain insert, the
+    /// one write that does (a contested insert never does; an overriding insert
+    /// that turns out an update is counted conservatively). Withdrawals and
+    /// document history write system types and are not visited. Resolution reads are unbilled
+    /// maintenance; normal conversion still resolves and bills the contract
+    /// through its usual path.
+    pub(crate) fn for_each_document_type(
+        &self,
+        drive: &Drive,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        mut visit: impl FnMut(&DataContract, DocumentTypeRef, bool) -> Result<(), Error>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         match self {
             Self::AddDocument {
                 contract_info,
@@ -249,8 +285,6 @@ impl DocumentOperationType<'_> {
                 document_type_info,
                 ..
             } => {
-                // Preparation reads are unbilled maintenance. Normal conversion
-                // still resolves and bills the contract through its usual path.
                 let resolved = contract_info.clone().resolve(
                     drive,
                     block_info,
@@ -259,27 +293,20 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 let contract = resolved.as_ref();
-                let document_type = document_type_info.clone().resolve(contract)?;
-                drive.prepare_document_time_range_ttl(
+                visit(
                     contract,
-                    document_type,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
+                    document_type_info.clone().resolve(contract)?,
+                    matches!(self, Self::AddDocument { .. }),
                 )
             }
             Self::MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations,
             } => {
-                // Each document earns a drainage budget, but all budgets are
-                // spent before the first document's low-level ops are queued.
-                for _ in &document_operations.operations {
-                    drive.prepare_document_time_range_ttl(
+                for operation in &document_operations.operations {
+                    visit(
                         document_operations.contract,
                         document_operations.document_type,
-                        block_info.time_ms,
-                        transaction,
-                        platform_version,
+                        matches!(operation, DocumentOperation::AddOperation { .. }),
                     )?;
                 }
                 Ok(())
@@ -299,23 +326,22 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 let contract = resolved.as_ref();
-                let document_types = std::iter::once(document_type_info.clone()).chain(
-                    consumed_documents.iter().map(|(_, document_type_name)| {
-                        DocumentTypeInfo::DocumentTypeName(document_type_name.clone())
-                    }),
-                );
-                for document_type_info in document_types {
-                    drive.prepare_document_time_range_ttl(
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    true,
+                )?;
+                for (_, document_type_name) in consumed_documents {
+                    visit(
                         contract,
-                        document_type_info.resolve(contract)?,
-                        block_info.time_ms,
-                        transaction,
-                        platform_version,
+                        DocumentTypeInfo::DocumentTypeName(document_type_name.clone())
+                            .resolve(contract)?,
+                        false,
                     )?;
                 }
                 Ok(())
             }
-            // These write to system contracts, which have no TTL indexes.
+            // These write to system contracts.
             Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
         }
     }
