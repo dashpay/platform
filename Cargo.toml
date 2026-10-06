@@ -65,14 +65,14 @@ grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "9791d2772
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "9791d277207998b7789c85b0745e99d37040a12e" }
 grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "9791d277207998b7789c85b0745e99d37040a12e" }
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9791d277207998b7789c85b0745e99d37040a12e" }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "870af146f7656b98e746d1a84f08c725c5af68da" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "314f10600e35311f3d875a6e8740476ab6c79c0c" }
 tokio-metrics = "0.5"
 
 [patch.crates-io]
