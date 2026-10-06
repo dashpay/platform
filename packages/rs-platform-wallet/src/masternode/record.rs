@@ -347,17 +347,9 @@ where
                     agg.operator_height = height;
                 }
                 if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                    // Evonode-only; `None` on a regular masternode.
-                    // `platform_node_id` is a `PlatformNodeId` newtype
-                    // (rust-dashcore #885) whose `consensus_decode` normalizes
-                    // the wire's reversed uint160-internal bytes to the
-                    // canonical Tenderdash `SHA256(pubkey)[..20]` order
-                    // (rust-dashcore #887/#889), so `to_byte_array()` here is
-                    // already canonical and matches the derived ownership
-                    // index (`accessors.rs`) and dashmate display directly —
-                    // do NOT reverse platform-side.
+                    // Evonode IDs use canonical Tenderdash bytes in the ownership index.
                     if let Some(node_id) = p.platform_node_id {
-                        agg.platform_node_id = Some(node_id.to_byte_array());
+                        agg.platform_node_id = Some(node_id.to_canonical_bytes());
                         agg.platform_node_height = height;
                     }
                 }
@@ -372,12 +364,9 @@ where
                     agg.platform_http_port = p.platform_http_port;
                     agg.service_height = height;
                 }
-                // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
-                // (rust-dashcore #885, was `Option<[u8; 20]>`); decoded bytes
-                // are canonical forward order (see the ProRegTx arm above).
                 if let Some(node_id) = p.platform_node_id {
                     if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                        agg.platform_node_id = Some(node_id.to_byte_array());
+                        agg.platform_node_id = Some(node_id.to_canonical_bytes());
                         agg.platform_node_height = height;
                     }
                 }

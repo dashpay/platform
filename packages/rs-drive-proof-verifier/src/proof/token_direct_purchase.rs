@@ -9,10 +9,7 @@ use dapi_grpc::platform::{
     },
     VersionedGrpcResponse,
 };
-use dpp::{
-    dashcore::{secp256k1::hashes::hex::DisplayHex, Network},
-    version::PlatformVersion,
-};
+use dpp::{dashcore::Network, version::PlatformVersion};
 use drive::drive::Drive;
 
 use crate::{
@@ -51,7 +48,7 @@ impl FromProof<GetTokenDirectPurchasePricesRequest> for TokenDirectPurchasePrice
         .map(<[u8; 32]>::try_from)
         .collect::<Result<BTreeSet<_>, _>>() // BTreeSet to make it unique
         .map_err(|e| Error::RequestError {
-            error: format!("token id {} has invalid length", e.to_lower_hex_string()),
+            error: format!("token id {} has invalid length", hex::encode(e)),
         })?
         .into_iter()
         .collect::<Vec<_>>();

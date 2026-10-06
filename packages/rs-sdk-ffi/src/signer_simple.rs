@@ -311,7 +311,6 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     out_signature_len: *mut usize,
     out_error: *mut u8,
 ) -> i32 {
-    use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
     use dash_sdk::dpp::identity::KeyType;
     use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
     use std::ffi::CStr;
@@ -396,8 +395,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
-    let secp = Secp256k1::new();
-    let derived = match master.derive_priv(&secp, &path) {
+    let derived = match master.derive_priv(&path) {
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
@@ -406,7 +404,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     // returns. `derived` self-wipes separately: `ExtendedPrivKey`
     // zeroizes on `Drop`.
     let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
-        zeroize::Zeroizing::new(derived.private_key.secret_bytes());
+        zeroize::Zeroizing::new(derived.private_key.to_secret_bytes());
 
     // ---- Sign ---------------------------------------------------------------
     // `dashcore::signer::sign` returns a 65-byte compact recoverable

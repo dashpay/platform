@@ -147,7 +147,6 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
     identity_index: u32,
     key_index: u32,
 ) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
-    use dashcore::secp256k1::Secp256k1;
     use key_wallet::bip32::ExtendedPubKey;
 
     let path = identity_auth_derivation_path_for_type(
@@ -156,7 +155,6 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
         identity_index,
         key_index,
     )?;
-    let secp = Secp256k1::new();
     // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
     // wrap it in `Zeroizing` directly — but its inner
     // `secp256k1::SecretKey` does implement `Drop` with a memzero,
@@ -167,16 +165,16 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
     // returned `private_key` is wrapped in `Zeroizing` below so
     // the 32-byte scalar copy crossing the function boundary is
     // also scrubbed on the caller's drop.
-    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+    let derived = master.derive_priv(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
         ))
     })?;
-    let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+    let extended_pub = ExtendedPubKey::from_priv(&derived);
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.secret_bytes()),
+        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
         public_key: extended_pub.public_key.serialize(),
     })
 }
@@ -196,7 +194,6 @@ pub fn derive_identity_auth_keypair(
     identity_index: u32,
     key_index: u32,
 ) -> Result<(DerivationPath, ExtendedPrivKey, PublicKey), PlatformWalletError> {
-    use dashcore::secp256k1::Secp256k1;
     use key_wallet::bip32::ExtendedPubKey;
 
     let full_path = identity_auth_derivation_path(network, identity_index, key_index)?;
@@ -209,8 +206,7 @@ pub fn derive_identity_auth_keypair(
             ))
         })?;
 
-    let secp = Secp256k1::new();
-    let extended_pub = ExtendedPubKey::from_priv(&secp, &auth_key);
+    let extended_pub = ExtendedPubKey::from_priv(&auth_key);
     Ok((full_path, auth_key, extended_pub.public_key))
 }
 
@@ -434,7 +430,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             ))
         })?;
 
-        Ok(Zeroizing::new(secret_key.secret_bytes()))
+        Ok(Zeroizing::new(secret_key.to_secret_bytes()))
     }
 
     /// Get a read-lock handle to the shared [`WalletManager`].

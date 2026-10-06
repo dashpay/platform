@@ -6,7 +6,7 @@ use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
-use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
+use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -67,14 +67,13 @@ impl WasmSdk {
         network: Network,
         network_label: &str,
     ) -> Result<KeyPair, WasmSdkError> {
-        let secp = Secp256k1::new();
-        let public_key = private_key.public_key(&secp);
+        let public_key = private_key.public_key();
         let public_key_bytes = public_key.inner.serialize();
         let address = Address::p2pkh(&public_key, network);
 
         Ok(KeyPair {
             private_key_wif: private_key.to_wif(),
-            private_key_hex: hex::encode(private_key.inner.secret_bytes()),
+            private_key_hex: hex::encode(private_key.inner.to_secret_bytes()),
             public_key: hex::encode(public_key_bytes),
             address: address.to_string(),
             network: network_label.to_string(),
@@ -96,7 +95,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
 
         // Ensure secret key is valid before building info
-        SecretKey::from_slice(&key_bytes)
+        SecretKey::from_secret_bytes(key_bytes)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
 
         let key_pair = Self::build_key_pair(&private_key, net, network_wasm.as_str())?;
@@ -221,13 +220,12 @@ impl WasmSdk {
         let hash = sha256::Hash::hash(message_bytes);
 
         // Sign the hash
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&private_key.inner.secret_bytes())
+        let secret_key = SecretKey::from_secret_bytes(private_key.inner.to_secret_bytes())
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
 
         let message_hash =
             dash_sdk::dpp::dashcore::secp256k1::Message::from_digest(hash.to_byte_array());
-        let signature = secp.sign_ecdsa(&message_hash, &secret_key);
+        let signature = secret_key.sign_ecdsa(message_hash);
 
         Ok(hex::encode(signature.serialize_compact()))
     }

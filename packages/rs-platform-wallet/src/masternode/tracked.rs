@@ -1092,7 +1092,7 @@ pub fn registration_from_transaction(
         payout_script: p.script_payout.as_bytes().to_vec(),
         service_address: Some(p.service_address.to_string()),
         is_evonode: p.masternode_type == ProviderMasternodeType::HighPerformance,
-        platform_node_id: p.platform_node_id.map(|id| id.to_byte_array()),
+        platform_node_id: p.platform_node_id.map(|id| id.to_canonical_bytes()),
         platform_http_port: p.platform_http_port,
     })
 }

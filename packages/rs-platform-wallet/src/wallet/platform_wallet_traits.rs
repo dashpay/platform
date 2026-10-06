@@ -136,6 +136,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.accounts()
     }
 
+    fn unrecorded_spend_heights(&self, tx: &Transaction) -> BTreeSet<u32> {
+        self.core_wallet.unrecorded_spend_heights(tx)
+    }
+
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.core_wallet.immature_transactions()
     }

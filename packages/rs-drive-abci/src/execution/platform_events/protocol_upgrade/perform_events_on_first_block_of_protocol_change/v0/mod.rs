@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::masternode::v0::required_legacy_address;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -192,7 +193,7 @@ impl<C> Platform<C> {
                 .expect("there must be keys, we already checked");
 
             let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
+                required_legacy_address(masternode.state.owner_address, "ownerAddress")?,
                 last_key_id + 1,
                 platform_version,
             )?;
