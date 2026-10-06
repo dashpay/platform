@@ -2,6 +2,8 @@
 """Prepare a reviewed SwiftData snapshot from the iOS release-data branch.
 
 The caller supplies a release ID and a metadata commit, never a Platform ref.
+The base branch is the repository's default branch, which the workflow reads
+from repository metadata, so renaming the development branch needs no edit.
 Only the iOS monitor has Apple credentials; its publication proof is trusted
 only after proving it belongs to the fixed release-data branch. All Git writes
 take place in a temporary clone. --dry-run generates and checks the patch but
@@ -29,7 +31,6 @@ import urllib.request
 
 IOS_REPO = "dashpay/dashwallet-ios"
 PLATFORM_REPO = "dashpay/platform"
-BASE_BRANCH = "v4.2-dev"
 DATA_BRANCH = "schema-release-data"
 SDK = "packages/swift-sdk"
 REGISTRY = f"{SDK}/schema-releases.json"
@@ -73,6 +74,17 @@ def git(directory, *args, env=None):
 def require_string(value, pattern, label):
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise ReleaseError(f"Invalid {label}")
+    return value
+
+
+def require_branch(value):
+    """Accept any branch name Git accepts, except one Git would parse as an option."""
+    if not isinstance(value, str) or not value or value.startswith("-"):
+        raise ReleaseError("Invalid Platform base branch")
+    try:
+        run(None, "git", "check-ref-format", f"refs/heads/{value}")
+    except ReleaseError:
+        raise ReleaseError("Invalid Platform base branch") from None
     return value
 
 
@@ -219,11 +231,11 @@ class GitHub:
                 raise ReleaseError(f"GitHub {method} response could not be read or decoded; "
                                    "retry the workflow to reconcile its state") from error
 
-    def pull_requests(self, branch):
+    def pull_requests(self, branch, base):
         results = []
         page = 1
         while True:
-            query = urllib.parse.urlencode({"head": f"dashpay:{branch}", "base": BASE_BRANCH,
+            query = urllib.parse.urlencode({"head": f"dashpay:{branch}", "base": base,
                                             "state": "all", "sort": "created", "direction": "desc",
                                             "per_page": 100, "page": page})
             rows = self.request("GET", f"pulls?{query}")
@@ -309,11 +321,12 @@ No runtime schema switch is included. This draft requires human review and a man
 """
 
 
-def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
+def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False, *, base_branch):
+    require_branch(base_branch)
     proof, manifest, fixture = validate_publication(data_repo, data_commit, release_id)
     branch = f"codex/freeze-swift-schema-v{manifest['schema']['schema_version']}"
     api = GitHub(token)
-    pulls = api.pull_requests(branch)
+    pulls = api.pull_requests(branch, base_branch)
     opened = [pr for pr in pulls if pr["state"] == "open"]
     if len(opened) > 1:
         raise ReleaseError("Multiple open snapshot pull requests need manual reconciliation")
@@ -325,18 +338,18 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
         git(clone, "config", "user.name", "Dash schema release automation")
         git(clone, "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
         git(clone, "config", "commit.gpgsign", "false")
-        git(clone, "fetch", "origin", f"{BASE_BRANCH}:refs/remotes/origin/{BASE_BRANCH}", env=env)
+        git(clone, "fetch", "origin", f"{base_branch}:refs/remotes/origin/{base_branch}", env=env)
         # Read executable code only from the reviewed base. A contributor may
         # edit code on the draft branch; it must never become this worker's
         # generator, even when running a dry-run with no remote writes.
         trusted_generator = Path(temporary) / "trusted-freeze-schema-models.py"
-        trusted_generator.write_bytes(read_blob(clone, f"origin/{BASE_BRANCH}", GENERATOR,
+        trusted_generator.write_bytes(read_blob(clone, f"origin/{base_branch}", GENERATOR,
                                                 allow_executable=True))
 
         def generate(*args):
             run(temporary, sys.executable, "-I", str(trusted_generator), "--repo", str(clone), *args)
 
-        git(clone, "checkout", "--detach", f"origin/{BASE_BRANCH}")
+        git(clone, "checkout", "--detach", f"origin/{base_branch}")
         merged_registry = json_object((clone / REGISTRY).read_bytes(), "merged snapshot registry")
         if release_id in merged_registry.get("releases", {}):
             associate_release(merged_registry, release_id, release_entry(proof, manifest, data_commit))
@@ -358,9 +371,9 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
             git(clone, "checkout", "-b", branch, f"origin/{branch}")
             # Merge with no commit so --dry-run never writes a commit. The
             # publication commit below includes the merge and generated patch.
-            git(clone, "merge", "--no-commit", "--no-ff", f"origin/{BASE_BRANCH}")
+            git(clone, "merge", "--no-commit", "--no-ff", f"origin/{base_branch}")
         else:
-            git(clone, "checkout", "-b", branch, f"origin/{BASE_BRANCH}")
+            git(clone, "checkout", "-b", branch, f"origin/{base_branch}")
         before_registry = json_object((clone / REGISTRY).read_bytes(), "snapshot registry")
         fetch_sources(clone, source_commits(before_registry) | {manifest["platform_sha"]}, env)
         generate("--check")
@@ -417,7 +430,7 @@ def prepare(repo, data_repo, release_id, data_commit, token, dry_run=False):
         else:
             created = api.request("POST", "pulls", {
                 "title": f"chore(swift-sdk): freeze App Store schema {manifest['schema']['schema_version']}",
-                "head": branch, "base": BASE_BRANCH, "draft": True,
+                "head": branch, "base": base_branch, "draft": True,
                 "body": pr_body(proof, manifest, data_commit)})
             print(f"Snapshot pull request: {created['html_url']}")
 
@@ -429,13 +442,15 @@ def main():
     parser.add_argument("--data-repo", required=True, type=Path)
     parser.add_argument("--repo", default=Path.cwd(), type=Path)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--base-branch", required=True,
+                        help="Platform default branch; the workflow reads it from repository metadata")
     args = parser.parse_args()
     token = os.environ.get("SCHEMA_RELEASE_TOKEN", "")
     if not token:
         parser.error("SCHEMA_RELEASE_TOKEN is required for read access, including dry runs")
     try:
         prepare(args.repo.resolve(), args.data_repo.resolve(), args.release_id,
-                args.data_commit, token, args.dry_run)
+                args.data_commit, token, args.dry_run, base_branch=args.base_branch)
     except (ReleaseError, OSError, sqlite3.Error) as error:
         print(f"Freeze stopped: {error}", file=sys.stderr)
         return 1
