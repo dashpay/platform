@@ -751,6 +751,12 @@ mod tests {
 
     mod proof_verification {
         use super::*;
+        use crate::execution::types::execution_event::ExecutionEvent;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::validation::state_transition::processor::process_state_transition;
+        use crate::platform_types::platform::PlatformRef;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::shielded::compute_shielded_verification_fee;
 
         #[tokio::test]
         async fn test_invalid_proof_returns_shielded_proof_error() {
@@ -885,6 +891,51 @@ mod tests {
                     &platform,
                     &guard_serialized_transition,
                     "shield",
+                );
+            }
+
+            {
+                let state = platform.state.load();
+                let transaction = platform.drive.grove.start_transaction();
+                let platform_ref = PlatformRef {
+                    drive: &platform.drive,
+                    state: &state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                };
+                let event = process_state_transition(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    st.clone(),
+                    Some(&transaction),
+                )
+                .expect("prepare successful shield")
+                .data
+                .expect("successful shield event");
+                let ExecutionEvent::PaidFromAddressInputs {
+                    execution_operations,
+                    additional_fixed_fee_cost,
+                    ..
+                } = event
+                else {
+                    panic!("address-paid shield event");
+                };
+                let StateTransition::Shield(ShieldTransition::V1(shield)) = &st else {
+                    panic!("shield");
+                };
+                assert_eq!(
+                    additional_fixed_fee_cost,
+                    Some(
+                        compute_shielded_verification_fee(shield.actions.len(), platform_version)
+                            .expect("flat shield compute fee")
+                    )
+                );
+                assert!(
+                    execution_operations.iter().all(|operation| !matches!(
+                        operation,
+                        ValidationOperation::PrecalculatedOperation(_)
+                    )),
+                    "successful shields cover validation reads in their flat compute fee"
                 );
             }
 
@@ -3342,6 +3393,7 @@ mod tests {
         use super::*;
         use crate::execution::check_tx::CheckTxLevel;
         use crate::execution::types::execution_event::ExecutionEvent;
+        use crate::execution::types::execution_operation::ValidationOperation;
         use crate::execution::validation::state_transition::processor::process_state_transition;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::{
             check_tx_errors, has_recorded_nullifier, insert_nullifier_into_state,
@@ -3352,6 +3404,7 @@ mod tests {
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
         use dpp::block::block_info::BlockInfo;
+        use drive::drive::Drive;
 
         #[tokio::test]
         async fn should_charge_a_failed_shield_proof_and_consume_its_nonce() {
@@ -3409,6 +3462,37 @@ mod tests {
         ) -> (Credits, Credits) {
             let state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
+            let pv = PlatformVersion::latest();
+            let block_info = BlockInfo::default();
+            let StateTransition::Shield(ShieldTransition::V1(shield)) = st else {
+                panic!("shield");
+            };
+            let mut read_operations = vec![];
+            platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut read_operations, pv)
+                .expect("pool read");
+            for action in &shield.actions {
+                assert!(!platform
+                    .drive
+                    .has_nullifier(
+                        &action.nullifier,
+                        Some(&transaction),
+                        &mut read_operations,
+                        pv,
+                    )
+                    .expect("nullifier read"));
+            }
+            let read_fee = Drive::calculate_fee(
+                None,
+                Some(read_operations),
+                &block_info.epoch,
+                platform.drive.config.epochs_per_era,
+                pv,
+                None,
+            )
+            .expect("independently price validation reads");
+            assert!(read_fee.processing_fee > 0);
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
                 state: &state,
@@ -3426,12 +3510,63 @@ mod tests {
             .expect("failure event");
             let ExecutionEvent::PaidFromAddressInputs {
                 ref mut additional_fixed_fee_cost,
+                ref operations,
+                ref execution_operations,
+                user_fee_increase,
                 ..
             } = event
             else {
                 panic!("address-paid failure event");
             };
             let penalty = additional_fixed_fee_cost.replace(0).expect("penalty");
+            assert_eq!(
+                execution_operations
+                    .iter()
+                    .filter(|operation| matches!(
+                        operation,
+                        ValidationOperation::PrecalculatedOperation(fee) if fee == &read_fee
+                    ))
+                    .count(),
+                1,
+                "a failed proof must retain its pool and nullifier read costs exactly once"
+            );
+            let authentication_operations = execution_operations
+                .iter()
+                .filter(|operation| {
+                    !matches!(
+                        operation,
+                        ValidationOperation::PrecalculatedOperation(fee) if fee == &read_fee
+                    )
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let mut without_reads = platform
+                .drive
+                .apply_drive_operations(
+                    operations.clone(),
+                    false,
+                    &block_info,
+                    Some(&transaction),
+                    pv,
+                    Some(state.previous_fee_versions()),
+                )
+                .expect("price nonce updates");
+            ValidationOperation::add_many_to_fee_result(
+                &authentication_operations,
+                &mut without_reads,
+                pv,
+            )
+            .expect("price authentication");
+            let mut complete = without_reads.clone();
+            complete
+                .checked_add_assign(read_fee)
+                .expect("include independently measured reads");
+            complete.apply_user_fee_increase(user_fee_increase);
+            without_reads.apply_user_fee_increase(user_fee_increase);
+            assert!(
+                without_reads.total_base_fee() < complete.total_base_fee(),
+                "one credit below the complete fee still covers the old incomplete estimate"
+            );
             let fee = platform
                 .platform
                 .validate_fees_of_event(
@@ -3445,6 +3580,7 @@ mod tests {
                 .data
                 .expect("estimate")
                 .total_base_fee();
+            assert_eq!(fee, complete.total_base_fee());
             (fee, penalty)
         }
 
@@ -3572,7 +3708,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_bound_failed_proof_penalties_after_reserving_the_estimated_fee() {
+        async fn should_reserve_validation_reads_before_capping_failed_proof_penalties() {
             let pv = PlatformVersion::latest();
             let nominal = pv
                 .drive_abci

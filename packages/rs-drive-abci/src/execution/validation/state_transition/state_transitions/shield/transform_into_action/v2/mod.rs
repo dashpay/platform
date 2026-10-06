@@ -114,6 +114,19 @@ impl ShieldStateTransitionTransformIntoActionValidationV2 for ShieldTransition {
                 &transition.binding_signature,
                 &extra_sighash_data,
             ) {
+                // A nonce-only failure has no Shield compute fee covering these reads.
+                // Retain them as ordinary metered work before reserving the base fee.
+                let state_read_fee = Drive::calculate_fee(
+                    None,
+                    Some(drive_operations),
+                    &block_info.epoch,
+                    drive.config.epochs_per_era,
+                    platform_version,
+                    None,
+                )?;
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(state_read_fee));
+
                 // These balances still reflect the full requested debits. Restore them
                 // before successful-path reallocation so a failure moves no principal.
                 let mut restored = inputs_with_remaining_balance;
