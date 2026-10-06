@@ -211,10 +211,7 @@ impl SubscriptionService {
             sender,
             next_height: start,
         };
-        tokio::spawn(async move {
-            let _admission = admission;
-            scan.run().await;
-        });
+        tokio::spawn(scan.run(admission));
         Ok(ReceiverStream::new(receiver))
     }
 
@@ -257,6 +254,8 @@ enum Stop {
     Closed,
     /// End the stream with this status.
     Fail(Status),
+    /// The client did not read for `SEND_DEADLINE`.
+    SlowClient,
 }
 
 struct Scan {
@@ -270,11 +269,21 @@ struct Scan {
 }
 
 impl Scan {
-    async fn run(mut self) {
+    /// Scan until the subscription ends, then give its capacity back before telling the
+    /// client why: a client that stopped reading must not hold a slot while the status waits.
+    async fn run(mut self, admission: Admission) {
         let outcome = self.scan().await;
-        if let Err(Stop::Fail(status)) = outcome {
-            debug!(code = ?status.code(), message = status.message(), "ending state transition subscription");
-            let _ = timeout(SEND_DEADLINE, self.sender.send(Err(status))).await;
+        drop(admission);
+        match outcome {
+            // The client is not reading: the status goes only if there is room for it.
+            Err(Stop::SlowClient) => {
+                let _ = self.sender.try_send(Err(slow_client()));
+            }
+            Err(Stop::Fail(status)) => {
+                debug!(code = ?status.code(), message = status.message(), "ending state transition subscription");
+                let _ = timeout(SEND_DEADLINE, self.sender.send(Err(status))).await;
+            }
+            Ok(()) | Err(Stop::Closed) => {}
         }
     }
 
@@ -401,7 +410,7 @@ impl Scan {
                     if self.try_checkpoint()? {
                         full_since = None;
                     } else if full_since.get_or_insert_with(Instant::now).elapsed() >= SEND_DEADLINE {
-                        return Err(Stop::Fail(slow_client()));
+                        return Err(Stop::SlowClient);
                     }
                     *last_checkpoint = Instant::now();
                 }
@@ -512,7 +521,7 @@ impl Scan {
         match timeout(SEND_DEADLINE, self.sender.send(Ok(response))).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(_)) => Err(Stop::Closed),
-            Err(_) => Err(Stop::Fail(slow_client())),
+            Err(_) => Err(Stop::SlowClient),
         }
     }
 }

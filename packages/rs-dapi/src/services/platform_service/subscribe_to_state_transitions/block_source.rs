@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use dpp::platform_value::Value;
-use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use quick_cache::Weighter;
 use quick_cache::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -225,6 +225,15 @@ impl BlockSource {
             ))));
         }
 
+        let protocol_version = u32::try_from(block.header.version.app).map_err(|_| {
+            ReadMiss::Failed(DapiError::Internal(format!(
+                "block {height} has protocol version {} out of range",
+                block.header.version.app
+            )))
+        })?;
+        // Transactions decode under the rules of the version the block executed with, as
+        // consensus decoded them (older versions put no depth limit on document values).
+        let platform_version = PlatformVersion::get(protocol_version).ok();
         let mut txs = Vec::new();
         for (index, (tx, result)) in block.data.txs.iter().zip(&results.txs_results).enumerate() {
             if result.code != 0 {
@@ -238,17 +247,10 @@ impl BlockSource {
             txs.push(CommittedTx {
                 index: index as u32,
                 hash: Sha256::digest(&bytes).into(),
-                state_transition: StateTransition::deserialize_from_bytes_untrusted(&bytes)
-                    .map_err(|e| e.to_string()),
+                state_transition: decode_state_transition(&bytes, platform_version),
                 bytes: Arc::new(bytes),
             });
         }
-        let protocol_version = u32::try_from(block.header.version.app).map_err(|_| {
-            ReadMiss::Failed(DapiError::Internal(format!(
-                "block {height} has protocol version {} out of range",
-                block.header.version.app
-            )))
-        })?;
         let time_ms = parse_block_time_ms(&block.header.time).ok_or_else(|| {
             ReadMiss::Failed(DapiError::Internal(format!(
                 "block {height} has an unreadable time '{}'",
@@ -262,6 +264,18 @@ impl BlockSource {
             txs,
         }))
     }
+}
+
+/// A committed transaction decoded as the block's protocol version decoded it; `None` for a
+/// version this build does not know, whose block the scan refuses anyway.
+fn decode_state_transition(
+    bytes: &[u8],
+    platform_version: Option<&PlatformVersion>,
+) -> Result<StateTransition, String> {
+    let platform_version =
+        platform_version.ok_or_else(|| "unknown protocol version".to_string())?;
+    StateTransition::deserialize_from_bytes_untrusted_in_version(bytes, platform_version)
+        .map_err(|e| e.to_string())
 }
 
 /// The page `[page_start, page_end]` from the metas Tenderdash returned, which must cover

@@ -21,6 +21,9 @@ pub use block_source::{BlockSource, TenderdashBlocks};
 pub use stream::{SubscriptionLimits, SubscriptionService, SubscriptionStream};
 
 use crate::services::platform_service::PlatformServiceImpl;
+use crate::services::platform_service::shielded_proof_failure_budget::{
+    is_internal, last_forwarded_address,
+};
 use dapi_grpc::platform::v0::SubscribeToStateTransitionsRequest;
 use dapi_grpc::platform::v0::subscribe_to_state_transitions_request::Version;
 use dapi_grpc::platform::v0::{
@@ -147,33 +150,65 @@ fn filter_error_status(error: SubscriptionFilterError) -> Status {
     }
 }
 
-/// The client address Envoy reports: the last `X-Forwarded-For` entry, which Envoy appends
-/// from the connection it accepted and a client cannot forge. Without the header the request
-/// did not come through the gateway.
+/// The client a request comes from: the connection's peer, or, when that peer is the gateway
+/// (a loopback or private address), the last `X-Forwarded-For` entry, which Envoy appends from
+/// the connection it accepted and a client cannot forge. A client connecting directly is its
+/// own peer, whatever header it sends.
 fn client_ip<T>(request: &Request<T>) -> Option<IpAddr> {
-    request
-        .metadata()
-        .get("x-forwarded-for")?
-        .to_str()
-        .ok()?
-        .rsplit(',')
-        .next()?
-        .trim()
-        .parse()
-        .ok()
+    let peer = request.remote_addr().map(|address| address.ip());
+    let behind_gateway = peer.is_none_or(is_internal);
+    let forwarded = behind_gateway
+        .then(|| {
+            request
+                .metadata()
+                .get_all("x-forwarded-for")
+                .iter()
+                .next_back()
+                .and_then(|value| value.to_str().ok())
+                .and_then(last_forwarded_address)
+        })
+        .flatten();
+    forwarded.or(peer)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::SocketAddr;
 
-    #[test]
-    fn should_read_the_client_address_from_the_last_forwarded_entry() {
+    fn request_from(peer: &str, forwarded_for: Option<&str>) -> Request<()> {
         let mut request = Request::new(());
         request
-            .metadata_mut()
-            .insert("x-forwarded-for", "10.0.0.1, 203.0.113.7".parse().unwrap());
+            .extensions_mut()
+            .insert(tonic::transport::server::TcpConnectInfo {
+                local_addr: None,
+                remote_addr: Some(peer.parse::<SocketAddr>().unwrap()),
+            });
+        if let Some(value) = forwarded_for {
+            request
+                .metadata_mut()
+                .insert("x-forwarded-for", value.parse().unwrap());
+        }
+        request
+    }
+
+    #[test]
+    fn should_read_the_client_address_the_gateway_forwards() {
+        let request = request_from("10.0.0.2:41000", Some("10.0.0.1, 203.0.113.7"));
         assert_eq!(client_ip(&request), Some("203.0.113.7".parse().unwrap()));
-        assert_eq!(client_ip(&Request::new(())), None);
+    }
+
+    #[test]
+    fn should_use_the_peer_of_a_direct_connection_with_or_without_a_header() {
+        let peer: IpAddr = "198.51.100.1".parse().unwrap();
+        assert_eq!(
+            client_ip(&request_from("198.51.100.1:41000", None)),
+            Some(peer)
+        );
+        // A forged header from a client connecting directly is ignored.
+        assert_eq!(
+            client_ip(&request_from("198.51.100.1:41000", Some("203.0.113.7"))),
+            Some(peer)
+        );
     }
 }

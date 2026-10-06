@@ -57,7 +57,8 @@ js-sys = "0.3.64"
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+# `test-util`: paused time in the subscription idle-deadline tests.
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "test-util"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [

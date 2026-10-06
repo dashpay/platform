@@ -94,14 +94,14 @@ impl SourceKey {
     }
 }
 
-fn is_internal(ip: IpAddr) -> bool {
+pub(super) fn is_internal(ip: IpAddr) -> bool {
     match ip.to_canonical() {
         IpAddr::V4(v4) => v4.is_loopback() || v4.is_private(),
         IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
     }
 }
 
-fn last_forwarded_address(header: &str) -> Option<IpAddr> {
+pub(super) fn last_forwarded_address(header: &str) -> Option<IpAddr> {
     let entry = header.rsplit(',').next()?.trim();
     IpAddr::from_str(entry)
         .ok()

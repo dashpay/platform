@@ -33,13 +33,14 @@ use dash_platform_queries::subscriptions::{
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::{sleep, TransportError};
 use rs_dapi_client::{Address, DapiClientError, DapiRequestExecutor, RequestSettings};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 /// Consecutive failed attempts after which the subscription gives up.
@@ -106,6 +107,22 @@ pub struct StateTransitionSubscription {
     contracts_to_refresh: BTreeSet<Identifier>,
     /// Why the subscription ended, once it has: later calls fail rather than read on.
     terminated: Option<String>,
+    /// Fires when the current stream has been silent for `MESSAGE_IDLE_DEADLINE`; armed by
+    /// the first read after a message or a new stream.
+    idle: Option<IdleTimer>,
+}
+
+/// A deadline kept across reads.
+type IdleTimer = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// `read`'s output, or `None` if `idle` fires first. `idle` is kept by the caller, so a read
+/// that is cancelled and started again does not restart the deadline.
+async fn read_or_idle<F: Future>(idle: &mut IdleTimer, read: F) -> Option<F::Output> {
+    futures::pin_mut!(read);
+    match futures::future::select(read, idle.as_mut()).await {
+        futures::future::Either::Left((output, _)) => Some(output),
+        futures::future::Either::Right(_) => None,
+    }
 }
 
 impl Sdk {
@@ -176,6 +193,7 @@ impl Sdk {
             consecutive_failures: 0,
             contracts_to_refresh: BTreeSet::new(),
             terminated: None,
+            idle: None,
         };
         // Open the first stream now, so a refused request fails here rather than on `next`.
         subscription.stream = Some(subscription.open(false).await?);
@@ -216,26 +234,27 @@ impl StateTransitionSubscription {
             None => {
                 let stream = self.reopen().await?;
                 self.stream_messages = 0;
+                self.idle = None;
                 self.stream.insert(stream)
             }
         };
         // The node checkpoints at least every few seconds; a stream quiet for much longer is
-        // stalled, even if its connection still answers, and is resumed elsewhere.
-        let message = {
-            let message = stream.message();
-            futures::pin_mut!(message);
-            let idle = sleep(MESSAGE_IDLE_DEADLINE);
-            futures::pin_mut!(idle);
-            match futures::future::select(message, idle).await {
-                futures::future::Either::Left((message, _)) => message,
-                futures::future::Either::Right(_) => Err(Status::unavailable(format!(
+        // stalled, even if its connection still answers, and is resumed elsewhere. The timer
+        // lives in the subscription, so a caller cancelling `next()` does not restart it.
+        let idle = self
+            .idle
+            .get_or_insert_with(|| Box::pin(sleep(MESSAGE_IDLE_DEADLINE)));
+        let message = read_or_idle(idle, stream.message())
+            .await
+            .unwrap_or_else(|| {
+                Err(Status::unavailable(format!(
                     "no message for {}s",
                     MESSAGE_IDLE_DEADLINE.as_secs()
-                ))),
-            }
-        };
+                )))
+            });
         let failure = match message {
             Ok(Some(response)) => {
+                self.idle = None;
                 self.stream_messages += 1;
                 // A stream that got past its opening checkpoint was healthy; a node that
                 // fails right after every start is not retried forever.
@@ -419,8 +438,12 @@ impl StateTransitionSubscription {
                 }
                 let platform_version = PlatformVersion::get(matched.protocol_version)
                     .map_err(|e| Error::Protocol(e.into()))?;
+                // Decoded under the rules of the block's version, as consensus decoded it.
                 let state_transition =
-                    StateTransition::deserialize_from_bytes_untrusted(&matched.state_transition)?;
+                    StateTransition::deserialize_from_bytes_untrusted_in_version(
+                        &matched.state_transition,
+                        platform_version,
+                    )?;
                 let local_match = self.resolved.matches(&state_transition, platform_version);
                 if let Some(data_contract_id) =
                     self.resolved.followed_data_contract(&state_transition)
@@ -540,6 +563,7 @@ mod tests {
             consecutive_failures: 0,
             contracts_to_refresh: BTreeSet::new(),
             terminated: None,
+            idle: None,
         }
     }
 
@@ -895,5 +919,28 @@ mod tests {
         assert!(subscription.next().await.is_err());
         assert_eq!(subscription.resume_height(), Some(42));
         assert!(subscription.stream.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_the_idle_deadline_across_cancelled_reads() {
+        let mut idle: IdleTimer = Box::pin(sleep(MESSAGE_IDLE_DEADLINE));
+        // A read that never completes, cancelled twice before the deadline, as a caller
+        // multiplexing `next()` with other work would.
+        for _ in 0..2 {
+            let cancelled = tokio::time::timeout(
+                Duration::from_secs(40),
+                read_or_idle(&mut idle, std::future::pending::<()>()),
+            )
+            .await;
+            assert!(cancelled.is_err(), "still within the deadline");
+        }
+        // 80 seconds in: the original deadline fires 10 seconds into the next read, rather
+        // than a fresh 90 seconds.
+        let expired = tokio::time::timeout(
+            Duration::from_secs(40),
+            read_or_idle(&mut idle, std::future::pending::<()>()),
+        )
+        .await;
+        assert_eq!(expired.ok(), Some(None), "the silence deadline expires");
     }
 }

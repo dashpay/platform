@@ -565,8 +565,40 @@ async fn should_drop_a_client_that_stops_reading_while_waiting_for_replay_capaci
     .await
     .expect("the wait ends without a permit");
     match outcome {
-        Err(Stop::Fail(status)) => assert_eq!(status.code(), tonic::Code::ResourceExhausted),
-        Err(Stop::Closed) => panic!("expected the slow client to be dropped, not closed"),
+        Err(Stop::SlowClient) => {}
+        Err(_) => panic!("expected the slow client to be dropped"),
         Ok(_) => panic!("expected no permit"),
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn should_free_a_slow_clients_slot_once_its_deadline_passes() {
+    let harness = harness(SubscriptionLimits {
+        max_subscriptions: 1,
+        ..Default::default()
+    });
+    // More matches than the stream buffer holds, and a client that never reads.
+    for _ in 0..100 {
+        harness.commit(vec![credit_transfer(7)]);
+    }
+    let _unread = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            recipient_filter(7),
+            Some(1),
+        )
+        .await
+        .unwrap();
+    assert!(
+        harness.service.admit(None).is_err(),
+        "the only slot is taken"
+    );
+
+    // Just past the slow-reader deadline, not a second one, the slot is free again.
+    sleep(SEND_DEADLINE + Duration::from_secs(5)).await;
+    assert!(
+        harness.service.admit(None).is_ok(),
+        "a slow client's slot is freed at its deadline"
+    );
 }
