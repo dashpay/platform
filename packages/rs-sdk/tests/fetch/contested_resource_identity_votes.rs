@@ -1,13 +1,104 @@
 //! Test GetContestedResourceIdentityVotesRequest
 
 use crate::fetch::{common::setup_logs, config::Config};
+use dash_sdk::platform::resource_votes_with_counts::{
+    ResourceVoteWithCount, ResourceVotesWithCountsByIdentity,
+};
 use dash_sdk::platform::FetchMany;
+use dash_sdk::Sdk;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     identifier::Identifier,
-    voting::votes::resource_vote::ResourceVote,
+    platform_value::Value,
+    voting::{
+        vote_choices::resource_vote_choice::ResourceVoteChoice,
+        vote_polls::{
+            contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll, VotePoll,
+        },
+        votes::resource_vote::{v0::ResourceVoteV0, ResourceVote},
+    },
 };
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
+
+/// A vote of the mock tests: `choice` on the contested DPNS name `label`.
+fn dpns_name_vote(label: &str, choice: ResourceVoteChoice) -> ResourceVote {
+    ResourceVote::V0(ResourceVoteV0 {
+        vote_poll: VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([1; 32]),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text(label.to_string()),
+            ],
+        }),
+        resource_vote_choice: choice,
+    })
+}
+
+/// Given the votes of an identity with their counts, when I fetch them using mock API, then I
+/// get the same votes and counts, and no entry for a vote poll the identity has not voted on.
+#[tokio::test]
+async fn test_mock_fetch_many_resource_votes_with_counts() {
+    let mut sdk = Sdk::new_mock();
+
+    let query = ContestedResourceVotesGivenByIdentityQuery {
+        identity_id: Identifier::new([7; 32]),
+        limit: Some(10),
+        offset: None,
+        order_ascending: true,
+        start_at: None,
+    };
+    let voted_once = Identifier::new([2; 32]);
+    let voted_three_times = Identifier::new([3; 32]);
+    let not_voted = Identifier::new([4; 32]);
+    let expected: ResourceVotesWithCountsByIdentity = [
+        (
+            voted_once,
+            Some(ResourceVoteWithCount {
+                resource_vote: dpns_name_vote(
+                    "quantum",
+                    ResourceVoteChoice::TowardsIdentity(Identifier::new([5; 32])),
+                ),
+                vote_count: 1,
+            }),
+        ),
+        (
+            voted_three_times,
+            Some(ResourceVoteWithCount {
+                resource_vote: dpns_name_vote("cooldog", ResourceVoteChoice::Lock),
+                vote_count: 3,
+            }),
+        ),
+    ]
+    .into_iter()
+    .collect();
+
+    sdk.mock()
+        .expect_fetch_many::<Identifier, ResourceVoteWithCount, _, ResourceVotesWithCountsByIdentity>(
+            query.clone(),
+            Some(expected.clone()),
+        )
+        .await
+        .expect("register the expectation");
+
+    let retrieved = ResourceVoteWithCount::fetch_many(&sdk, query)
+        .await
+        .expect("fetch votes with counts");
+
+    assert_eq!(retrieved, expected);
+    assert_eq!(
+        retrieved
+            .get(&voted_three_times)
+            .and_then(Option::as_ref)
+            .map(|vote| vote.vote_count),
+        Some(3)
+    );
+    assert!(
+        !retrieved.contains_key(&not_voted),
+        "a vote poll that was not voted on has no entry"
+    );
+}
 
 /// When we request votes for a non-existing identity, we should get no votes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -107,4 +198,23 @@ pub(super) async fn contested_resource_identity_votes_ok() {
 
     // Then I get some votes
     assert!(!votes.is_empty(), "votes expected for this query");
+
+    // When I read the same votes with their counts
+    let votes_with_counts = ResourceVoteWithCount::fetch_many(&sdk, protx)
+        .await
+        .expect("fetch votes with counts for identity");
+
+    // Then I get the same votes, each counted at least once
+    assert_eq!(votes_with_counts.len(), votes.len());
+    for (vote_poll_id, vote) in &votes {
+        let vote_with_count = votes_with_counts
+            .get(vote_poll_id)
+            .and_then(Option::as_ref)
+            .expect("every vote is returned with its count");
+        assert_eq!(Some(&vote_with_count.resource_vote), vote.as_ref());
+        assert!(
+            vote_with_count.vote_count >= 1,
+            "an existing vote was given at least once"
+        );
+    }
 }

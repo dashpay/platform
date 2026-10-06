@@ -27,6 +27,7 @@ pub mod identity_keys_remaining_budgets;
 pub mod moderation_charters;
 pub mod query;
 pub mod query_settings;
+pub mod resource_votes_with_counts;
 #[cfg(feature = "shielded")]
 pub mod shielded;
 mod system_data_contract;

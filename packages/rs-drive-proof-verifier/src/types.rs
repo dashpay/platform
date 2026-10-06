@@ -389,6 +389,29 @@ pub struct ContestedVote(
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
 
+/// The vote an identity currently has on a vote poll, with the number of times the identity
+/// has voted on that poll.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct ResourceVoteWithCount {
+    /// The identity's current vote on the vote poll
+    pub resource_vote: ResourceVote,
+    /// How many times the identity has voted on the vote poll, the current vote included: 1
+    /// after a first vote, one more with each changed vote. Platform refuses a changed vote
+    /// once this reaches the `votes_allowed_per_masternode` of the active protocol version.
+    pub vote_count: u16,
+}
+
+/// Votes casted by some identity, each with the number of times the identity has voted on its
+/// vote poll, by vote poll unique id.
+///
+/// Every entry is `Some`: a vote poll the identity has not voted on has no entry.
+pub type ResourceVotesWithCountsByIdentity = RetrievedObjects<Identifier, ResourceVoteWithCount>;
+
 /// Represents the current state of quorums in the platform.
 ///
 /// This struct holds various information related to the current quorums,

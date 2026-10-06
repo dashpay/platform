@@ -2183,6 +2183,60 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
     }
 }
 
+impl FromProof<platform::GetContestedResourceIdentityVotesRequest>
+    for ResourceVotesWithCountsByIdentity
+{
+    type Request = platform::GetContestedResourceIdentityVotesRequest;
+    type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Decode request to get drive query
+        let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)?;
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
+        let (root_hash, votes) = drive_query
+            .verify_identity_votes_given_with_counts_proof::<Vec<_>>(
+                supported_grovedb_proof_bytes(proof)?,
+                &contract_provider_fn,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let response: ResourceVotesWithCountsByIdentity = votes
+            .into_iter()
+            .map(|(id, (resource_vote, vote_count))| {
+                (
+                    id,
+                    Some(ResourceVoteWithCount {
+                        resource_vote,
+                        vote_count,
+                    }),
+                )
+            })
+            .collect();
+
+        Ok((response.into_option(), mtd.clone(), proof.clone()))
+    }
+}
+
 impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTimestamp {
     type Request = platform::GetVotePollsByEndDateRequest;
     type Response = platform::GetVotePollsByEndDateResponse;
@@ -6301,6 +6355,56 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_votes_with_counts_request_without_a_version() {
+        // Delegates to ContestedResourceVotesGivenByIdentityQuery::try_from_request,
+        // which returns Error::EmptyVersion when the request version is missing.
+        let request = platform::GetContestedResourceIdentityVotesRequest { version: None };
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesWithCountsByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_votes_with_counts_response_without_a_proof() {
+        // The counts are read from the proof only, so a response carrying none is refused
+        // before the context provider is asked for anything.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request: platform::GetContestedResourceIdentityVotesRequest =
+            GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![7u8; 32],
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove: true,
+            }
+            .into();
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesWithCountsByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
     }
 
     // ---------------------------------------------------------------------
