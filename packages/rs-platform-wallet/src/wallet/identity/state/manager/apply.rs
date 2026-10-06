@@ -240,13 +240,16 @@ impl IdentityManager {
     }
 
     /// Blocked moves on a closed cycle: following blockers through the other
-    /// blocked moves leads back to the start.
+    /// blocked moves leads back to the start. Empty when another blocked move
+    /// waits on a cycle member: that slot is claimed twice (only an
+    /// inconsistent batch does this), and staging could strand the loser
+    /// outside the wallet.
     fn cycle_members(&self, pending: &[IdentityEntry]) -> Vec<Identifier> {
         let blockers: BTreeMap<Identifier, Identifier> = pending
             .iter()
             .filter_map(|entry| Some((entry.id, self.blocker(entry)?)))
             .collect();
-        blockers
+        let cycle: Vec<Identifier> = blockers
             .keys()
             .copied()
             .filter(|start| {
@@ -260,7 +263,15 @@ impl IdentityManager {
                 }
                 false
             })
-            .collect()
+            .collect();
+        let contested = blockers
+            .iter()
+            .any(|(id, blocker)| !cycle.contains(id) && cycle.contains(blocker));
+        if contested {
+            Vec::new()
+        } else {
+            cycle
+        }
     }
 
     /// Park an in-wallet identity in the observed bucket, freeing its slot;

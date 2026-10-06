@@ -1595,6 +1595,33 @@ mod tests {
         );
     }
 
+    /// A swap whose slot a third entry also claims (an inconsistent batch)
+    /// is not staged, so no identity is stranded outside the wallet.
+    #[test]
+    fn should_not_stage_a_swap_whose_slot_is_claimed_twice() {
+        let w = [0xAB; 32];
+        let batch = merged([
+            snapshot(slotted_entry(1, Some(w), 1)),
+            snapshot(slotted_entry(3, Some(w), 0)),
+            snapshot(slotted_entry(2, Some(w), 0)),
+        ]);
+        replay_twice(
+            [
+                slotted_entry(1, Some(w), 0),
+                slotted_entry(3, Some(w), 1),
+                slotted_entry(2, Some(w), 5),
+            ],
+            batch,
+            |info| {
+                assert_eq!(info.identity_manager.identity_count(), 3);
+                assert!(info.identity_manager.out_of_wallet_identities.is_empty());
+                assert_slot(info, w, 0, 1);
+                assert_slot(info, w, 1, 3);
+                assert_slot(info, w, 5, 2);
+            },
+        );
+    }
+
     /// A contact tombstone for a present (non-orphan) owner
     /// must drop the matching pending request.
     #[test]

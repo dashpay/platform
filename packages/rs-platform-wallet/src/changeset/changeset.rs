@@ -1061,9 +1061,10 @@ impl Merge for IdentityKeysChangeSet {
 ///
 /// `IdentityChangeSet::merge` does NOT resolve `identities` vs
 /// `removed` for the same key — both fields are extended
-/// independently. Apply runs inserts before removes, so a merged
-/// changeset that contains both an insert and a tombstone for the
-/// same identity will end up "removed". Same hazard as
+/// independently. Apply runs removes first and drops the snapshots of
+/// removed identities, so a merged changeset that contains both an
+/// insert and a tombstone for the same identity will end up "removed".
+/// Same hazard as
 /// [`ContactChangeSet`]; same mitigation: every current emitter
 /// produces only one of {insert, tombstone} per key per mutation.
 #[derive(Debug, Clone, Default, PartialEq)]
