@@ -281,7 +281,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // would then overwrite it with the stale loaded one. An entry a
             // removed same-id predecessor left behind is what the host holds
             // now — a commit of its may have been accepted after the start
-            // state was read — so it wins over the loaded cursor.
+            // state was read — so it wins over the loaded cursor, and a
+            // loaded cursor below it is owed to the host like any in-memory
+            // reset, in this wallet's inherited epoch, so no coverage is
+            // recorded beside the host's higher cursor without a reset
+            // (dashpay/platform#4302 review).
             {
                 let mut durable_cursors = self.durable_cursors.lock().await;
                 let mut wm = self.wallet_manager.write().await;
@@ -295,10 +299,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
+                let host_cursor = durable_cursors
+                    .get(&wallet_id)
+                    .map_or(loaded_cursor, |entry| entry.height);
                 durable_cursors
                     .entry(wallet_id)
                     .or_insert(crate::changeset::DurableCursor::at(loaded_cursor));
                 self.inherit_rewind_barrier(&mut wm, &wallet_id);
+                if loaded_cursor < host_cursor {
+                    if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+                        let epoch = info.rewind_barrier.epoch();
+                        info.dashpay_backfill.owe_cursor(loaded_cursor, epoch);
+                    }
+                }
             }
             inserted_in_manager.push(wallet_id);
 

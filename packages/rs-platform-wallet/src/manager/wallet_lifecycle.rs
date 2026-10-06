@@ -478,13 +478,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // preserves `syncedHeight` on the metadata upsert — so the seed is
         // the host's cursor, not the freshly built one. The snapshot above
         // was read before this lock, and a same-id predecessor still
-        // registered then may have had a commit accepted since: the entry
-        // that commit left in `DurableCursors` is what the host holds now,
-        // so it wins over the snapshot. With no host row at all the host
-        // holds nothing, and a leftover entry is discarded. When the built
-        // cursor is lower than the host's, the wallet is in effect reset in
-        // memory only: that reset is owed to the host like any other, and
-        // the next DashPay backfill record round carries it, so coverage
+        // registered then may have had a commit accepted since — or a whole
+        // same-id registration may have come and gone, creating the row the
+        // snapshot did not see. The entry those writes left in
+        // `DurableCursors` is what the host holds now, so it wins over the
+        // snapshot, row or no row. When the built cursor is lower than the
+        // host's, the wallet is in effect reset in memory only: that reset is
+        // owed to the host like any other, in this wallet's inherited epoch,
+        // and the next DashPay backfill record round carries it, so coverage
         // never reaches disk beside the host's higher cursor
         // (dashpay/platform#4302 review).
         //
@@ -493,11 +494,63 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // seed. Coverage for an account that is absent while this wallet
         // scans is not coverage: the scan does not watch the account's
         // scripts, and the account-generation guard only stops batches still
-        // in flight, not an advance already committed. Those accounts re-arm
-        // when they are registered, at the cost of one more backfill.
+        // in flight, not an advance already committed. The host still holds
+        // the old record and the account rows, and would restore both beside
+        // this wallet's advanced cursor after a crash — so the filtered
+        // record is stored BEFORE the wallet is published to the scanner.
+        // Those accounts re-arm when they are registered, at the cost of one
+        // more backfill.
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
+        let (snapshot_cursor, mut host_backfill) =
+            match host_wallets.remove(&registration_wallet_id) {
+                Some((cursor, record)) => (Some(cursor), record),
+                None => (None, Default::default()),
+            };
+        let held: Vec<(Identifier, Identifier, u32)> = platform_info
+            .core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .keys()
+            .map(|key| {
+                (
+                    Identifier::from(key.user_identity_id),
+                    Identifier::from(key.friend_identity_id),
+                    key.index,
+                )
+            })
+            .collect();
+        let dropped =
+            host_backfill.retain(|owner, contact, index| held.contains(&(*owner, *contact, index)));
+        if dropped && host_backfill.is_empty() {
+            host_backfill = Default::default();
+        }
         let wallet_id = {
             let mut durable_cursors = self.durable_cursors.lock().await;
+            if dropped {
+                tracing::info!(
+                    wallet_id = %hex::encode(registration_wallet_id),
+                    kept = host_backfill.covered.len(),
+                    "wallet recreated: DashPay backfill coverage for receival accounts it \
+                     does not hold is re-armed on the host before the wallet is published"
+                );
+                self.persister
+                    .store(
+                        registration_wallet_id,
+                        crate::changeset::PlatformWalletChangeSet {
+                            dashpay_backfill: Some(host_backfill.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| {
+                        tracing::error!(
+                            wallet_id = %hex::encode(registration_wallet_id),
+                            error = %e,
+                            "failed to re-arm the host's DashPay backfill coverage; \
+                             registration aborted before the wallet was registered"
+                        );
+                        PlatformWalletError::from_store_failure(&*self.persister, e)
+                    })?;
+            }
             let mut wm = self.wallet_manager.write().await;
             let wallet_id = wm
                 .insert_wallet(wallet, platform_info)
@@ -508,56 +561,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         other
                     )),
                 })?;
-            let (host_cursor, host_backfill) = match host_wallets.remove(&wallet_id) {
-                Some((snapshot_cursor, record)) => (
-                    durable_cursors
-                        .get(&wallet_id)
-                        .map_or(snapshot_cursor, |entry| entry.height),
-                    record,
-                ),
-                None => {
-                    durable_cursors.remove(&wallet_id);
-                    (created_cursor, Default::default())
-                }
-            };
+            let host_cursor = durable_cursors
+                .get(&wallet_id)
+                .map(|entry| entry.height)
+                .or(snapshot_cursor)
+                .unwrap_or(created_cursor);
+            self.inherit_rewind_barrier(&mut wm, &wallet_id);
             if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
-                let held: Vec<(Identifier, Identifier, u32)> = info
-                    .core_wallet
-                    .accounts
-                    .dashpay_receival_accounts
-                    .keys()
-                    .map(|key| {
-                        (
-                            Identifier::from(key.user_identity_id),
-                            Identifier::from(key.friend_identity_id),
-                            key.index,
-                        )
-                    })
-                    .collect();
-                let mut record = host_backfill;
-                let dropped = record
-                    .retain(|owner, contact, index| held.contains(&(*owner, *contact, index)));
-                if dropped && record.is_empty() {
-                    record = Default::default();
-                }
-                if dropped {
-                    tracing::info!(
-                        wallet_id = %hex::encode(wallet_id),
-                        kept = record.covered.len(),
-                        "wallet recreated: DashPay backfill coverage for receival accounts it \
-                         does not hold is re-armed"
-                    );
-                }
-                info.dashpay_backfill = record;
+                info.dashpay_backfill = host_backfill;
                 if created_cursor < host_cursor {
-                    // Owed from this wallet's first epoch: any advance the
-                    // host accepts from its own scan pays it.
                     let epoch = info.rewind_barrier.epoch();
                     info.dashpay_backfill.owe_cursor(created_cursor, epoch);
                 }
             }
-            durable_cursors.insert(wallet_id, crate::changeset::DurableCursor::at(host_cursor));
-            self.inherit_rewind_barrier(&mut wm, &wallet_id);
+            durable_cursors
+                .entry(wallet_id)
+                .or_insert(crate::changeset::DurableCursor::at(host_cursor));
             wallet_id
         };
 
@@ -1424,8 +1443,8 @@ mod register_wallet_duplicate_tests {
     /// reconcile could record a newer durable height in between and the seed
     /// would overwrite it with the creation one. While the cursor lock is
     /// held the registration must not publish the wallet at all, and once it
-    /// does, the entry is the created cursor — never one left behind by an
-    /// earlier registration of the same id.
+    /// does, an entry an earlier same-id registration left is what the host
+    /// holds now, so it is kept and the lower created cursor is owed to it.
     #[tokio::test]
     async fn a_wallet_is_published_and_its_durable_cursor_seeded_in_one_step() {
         let manager = make_manager();
@@ -1484,8 +1503,21 @@ mod register_wallet_duplicate_tests {
                 .await
                 .get(&wallet_id)
                 .map(|cursor| cursor.height),
+            Some(777),
+            "the entry the earlier registration left is what the host holds"
+        );
+        assert!(created_cursor < 777);
+        assert_eq!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("published")
+                .dashpay_backfill
+                .unpersisted_cursor,
             Some(created_cursor),
-            "the seed is the created cursor, not the leftover entry"
+            "the lower created cursor is owed"
         );
     }
 
