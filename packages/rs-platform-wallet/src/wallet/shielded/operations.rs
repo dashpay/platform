@@ -27,7 +27,9 @@ use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
-use super::prover::{prove_on_blocking_thread, ShieldedProver};
+use super::prover::{
+    fetch_while_proving, prove_on_blocking_thread, reprove_if_unbound, ShieldedProver,
+};
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
@@ -35,7 +37,7 @@ use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
@@ -60,9 +62,11 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
-    build_identity_top_up_from_shielded_pool_transition, build_shield_from_identity_transition,
-    build_shield_transition, build_shielded_transfer_transition,
-    build_shielded_withdrawal_transition, build_unshield_transition, SpendableNote,
+    build_identity_top_up_from_shielded_pool_transition,
+    build_shield_from_identity_transition_from_proved_bundle,
+    build_shield_transition_from_proved_bundle, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, prove_shield_bundle,
+    prove_shield_from_identity_bundle, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -604,31 +608,6 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Shield
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
     let inputs = reserve_shield_fee_on_input_0(inputs, fee)?;
 
-    // Reuse rs-sdk's canonical fetch + hard balance check rather than
-    // re-implementing the fetch-and-validate dance. Unlike the old
-    // warn-and-proceed path, `fetch_inputs_with_nonce` errors with
-    // `AddressNotEnoughFundsError` when any input is short, so we fail
-    // before paying the ~30 s Halo 2 proof for a transition drive-abci
-    // would reject. It returns the *current* on-chain nonces; we apply
-    // a checked increment (the canonical `nonce_inc` uses an unchecked
-    // `+ 1`, which would wrap an address at u32::MAX into a replay
-    // nonce — bail loudly here instead).
-    use dash_sdk::platform::transition::fetch_inputs_with_nonce;
-
-    let fetched = fetch_inputs_with_nonce(sdk, &inputs)
-        .await
-        .map_err(|error| map_shield_input_fetch_error(&error))?;
-
-    let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
-    for (addr, (nonce, credits)) in fetched {
-        let next_nonce = nonce.checked_add(1).ok_or_else(|| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "input address nonce exhausted on platform: {addr:?}"
-            ))
-        })?;
-        inputs_with_nonce.insert(addr, (next_nonce, credits));
-    }
-
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
@@ -639,25 +618,89 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Shield
         "Shield: building proof"
     );
 
+    // Prove the bundle while the input nonces are fetched. The bundle's
+    // binding signature commits only to the SET of input addresses (known
+    // here), never to their nonces or claimed amounts — those are committed
+    // by the input witnesses, which sign the assembled transition below, after
+    // both halves are done. See `dpp::shielded::shield_extra_sighash_data`.
+    let prove_at = |platform_version: &'static PlatformVersion| {
+        let input_addresses: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
+        let sender_ovk = keys.outgoing_viewing_key.clone();
+        async move {
+            prove_on_blocking_thread(prover, move |prover| {
+                prove_shield_bundle(
+                    &recipient_addr,
+                    amount,
+                    input_addresses,
+                    prover,
+                    memo,
+                    // Encrypt the output under the account's own OVK so the
+                    // wallet's shielded sync can recover this send (recipient,
+                    // value, memo) from chain data alone.
+                    Some(sender_ovk),
+                    platform_version,
+                )
+            })
+            .await?
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
+        }
+    };
+
+    // Reuse rs-sdk's canonical fetch + hard balance check rather than
+    // re-implementing the fetch-and-validate dance. Unlike the old
+    // warn-and-proceed path, `fetch_inputs_with_nonce` errors with
+    // `AddressNotEnoughFundsError` when any input is short; that error is
+    // returned as soon as the fetch fails (the concurrent proof is discarded),
+    // so a transition drive-abci would reject is never signed or broadcast. It
+    // returns the *current* on-chain nonces; we apply a checked increment (the
+    // canonical `nonce_inc` uses an unchecked `+ 1`, which would wrap an
+    // address at u32::MAX into a replay nonce — bail loudly here instead).
+    let fetch = async {
+        use dash_sdk::platform::transition::fetch_inputs_with_nonce;
+
+        let fetched = fetch_inputs_with_nonce(sdk, &inputs)
+            .await
+            .map_err(|error| map_shield_input_fetch_error(&error))?;
+
+        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
+        for (addr, (nonce, credits)) in fetched {
+            let next_nonce = nonce.checked_add(1).ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "input address nonce exhausted on platform: {addr:?}"
+                ))
+            })?;
+            inputs_with_nonce.insert(addr, (next_nonce, credits));
+        }
+        Ok(inputs_with_nonce)
+    };
+
+    let (inputs_with_nonce, proved) = fetch_while_proving(fetch, prove_at(sdk.version())).await?;
+
+    // The fetch is a proved query and can advance the SDK's protocol
+    // version. Assemble at the version current now (as the sequential code
+    // did) and, in the rare case the binding rules changed under the proof
+    // (e.g. across `credit_pool_bundle_binding` activation), prove again.
+    let platform_version: &'static PlatformVersion = sdk.version();
+    let proved = reprove_if_unbound(
+        proved,
+        |proved| {
+            proved
+                .is_bound_for(&inputs_with_nonce, platform_version)
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
+        },
+        || prove_at(platform_version),
+    )
+    .await?;
+
     let claimed_inputs = inputs_with_nonce.clone();
 
-    // Await the shared, off-runtime proving-key preparation rather than
-    // blocking this worker on the key build.
-    let prover = prover.ready().await?;
-    let state_transition = build_shield_transition(
-        &recipient_addr,
-        amount,
+    let state_transition = build_shield_transition_from_proved_bundle(
+        proved,
         inputs_with_nonce,
         fee_strategy,
         signer,
         0, // user_fee_increase
-        &prover,
-        memo,
-        // Encrypt the output under the account's own OVK so the wallet's
-        // shielded sync can recover this send (recipient, value, memo)
-        // from chain data alone.
-        Some(keys.outgoing_viewing_key.clone()),
-        sdk.version(),
+        platform_version,
     )
     .await
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -977,13 +1020,6 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         other => other,
     };
 
-    let nonce = sdk
-        .get_identity_nonce(identity_id, true, None)
-        .await
-        .map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!("fetch identity nonce: {e}"))
-        })?;
-
     info!(
         account,
         credits = amount,
@@ -992,21 +1028,62 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         "ShieldFromIdentity: building proof"
     );
 
-    // Await the shared, off-runtime proving-key preparation rather than
-    // blocking this worker on the key build.
-    let prover = prover.ready().await?;
-    let state_transition = build_shield_from_identity_transition(
+    // Prove the bundle while the identity nonce is fetched. The bundle's
+    // binding signature commits to the funding identity id, never to the
+    // nonce; the nonce is committed by the identity signature over the
+    // assembled transition below, after both halves are done. See
+    // `dpp::shielded::shield_from_identity_extra_sighash_data`.
+    let prove_at = |platform_version: &'static PlatformVersion| {
+        let sender_ovk = keys.outgoing_viewing_key.clone();
+        async move {
+            prove_on_blocking_thread(prover, move |prover| {
+                prove_shield_from_identity_bundle(
+                    identity_id,
+                    &recipient_addr,
+                    amount,
+                    prover,
+                    memo,
+                    Some(sender_ovk),
+                    platform_version,
+                )
+            })
+            .await?
+            .map_err(map_shield_from_identity_build_error)
+        }
+    };
+    let fetch = async {
+        sdk.get_identity_nonce(identity_id, true, None)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!("fetch identity nonce: {e}"))
+            })
+    };
+    let (nonce, proved) = fetch_while_proving(fetch, prove_at(sdk.version())).await?;
+
+    // The nonce fetch can advance the SDK's protocol version; assemble at
+    // the current version and re-prove if the binding rules changed under
+    // the proof (see `shield_to`). The fetched nonce is reused, never
+    // fetched again.
+    let platform_version: &'static PlatformVersion = sdk.version();
+    let proved = reprove_if_unbound(
+        proved,
+        |proved| {
+            proved
+                .is_bound_for(identity_id, platform_version)
+                .map_err(map_shield_from_identity_build_error)
+        },
+        || prove_at(platform_version),
+    )
+    .await?;
+
+    let state_transition = build_shield_from_identity_transition_from_proved_bundle(
+        proved,
         identity,
-        &recipient_addr,
-        amount,
         nonce,
         signer,
         None,
         0, // user_fee_increase
-        &prover,
-        memo,
-        Some(keys.outgoing_viewing_key.clone()),
-        sdk.version(),
+        platform_version,
     )
     .await
     .map_err(map_shield_from_identity_build_error)?;
