@@ -3131,9 +3131,9 @@ mod tests {
                 .expect_err(label);
             assert!(
                 matches!(&error, ProtocolError::ConsensusError(consensus_error)
-                if matches!(**consensus_error, ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(_)
-                ))),
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(e)
+                ) if e.message() == "BLS12_381 signature does not verify")),
                 "{label}: {error:?}"
             );
             transition

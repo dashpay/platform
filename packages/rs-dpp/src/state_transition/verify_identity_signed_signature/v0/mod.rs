@@ -18,9 +18,9 @@ impl StateTransition {
             .map(|_| ())
     }
 
-    /// The checks of generation 0, returning whether the signature verifies. A failed ECDSA
-    /// check is an error, so `Ok(false)` only comes from a BLS12_381 signature that is well
-    /// formed but does not verify. Generation 1 runs the same checks.
+    /// The checks of generation 0, returning whether the signature verifies. Today only the
+    /// BLS12_381 arm returns `false`, for a signature that is well formed but does not verify;
+    /// the ECDSA arms report a failed check as an error. Generation 1 runs the same checks.
     pub(super) fn identity_signed_signature_verdict_v0(
         &self,
         public_key: &IdentityPublicKey,
