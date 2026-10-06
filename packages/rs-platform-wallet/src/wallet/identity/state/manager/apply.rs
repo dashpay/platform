@@ -195,8 +195,10 @@ impl IdentityManager {
     /// identities are applied first, each deferred while its target slot is
     /// still held by another identity that the batch moves out, and new ones
     /// are inserted last: a re-slot A@0 → A@5 frees slot 0 for a new B@0
-    /// whichever entry is visited first. Identities still blocked (two
-    /// swapping slots) are updated in place.
+    /// whichever entry is visited first. Moves that only wait on each other
+    /// (A@0/B@1 becoming A@1/B@0) are staged out of the wallet and then
+    /// placed; a move blocked by an identity that stays put is applied in
+    /// place.
     pub(crate) fn apply_identity_entries(
         &mut self,
         entries: impl IntoIterator<Item = IdentityEntry>,
@@ -204,25 +206,80 @@ impl IdentityManager {
         let (mut pending, fresh): (Vec<_>, Vec<_>) = entries
             .into_iter()
             .partition(|entry| self.identity(&entry.id).is_some());
-        loop {
-            let before = pending.len();
-            let (blocked, ready): (Vec<_>, Vec<_>) = pending.into_iter().partition(|entry| {
-                entry
-                    .wallet_id
-                    .zip(entry.identity_index)
-                    .and_then(|(wallet_id, index)| self.slot_holder(&wallet_id, index))
-                    .is_some_and(|holder| holder != entry.id)
-            });
+        while !pending.is_empty() {
+            let (blocked, ready): (Vec<_>, Vec<_>) = pending
+                .into_iter()
+                .partition(|entry| self.blocker(entry).is_some());
+            let progressed = !ready.is_empty();
             for entry in ready {
                 self.apply_identity_entry(entry);
             }
             pending = blocked;
-            if pending.is_empty() || pending.len() == before {
-                break;
+            if !progressed {
+                let cycle = self.cycle_members(&pending);
+                if cycle.is_empty() {
+                    break;
+                }
+                for id in &cycle {
+                    self.stage_out_of_wallet(id);
+                }
             }
         }
         for entry in pending.into_iter().chain(fresh) {
             self.apply_identity_entry(entry);
+        }
+    }
+
+    /// The other identity holding the slot `entry` places its identity in.
+    fn blocker(&self, entry: &IdentityEntry) -> Option<Identifier> {
+        entry
+            .wallet_id
+            .zip(entry.identity_index)
+            .and_then(|(wallet_id, index)| self.slot_holder(&wallet_id, index))
+            .filter(|holder| *holder != entry.id)
+    }
+
+    /// Blocked moves on a closed cycle: following blockers through the other
+    /// blocked moves leads back to the start.
+    fn cycle_members(&self, pending: &[IdentityEntry]) -> Vec<Identifier> {
+        let blockers: BTreeMap<Identifier, Identifier> = pending
+            .iter()
+            .filter_map(|entry| Some((entry.id, self.blocker(entry)?)))
+            .collect();
+        blockers
+            .keys()
+            .copied()
+            .filter(|start| {
+                let mut current = *start;
+                for _ in 0..blockers.len() {
+                    match blockers.get(&current) {
+                        Some(next) if next == start => return true,
+                        Some(next) => current = *next,
+                        None => return false,
+                    }
+                }
+                false
+            })
+            .collect()
+    }
+
+    /// Park an in-wallet identity in the observed bucket, freeing its slot;
+    /// applying its entry then adopts it back into its target slot.
+    fn stage_out_of_wallet(&mut self, identity_id: &Identifier) {
+        let Some(IdentityLocation::InWallet {
+            wallet_id,
+            registration_index,
+        }) = self.location_index().get(identity_id).copied()
+        else {
+            return;
+        };
+        if let Some(managed) = self
+            .wallet_identities
+            .get_mut(&wallet_id)
+            .and_then(|bucket| bucket.remove(&registration_index))
+        {
+            self.out_of_wallet_identities.insert(*identity_id, managed);
+            self.location_index_insert(*identity_id, IdentityLocation::OutOfWallet);
         }
     }
 

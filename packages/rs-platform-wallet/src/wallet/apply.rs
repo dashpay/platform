@@ -155,20 +155,19 @@ impl PlatformWalletInfo {
             // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
-            // reach in and touch the index from out here. Removals of
-            // identities the batch does not also snapshot go first, freeing
-            // their slots for entries that take them over; the rest still
-            // apply last, so removal wins over a same-batch snapshot.
-            let (freeing, last): (Vec<_>, Vec<_>) =
-                removed.iter().partition(|id| !identities.contains_key(id));
-            for removed_id in freeing {
+            // reach in and touch the index from out here. Removal wins over
+            // a same-batch snapshot, so removals go first and their
+            // snapshots are dropped: a removed identity's last placement
+            // must not hold a slot a surviving entry takes over.
+            for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
             }
-            self.identity_manager
-                .apply_identity_entries(identities.into_values());
-            for removed_id in last {
-                self.identity_manager.remove_for_apply(removed_id);
-            }
+            self.identity_manager.apply_identity_entries(
+                identities
+                    .into_iter()
+                    .filter(|(id, _)| !removed.contains(id))
+                    .map(|(_, entry)| entry),
+            );
         }
 
         // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
@@ -1507,6 +1506,93 @@ mod tests {
             .expect("apply");
         assert_eq!(info.identity_manager.identity_count(), 1);
         assert_slot(&info, w, 3, 1);
+    }
+
+    /// Merge per-mutation changesets the way a Manual-flush buffer does.
+    fn merged(changesets: impl IntoIterator<Item = IdentityChangeSet>) -> IdentityChangeSet {
+        use crate::changeset::Merge;
+        let mut all = IdentityChangeSet::default();
+        for cs in changesets {
+            all.merge(cs);
+        }
+        all
+    }
+
+    fn snapshot(entry: IdentityEntry) -> IdentityChangeSet {
+        let mut cs = IdentityChangeSet::default();
+        cs.identities.insert(entry.id, entry);
+        cs
+    }
+
+    /// Replay a merged batch twice; both applications must reach the state
+    /// the mutations produced.
+    fn replay_twice(
+        seed: impl IntoIterator<Item = IdentityEntry> + Clone,
+        batch: IdentityChangeSet,
+        check: impl Fn(&PlatformWalletInfo),
+    ) {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, seed);
+        for _ in 0..2 {
+            info.apply_changeset(&mut wallet, wrap_id(batch.clone()))
+                .expect("apply");
+            check(&info);
+        }
+    }
+
+    /// A moved to 5, then removed, then B added at 5: the merged batch keeps
+    /// A's snapshot beside its tombstone, which must not keep B out.
+    #[test]
+    fn should_place_an_entry_in_the_slot_of_a_removed_identity() {
+        let w = [0xAB; 32];
+        let mut removal = IdentityChangeSet::default();
+        removal.removed.insert(Identifier::from([9; 32]));
+        let batch = merged([
+            snapshot(slotted_entry(9, Some(w), 5)),
+            removal,
+            snapshot(slotted_entry(1, Some(w), 5)),
+        ]);
+        replay_twice([slotted_entry(9, Some(w), 0)], batch, |info| {
+            assert_eq!(info.identity_manager.identity_count(), 1);
+            assert_slot(info, w, 5, 1);
+        });
+    }
+
+    /// A@0/B@1 swapped through free slot 2 merges into A@1/B@0, which replay
+    /// must install even though each move waits on the other.
+    #[test]
+    fn should_replay_a_merged_slot_swap() {
+        let w = [0xAB; 32];
+        let batch = merged([
+            snapshot(slotted_entry(9, Some(w), 2)),
+            snapshot(slotted_entry(1, Some(w), 0)),
+            snapshot(slotted_entry(9, Some(w), 1)),
+        ]);
+        replay_twice(
+            [slotted_entry(9, Some(w), 0), slotted_entry(1, Some(w), 1)],
+            batch,
+            |info| {
+                assert_eq!(info.identity_manager.identity_count(), 2);
+                assert_slot(info, w, 1, 9);
+                assert_slot(info, w, 0, 1);
+                assert!(info.identity_manager.out_of_wallet_identities.is_empty());
+            },
+        );
+    }
+
+    /// A move blocked by an identity the batch leaves in place keeps its slot.
+    #[test]
+    fn should_keep_a_move_blocked_by_a_stationary_identity_in_place() {
+        let w = [0xAB; 32];
+        replay_twice(
+            [slotted_entry(9, Some(w), 0), slotted_entry(1, Some(w), 1)],
+            snapshot(slotted_entry(9, Some(w), 1)),
+            |info| {
+                assert_slot(info, w, 0, 9);
+                assert_slot(info, w, 1, 1);
+            },
+        );
     }
 
     /// A contact tombstone for a present (non-orphan) owner
