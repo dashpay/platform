@@ -226,14 +226,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   lookups are ever needed. Reads dispatch on the byte prefix, so
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
-/// 7. **Client-side GroveDB proof envelope floor**:
-///    `SYSTEM_LIMITS_V4.minimum_grovedb_proof_envelope_version` becomes 1, so
-///    a client verifying with v14 tables rejects the legacy V0 proof
-///    envelope before its bytes reach Drive (`drive-proof-verifier`,
-///    `wasm-drive-verify`, and the nested compacted address proofs). V0's
-///    item binding lets a prover return different item bytes under the same
-///    authenticated root; every live network has emitted V1 envelopes since
-///    v13 (grove version 3), so no honest response is affected.
+/// 7. **Client-side GroveDB proof envelope floor (not a version-table
+///    entry)**: clients refuse the legacy V0 proof envelope at every protocol
+///    version through
+///    `drive::verify::grovedb_proof_envelope::MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`,
+///    so nothing about it is gated on v14. The note keeps its number so the
+///    later notes keep theirs.
 /// 8. **Epoch-based perpetual distribution claims stop wrapping**:
 ///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
 ///    may redeem, selected by
@@ -836,8 +834,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     no `timeRange` and is not on an indexOnly type, the keys cover it
 ///     exactly, every source shares its index property's value kind, and the
 ///     key cannot move off the document it found: its schema properties are
-///     immutable, and `$ownerId` is only a part on a type that is neither
-///     transferable nor tradeable), and the contract reference validation
+///     immutable, none an optional `deletableDocument` reference by id, which
+///     a replace may clear once its document is deleted (item 73), and
+///     `$ownerId` is only a part on a type that is neither transferable nor
+///     tradeable), and the contract reference validation
 ///     checks one into another contract, refusing it with
 ///     `ReferencedDocumentLookupInvalidError` (40137). The document
 ///     reference validation (generation 0, reached only from this version)
@@ -1939,6 +1939,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
 ///
+/// 71. **Documents deleted only when consumed (`canBeDeleted:
+///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
+///     and parser generation 3, in place
+///     (`parse_can_be_deleted_only_when_consumed_keyword`, passed to the core
+///     parse as `indexOnly` is, `false` for generations 1 and 2;
+///     `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). The
+///     owner's delete reads it as `false` (document delete advanced structure
+///     validation refuses it, 10404), and a `refersTo` with `consume` may
+///     target the type (`DocumentReferenceLookup::referenced_side_error`,
+///     which refused every type its owner can not delete). Its documents can
+///     leave state, so the type is a `deletableDocument` target, never a
+///     `permanentDocument` or `moderatedDocument` one
+///     (`documents_can_disappear`, `document_reference_kind`). A consumed
+///     document is deleted without its owner's `canBeDeleted` guard
+///     (`ForceDeleteDocument` beside a contested create,
+///     `force_delete_document_for_contract_operations` in
+///     `AddDocumentAndDeleteConsumed`), so Drive's delete guard stays strict
+///     for the owner's delete. Refused on a type that keeps history or is
+///     indexOnly (10231), and fixed on update (`validate_update` v1, 40212).
+///     Inert for every contract without the value, which every earlier grammar
+///     refuses.
+///
 /// 72. **A barred author may still retract (`retractedWhen`)**: a document
 ///     type of meta-schema v3 and parser generation 3, in place, may declare
 ///     `retractedWhen`, one condition in the grammar of an `immutable` entry's
@@ -1955,6 +1977,64 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     author whose documents can not be deleted can still take one back. Inert
 ///     before this version: the gate and the keyword exist only here.
 ///
+/// 73. **An index that counts another index's entries
+///     (`summableOffCountIndex`)**: an index keyword of meta-schema v3 and
+///     parser generation 3, in place (`Index::summable_off_count_index`,
+///     `IndexLevelTypeInfo::summable_off_count_index`), admitted only on an
+///     indexOnly type with `rangeSummable`, naming a source index of the type
+///     that holds every document once; its other properties must be fixed by
+///     the source through unchanging `where` values of same-contract
+///     `permanentDocument` or `moderatedDocument` references
+///     (`validate_summable_off_count_indexes_lossless`, judging a value as a
+///     lookup's key part is judged, `why_value_can_change`: an optional
+///     `deletableDocument` reference by id a replace may clear once its
+///     document is deleted is not fixed, and from this version neither is a
+///     findBy key part, a findBy function's param or a `where` value beside
+///     one), and one summed value per type is kept. Such an index keeps one `Element::SumItem` per group
+///     in place of a value tree and entries: the index walkers (insert and
+///     delete index level 2) move it by one per document, preallocation
+///     creates it at zero, and document create state validation 1, document index-only delete
+///     state validation 0, the within-batch collision tracker and the proof
+///     index never use it. `rankedSummable` and `rankedAverageable` gain the
+///     `{ "at": ... }` form on such an index only, stamped on the index
+///     levels (`IndexLevel::ranked_sum_grouping`, `ranked_average_grouping`,
+///     `sum_propagating`) and laid out by Drive as sum chains, count-and-sum
+///     chains where an average ranking or `rangeCountable` adds counts
+///     (`property_name_tree_type_and_ranked_axes_for_level`,
+///     `ranked_chain_value_tree_type`); its `rankedCountable` is parsed into
+///     that Sum ranking, since a document count there is its sums (no
+///     `rangeCountable` needed). Sum, average and ranked queries name
+///     the source index for the summed value, and a count query reads such
+///     an index's sums, its document counts: a point read
+///     (`document_count_of_element`), and a ranked or having-range read on
+///     its Sum secondaries (`read_axis_for`), and a range read through the
+///     sum surface's range forms (`counter_sums_query`). A range total
+///     through any index whose path passes through a ranked level (its own,
+///     or one another index ranks at a shared level) is refused cleanly
+///     (`refuse_a_range_total_through_a_ranked_index`). Drive's batch methods,
+///     `apply_drive_operations` and `convert_drive_operations_to_grove_operations`
+///     at version 1, refuse a batch moving one document type's counters for
+///     more than one document (`refuse_repeated_counter_moves`). Needs
+///     grovedb's `GROVE_V4`, which admits a bare `SumItem` under a
+///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
+///     the keyword, which every earlier grammar refuses. For any index, the
+///     range-total verifiers at version 1 (`DRIVE_VERIFY_METHOD_VERSIONS_V3`:
+///     `verify_aggregate_count_proof`, `verify_carrier_aggregate_count_proof`,
+///     `verify_aggregate_sum_proof`, `verify_carrier_aggregate_sum_proof`,
+///     `verify_aggregate_count_and_sum_proof` and
+///     `verify_carrier_aggregate_count_and_sum_proof`) verify a proof showing
+///     the range holds nothing (an equality value no document holds, or an
+///     empty tree of a kind the read does not aggregate), which grovedb's
+///     aggregate verifiers refuse, as a zero total or no carrier branch
+///     (`or_empty_range_total`), and the unproven range totals, keyed on the
+///     same verifier versions, read an absent value as zero
+///     (`aggregate_or_zero_when_absent`); and
+///     `verify_composite_documents_proof` 1 reads the sum-bearing items of a
+///     `documentsSummable` type as documents. Their
+///     version 0, which every earlier protocol version selects, refuses both
+///     proofs, and the unproven total fails, as released; the prover is
+///     unchanged.
+///
 /// 75. **No reference by id to an indexOnly document type**: the contract
 ///     reference validation 0 (`validate_data_contract_references`), in place,
 ///     refuses a `permanentDocument`, `deletableDocument` or
@@ -1967,6 +2047,69 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     into one keeps its own refusal (40137, or 10231 in the declaring
 ///     contract). Inert before this version: only parser generation 3 admits
 ///     an indexOnly document type.
+///
+/// 76. **Every revealed nullifier is recorded once**: each action of an
+///     outputs-only Orchard bundle reveals a nullifier (that of a dummy spend,
+///     which becomes the new note's `rho`). The spends already recorded and
+///     checked theirs; now `Shield`, `ShieldFromAssetLock` and
+///     `ShieldFromIdentity` do too. `transform_into_action` 1 of the shield and
+///     the shield from asset lock (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`), and
+///     `transform_into_action` 0 of the shield from identity in place, refuse a
+///     nullifier repeated inside the bundle or already recorded, with
+///     `NullifierAlreadySpentError`: unpaid for the first two, as for the
+///     spends, and a paid nonce bump for the identity-signed one. The
+///     high-level operations of the shield and the shield from asset lock 1
+///     (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`), and of the shield from
+///     identity 0 in place, record the nullifiers. Recording them is metered
+///     storage for the shield and the shield from identity; the shield from
+///     asset lock's flat pool fee already prices a note and a nullifier write
+///     per action. The shield from identity's admission floor
+///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
+///     of its complete fee) uses versioned allowances of 400 effective bytes
+///     per action and 500 flat bytes, covering the complete execution-event
+///     admission estimate. Actual fees remain metered. Nullifiers revealed by
+///     shields before this version are not added.
+///
+/// 77. **Owner identities for shared and extended-address masternodes**: from
+///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
+///     or collateral address, and extended-address masternodes, which have a
+///     `payouts` list instead of a `payoutAddress`. `create_owner_identity` 1
+///     needs both addresses and fails on such a masternode with
+///     `DashCoreBadResponseError`, which fails the block. With
+///     `create_owner_identity` 2 and `update_masternode_identities` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`), a masternode without an owner
+///     address gets no owner identity, only its voter and operator identities;
+///     one with an owner address and either a legacy payout address or a sole
+///     payout with a matching P2PKH script gets the version 1 identity,
+///     TRANSFER key id 0 and OWNER key id 1, byte for byte; other payout shapes
+///     get only OWNER key id 1. Legacy payout-address rotation is unchanged.
+///     Payout-list changes retain, re-enable or add the sole supported P2PKH
+///     TRANSFER key and disable obsolete TRANSFER keys. Split, empty or
+///     unsupported lists disable all TRANSFER authority while preserving OWNER
+///     and balance. Historical updaters keep their payout-list policy. This
+///     version must be active on a network before its Dash Core activates V24,
+///     since earlier versions keep failing on these masternodes.
+///
+/// 78. **Versioned Core masternode address resolution**: `update_masternode_list` 1
+///     resolves nested platform addresses first, then falls back to legacy ports,
+///     before storing the masternode state. Earlier protocol versions keep their
+///     flat-field interpretation. The stored layout and validator construction
+///     remain unchanged: new validators read the resolved stored ports, and an
+///     existing validator is refreshed on a ban, service or P2P-port change.
+///     Each diff starts from the old persisted representation so transient address
+///     data retained before activation cannot make a running node disagree with
+///     a restarted one. Payout lists remain outside the persisted representation.
+///
+/// 80. **A BLS12_381 signature must verify**: `verify_identity_signed_signature`
+///     1 (`STATE_TRANSITION_METHOD_VERSIONS_V2`), the signature check that
+///     identity-signature validation runs for every identity-signed
+///     transition, refuses a signature by a BLS12_381 key that does not verify
+///     (`InvalidStateTransitionSignatureError`, unpaid, as for ECDSA keys).
+///     Generation 0 refused one only when the key or the signature could not be
+///     read, and earlier versions replay through it. Identity-signature
+///     validation v0, in place, passes the platform version to the check; the
+///     tables of every earlier version select generation 0, the code it called
+///     before.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -2049,7 +2192,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; a batch moving one document type's summableOffCountIndex counters for more than one document refused; repaid identity debt credited to the processing fee pool); convert_drive_operations_to_grove_operations 1 (refuses that counter batch too, then converts as before); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
@@ -2063,7 +2206,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
@@ -2079,7 +2222,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

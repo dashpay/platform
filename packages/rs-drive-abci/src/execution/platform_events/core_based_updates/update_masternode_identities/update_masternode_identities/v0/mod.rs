@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -54,7 +55,13 @@ where
         let mut drive_operations = vec![];
 
         for masternode in added_mns {
-            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?;
+            // Protocol versions 1 to 13, the ones that select this generation, select
+            // create_owner_identity 0 or 1, which create an identity or fail, and never return
+            // `None`.
+            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "create_owner_identity 0 and 1 always create an owner identity",
+                )))?;
 
             tracing::trace!(
                 identity = ?owner_identity,

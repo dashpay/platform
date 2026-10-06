@@ -17,8 +17,10 @@ use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
 use crate::util::batch::DriveOperation;
 use dpp::fee::Credits;
 
-/// Insert nullifiers into the permanent tree (double-spend prevention) and
-/// per-block sync storage (catch-up RPCs).
+/// Insert nullifiers into the permanent nullifier tree, which refuses a nullifier
+/// revealed twice: every spend records the nullifiers its actions reveal, and from
+/// protocol version 14 so does every shield (an outputs-only bundle's actions
+/// reveal the nullifiers of dummy spends, each the `rho` of its new note).
 pub(super) fn insert_nullifiers<'a>(
     ops: &mut Vec<DriveOperation<'a>>,
     notes: &[ShieldedActionNote],

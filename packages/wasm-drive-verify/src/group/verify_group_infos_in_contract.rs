@@ -68,7 +68,7 @@ pub fn verify_group_infos_in_contract_vec(
 
     let (root_hash, groups_vec): (RootHash, Vec<(GroupContractPosition, Group)>) =
         Drive::verify_group_infos_in_contract(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             Identifier::from(contract_id_bytes),
             start_position,
             limit,
@@ -137,7 +137,7 @@ pub fn verify_group_infos_in_contract_map(
 
     let (root_hash, groups_map): (RootHash, BTreeMap<GroupContractPosition, Group>) =
         Drive::verify_group_infos_in_contract(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             Identifier::from(contract_id_bytes),
             start_position,
             limit,

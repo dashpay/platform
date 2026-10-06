@@ -101,6 +101,9 @@ impl IndexOnlyBatchEntries {
         // makes its key hold the key of an index claimed here, so two creates
         // of one batch sharing its entry already collide on that one.
         let mut claimed = Vec::new();
+        // A summableOffCountIndex index writes no entry to claim (it yields no
+        // paths): its counter is moved by whichever create the other entries
+        // admit.
         for index in document_type
             .indexes()
             .values()

@@ -97,7 +97,7 @@ pub struct SystemLimits {
     /// proofs attest the wrong ranking against the live root hash.
     ///
     /// The cap is not the only thing standing between that machinery and a live path, and a
-    /// reader raising it needs to know what the other two are:
+    /// reader raising it needs to know what the others are:
     ///
     /// * `Drive::update_contract_keywords_operations` puts N blind document deletes and M adds
     ///   in one batch over a single shared index group. Every batch it actually emits refills
@@ -110,6 +110,19 @@ pub struct SystemLimits {
     ///   the accumulated operations through, so document operations in *that* variant do see
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
     ///   not a drop-in for batch transitions: it carries no delete variant.
+    /// * A `summableOffCountIndex` counter is read and rewritten by each document conversion
+    ///   (`Drive::add_summable_off_count_counter_operations`). Two documents of one batch in one
+    ///   counter group, which a source keyed by more than its owner admits (a terminal such as
+    ///   `["$ownerId", "emoji"]`), would each read the stored count and write the same next
+    ///   value, losing one move; the group's last delete would then find the counter at zero
+    ///   and fail. Protocol version 14's batch methods refuse such a batch instead
+    ///   (`Drive::refuse_repeated_counter_moves`), but per document type, not per group, and
+    ///   as an internal error: with the cap raised, two likes of different posts, or two posts
+    ///   each preallocating their own counters, would pass validation (the within-batch entry
+    ///   tracker does not claim counter groups) and then fail as an internal error, dropping a
+    ///   valid transition unpaid. Raising the cap therefore needs the counter moves folded
+    ///   across the documents of a batch (one read and one write per counter) in place of
+    ///   that refusal.
     ///
     /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
     ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
@@ -343,21 +356,6 @@ pub struct SystemLimits {
     ///
     /// 0 on protocol versions that predate document expiry, where the event does not run.
     pub max_document_expiration_weight_per_block: u32,
-    /// Lowest GroveDB proof envelope version a client accepts from a
-    /// current-state response.
-    ///
-    /// Read by `drive-proof-verifier`'s `supported_grovedb_proof_bytes` and
-    /// `verify_tenderdash_proof`, by `wasm-drive-verify`'s
-    /// `supported_grovedb_proof`, and by Drive's
-    /// `verify_compacted_address_balance_changes` v1 for its nested proofs.
-    ///
-    /// `0` keeps accepting the legacy V0 envelope. Protocol version 14 raises
-    /// the floor to `1`: V0's item binding lets a prover return different
-    /// item bytes under the same authenticated root, so a quorum signature on
-    /// the root does not make a V0 payload safe. GroveDB emits V1 from grove
-    /// version 3 (protocol version 13), so every live network already serves
-    /// V1 by the time the floor applies.
-    pub minimum_grovedb_proof_envelope_version: u32,
     /// The largest magnitude a summed property may admit on a document type with a
     /// contested index, enforced when a contract is registered or updated (full validation
     /// only, like `max_document_ttl_seconds`): the property's schema must declare a
