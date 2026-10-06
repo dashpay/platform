@@ -45,6 +45,9 @@ pub struct FilterMatch {
 #[derive(Debug, Clone)]
 pub struct ResolvedFilters {
     filters: Vec<ResolvedFilter>,
+    /// The rules the filters were resolved under (clause grammar, value types), kept for
+    /// rebinding them: the filters must stay as admitted, whatever version later blocks run.
+    platform_version: &'static PlatformVersion,
 }
 
 #[derive(Debug, Clone)]
@@ -107,7 +110,7 @@ impl ResolvedFilters {
     pub fn resolve(
         filters: Vec<StateTransitionFilter>,
         data_contract: impl Fn(&Identifier) -> Option<Arc<DataContract>>,
-        platform_version: &PlatformVersion,
+        platform_version: &'static PlatformVersion,
     ) -> Result<Self, SubscriptionFilterError> {
         if filters.is_empty() {
             return Err(SubscriptionFilterError::InvalidRequest(
@@ -125,7 +128,10 @@ impl ResolvedFilters {
             .enumerate()
             .map(|(index, filter)| resolve_filter(index, filter, &data_contract, platform_version))
             .collect::<Result<_, _>>()?;
-        Ok(Self { filters })
+        Ok(Self {
+            filters,
+            platform_version,
+        })
     }
 
     /// Which filters `state_transition` matches, or `None` when it matches none.
@@ -197,7 +203,9 @@ impl ResolvedFilters {
     /// This trusts the update's embedded contract, so only a party that trusts the block
     /// source may call it: the node, reading its own Tenderdash. A client must not install a
     /// contract a node sent it; it re-reads the contract with a proof instead (see
-    /// [`Self::followed_data_contract`]). Fails when the update's contract cannot be built.
+    /// [`Self::followed_data_contract`]). `platform_version` is the version of the block the
+    /// update executed in, which decodes the contract; the filters are rebound under the rules
+    /// they were resolved with. Fails when the update's contract cannot be built.
     pub fn follow(
         &mut self,
         state_transition: &StateTransition,
@@ -215,7 +223,7 @@ impl ResolvedFilters {
             &mut vec![],
             platform_version,
         )?;
-        self.rebind_data_contract(Arc::new(contract), platform_version)
+        self.rebind_data_contract(Arc::new(contract))
             .map_err(ProtocolError::Generic)
     }
 
@@ -264,11 +272,8 @@ impl ResolvedFilters {
     /// keeps its binding; one a newer version cannot serve is an error, since matching under
     /// the outdated schema could drop what the node matches. Nothing is rebound unless every
     /// filter that must be can be, so the filters on a contract never mix versions.
-    pub fn rebind_data_contract(
-        &mut self,
-        data_contract: Arc<DataContract>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), String> {
+    pub fn rebind_data_contract(&mut self, data_contract: Arc<DataContract>) -> Result<(), String> {
+        let platform_version = self.platform_version;
         let mut rebound = Vec::new();
         for (position, filter) in self.filters.iter().enumerate() {
             let ResolvedFilter::Documents(document_filter) = filter else {

@@ -506,7 +506,7 @@ impl StateTransitionSubscription {
             }
             self.stale_reads = 0;
             self.resolved
-                .rebind_data_contract(Arc::new(contract), self.sdk.version())
+                .rebind_data_contract(Arc::new(contract))
                 .map_err(Error::Generic)?;
             self.contracts_to_refresh.remove(&data_contract_id);
         }

@@ -950,7 +950,7 @@ fn should_fail_to_rebind_to_a_newer_version_the_filter_does_not_apply_to() {
     let mut without_type = widening_contract(255, contract.version());
     without_type.set_id(contract.id());
     assert!(filters
-        .rebind_data_contract(Arc::new(without_type.clone()), PlatformVersion::latest())
+        .rebind_data_contract(Arc::new(without_type.clone()))
         .is_ok());
     assert_eq!(
         filters.data_contract(contract.id()).unwrap().version(),
@@ -960,10 +960,63 @@ fn should_fail_to_rebind_to_a_newer_version_the_filter_does_not_apply_to() {
     // leaves every filter on the contract as it was: none moved to the new version alone.
     without_type.set_version(contract.version() + 1);
     assert!(filters
-        .rebind_data_contract(Arc::new(without_type), PlatformVersion::latest())
+        .rebind_data_contract(Arc::new(without_type))
         .is_err());
     assert_eq!(
         filters.data_contract(contract.id()).unwrap().version(),
         contract.version()
     );
+}
+
+#[test]
+fn should_rebind_under_the_rules_the_filters_were_admitted_with() {
+    // Two IN clauses: accepted by the latest clause grammar, refused by an older one.
+    let older = (1..PlatformVersion::latest().protocol_version)
+        .rev()
+        .filter_map(|version| PlatformVersion::get(version).ok())
+        .find(|version| {
+            drive::query::InternalClauses::extract_from_clauses(
+                vec![
+                    drive::query::WhereClause {
+                        field: "stars".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Array(vec![Value::U8(1), Value::U8(2)]),
+                    },
+                    drive::query::WhereClause {
+                        field: "votes".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Array(vec![Value::U8(3), Value::U8(4)]),
+                    },
+                ],
+                version,
+            )
+            .is_err()
+        })
+        .expect("an older clause grammar refuses two IN clauses");
+    let narrow = Arc::new(widening_contract(255, 1));
+    let in_clause = |field: &str, values: [u64; 2]| drive::query::WhereClause {
+        field: field.to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(values.into_iter().map(Value::U64).collect()),
+    };
+    let mut filters = resolve(
+        vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(narrow.id())
+                .with_document_type("rating")
+                .with_action(
+                    DocumentActionMatch::new(DocumentAction::Create)
+                        .with_new_document_where(in_clause("stars", [1, 2]))
+                        .with_new_document_where(in_clause("votes", [3, 4])),
+                ),
+        )],
+        &narrow,
+    )
+    .expect("the latest grammar takes two IN clauses");
+    // An update executed in a block of the older version still rebinds the admitted filter.
+    let wide = widening_contract(1000, 2);
+    filters
+        .follow(&contract_update(wide.clone()), older)
+        .expect("rebinds under the rules it was admitted with");
+    assert_eq!(filters.data_contract(narrow.id()).unwrap().version(), 2);
+    assert!(matches(&filters, &rating(&wide, 1, 4)).is_some());
 }
