@@ -24,6 +24,13 @@ use drive::query::{ValueClause, WhereClause, WhereOperator};
 
 /// Build a subscription request for `filters`, scanning from `from_block_height` (inclusive),
 /// or from after the current tip when `None`.
+///
+/// Operands are encoded as given (see [`StateTransitionFilter::to_proto`]). A document filter
+/// with clauses or a price should first go through
+/// [`canonical_operands`](super::canonical_operands) with the contract it is on, as
+/// `Sdk::subscribe_to_state_transitions` does: the wire carries only a few primitive types, so
+/// an operand the matcher accepts in another representation than its field's (a `u128` for a
+/// float field, `u8`s for a byte array) can arrive as one the node refuses.
 pub fn subscribe_request(
     filters: &[StateTransitionFilter],
     from_block_height: Option<u64>,
@@ -40,7 +47,9 @@ pub fn subscribe_request(
 }
 
 impl StateTransitionFilter {
-    /// The filter's wire message.
+    /// The filter's wire message, with operands encoded as given: pass a document filter
+    /// through [`canonical_operands`](super::canonical_operands) first, so that the node reads
+    /// its operands as the schema types them (see [`subscribe_request`]).
     pub fn to_proto(&self) -> Result<proto::StateTransitionFilter, Error> {
         let filter = match self {
             StateTransitionFilter::Documents(filter) => {

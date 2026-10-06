@@ -219,14 +219,20 @@ impl ResolvedFilters {
         Ok(())
     }
 
-    /// The bound data contract a transition updates, if any: after it, the filters on that
-    /// contract should be rebound to the contract's new version.
-    pub fn followed_data_contract(&self, state_transition: &StateTransition) -> Option<Identifier> {
+    /// The bound data contract a transition updates, if any, and the version it updates it
+    /// to: after it, the filters on that contract should be rebound to that version or later.
+    pub fn followed_data_contract(
+        &self,
+        state_transition: &StateTransition,
+    ) -> Option<(Identifier, u32)> {
         match state_transition {
             StateTransition::DataContractUpdate(update)
                 if self.binds(update.data_contract().id()) =>
             {
-                Some(update.data_contract().id())
+                Some((
+                    update.data_contract().id(),
+                    update.data_contract().version(),
+                ))
             }
             _ => None,
         }

@@ -899,6 +899,10 @@ fn canonical_property_value<'v>(
         {
             None
         }
+        // Bytes are already in the form the codec would produce; skip its two copies.
+        DocumentPropertyType::ByteArray(_) if matches!(value, Value::Bytes(_)) => {
+            Some(Cow::Borrowed(value))
+        }
         _ => {
             let encoded = property_type.encode_value_for_tree_keys(value).ok()?;
             // The index-key form of an empty byte array is empty, which decodes as null.
@@ -3472,6 +3476,31 @@ mod tests {
                     "{field}"
                 );
             }
+        }
+
+        #[test]
+        fn should_borrow_byte_array_operands_already_in_canonical_form() {
+            let contract = contract();
+            let document_type = contract
+                .document_type_for_name("withByteArrays")
+                .expect("document type");
+            let byte_array = &document_type
+                .flattened_properties()
+                .get("byteArrayField")
+                .expect("byte array field")
+                .property_type;
+            for value in [Value::Bytes(vec![]), Value::Bytes(vec![1, 2, 3])] {
+                let canonical =
+                    canonical_property_value(byte_array, &value).expect("bytes are canonical");
+                assert!(matches!(canonical, Cow::Borrowed(_)), "{value:?}");
+                assert_eq!(canonical.as_ref(), &value);
+            }
+            // Other encodings of bytes are still converted.
+            let identifier = Value::Identifier([7; 32]);
+            assert_eq!(
+                canonical_property_value(byte_array, &identifier).as_deref(),
+                Some(&Value::Bytes(vec![7; 32]))
+            );
         }
 
         #[test]

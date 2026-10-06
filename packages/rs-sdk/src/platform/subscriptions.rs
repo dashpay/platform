@@ -31,13 +31,14 @@ use dash_platform_queries::subscriptions::{
     canonical_operands, subscribe_request, ResolvedFilters, StateTransitionFilter, MAX_FILTERS,
 };
 use dpp::dashcore::hashes::{sha256, Hash};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::{sleep, TransportError};
 use rs_dapi_client::{Address, DapiClientError, DapiRequestExecutor, RequestSettings};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::future::Future;
 use std::pin::Pin;
@@ -106,9 +107,9 @@ pub struct StateTransitionSubscription {
     /// The wait before the next stream is opened, after a failure. Kept here, like `idle`, so
     /// a caller cancelling `next()` does not restart it.
     retry: Option<Timer>,
-    /// Bound data contracts a delivered update changed; re-read with proofs before the next
-    /// message is checked.
-    contracts_to_refresh: BTreeSet<Identifier>,
+    /// Bound data contracts a delivered update changed, with the version it changed each to;
+    /// re-read with proofs before the next message is checked.
+    contracts_to_refresh: BTreeMap<Identifier, u32>,
     /// Why the subscription ended, once it has: later calls fail rather than read on.
     terminated: Option<String>,
     /// Notices the current stream going silent.
@@ -220,7 +221,7 @@ impl Sdk {
             resume_from: from_block_height,
             consecutive_failures: 0,
             retry: None,
-            contracts_to_refresh: BTreeSet::new(),
+            contracts_to_refresh: BTreeMap::new(),
             terminated: None,
             idle: IdleWatch::default(),
         };
@@ -412,11 +413,24 @@ impl StateTransitionSubscription {
         }
     }
 
-    /// Rebind the filters on contracts a delivered update changed to their current version,
-    /// read with a proof. A contract that can no longer be read ends the subscription.
+    /// Rebind the filters on contracts a delivered update changed to the updated version or a
+    /// later one, read with a proof. A node answering with an older version is behind the
+    /// stream; the read is retried, and fails (to be retried by the caller) if it stays behind.
+    /// A contract that can no longer be read ends the subscription.
     async fn refresh_contracts(&mut self) -> Result<(), Error> {
+        let mut stale_reads = 0;
         // An id leaves the queue only once rebound, so a cancelled or failed refresh is retried.
-        while let Some(data_contract_id) = self.contracts_to_refresh.first().copied() {
+        while let Some((&data_contract_id, &updated_version)) =
+            self.contracts_to_refresh.first_key_value()
+        {
+            let bound_version = self
+                .resolved
+                .data_contract(data_contract_id)
+                .map(|contract| contract.version());
+            if bound_version >= Some(updated_version) {
+                self.contracts_to_refresh.remove(&data_contract_id);
+                continue;
+            }
             let contract = DataContract::fetch(&self.sdk, data_contract_id)
                 .await?
                 .ok_or_else(|| {
@@ -425,6 +439,21 @@ impl StateTransitionSubscription {
                         format!("data contract {data_contract_id} not found after its update"),
                     )
                 })?;
+            if contract.version() < updated_version {
+                // Never bind a version older than the update the stream has passed: matching
+                // under the old schema could drop events the node matched under the new one.
+                stale_reads += 1;
+                if stale_reads >= MAX_CONSECUTIVE_FAILURES {
+                    return Err(Error::Generic(format!(
+                        "data contract {data_contract_id} read with a proof is still at version \
+                         {}, before the update to version {updated_version} the stream passed; \
+                         try again",
+                        contract.version()
+                    )));
+                }
+                sleep(FIRST_RETRY_DELAY).await;
+                continue;
+            }
             self.resolved
                 .rebind_data_contract(Arc::new(contract), self.sdk.version());
             self.contracts_to_refresh.remove(&data_contract_id);
@@ -488,11 +517,15 @@ impl StateTransitionSubscription {
                         MAX_VALUE_DEPTH,
                     )?;
                 let local_match = self.resolved.matches(&state_transition, platform_version);
-                if let Some(data_contract_id) =
+                if let Some((data_contract_id, updated_version)) =
                     self.resolved.followed_data_contract(&state_transition)
                 {
                     // Never install the contract the node sent: re-read it with a proof.
-                    self.contracts_to_refresh.insert(data_contract_id);
+                    let pending = self
+                        .contracts_to_refresh
+                        .entry(data_contract_id)
+                        .or_insert(updated_version);
+                    *pending = (*pending).max(updated_version);
                 }
                 let Some(mut local_match) = local_match else {
                     tracing::warn!(
@@ -606,7 +639,7 @@ mod tests {
             resume_from: None,
             consecutive_failures: 0,
             retry: None,
-            contracts_to_refresh: BTreeSet::new(),
+            contracts_to_refresh: BTreeMap::new(),
             terminated: None,
             idle: IdleWatch::default(),
         }
@@ -919,7 +952,10 @@ mod tests {
             proved.version()
         );
         // ...and the contract is queued to be read again with a proof.
-        assert!(subscription.contracts_to_refresh.contains(&proved.id()));
+        assert_eq!(
+            subscription.contracts_to_refresh.get(&proved.id()),
+            Some(&(proved.version() + 7))
+        );
     }
 
     #[test]
@@ -942,13 +978,109 @@ mod tests {
     async fn should_keep_a_contract_queued_until_its_refresh_completes() {
         let mut subscription = subscription();
         let data_contract_id = Identifier::from([5u8; 32]);
-        subscription.contracts_to_refresh.insert(data_contract_id);
+        subscription
+            .contracts_to_refresh
+            .insert(data_contract_id, 2);
         // The mock SDK has no expectation for this fetch, so the refresh fails part-way, as it
         // would if the future were dropped while fetching.
         assert!(subscription.refresh_contracts().await.is_err());
         assert!(subscription
             .contracts_to_refresh
-            .contains(&data_contract_id));
+            .contains_key(&data_contract_id));
+    }
+
+    /// A subscription with a document filter bound to version 1 of a contract, and the
+    /// contract at versions 2 and 3.
+    fn subscription_on_contract() -> (StateTransitionSubscription, [Arc<DataContract>; 2]) {
+        use dash_platform_queries::subscriptions::DocumentFilter;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let fixture =
+            get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+                .data_contract_owned();
+        let version = |version: u32| {
+            let mut contract = fixture.clone();
+            contract.set_version(version);
+            Arc::new(contract)
+        };
+        let bound = version(1);
+        let filters = vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(bound.id()).with_document_type("niceDocument"),
+        )];
+        let subscription = StateTransitionSubscription {
+            resolved: ResolvedFilters::resolve(
+                filters.clone(),
+                |_| Some(bound.clone()),
+                PlatformVersion::latest(),
+            )
+            .expect("filters resolve"),
+            filters,
+            ..subscription()
+        };
+        (subscription, [version(2), version(3)])
+    }
+
+    fn bound_version(subscription: &StateTransitionSubscription, id: Identifier) -> u32 {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        subscription
+            .resolved
+            .data_contract(id)
+            .expect("bound")
+            .version()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_not_bind_a_proved_contract_older_than_the_update_the_stream_passed() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        let (mut subscription, [lagging, updated]) = subscription_on_contract();
+        let id = updated.id();
+        // The stream passed the update to version 3, but the proved read comes from a node
+        // still at version 2.
+        subscription.contracts_to_refresh.insert(id, 3);
+        subscription
+            .sdk
+            .mock()
+            .expect_fetch(id, Some((*lagging).clone()))
+            .await
+            .expect("expectation");
+        assert!(subscription.refresh_contracts().await.is_err());
+        assert_eq!(
+            bound_version(&subscription, id),
+            1,
+            "not rebound to the lagging read"
+        );
+        assert_eq!(subscription.contracts_to_refresh.get(&id), Some(&3));
+
+        // Once a node has caught up, the refresh completes.
+        subscription
+            .sdk
+            .mock()
+            .remove_fetch_expectation::<DataContract, _>(id)
+            .await;
+        subscription
+            .sdk
+            .mock()
+            .expect_fetch(id, Some((*updated).clone()))
+            .await
+            .expect("expectation");
+        subscription.refresh_contracts().await.expect("refreshed");
+        assert_eq!(bound_version(&subscription, id), 3);
+        assert!(subscription.contracts_to_refresh.is_empty());
+
+        // An update the binding already covers needs no read (the mock now expects none).
+        subscription
+            .sdk
+            .mock()
+            .remove_fetch_expectation::<DataContract, _>(id)
+            .await;
+        subscription.contracts_to_refresh.insert(id, 2);
+        subscription
+            .refresh_contracts()
+            .await
+            .expect("nothing to read");
+        assert_eq!(bound_version(&subscription, id), 3, "not regressed");
+        assert!(subscription.contracts_to_refresh.is_empty());
     }
 
     #[test]
@@ -1071,10 +1203,16 @@ mod tests {
                 block_height: 41,
             })))
             .expect("accepted");
-        subscription.terminated = Some("a response could not be interpreted".to_string());
-        // No stream is read or reopened, and the cursor stays where it was.
-        assert!(subscription.next().await.is_err());
-        assert!(subscription.next().await.is_err());
+        // Reopening the stream fails for good: the mock SDK refuses the request.
+        let error = subscription.next().await.expect_err("refused");
+        assert!(
+            subscription.terminated.is_some(),
+            "next() latches a terminal failure"
+        );
+        // Later calls do not try again, and the cursor stays where it was.
+        let later = subscription.next().await.expect_err("ended");
+        assert!(later.to_string().contains("has ended"), "{later}");
+        assert!(later.to_string().contains(&error.to_string()), "{later}");
         assert_eq!(subscription.resume_height(), Some(42));
         assert!(subscription.stream.is_none());
     }

@@ -521,7 +521,10 @@ fn should_rebind_document_filters_to_the_contract_an_update_carries() {
     let mut updated = (*contract).clone();
     updated.set_version(contract.version() + 1);
     let update = contract_update(updated);
-    assert_eq!(filters.followed_data_contract(&update), Some(contract.id()));
+    assert_eq!(
+        filters.followed_data_contract(&update),
+        Some((contract.id(), contract.version() + 1))
+    );
     filters
         .follow(&update, PlatformVersion::latest())
         .expect("update converts");
