@@ -4,8 +4,7 @@ use crate::drive::document::expiration::pricing::{
 };
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, document_takes_part_in_index,
-    index_level_tree_types_with_continuation_demotion, level_counts_continuations,
-    IndexLevelTreeTypes,
+    index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
@@ -581,7 +580,7 @@ impl Drive {
             // count exactly their single continuation, so the continuation
             // is inserted unwrapped and contributes its subtree count —
             // matching the v2 insert walker's dispatch.
-            let mut parent_counts_continuations = level_counts_continuations(current_index_level);
+            let mut parent_counts_continuations = current_index_level.is_ranked_chain_level();
 
             if change_occurred_on_index && new_takes_part {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
@@ -859,7 +858,7 @@ impl Drive {
                 // The next-deeper continuation (if any) hangs inside
                 // this level's value tree.
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
-                parent_counts_continuations = level_counts_continuations(current_index_level);
+                parent_counts_continuations = current_index_level.is_ranked_chain_level();
 
                 // we push the actual value of the index path, both for the new and the old
                 index_path.push(document_index_field);
@@ -1411,7 +1410,7 @@ impl Drive {
             // grouping level (validation rejects `at` naming the transform
             // source), but the stamps are read rather than assumed so the
             // three walkers share one rule.
-            let mut parent_counts_continuations = level_counts_continuations(top_index_level);
+            let mut parent_counts_continuations = top_index_level.is_ranked_chain_level();
             for (i, (level, sub_level_tree_types)) in levels.iter().enumerate() {
                 let property_name = &new_suffix[i * 2];
                 let value = &new_suffix[i * 2 + 1];
@@ -1484,7 +1483,7 @@ impl Drive {
                 path.push(value.clone());
 
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
-                parent_counts_continuations = level_counts_continuations(level);
+                parent_counts_continuations = level.is_ranked_chain_level();
             }
 
             if new_terminator_is_unique {

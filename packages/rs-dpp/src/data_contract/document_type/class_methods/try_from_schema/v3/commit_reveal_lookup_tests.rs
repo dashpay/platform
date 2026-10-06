@@ -9,7 +9,9 @@
 
 use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceLookup, HashFunction,
     LookupHashKey, LookupKeyParam, LookupKeySource, PropertyReference,
@@ -603,6 +605,32 @@ fn should_refuse_consuming_a_commitment_its_owner_may_not_delete() {
 }
 
 #[test]
+fn should_consume_a_commitment_only_a_consume_deletes() {
+    // `canBeDeleted: "onlyWhenConsumed"`: its owner can not withdraw the preorder with a
+    // delete, and the reveal consumes it
+    let parsed = contract(dpns_contract_with(
+        dpns_salt_reveal(),
+        json!({}),
+        json!({ "canBeDeleted": "onlyWhenConsumed" }),
+    ))
+    .expect("a reveal consuming a commitment only a consume deletes should parse");
+    assert_eq!(
+        salt_reference(&parsed),
+        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id: None,
+            document_type_name: "preorder".to_string(),
+            property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
+            lookup: dpns_lookup(Some(1), true),
+        }
+    );
+    let preorder = parsed
+        .document_type_for_name("preorder")
+        .expect("the preorder");
+    assert!(!preorder.documents_can_be_deleted());
+    assert!(preorder.documents_deleted_only_when_consumed());
+}
+
+#[test]
 fn should_refuse_params_the_referring_type_cannot_supply() {
     let with_params = |params: serde_json::Value| {
         dpns_contract(reveal_with(
@@ -748,6 +776,56 @@ fn should_refuse_a_carrier_or_stored_param_a_replace_could_change() {
         json!({}),
     ))
     .expect("stored params listed under immutable, and the transient salt, are fixed");
+}
+
+/// A stored param that is an immutable `deletableDocument` reference by id is
+/// fixed only when required: a replace may clear an optional one once its
+/// document is deleted, and the stored reveal would then no longer hold the
+/// value its commitment was revealed for.
+#[test]
+fn should_refuse_a_param_a_replace_can_clear_once_its_document_is_deleted() {
+    let option_reveal = |required: bool| {
+        let mut domain_extra = json!({
+            "documentsMutable": true,
+            "immutable": ["normalizedLabel", "parentDomainName", "optionId"]
+        });
+        if required {
+            domain_extra["required"] = json!([
+                "label",
+                "normalizedLabel",
+                "parentDomainName",
+                "preorderSalt",
+                "optionId"
+            ]);
+        }
+        let mut contract_value = dpns_contract_with(
+            reveal_with(
+                json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "optionId"] }),
+                json!({}),
+                json!({}),
+                json!({}),
+            ),
+            domain_extra,
+            json!({}),
+        );
+        contract_value["documentSchemas"]["domain"]["properties"]["optionId"] = json!({
+            "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier", "position": 6,
+            "refersTo": { "type": "deletableDocument", "documentType": "option" }
+        });
+        contract_value["documentSchemas"]["option"] = json!({
+            "type": "object",
+            "canBeDeleted": true,
+            "properties": { "name": { "type": "string", "maxLength": 63, "position": 0 } },
+            "additionalProperties": false
+        });
+        contract(contract_value)
+    };
+    assert_refused(
+        option_reveal(false),
+        "param \"optionId\" is an optional `deletableDocument` reference a replace can clear",
+    );
+    option_reveal(true).expect("a required reference is never cleared");
 }
 
 /// A contract whose domain's `committerId` identifier refers to a

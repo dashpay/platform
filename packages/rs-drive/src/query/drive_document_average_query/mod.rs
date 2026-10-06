@@ -86,8 +86,9 @@ pub struct AverageEntry {
     /// The terminator key value (the value of the index's last covered
     /// property within the query).
     pub key: Vec<u8>,
-    /// Matched-document count for this key. `Some(n)` for matched
-    /// keys; `None` for keys proven absent.
+    /// Matched-document count for this key (over a
+    /// `summableOffCountIndex` index, matched groups). `Some(n)` for
+    /// matched keys; `None` for keys proven absent.
     pub count: Option<u64>,
     /// Aggregated `sum_property` value for this key. `Some(n)` for
     /// matched keys; `None` for keys proven absent.
@@ -168,7 +169,9 @@ pub enum DocumentAverageResponse {
     /// A single `(count, sum)` pair across all matched documents.
     /// Client computes `avg = sum / count`.
     Aggregate {
-        /// Total matched-document count.
+        /// Total matched-document count; over a `summableOffCountIndex`
+        /// index, the number of matched groups (its average is the source's
+        /// entries per group).
         count: u64,
         /// Total aggregated value of `sum_property`.
         sum: i64,

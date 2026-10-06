@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::ProTxHash;
+use dpp::dashcore::{ProTxHash, PubkeyHash};
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator::v0::NewValidatorIfMasternodeInState;
@@ -11,6 +11,7 @@ use dpp::core_types::validator::v0::ValidatorV0;
 pub use dpp::core_types::validator_set::v0::*;
 use dpp::dashcore_rpc::json::QuorumInfoResult;
 use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
@@ -91,12 +92,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                             if *is_banned {
                                 None
                             } else {
-                                let node_address = format!(
-                                    "tcp://{}@{}:{}",
-                                    hex::encode(node_id.to_byte_array()),
-                                    node_ip,
-                                    platform_p2p_port
-                                );
+                                let node_address =
+                                    validator_node_address(node_id, node_ip, *platform_p2p_port);
 
                                 Some(Ok(abci::ValidatorUpdate {
                                     pub_key: (*public_key).map(|public_key| crypto::PublicKey {
@@ -121,12 +118,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                             if *is_banned {
                                 None
                             } else {
-                                let node_address = format!(
-                                    "tcp://{}@{}:{}",
-                                    hex::encode(node_id.to_byte_array()),
-                                    node_ip,
-                                    platform_p2p_port
-                                );
+                                let node_address =
+                                    validator_node_address(node_id, node_ip, *platform_p2p_port);
 
                                 Some(Ok(abci::ValidatorUpdate {
                                     pub_key: (*public_key).map(|public_key| crypto::PublicKey {
@@ -178,12 +171,7 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                     if *is_banned {
                         return None;
                     }
-                    let node_address = format!(
-                        "tcp://{}@{}:{}",
-                        hex::encode(node_id.to_byte_array()),
-                        node_ip,
-                        platform_p2p_port
-                    );
+                    let node_address = validator_node_address(node_id, node_ip, *platform_p2p_port);
                     Some(abci::ValidatorUpdate {
                         pub_key: public_key.as_ref().map(|public_key| crypto::PublicKey {
                             sum: Some(Bls12381(public_key.0.to_compressed().to_vec())),
@@ -224,12 +212,8 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
                     if is_banned {
                         return None;
                     }
-                    let node_address = format!(
-                        "tcp://{}@{}:{}",
-                        hex::encode(node_id.to_byte_array()),
-                        node_ip,
-                        platform_p2p_port
-                    );
+                    let node_address =
+                        validator_node_address(&node_id, &node_ip, platform_p2p_port);
 
                     Some(abci::ValidatorUpdate {
                         pub_key: public_key.map(|public_key| crypto::PublicKey {
@@ -307,6 +291,25 @@ impl ValidatorSetMethodsV0 for ValidatorSetV0 {
             threshold_public_key,
         })
     }
+}
+
+/// The address Tenderdash dials a validator on: `tcp://<node id>@<ip>:<port>`.
+///
+/// Formatting the host and port as a socket address writes an IPv6 host in
+/// brackets, as a URL authority requires. `node_ip` always holds a formatted
+/// IP address; anything else is written as it is. This only formats Tenderdash's
+/// dialing text; persisted validator membership, keys and the validator-set hash
+/// do not depend on it, so every protocol version can use the same formatting.
+fn validator_node_address(node_id: &PubkeyHash, node_ip: &str, platform_p2p_port: u16) -> String {
+    let host_port = match node_ip.parse::<IpAddr>() {
+        Ok(ip) => SocketAddr::new(ip, platform_p2p_port).to_string(),
+        Err(_) => format!("{}:{}", node_ip, platform_p2p_port),
+    };
+    format!(
+        "tcp://{}@{}",
+        hex::encode(node_id.to_byte_array()),
+        host_port
+    )
 }
 
 #[cfg(test)]
@@ -545,5 +548,58 @@ mod tests {
         assert!(update.validator_updates.is_empty());
         // threshold_public_key is still present
         assert!(update.threshold_public_key.is_some());
+    }
+
+    /// A set holding one validator, on `node_ip`.
+    fn set_with_validator_on(pro_tx_hash: ProTxHash, node_ip: &str) -> ValidatorSetV0 {
+        let validator = ValidatorV0 {
+            node_ip: node_ip.to_string(),
+            ..make_validator(pro_tx_hash, false)
+        };
+        // Same seeds, so every such set shares its threshold key.
+        make_set(1, 100, 1, BTreeMap::from([(pro_tx_hash, validator)]))
+    }
+
+    /// Every node address Drive hands Tenderdash for a validator on `node_ip`:
+    /// from `to_update`, `to_update_owned`, and `update_difference` both when
+    /// the validator is unchanged and when it just moved there.
+    fn node_addresses_for_validator_on(node_ip: &str) -> Vec<String> {
+        let pro_tx_hash = ProTxHash::from_byte_array([9; 32]);
+        let set = set_with_validator_on(pro_tx_hash, node_ip);
+        let before_the_move = set_with_validator_on(pro_tx_hash, "192.168.0.2");
+        [
+            set.to_update(),
+            set.clone().to_update_owned(),
+            set.update_difference(&set).expect("same quorum"),
+            before_the_move
+                .update_difference(&set)
+                .expect("same quorum"),
+        ]
+        .into_iter()
+        .map(|update| {
+            assert_eq!(update.validator_updates.len(), 1);
+            update.validator_updates[0].node_address.clone()
+        })
+        .collect()
+    }
+
+    /// A URL authority needs an IPv6 host in brackets (RFC 3986). Tenderdash
+    /// writes validator addresses that way; it only reads the unbracketed form
+    /// because Go's URL parser does not enforce this outside http(s).
+    #[test]
+    fn should_bracket_an_ipv6_host_in_the_validator_node_address() {
+        let expected = format!("tcp://{}@[2001:db8::1]:30", "07".repeat(20));
+        for node_address in node_addresses_for_validator_on("2001:db8::1") {
+            assert_eq!(node_address, expected);
+        }
+    }
+
+    /// An IPv4 host takes no brackets.
+    #[test]
+    fn should_write_an_ipv4_validator_node_address_without_brackets() {
+        let expected = format!("tcp://{}@192.168.0.1:30", "07".repeat(20));
+        for node_address in node_addresses_for_validator_on("192.168.0.1") {
+            assert_eq!(node_address, expected);
+        }
     }
 }

@@ -44,7 +44,7 @@ pub fn verify_token_status(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, status_option) = Drive::verify_token_status(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         token_id_bytes,
         verify_subset_of_proof,
         platform_version,

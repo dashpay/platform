@@ -9,11 +9,25 @@ use grovedb::GroveDb;
 
 impl DriveDocumentQuery<'_> {
     /// v0 of the composite proof verification — see the versioned
-    /// wrapper for the trust model.
+    /// wrapper for the trust model. Reads only a plain `Item` as a document.
     #[inline(always)]
     pub(super) fn verify_composite_documents_proof_v0(
         &self,
         proof: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, CompositeDocumentsResult), Error> {
+        self.verify_composite_documents_proof_classifying(proof, false, platform_version)
+    }
+
+    /// The composite proof verification of v0 and v1, which differ only in
+    /// the items read as documents: a plain `Item` (v0), or every item
+    /// variant, the sum-bearing ones included (`sum_bearing_items_are_documents`,
+    /// v1). Split out of v0 in place: v0 passes `false`, which classifies each
+    /// element exactly as before.
+    pub(super) fn verify_composite_documents_proof_classifying(
+        &self,
+        proof: &[u8],
+        sum_bearing_items_are_documents: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, CompositeDocumentsResult), Error> {
         self.validate_composite(platform_version)?;
@@ -97,6 +111,7 @@ impl DriveDocumentQuery<'_> {
             &sub_path_queries,
             &removal_path_queries,
             proved_trios,
+            sum_bearing_items_are_documents,
             platform_version,
         )?;
 

@@ -12,4 +12,5 @@ pub const STATE_TRANSITION_METHOD_VERSIONS_V1: DPPStateTransitionMethodVersions 
             duplicated_keys_witness: 0,
             validate_identity_public_keys_structure: 0,
         },
+        verify_identity_signed_signature: 0,
     };

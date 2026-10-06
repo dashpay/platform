@@ -130,15 +130,20 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                     ));
                     // The commitments the create revealed and consumes, each in the create's
                     // own contract. A contested document sits in its contest's own trees, so
-                    // no tree its insert writes into is shared with these deletes
+                    // no tree its insert writes into is shared with these deletes. They are
+                    // deleted without their owner's `canBeDeleted` guard: the consume rules
+                    // admitted them, and a type whose documents only a consume deletes
+                    // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
                     for consumed in consumed_documents {
-                        ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
-                            document_id: consumed.document_id,
-                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
-                            document_type_info: DocumentTypeInfo::DocumentTypeName(
-                                consumed.document_type_name,
-                            ),
-                        }));
+                        ops.push(DocumentOperation(
+                            DocumentOperationType::ForceDeleteDocument {
+                                document_id: consumed.document_id,
+                                contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                                document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                    consumed.document_type_name,
+                                ),
+                            },
+                        ));
                     }
                 } else if consumed_documents.is_empty() {
                     // Just add the document

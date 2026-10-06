@@ -10,6 +10,7 @@ use drive::grovedb::TransactionArg;
 
 mod v0;
 mod v1;
+mod v2;
 
 impl<C> Platform<C>
 where
@@ -52,9 +53,14 @@ where
                 transaction,
                 platform_version,
             ),
+            2 => self.pool_withdrawals_into_transactions_queue_v2(
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "pool_withdrawals_into_transactions_queue".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
