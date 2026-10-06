@@ -97,7 +97,7 @@ log = { version = "0.4.27" }
 # `wasm_js` feature, so enable it here where every wasm crate picks it up.
 # Unlike getrandom 0.2's `js` (which falls back to Node's `require("crypto")`),
 # `wasm_js` only reads `globalThis.crypto.getRandomValues`, which Node.js
-# exposes by default from v19; the JS packages therefore require Node >= 20.
+# exposes by default from v19; the JS packages require Node >= 22.
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }

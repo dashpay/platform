@@ -52,6 +52,9 @@
     "dist",
     "pkg"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "./build.sh",
     "build:modules": "./scripts/build-modules.sh"
