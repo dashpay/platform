@@ -42,7 +42,7 @@ mod validate_document_replace_transition_action_uniqueness;
 mod validate_document_purchase_transition_action_uniqueness;
 mod validate_document_transfer_transition_action_uniqueness;
 mod validate_document_update_price_transition_action_uniqueness;
-mod validate_restored_document_uniqueness;
+mod validate_moderated_document_uniqueness;
 
 #[cfg(test)]
 #[cfg(feature = "server")]
@@ -130,6 +130,7 @@ mod tests {
             gas_fees_paid_by: GasFeesPaidBy::default(),
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             declared_action_fee: None,
+            shielded_token_payment: None,
         });
 
         let data = BTreeMap::from([(
@@ -144,6 +145,10 @@ mod tests {
             prefunded_voting_balance: None,
             current_store_contest_info: None,
             should_store_contest_info: None,
+            property_constraint_aggregates: Default::default(),
+            moderated: false,
+            consumed_documents: Vec::new(),
+            derived_index_values: None,
         })
     }
 
@@ -449,7 +454,8 @@ mod tests {
     /// index (allow_original remains true).
     #[test]
     fn validate_uniqueness_of_data_v1_changed_document_allows_original() {
-        let platform_version = PlatformVersion::latest();
+        // The last protocol version selecting uniqueness generation 1
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let (drive, dpns) = setup_drive_with_dpns(platform_version);
 
         let document_type = dpns
@@ -589,7 +595,8 @@ mod tests {
     /// check is skipped, yielding a valid result.
     #[test]
     fn validate_uniqueness_of_data_v1_exits_early_when_required_timestamp_missing() {
-        let platform_version = PlatformVersion::latest();
+        // The last protocol version selecting uniqueness generation 1
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let (drive, dpns) = setup_drive_with_dpns(platform_version);
 
         // Use the domain document type because it has required timestamps
@@ -1183,5 +1190,258 @@ mod unique_time_range_index_tests {
             platform_version,
         );
         assert_duplicate(&result, "inside the first window");
+    }
+}
+
+#[cfg(test)]
+mod unique_integer_range_index_tests {
+    //! A unique integer-range index with non-overlapping windows expresses
+    //! "at most one document per window per remaining key tuple" — one bid
+    //! per author per price band. The probe looks in the window the
+    //! candidate's value falls in, and, unlike a time-range source, the
+    //! integer source may change on update: a change that stays in the
+    //! document's own window finds the document itself, which is its own
+    //! slot rather than a conflict.
+    use std::borrow::Cow;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::prelude::DataContract;
+    use dpp::validation::SimpleConsensusValidationResult;
+    use dpp::version::PlatformVersion;
+
+    use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{
+        UniquenessOfDataRequest, UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
+    };
+    use crate::drive::Drive;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    /// A `bid` type with a UNIQUE `(integerRange(amount, range = step = 100),
+    /// author)` index: one bid per author per band of 100.
+    fn build_contract() -> DataContract {
+        let schemas = platform_value!({
+            "bid": {
+                "type": "object",
+                "properties": {
+                    "amount": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0},
+                    "author": {"type": "string", "maxLength": 63, "position": 1}
+                },
+                "required": ["amount", "author"],
+                "indices": [{
+                    "name": "oneBidPerBand",
+                    "properties": [{"amount": "asc"}, {"author": "asc"}],
+                    "unique": true,
+                    "integerRange": {"on": "amount", "range": 100u64, "step": 100u64}
+                }],
+                "additionalProperties": false
+            }
+        });
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::from([203u8; 32]), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned()
+    }
+
+    fn setup() -> (Drive, DataContract) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = build_contract();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        (drive, contract)
+    }
+
+    fn insert_bid(
+        drive: &Drive,
+        contract: &DataContract,
+        marker: u8,
+        amount: u64,
+        author: &str,
+    ) -> Identifier {
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([marker; 32]),
+            owner_id: Identifier::from([1; 32]),
+            properties: BTreeMap::from([
+                ("amount".to_string(), Value::U64(amount)),
+                ("author".to_string(), Value::Text(author.to_string())),
+            ]),
+            revision: Some(1),
+            ..Default::default()
+        });
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some([1; 32]),
+                    },
+                    contract,
+                    document_type: contract.document_type_for_name("bid").expect("bid"),
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("add document");
+        document.id()
+    }
+
+    fn check(
+        drive: &Drive,
+        contract: &DataContract,
+        document_id: Identifier,
+        amount: u64,
+        author: &str,
+        update_type: UniquenessOfDataRequestUpdateType,
+    ) -> SimpleConsensusValidationResult {
+        let data = BTreeMap::from([
+            ("amount".to_string(), Value::U64(amount)),
+            ("author".to_string(), Value::Text(author.to_string())),
+        ]);
+        let request = UniquenessOfDataRequestV1 {
+            contract,
+            document_type: contract.document_type_for_name("bid").expect("bid"),
+            owner_id: Identifier::from([1; 32]),
+            creator_id: None,
+            document_id,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            data: &data,
+            update_type,
+        };
+        drive
+            .validate_uniqueness_of_data(
+                UniquenessOfDataRequest::V1(request),
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("uniqueness validation should run")
+    }
+
+    fn changed(values: &BTreeSet<String>) -> UniquenessOfDataRequestUpdateType<'_> {
+        UniquenessOfDataRequestUpdateType::ChangedDocument {
+            changed_owner_id: false,
+            changed_updated_at: false,
+            changed_transferred_at: false,
+            changed_updated_at_block_height: false,
+            changed_transferred_at_block_height: false,
+            changed_updated_at_core_block_height: false,
+            changed_transferred_at_core_block_height: false,
+            changed_data_values: Cow::Borrowed(values),
+        }
+    }
+
+    fn is_duplicate(result: &SimpleConsensusValidationResult) -> bool {
+        matches!(
+            result.errors.first(),
+            Some(ConsensusError::StateError(
+                StateError::DuplicateUniqueIndexError(_)
+            ))
+        )
+    }
+
+    #[test]
+    fn should_refuse_a_second_document_in_the_same_window() {
+        let (drive, contract) = setup();
+        insert_bid(&drive, &contract, 1, 120, "alice");
+        let result = check(
+            &drive,
+            &contract,
+            Identifier::from([9; 32]),
+            199,
+            "alice",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+        );
+        assert!(is_duplicate(&result), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_accept_the_next_window_and_another_author() {
+        let (drive, contract) = setup();
+        insert_bid(&drive, &contract, 1, 120, "alice");
+        let next_window = check(
+            &drive,
+            &contract,
+            Identifier::from([9; 32]),
+            200,
+            "alice",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+        );
+        assert!(next_window.is_valid(), "{:?}", next_window.errors);
+        let other_author = check(
+            &drive,
+            &contract,
+            Identifier::from([9; 32]),
+            150,
+            "bob",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+        );
+        assert!(other_author.is_valid(), "{:?}", other_author.errors);
+        insert_bid(&drive, &contract, 9, 200, "alice");
+    }
+
+    #[test]
+    fn should_let_a_document_change_its_value_within_its_own_window() {
+        let (drive, contract) = setup();
+        let alice = insert_bid(&drive, &contract, 1, 120, "alice");
+        let changed_amount = BTreeSet::from(["amount".to_string()]);
+        let result = check(
+            &drive,
+            &contract,
+            alice,
+            180,
+            "alice",
+            changed(&changed_amount),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_refuse_a_value_change_into_a_window_another_document_holds() {
+        let (drive, contract) = setup();
+        let alice = insert_bid(&drive, &contract, 1, 120, "alice");
+        insert_bid(&drive, &contract, 2, 250, "alice");
+        let changed_amount = BTreeSet::from(["amount".to_string()]);
+        let result = check(
+            &drive,
+            &contract,
+            alice,
+            230,
+            "alice",
+            changed(&changed_amount),
+        );
+        assert!(is_duplicate(&result), "{:?}", result.errors);
     }
 }

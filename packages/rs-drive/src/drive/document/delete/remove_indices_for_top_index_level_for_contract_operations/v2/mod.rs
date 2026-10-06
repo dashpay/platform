@@ -9,7 +9,8 @@ use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+    bucket_index_keys, index_level_tree_types_with_continuation_demotion,
+    index_only_level_skips_when_absent, level_removes_entry,
 };
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
@@ -175,6 +176,19 @@ impl Drive {
                 continue;
             }
 
+            // Mirror of the insert walker: a branch under which the document
+            // wrote no entry (every index through it skipped the document)
+            // holds nothing of it to remove, and one whose entries all
+            // outlive the delete holds nothing it removes. The delete's
+            // worst-case estimation document carries every property, so it
+            // sweeps every other branch, an over-estimate like the one below.
+            if !level_removes_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                continue;
+            }
+
             // The delete walker writes nothing itself, but its
             // estimation layers must describe the tree the insert path
             // actually laid down — including the meta-schema-v3 ranked
@@ -205,13 +219,12 @@ impl Drive {
             index_path.push(Vec::from(name.as_bytes()));
 
             // The level key is the path segment; the document value is read
-            // from the *source property* — they differ on a time-range
-            // level, whose key is grid-qualified
-            // (`TimeRangeTransform::storage_key`) while the timestamp lives
-            // under the bare property name. Mirrors the insert walker.
+            // from the *source property* — they differ on a bucketed level,
+            // whose key is grid-qualified (`storage_key`) while the value
+            // lives under the bare property name. Mirrors the insert walker.
             let property_name = sub_level
-                .time_range()
-                .map(|transform| transform.source.as_str())
+                .bucketing()
+                .map(|bucketing| bucketing.source())
                 .unwrap_or(name.as_str());
 
             // with the example of the dashpay contract's first index
@@ -227,18 +240,18 @@ impl Drive {
                     platform_version,
                 )? {
                 Some(document_top_field) => document_top_field,
-                // An unrequired top-level property on an indexOnly type is a
-                // skipIfAbsent index's trigger: the insert walker wrote no
-                // entries through this branch for a trigger-absent document,
-                // so its delete removes none — mirroring the insert skip is
-                // what keeps delete-by-values exact. The delete's estimation
+                // An unrequired property on an indexOnly type is a skip
+                // property of every index that holds it: the insert walker
+                // wrote no entries through this branch for a document
+                // missing it, so its delete removes none — mirroring the
+                // insert skip is what keeps delete-by-values exact
+                // (`level_reaches_entry` has normally passed the branch by
+                // already; this is the defensive arm). The delete's estimation
                 // dry-run runs on a worst-case document info that always
                 // resolves a value, so estimation sweeps this branch as
                 // written — a deliberate over-estimate that keeps the dry
                 // run an upper bound.
-                None if document_type.index_only()
-                    && !document_type.required_fields().contains(property_name) =>
-                {
+                None if index_only_level_skips_when_absent(document_type, property_name) => {
                     continue;
                 }
                 // A stored type's absent value keeps its null-layout empty
@@ -283,15 +296,15 @@ impl Drive {
             let any_fields_null = document_top_field.is_empty();
             let all_fields_null = document_top_field.is_empty();
 
-            // Mirror the insert side's time-range fan-out: a time-range
-            // first-property node removes one index entry per overlapping
-            // range bucket the document's timestamp fell into. The keys are
-            // recomputed deterministically through the same shared helper the
-            // insert walker uses, so they match exactly what insert wrote —
+            // Mirror the insert side's bucket fan-out: a bucketed
+            // first-property node removes one index entry per window the
+            // document's value fell into. The keys are recomputed
+            // deterministically through the same shared helper the insert
+            // walker uses, so they match exactly what insert wrote —
             // including the null case (single null entry) and the pre-origin
             // case (no entries on either side).
-            let index_keys: Vec<DriveKeyInfo> = time_range_index_keys(
-                sub_level.time_range(),
+            let index_keys: Vec<DriveKeyInfo> = bucket_index_keys(
+                sub_level.bucketing(),
                 document_top_field,
                 // A validated contract cannot exceed this; the clamp only
                 // bounds estimation work for unvalidated transforms. The

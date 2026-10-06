@@ -53,6 +53,13 @@ service Platform {
       returns (GetContractModerationEntriesResponse);
   rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
       returns (GetContractDocumentRemovalsResponse);
+  rpc getContractTeamActions(GetContractTeamActionsRequest)
+      returns (GetContractTeamActionsResponse);
+  rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest)
+      returns (GetContractTeamActionSignersResponse);
+  rpc getContractModerationActionCounts(
+      GetContractModerationActionCountsRequest)
+      returns (GetContractModerationActionCountsResponse);
   rpc getContractFeePots(GetContractFeePotsRequest)
       returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
@@ -829,7 +836,7 @@ message GetContractModerationEntriesResponse {
 }
 
 // The records of the documents a contract's moderators deleted, within one
-// document type whose documents they may delete (`canBeDeletedByModerators`):
+// document type whose documents they may delete (`moderatorAbilities.delete`):
 // the ones of the document ids named, or one page in document id order.
 message GetContractDocumentRemovalsRequest {
   message DocumentIds {
@@ -882,6 +889,13 @@ message GetContractDocumentRemovalsResponse {
     ContractDocumentRestoration restoration =
         7; // Set once a moderator restored the document, which is then live
            // again as it was; absent while the removal stands
+    bytes kept_fields =
+        8; // The values the record keeps of the document, as the record stores
+           // them: for each path its document type lists under
+           // moderatorAbilities.deleteKeepsFields, in the list's order, 0 when
+           // the document held no value there, or 1 and the value encoded as
+           // the document encodes its properties. Read under the contract's
+           // document type, as a document is. Empty when the type keeps none
   }
 
   message ContractDocumentRemovals {
@@ -897,6 +911,147 @@ message GetContractDocumentRemovalsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionsRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // Actions still gathering approvals
+    CLOSED = 1; // Actions whose approvals met their rule, which ran
+  }
+
+  message StartAtActionId {
+    bytes start_action_id = 1;        // 32-byte action id the page starts at
+    bool start_action_id_included = 2; // Whether the page includes that action
+  }
+
+  message GetContractTeamActionsRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the actions
+    ActionStatus status = 2; // Active or closed actions
+    optional StartAtActionId start_at_action_id =
+        3; // Where the page starts, in action id order; absent means the first
+    optional uint32 count =
+        4; // Maximum number of actions to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionsRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionsResponse {
+  // The deletion of a settled document: one past its type's deleteWithin
+  // window, which its type's moderatorAbilities.deleteSettled lets the team
+  // delete together
+  message DeleteSettledDocument {
+    string document_type_name = 1; // The document's type
+    bytes document_id = 2;         // The 32-byte id of the document
+    uint64 document_last_modified_at =
+        3; // The document's $updatedAt (or $createdAt) when proposed: the
+           // approvals are of the document as it was then
+    optional uint64 document_revision =
+        4; // The document's $revision when proposed, absent on a type whose
+           // documents carry none: an approval of a document changed since is
+           // refused
+    ContractModerationReason reason = 5; // Why, as the proposer gave it
+  }
+
+  // One action the seated team votes on: proposed by one member, approved by
+  // the others by its id, run once the approvals meet its rule
+  message ContractTeamAction {
+    bytes action_id = 1;   // The 32-byte id of the action
+    bytes proposer_id = 2; // The 32-byte id of the member that proposed it
+    uint64 proposed_at =
+        3; // The time of the block of the proposal, in milliseconds
+    oneof event {
+      DeleteSettledDocument delete_settled_document = 4; // What it does
+    }
+    uint32 approval_count =
+        5; // How many approvals it holds, the proposer's among them; an active
+           // action's is an upper bound, counting a member who left the team
+           // until a later approval reads the team and drops it; the exact
+           // figure is its signers still on the team
+  }
+
+  message ContractTeamActions {
+    repeated ContractTeamAction actions = 1; // The actions, in action id order
+  }
+
+  message GetContractTeamActionsResponseV0 {
+    oneof result {
+      ContractTeamActions actions = 1; // The actions read
+      Proof proof = 2; // Cryptographic proof of the actions, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // An action still gathering approvals
+    CLOSED = 1; // An action whose approvals met its rule, which ran
+  }
+
+  message GetContractTeamActionSignersRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the action
+    ActionStatus status = 2; // Whether the action is active or closed
+    bytes action_id = 3;     // The 32-byte id of the action
+    bool prove = 4;          // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionSignersRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersResponse {
+  message ContractTeamActionSigners {
+    repeated bytes signer_ids =
+        1; // The 32-byte ids of the members that approved, the proposer among
+           // them unless it left the team and its approval was dropped, in id
+           // order; none when there is no such action
+  }
+
+  message GetContractTeamActionSignersResponseV0 {
+    oneof result {
+      ContractTeamActionSigners signers = 1; // The approvals read
+      Proof proof = 2; // Cryptographic proof of the approvals, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionSignersResponseV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsRequest {
+  message GetContractModerationActionCountsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the elected contract whose
+                           // seated moderation team's actions are counted
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationActionCountsRequestV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsResponse {
+  // How many counted moderation actions (a ban, a suspension, a warning or a
+  // document deletion) one member of the seated team signed since the
+  // moderators pot was last paid out, which resets every count
+  message ContractModerationActionCount {
+    bytes identity_id = 1; // The 32-byte id of the member
+    uint32 count = 2;      // How many
+  }
+  message ContractModerationActionCounts {
+    repeated ContractModerationActionCount counts =
+        1; // The counts, in identity id order; a member that did not act since
+           // the last payout has none
+  }
+  message GetContractModerationActionCountsResponseV0 {
+    oneof result {
+      ContractModerationActionCounts counts = 1; // The counts read
+      Proof proof = 2; // Cryptographic proof of the counts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationActionCountsResponseV0 v0 = 1; }
 }
 
 message GetContractFeePotsRequest {
@@ -1112,6 +1267,15 @@ message GetDocumentsRequest {
     // index/count proof either way. See `timeRange` in the document
     // meta-schema and `drive::query::resolve_time_range_bucket_clause`.
     IN_TIME_RANGE = 11;
+    // Integer-range window selection (v1 only). `field` names an integer
+    // property covered by an `integerRange` index. The operand is
+    // `WhereClause.integer_range` (an `IntegerRangeSelection`);
+    // `WhereClause.value` must be unset. The window is named by its
+    // start, so the server and the verifier both resolve it from the
+    // query alone to a window-start equality — an ordinary index/count
+    // proof. See `integerRange` in the document meta-schema and
+    // `drive::query::resolve_integer_range_bucket_clause`.
+    IN_INTEGER_RANGE = 12;
   }
 
   // Tagged scalar (or list) operand for a `WhereClause`. The
@@ -1212,6 +1376,32 @@ message GetDocumentsRequest {
     Grid grid = 3;
   }
 
+  // Operand of an `IN_INTEGER_RANGE` where clause: which window of an
+  // `integerRange` grid the query selects, named by its start.
+  //
+  // `start` is required and must be a window start of the grid:
+  // `phase + k * step` within the property's integer type, or the
+  // type's minimum (0 for a property with a non-negative minimum), which
+  // starts the bottom window when the grid clamps it. An unaligned start
+  // is rejected rather than snapped. It rides as a `DocumentFieldValue`
+  // (`int64_value` or `uint64_value`) and is coerced through the schema
+  // like any value of the field. A window with no documents is a
+  // provable empty answer, not an error.
+  message IntegerRangeSelection {
+    // Names one of the field's declared grids, verbatim from the
+    // contract's `integerRange` declaration. Required when more than one
+    // grid buckets the field; optional while exactly one does. A zero
+    // `phase` is the proto3 default, matching the contract grammar where
+    // `phase` is an omittable key.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    DocumentFieldValue start = 1;
+    Grid grid = 2;
+  }
+
   // Single `field <op> value` clause. The server reassembles a
   // `Vec<WhereClause>` from the request's `where_clauses` field,
   // runs the same `WhereClause::group_clauses` validator (rejects
@@ -1222,14 +1412,16 @@ message GetDocumentsRequest {
   // triples — only the envelope differs.
   //
   // Exactly one operand field is set, keyed by the operator:
-  // `operator = IN_TIME_RANGE` carries its operand in `time_range`
-  // (`value` must be unset); every other operator carries `value`
-  // (`time_range` must be unset). Either mismatch is rejected.
+  // `operator = IN_TIME_RANGE` carries its operand in `time_range`,
+  // `operator = IN_INTEGER_RANGE` in `integer_range` (`value` unset in
+  // both); every other operator carries `value` (`time_range` and
+  // `integer_range` unset). Any mismatch is rejected.
   message WhereClause {
     string field = 1;
     WhereOperator operator = 2;
     DocumentFieldValue value = 3;
     TimeRangeSelection time_range = 4;
+    IntegerRangeSelection integer_range = 5;
   }
 
   // Per-group aggregate operand for the left side of a
@@ -2210,6 +2402,13 @@ message GetDocumentsResponse {
       // `refersTo: permanentDocument` a missing document fails the
       // query instead.
       repeated bytes missing_outer_ids = 3;
+      // The join values whose outer document the contract's
+      // moderators removed, each with its removal record, in first
+      // appearance order. Only a join property declaring `refersTo:
+      // moderatedDocument` can report any; there a join value with
+      // neither a document nor a record fails the query.
+      repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+          removed_outer_documents = 4;
     }
 
     // A composite query's page and per-sub-query results, documents
@@ -2232,6 +2431,14 @@ message GetDocumentsResponse {
         // deleted since). Only a source property declaring
         // `refersTo: deletableDocument` can report any.
         repeated bytes missing_ids = 3;
+        // DOCUMENTS by-id join only: the derived ids whose document
+        // the contract's moderators removed, each with its removal
+        // record, in first appearance order. Only a source property
+        // declaring `refersTo: moderatedDocument` can report any; there
+        // a derived id with neither a document nor a record fails the
+        // query.
+        repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+            removed = 4;
       }
       repeated SubQueryResult sub_results = 2;
     }
@@ -3578,6 +3785,20 @@ message GetGroupActionsResponse {
       optional string public_note = 3; // Public note
     }
 
+    // Mint straight into the token's shielded pool (protocol version 14+)
+    message MintToPoolEvent {
+      uint64 amount = 1;               // Amount minted into the pool
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
+    // Burn of notes held in the token's shielded pool (protocol version 14+)
+    message BurnFromPoolEvent {
+      uint64 amount = 1;               // Amount destroyed
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -3617,6 +3838,8 @@ message GetGroupActionsResponse {
             7; // Token configuration update details
         UpdateDirectPurchasePriceEvent update_price =
             8; // Updating the token direct selling price
+        MintToPoolEvent mint_to_pool = 9;     // Mint into the token shielded pool
+        BurnFromPoolEvent burn_from_pool = 10; // Burn from the token shielded pool
       }
     }
 
@@ -3850,11 +4073,15 @@ message GetRecentCompactedAddressBalanceChangesResponse {
 
 // --- Shielded Pool Queries ---
 
+// Every shielded pool query below targets the credit shielded pool unless `token_id` is set,
+// in which case it targets that token's own shielded pool (protocol version 14+; the 32-byte
+// token id). Responses have the same shape for both pools.
 message GetShieldedEncryptedNotesRequest {
   message GetShieldedEncryptedNotesRequestV0 {
     uint64 start_index = 1;
     uint32 count = 2;
     bool prove = 3;
+    optional bytes token_id = 4; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedEncryptedNotesRequestV0 v0 = 1; }
 }
@@ -3882,6 +4109,7 @@ message GetShieldedEncryptedNotesResponse {
 message GetShieldedAnchorsRequest {
   message GetShieldedAnchorsRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedAnchorsRequestV0 v0 = 1; }
 }
@@ -3903,6 +4131,7 @@ message GetShieldedAnchorsResponse {
 message GetMostRecentShieldedAnchorRequest {
   message GetMostRecentShieldedAnchorRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetMostRecentShieldedAnchorRequestV0 v0 = 1; }
 }
@@ -3921,6 +4150,7 @@ message GetMostRecentShieldedAnchorResponse {
 message GetShieldedPoolStateRequest {
   message GetShieldedPoolStateRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedPoolStateRequestV0 v0 = 1; }
 }
@@ -3946,6 +4176,7 @@ message GetShieldedPoolStateResponse {
 message GetShieldedNotesCountRequest {
   message GetShieldedNotesCountRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
 }
@@ -3965,6 +4196,7 @@ message GetShieldedNullifiersRequest {
   message GetShieldedNullifiersRequestV0 {
     repeated bytes nullifiers = 1;
     bool prove = 2;
+    optional bytes token_id = 3; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNullifiersRequestV0 v0 = 1; }
 }

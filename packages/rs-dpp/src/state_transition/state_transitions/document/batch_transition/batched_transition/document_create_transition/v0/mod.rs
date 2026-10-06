@@ -207,9 +207,19 @@ impl DocumentCreateTransitionV0 {
                 data_contract,
                 identity_contract_nonce,
             )?),
+            // Reads base64 because `to_value_map` below writes base64: it inserts `$entropy` as
+            // `Value::Bytes`, and `Value::Bytes` crosses into JSON as a base64 string. The two
+            // sides have to name the same encoding or a transition cannot survive a trip through
+            // its own JSON form.
+            //
+            // `remove_bytes_32` decodes base64; `remove_hash256_bytes` decodes base58 despite a
+            // name that sounds like it is about the width. Base58 is the identifier convention,
+            // which is why `$id` and `$dataContractId` — written as `Value::Identifier` — keep
+            // that reader and this field does not.
             entropy: map
-                .remove_hash256_bytes(property_names::ENTROPY)
-                .map_err(ProtocolError::ValueError)?,
+                .remove_bytes_32(property_names::ENTROPY)
+                .map_err(ProtocolError::ValueError)?
+                .to_buffer(),
             prefunded_voting_balance: map
                 .remove_optional_tuple(property_names::PREFUNDED_VOTING_BALANCE)?,
             data: map,
@@ -219,6 +229,8 @@ impl DocumentCreateTransitionV0 {
     #[cfg(feature = "value-conversion")]
     pub(crate) fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
+        // Written as `Value::Bytes`, which crosses into JSON as base64 — so the reader in
+        // `from_value_map` decodes base64 rather than the base58 an identifier would use.
         transition_base_map.insert(
             property_names::ENTROPY.to_string(),
             Value::Bytes(self.entropy.to_vec()),
@@ -307,7 +319,12 @@ impl DocumentFromCreateTransitionV0 for Document {
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 { base, data, .. } = v0;
+        let DocumentCreateTransitionV0 { base, mut data, .. } = v0;
+
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let requires_created_at = document_type
             .required_fields()
@@ -395,6 +412,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -422,7 +441,11 @@ impl DocumentFromCreateTransitionV0 for Document {
             .required_fields()
             .contains(document::property_names::CREATED_AT);
 
-        let properties = data.clone();
+        let mut properties = data.clone();
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut properties, platform_version)?;
 
         let creator_id = if document_type.should_use_creator_id(
             contract.system_version_type(),
@@ -506,6 +529,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -726,5 +751,34 @@ mod test {
                 .unwrap(),
             alpha_value
         );
+    }
+
+    /// `$entropy` is a binary field, not an identifier: `to_value_map` writes it
+    /// as `Value::Bytes`, and raw bytes cross JSON as base64 while an identifier
+    /// crosses as base58. Reading the field back therefore has to decode base64,
+    /// or a transition does not survive a trip through its own JSON form.
+    #[test]
+    fn should_read_entropy_as_base64_from_the_json_form() {
+        let data_contract = data_contract_with_dynamic_properties();
+        let entropy = [14_u8; 32];
+
+        let raw_document = platform_value!({
+            "$protocolVersion" : 0u32,
+            "$version" : "0".to_string(),
+            "$id" : Identifier::from([11_u8; 32]),
+            "$type" : "test",
+            "$dataContractId" : Identifier::from([13_u8; 32]),
+            "$identityContractNonce": 0u64,
+            "revision" : 1u32,
+            "$entropy" : BASE64_STANDARD.encode(entropy),
+            "$action": 0u8,
+        });
+
+        let transition = DocumentCreateTransition::from_object(raw_document, data_contract)
+            .expect("a base64 $entropy is what the JSON form writes, so it must parse");
+
+        match transition {
+            DocumentCreateTransition::V0(v0) => assert_eq!(v0.entropy, entropy),
+        }
     }
 }

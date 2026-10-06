@@ -650,6 +650,7 @@ mod tests {
             submitted_charter_id: Identifier::from([0xE2; 32]),
             leader_id: Identifier::from([0xE3; 32]),
             members: BTreeSet::from([Identifier::from([0xA1; 32]), Identifier::from([0xA3; 32])]),
+            elected_members: vec![Identifier::from([0xA1; 32]), Identifier::from([0xA2; 32])],
         };
 
         let pending = pending_resignation_requests(requests, &team);

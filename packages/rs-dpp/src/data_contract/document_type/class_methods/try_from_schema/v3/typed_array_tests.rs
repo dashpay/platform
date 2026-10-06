@@ -767,6 +767,8 @@ fn should_round_trip_a_document_with_typed_arrays_through_serialization() {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 

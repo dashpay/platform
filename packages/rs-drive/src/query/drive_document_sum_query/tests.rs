@@ -14,9 +14,11 @@
 //!   `verify_aggregate_sum_query` lands in grovedb.
 
 use super::index_picker::{
-    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
+    find_range_summable_index_for_where_clauses,
+    find_range_summable_index_with_counts_for_where_clauses, find_summable_index_for_where_clauses,
+    find_summable_index_with_counts_for_where_clauses,
 };
-use crate::query::{WhereClause, WhereOperator};
+use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
 use dpp::data_contract::document_type::{Index, IndexCountability, IndexProperty};
 use dpp::platform_value::Value;
 use std::collections::BTreeMap;
@@ -44,12 +46,18 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         range_summable: false,
         ranked_countable: false,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
     }
 }
 
@@ -68,12 +76,18 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         range_summable: true,
         ranked_countable: false,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
     }
 }
 
@@ -262,6 +276,192 @@ fn range_summable_picker_rejects_range_not_on_terminator() {
     );
 }
 
+// ── counts-aware pickers (average / count-and-sum) ─────────────────
+
+/// A counter index summing the source index `byPost`.
+fn summable_off_count_index(name: &str, props: &[&str]) -> Index {
+    let mut index = range_summable_index(name, props, "byPost");
+    index.summable = None;
+    index.summable_off_count_index = Some("byPost".to_string());
+    index
+}
+
+#[test]
+fn should_keep_refusing_an_average_whose_first_regular_index_lacks_counts() {
+    // Before protocol version 14 the average picked the first summable
+    // index by name and then required it to be countable; a released
+    // verifier rebuilds that choice, so a later countable index must not
+    // answer instead.
+    let first = summable_index("aByAB", &["a", "b"], Some("amount"));
+    let mut second = summable_index("bByBA", &["b", "a"], Some("amount"));
+    second.countable = IndexCountability::Countable;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![wc_equal("a"), wc_equal("b")];
+    assert!(find_summable_index_with_counts_for_where_clauses(
+        &indexes,
+        &where_clauses,
+        "amount",
+        &[]
+    )
+    .is_none());
+}
+
+#[test]
+fn should_pass_over_a_counter_index_without_counts_for_an_average() {
+    let first = summable_off_count_index("aByAuthorTag", &["postAuthor", "hashtag"]);
+    let mut second = summable_off_count_index("bByTagAuthor", &["hashtag", "postAuthor"]);
+    second.countable = IndexCountability::Countable;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![wc_equal("postAuthor"), wc_equal("hashtag")];
+    let found =
+        find_summable_index_with_counts_for_where_clauses(&indexes, &where_clauses, "byPost", &[]);
+    assert_eq!(found.map(|i| i.name.as_str()), Some("bByTagAuthor"));
+}
+
+#[test]
+fn should_read_a_sum_chain_pin_for_a_sum_but_not_for_an_average_above_the_count_chain() {
+    // Ranked by sum at `a` and by average at `b`: the sum chain starts at
+    // `a`, the count chain (which an average needs) at `b`.
+    let mut index = summable_off_count_index("byABT", &["a", "b", "t"]);
+    index.countable = IndexCountability::Countable;
+    index.ranked_summable_at = vec!["a".to_string()];
+    index.ranked_averageable_at = vec!["b".to_string()];
+    let indexes = make_index_map(vec![index]);
+    let pinned_a = vec![wc_equal("a")];
+    let pinned_a_b = vec![wc_equal("a"), wc_equal("b")];
+
+    assert_eq!(
+        find_summable_index_for_where_clauses(&indexes, &pinned_a, "byPost", &[])
+            .map(|i| i.name.as_str()),
+        Some("byABT"),
+        "a sum reads the `a` value tree"
+    );
+    assert!(
+        find_summable_index_with_counts_for_where_clauses(&indexes, &pinned_a, "byPost", &[])
+            .is_none(),
+        "the `a` value tree carries no count"
+    );
+    assert_eq!(
+        find_summable_index_with_counts_for_where_clauses(&indexes, &pinned_a_b, "byPost", &[])
+            .map(|i| i.name.as_str()),
+        Some("byABT"),
+        "the `b` value tree carries the count"
+    );
+}
+
+#[test]
+fn should_read_a_counter_index_s_last_property_tree_for_a_sum_pinned_above_it() {
+    // Unranked and pinned on every property but the last, a sum reads the
+    // last property's tree, and an average does when that tree counts
+    let mut counting = summable_off_count_index("byAuthorPost", &["postAuthor", "postId"]);
+    counting.countable = IndexCountability::Countable;
+    counting.range_countable = true;
+    let pinned_author = vec![wc_equal("postAuthor")];
+    let picks = |index: &Index| {
+        let indexes = make_index_map(vec![index.clone()]);
+        (
+            find_summable_index_for_where_clauses(&indexes, &pinned_author, "byPost", &[])
+                .is_some(),
+            find_summable_index_with_counts_for_where_clauses(
+                &indexes,
+                &pinned_author,
+                "byPost",
+                &[],
+            )
+            .is_some(),
+        )
+    };
+    assert_eq!(picks(&counting), (true, true), "a counting tree");
+
+    // Without `rangeCountable` the tree sums but counts no posts
+    let mut summing = counting.clone();
+    summing.range_countable = false;
+    assert_eq!(picks(&summing), (true, false), "a summing tree");
+
+    // Ranked by sum alone at `postAuthor`, whose value trees count no posts:
+    // the counting last tree still answers the average
+    let mut sum_ranked = counting.clone();
+    sum_ranked.ranked_summable_at = vec!["postAuthor".to_string()];
+    assert_eq!(picks(&sum_ranked), (true, true), "a sum-ranked prefix");
+
+    // A ranked last property is an indexed tree, which is never read whole
+    let mut ranked = counting.clone();
+    ranked.ranked_summable = true;
+    assert_eq!(picks(&ranked), (false, false), "a ranked tree");
+
+    // A regular summable index keeps the exact-cover rule
+    let mut regular = range_summable_index("byAuthorPost", &["postAuthor", "postId"], "byPost");
+    regular.countable = IndexCountability::Countable;
+    regular.range_countable = true;
+    assert_eq!(picks(&regular), (false, false), "a regular index");
+}
+
+#[test]
+fn should_read_a_sum_from_the_index_a_count_with_the_same_pins_reads() {
+    // Ranked by sum at `hashtag` and `postId`, the first index's `hashtag`
+    // value trees sum their posts, but its last property's tree is ranked, so
+    // a count pinned on `postAuthor` and `hashtag` reads the second index's
+    // last property's tree; the sum reads that same tree
+    let mut chained =
+        summable_off_count_index("aByAuthorTagPost", &["postAuthor", "hashtag", "postId"]);
+    chained.ranked_summable_at = vec!["hashtag".to_string()];
+    chained.ranked_summable = true;
+    let plain = summable_off_count_index("bByTagAuthorPost", &["hashtag", "postAuthor", "postId"]);
+    let indexes = make_index_map(vec![chained, plain]);
+    let pins = vec![wc_equal("postAuthor"), wc_equal("hashtag")];
+    assert_eq!(
+        DriveDocumentCountQuery::find_countable_index_for_where_clauses(&indexes, &pins, &[])
+            .map(|i| i.name.as_str()),
+        Some("bByTagAuthorPost"),
+        "the count reads the unranked last tree"
+    );
+    assert_eq!(
+        find_summable_index_for_where_clauses(&indexes, &pins, "byPost", &[])
+            .map(|i| i.name.as_str()),
+        Some("bByTagAuthorPost"),
+        "the sum reads the tree the count reads"
+    );
+}
+
+#[test]
+fn should_keep_refusing_a_range_average_whose_first_regular_index_lacks_range_counts() {
+    let first = range_summable_index("aByABT", &["a", "b", "t"], "amount");
+    let mut second = range_summable_index("bByBAT", &["b", "a", "t"], "amount");
+    second.countable = IndexCountability::Countable;
+    second.range_countable = true;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![wc_equal("a"), wc_equal("b"), wc_gt("t", 0)];
+    assert!(find_range_summable_index_with_counts_for_where_clauses(
+        &indexes,
+        &where_clauses,
+        "amount",
+        &[]
+    )
+    .is_none());
+}
+
+#[test]
+fn should_pass_over_a_counter_index_without_range_counts_for_a_range_average() {
+    let first = summable_off_count_index("aByAuthorTagPost", &["postAuthor", "hashtag", "postId"]);
+    let mut second =
+        summable_off_count_index("bByTagAuthorPost", &["hashtag", "postAuthor", "postId"]);
+    second.countable = IndexCountability::Countable;
+    second.range_countable = true;
+    let indexes = make_index_map(vec![first, second]);
+    let where_clauses = vec![
+        wc_equal("postAuthor"),
+        wc_equal("hashtag"),
+        wc_gt("postId", 0),
+    ];
+    let found = find_range_summable_index_with_counts_for_where_clauses(
+        &indexes,
+        &where_clauses,
+        "byPost",
+        &[],
+    );
+    assert_eq!(found.map(|i| i.name.as_str()), Some("bByTagAuthorPost"));
+}
+
 // ── Dispatcher limit-policy regression tests ───────────────────────
 //
 // Sum-side analogs of count's
@@ -286,7 +486,7 @@ mod limit_policy_regression {
     use crate::error::query::QuerySyntaxError;
     use crate::error::Error;
     use crate::query::drive_document_sum_query::{
-        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumEntry, SumMode,
     };
     use crate::query::{WhereClause, WhereOperator};
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -296,7 +496,7 @@ mod limit_policy_regression {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::DataContractFactory;
+    use dpp::data_contract::{DataContract, DataContractFactory};
     use dpp::document::{Document, DocumentV0};
     use dpp::identifier::Identifier;
     use dpp::platform_value::{platform_value, Value};
@@ -307,34 +507,15 @@ mod limit_policy_regression {
 
     const PROTOCOL_VERSION_V12: u32 = 12;
 
-    /// Build a v12 contract with a `widget` doctype carrying a single
-    /// `(color, amount)` `rangeSummable: true` index. The `byColor`
-    /// index — `summable: "amount"` + `rangeSummable: true` — is what
-    /// the SUM `RangeDistinctProof` arm walks (color = the per-distinct
-    /// terminator key, amount = the summed per-doc value).
-    fn build_widget_contract() -> dpp::data_contract::DataContract {
-        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
-        let document_schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "color":  {"type": "string",  "position": 0, "maxLength": 32},
-                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
-            },
-            "required": ["color", "amount"],
-            "indices": [{
-                "name": "byColor",
-                "properties": [{"color": "asc"}],
-                "summable":      "amount",
-                "rangeSummable": true,
-            }],
-            "additionalProperties": false,
-        });
-        let schemas = platform_value!({ "widget": document_schema });
-        factory
+    /// Build a contract at `protocol_version` with one `widget` doctype
+    /// carrying `document_schema`, owned by a fixed identity.
+    fn build_widget_contract_with(protocol_version: u32, document_schema: Value) -> DataContract {
+        DataContractFactory::new(protocol_version)
+            .expect("create factory")
             .create_with_value_config(
-                dpp::tests::utils::generate_random_identifier_struct(),
+                Identifier::from([0xAB; 32]),
                 0,
-                schemas,
+                platform_value!({ "widget": document_schema }),
                 None,
                 None,
             )
@@ -342,22 +523,59 @@ mod limit_policy_regression {
             .data_contract_owned()
     }
 
+    /// Build a v12 contract with a `widget` doctype carrying a single
+    /// `(color, amount)` `rangeSummable: true` index. The `byColor`
+    /// index — `summable: "amount"` + `rangeSummable: true` — is what
+    /// the SUM `RangeDistinctProof` arm walks (color = the per-distinct
+    /// terminator key, amount = the summed per-doc value).
+    fn build_widget_contract() -> DataContract {
+        build_widget_contract_with(
+            PROTOCOL_VERSION_V12,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                    "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+                },
+                "required": ["color", "amount"],
+                "indices": [{
+                    "name": "byColor",
+                    "properties": [{"color": "asc"}],
+                    "summable":      "amount",
+                    "rangeSummable": true,
+                }],
+                "additionalProperties": false,
+            }),
+        )
+    }
+
     /// Insert one widget document at the given `(color, amount)` pair
     /// using the index `(i+1)` as a unique 32-byte id.
-    fn insert_widget(
+    fn insert_widget(drive: &Drive, contract: &DataContract, i: usize, color: &str, amount: u64) {
+        insert_widget_with(
+            drive,
+            contract,
+            i,
+            StdBTreeMap::from([
+                ("color".to_string(), Value::Text(color.to_string())),
+                ("amount".to_string(), Value::U64(amount)),
+            ]),
+            PlatformVersion::latest(),
+        );
+    }
+
+    /// Insert one widget document with `properties` at `platform_version`,
+    /// using the index `(i+1)` as a unique 32-byte id.
+    fn insert_widget_with(
         drive: &Drive,
-        contract: &dpp::data_contract::DataContract,
+        contract: &DataContract,
         i: usize,
-        color: &str,
-        amount: u64,
+        properties: StdBTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
     ) {
-        let platform_version = PlatformVersion::latest();
         let document_type = contract
             .document_type_for_name("widget")
             .expect("widget type exists");
-        let mut properties = StdBTreeMap::new();
-        properties.insert("color".to_string(), Value::Text(color.to_string()));
-        properties.insert("amount".to_string(), Value::U64(amount));
         let document: Document = DocumentV0 {
             contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
@@ -374,6 +592,8 @@ mod limit_policy_regression {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -591,6 +811,369 @@ mod limit_policy_regression {
             msg.contains("exceeds max_query_limit"),
             "error must name the rejected limit; got: {msg}"
         );
+    }
+
+    /// At the last shipped protocol version, over a regular `[brand, color]`
+    /// index, a range sum per `IN` value without a proof still answers a
+    /// zero total as one entry, and a sum grouped by the range still leaves
+    /// out a group summing to zero (only an index that can hold empty groups,
+    /// a preallocated one or one sharing its levels, keeps those).
+    #[test]
+    fn should_keep_a_zero_in_total_and_drop_zero_groups_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let data_contract = build_widget_contract_with(
+            platform_version.protocol_version,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "brand":  {"type": "string",  "position": 0, "maxLength": 32},
+                    "color":  {"type": "string",  "position": 1, "maxLength": 32},
+                    "amount": {"type": "integer", "position": 2, "minimum": 0, "maximum": 1000},
+                },
+                "required": ["brand", "color", "amount"],
+                "indices": [{
+                    "name": "byBrandColor",
+                    "properties": [{"brand": "asc"}, {"color": "asc"}],
+                    "summable":      "amount",
+                    "rangeSummable": true,
+                }],
+                "additionalProperties": false,
+            }),
+        );
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        for (i, (brand, color, amount)) in [
+            ("acme", "blue", 0u64),
+            ("acme", "red", 5),
+            ("contoso", "red", 7),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            insert_widget_with(
+                &drive,
+                &data_contract,
+                i,
+                StdBTreeMap::from([
+                    ("brand".to_string(), Value::Text(brand.to_string())),
+                    ("color".to_string(), Value::Text(color.to_string())),
+                    ("amount".to_string(), Value::U64(amount)),
+                ]),
+                platform_version,
+            );
+        }
+
+        let drive_config = DriveConfig::default();
+        let entries = |where_clauses: Vec<WhereClause>, mode: SumMode| match drive
+            .execute_document_sum_request(
+                DocumentSumRequest {
+                    contract: &data_contract,
+                    document_type,
+                    sum_property: "amount".to_string(),
+                    where_clauses,
+                    order_clauses: Vec::new(),
+                    mode,
+                    limit: None,
+                    prove: false,
+                    drive_config: &drive_config,
+                    resolved_time_ranges: vec![],
+                },
+                None,
+                platform_version,
+            )
+            .expect("the sum executes at protocol version 13")
+        {
+            DocumentSumResponse::Entries(entries) => entries,
+            other => panic!("expected entries, got {other:?}"),
+        };
+        let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+            field: field.to_string(),
+            operator,
+            value,
+        };
+
+        assert_eq!(
+            entries(
+                vec![
+                    clause(
+                        "brand",
+                        WhereOperator::In,
+                        Value::Array(vec![
+                            Value::Text("acme".to_string()),
+                            Value::Text("contoso".to_string()),
+                        ]),
+                    ),
+                    clause(
+                        "color",
+                        WhereOperator::GreaterThan,
+                        Value::Text("zzz".to_string()),
+                    ),
+                ],
+                SumMode::GroupByIn,
+            ),
+            vec![SumEntry {
+                in_key: None,
+                key: Vec::new(),
+                sum: Some(0),
+            }],
+            "a zero total per IN value is one entry"
+        );
+        assert_eq!(
+            entries(
+                vec![
+                    clause(
+                        "brand",
+                        WhereOperator::Equal,
+                        Value::Text("acme".to_string())
+                    ),
+                    clause(
+                        "color",
+                        WhereOperator::GreaterThan,
+                        Value::Text("a".to_string()),
+                    ),
+                ],
+                SumMode::GroupByRange,
+            )
+            .into_iter()
+            .map(|entry| (entry.key, entry.sum))
+            .collect::<Vec<_>>(),
+            vec![(b"red".to_vec(), Some(5))],
+            "acme's blue sums to zero and is left out"
+        );
+    }
+
+    /// The average and sum point verifiers are edited in place to look
+    /// through a wrapped element; at the last shipped protocol version, over a
+    /// regular `[brand, color]` index counting and summing, no element they
+    /// read is wrapped, so an exact and a per-`IN` average and sum prove and
+    /// verify against the live root to the unproven answer.
+    #[test]
+    fn should_verify_an_average_point_proof_unchanged_at_protocol_version_13() {
+        use crate::query::drive_document_average_query::{
+            AverageEntry, AverageMode, DocumentAverageRequest, DocumentAverageResponse,
+        };
+        use crate::query::drive_document_sum_query::index_picker::find_summable_index_with_counts_for_where_clauses;
+
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let data_contract = build_widget_contract_with(
+            platform_version.protocol_version,
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "brand":  {"type": "string",  "position": 0, "maxLength": 32},
+                    "color":  {"type": "string",  "position": 1, "maxLength": 32},
+                    "amount": {"type": "integer", "position": 2, "minimum": 0, "maximum": 1000},
+                },
+                "required": ["brand", "color", "amount"],
+                "indices": [{
+                    "name": "byBrandColor",
+                    "properties": [{"brand": "asc"}, {"color": "asc"}],
+                    "countable": "countable",
+                    "summable":  "amount",
+                }],
+                "additionalProperties": false,
+            }),
+        );
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        for (i, (brand, color, amount)) in [
+            ("acme", "red", 5u64),
+            ("acme", "red", 7),
+            ("acme", "blue", 1),
+            ("contoso", "red", 4),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            insert_widget_with(
+                &drive,
+                &data_contract,
+                i,
+                StdBTreeMap::from([
+                    ("brand".to_string(), Value::Text(brand.to_string())),
+                    ("color".to_string(), Value::Text(color.to_string())),
+                    ("amount".to_string(), Value::U64(amount)),
+                ]),
+                platform_version,
+            );
+        }
+        let live_root = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable");
+
+        let drive_config = DriveConfig::default();
+        let average = |where_clauses: &[WhereClause], mode: AverageMode, prove: bool| {
+            drive
+                .execute_document_average_request(
+                    DocumentAverageRequest {
+                        contract: &data_contract,
+                        document_type,
+                        sum_property: "amount".to_string(),
+                        where_clauses: where_clauses.to_vec(),
+                        resolved_time_ranges: vec![],
+                        order_clauses: Vec::new(),
+                        mode,
+                        limit: None,
+                        prove,
+                        drive_config: &drive_config,
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("the average executes at protocol version 13")
+        };
+        let text = |value: &str| Value::Text(value.to_string());
+        let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+            field: field.to_string(),
+            operator,
+            value,
+        };
+        let red = clause("color", WhereOperator::Equal, text("red"));
+        let exact = vec![
+            clause("brand", WhereOperator::Equal, text("acme")),
+            red.clone(),
+        ];
+        let per_brand = vec![
+            clause(
+                "brand",
+                WhereOperator::In,
+                Value::Array(vec![text("acme"), text("contoso")]),
+            ),
+            red,
+        ];
+
+        match average(&exact, AverageMode::Aggregate, false) {
+            DocumentAverageResponse::Aggregate { count, sum } => {
+                assert_eq!((count, sum), (2, 12), "acme's red widgets, unproved")
+            }
+            other => panic!("expected an aggregate average, got {other:?}"),
+        }
+        for (where_clauses, mode, expected) in [
+            (
+                exact,
+                AverageMode::Aggregate,
+                vec![(Vec::new(), Some(2), Some(12))],
+            ),
+            (
+                per_brand,
+                AverageMode::GroupByIn,
+                vec![
+                    (b"acme".to_vec(), Some(2), Some(12)),
+                    (b"contoso".to_vec(), Some(1), Some(4)),
+                ],
+            ),
+        ] {
+            let proof = match average(&where_clauses, mode, true) {
+                DocumentAverageResponse::Proof(proof) => proof,
+                other => panic!("expected a proof, got {other:?}"),
+            };
+            let index = find_summable_index_with_counts_for_where_clauses(
+                document_type.indexes(),
+                &where_clauses,
+                "amount",
+                &[],
+            )
+            .expect("byBrandColor answers the average");
+            let (root_hash, entries) = DriveDocumentSumQuery {
+                document_type,
+                contract_id: data_contract.id().to_buffer(),
+                document_type_name: "widget".to_string(),
+                index,
+                where_clauses: where_clauses.clone(),
+                sum_property: "amount".to_string(),
+            }
+            .verify_point_lookup_count_and_sum_proof(&proof, platform_version)
+            .expect("the average proof verifies at protocol version 13");
+            assert_eq!(root_hash, live_root, "{where_clauses:?}");
+            assert_eq!(
+                entries
+                    .into_iter()
+                    .map(
+                        |AverageEntry {
+                             key, count, sum, ..
+                         }| (key, count, sum)
+                    )
+                    .collect::<Vec<_>>(),
+                expected,
+                "{where_clauses:?}"
+            );
+
+            // The point sum verifier, edited in place the same way, reads the
+            // same sums
+            let sum_mode = match mode {
+                AverageMode::GroupByIn => SumMode::GroupByIn,
+                _ => SumMode::Aggregate,
+            };
+            let proof = match drive
+                .execute_document_sum_request(
+                    DocumentSumRequest {
+                        contract: &data_contract,
+                        document_type,
+                        sum_property: "amount".to_string(),
+                        where_clauses: where_clauses.clone(),
+                        order_clauses: Vec::new(),
+                        mode: sum_mode,
+                        limit: None,
+                        prove: true,
+                        drive_config: &drive_config,
+                        resolved_time_ranges: vec![],
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("the sum proves at protocol version 13")
+            {
+                DocumentSumResponse::Proof(proof) => proof,
+                other => panic!("expected a proof, got {other:?}"),
+            };
+            let (root_hash, sums) = DriveDocumentSumQuery {
+                document_type,
+                contract_id: data_contract.id().to_buffer(),
+                document_type_name: "widget".to_string(),
+                index,
+                where_clauses: where_clauses.clone(),
+                sum_property: "amount".to_string(),
+            }
+            .verify_point_lookup_sum_proof(&proof, platform_version)
+            .expect("the sum proof verifies at protocol version 13");
+            assert_eq!(root_hash, live_root, "{where_clauses:?}");
+            assert_eq!(
+                sums.into_iter()
+                    .map(|entry| (entry.key, entry.sum))
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|(key, _, sum)| (key.clone(), *sum))
+                    .collect::<Vec<_>>(),
+                "{where_clauses:?}"
+            );
+        }
     }
 
     #[test]

@@ -57,13 +57,13 @@ impl FromProof<GetContractGroupInfoRequest> for ContractGroupInfo {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, info) = Drive::verify_contract_group_info(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_group_id,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((info, metadata, proof))
     }
@@ -99,7 +99,7 @@ impl FromProof<GetContractGroupMembersRequest> for ContractGroupMembersPage {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, page) = Drive::verify_contract_group_members(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_group_id,
             &query,
             limit,
@@ -107,7 +107,7 @@ impl FromProof<GetContractGroupMembersRequest> for ContractGroupMembersPage {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // An absent group and a group with no members of that kind both prove as an empty
         // page, so the page itself is always the answer.
@@ -143,13 +143,13 @@ impl FromProof<GetContractGroupsForContractRequest> for ContractGroupMemberships
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, memberships) = Drive::verify_contract_group_memberships_for_contract(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // A contract in no group proves as empty memberships, so they are always the answer.
         Ok((Some(memberships), metadata, proof))

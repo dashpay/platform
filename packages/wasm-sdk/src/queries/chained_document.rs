@@ -16,11 +16,13 @@
 //! entry's join value>]]`.
 
 use crate::error::WasmSdkError;
+use crate::queries::contract_moderation::removal_entry_to_js;
 use crate::queries::document::{build_documents_query, DocumentsQueryInput};
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::documents::chained_document_query::ChainedDocumentQuery;
 use dash_sdk::platform::{ChainedDocuments, Fetch};
 use js_sys::{Array, Object, Reflect};
@@ -89,9 +91,48 @@ interface ChainedDocumentsResult {
   /**
    * The join values that have NO outer document, in first-appearance
    * order: referenced documents deleted since, each one a proven
-   * absence. Always empty under a `permanentDocument` join property.
+   * absence. Always empty under a `permanentDocument` join property,
+   * and under a `moderatedDocument` one, which reports its missing
+   * documents in `removedOuterDocuments`.
    */
   missingOuterIds: Identifier[];
+  /**
+   * The join values whose outer document the contract's moderators
+   * removed, each with its proven removal record, in first-appearance
+   * order. Only a `moderatedDocument` join property reports any; there a
+   * join value with neither a document nor a record is a verification
+   * error.
+   */
+  removedOuterDocuments: JoinedDocumentRemoval[];
+}
+
+/**
+ * The removal record of a document a join through a `moderatedDocument`
+ * reference reports removed: the `ContractDocumentRemovalEntry` a removals
+ * query returns, its identifiers `Identifier`s, as the join's other ids are.
+ */
+interface JoinedDocumentRemoval {
+  documentId: Identifier;
+  /** The identity that owned the document when it was removed. */
+  documentOwnerId: Identifier;
+  /** The contract owner or moderator that removed it. */
+  moderatorId: Identifier;
+  /** Why, as the moderator wrote it: the text may be empty. */
+  reason: ContractModerationReason;
+  /** The time of the block that removed it, in milliseconds. */
+  removedAt: bigint;
+  /** A double SHA-256 of the document when it was removed, as 64 hex characters. */
+  documentHash: string;
+  /** The contract owner or moderator that restored the document; absent while the removal stands. */
+  restoredBy?: Identifier;
+  /** The time of the block that restored it, in milliseconds; absent while the removal stands. */
+  restoredAt?: bigint;
+  /**
+   * The values the record keeps of the document, by the property path its type lists under
+   * `moderatorAbilities.deleteKeepsFields`, shown as the document's `properties` show them.
+   * Empty when the type keeps none.
+   */
+  keptFields: Record<string, unknown>;
 }
 "#;
 
@@ -135,6 +176,7 @@ async fn parse_chained_documents_query(
             start_at: None,
             group_by: None,
             time_range: None,
+            integer_range: None,
         },
     )
     .await?;
@@ -186,6 +228,26 @@ fn chained_result_to_js(
         &missing_outer_ids,
     )
     .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
+    let removed_outer_documents = Array::new();
+    if !chained.removed_outer_documents.is_empty() {
+        // The outer type is the inner contract's: a join follows a same-contract reference
+        let outer_type = query
+            .inner
+            .data_contract
+            .document_type_for_name(&query.outer_document_type_name)
+            .map_err(ProtocolError::from)?;
+        for entry in &chained.removed_outer_documents {
+            removed_outer_documents.push(&removal_entry_to_js(entry, outer_type, |id| {
+                IdentifierWasm::from(id).into()
+            })?);
+        }
+    }
+    Reflect::set(
+        &result,
+        &JsValue::from_str("removedOuterDocuments"),
+        &removed_outer_documents,
+    )
+    .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
     Ok(result)
 }
 
@@ -198,8 +260,10 @@ impl WasmSdk {
     /// proof commits to one quorum-signed root, and the proven outer
     /// documents must match the proven inner join values: exactly for a
     /// `permanentDocument` join property (a missing referenced document
-    /// is a verification error), while for a `deletableDocument` one a
-    /// document deleted since is proven absent and left out.
+    /// is a verification error), for a `moderatedDocument` one a document
+    /// a moderator removed is reported by its proven removal record, and
+    /// for a `deletableDocument` one a document deleted since is proven
+    /// absent and left out.
     #[wasm_bindgen(
         js_name = "getChainedDocuments",
         unchecked_return_type = "ChainedDocumentsResult"
@@ -233,5 +297,46 @@ impl WasmSdk {
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             result, metadata, proof,
         ))
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use crate::queries::contract_moderation::joined_removal_tests::{
+        assert_joined_removal, field, removal_entry,
+    };
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::DocumentQuery;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// A join off a `moderatedDocument` property reports a removed outer document by its
+    /// record in `removedOuterDocuments`, identifiers as `Identifier`s like `missingOuterIds`.
+    /// Only a proved fetch produces such a result, so the conversion is fed one directly.
+    #[wasm_bindgen_test]
+    fn a_removed_outer_document_crosses_with_its_record() {
+        let contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("the DPNS contract loads");
+        let query = ChainedDocumentQuery::new(
+            DocumentQuery::new(contract, "domain").expect("a documents query"),
+            "parentDomainName",
+            "domain",
+        );
+        let entry = removal_entry();
+        let chained = ChainedDocuments {
+            removed_outer_documents: vec![entry.clone()],
+            ..Default::default()
+        };
+
+        let result: JsValue = chained_result_to_js(&chained, &query)
+            .expect("the result converts")
+            .into();
+
+        assert_eq!(Array::from(&field(&result, "missingOuterIds")).length(), 0);
+        let removed = Array::from(&field(&result, "removedOuterDocuments"));
+        assert_eq!(removed.length(), 1);
+        assert_joined_removal(&removed.get(0), &entry);
     }
 }

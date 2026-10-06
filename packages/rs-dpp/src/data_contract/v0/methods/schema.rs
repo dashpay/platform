@@ -1,5 +1,9 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::class_methods::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_summable_off_count_indexes_lossless,
+};
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
@@ -60,6 +64,30 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
 
         self.document_types
             .insert(document_type.name().clone(), document_type);
+
+        // A derived index property reading a schema property of another document type takes
+        // its type from it (protocol version 14): the type added, or one reading from it, is
+        // resolved as the parse of the whole contract resolves it. The rules on what it reads
+        // are the whole contract's parse's to judge.
+        let data_contract_system_version = self.system_version_type();
+        let contract_config_version = self.config.version();
+        resolve_derived_index_properties(
+            &mut self.document_types,
+            data_contract_system_version,
+            contract_config_version,
+            false,
+            platform_version,
+        )?;
+        // A preallocated index bound through a moderatedDocument reference needs every key of
+        // its path kept by the referenced type's removal record, judged as the parse of the
+        // whole contract judges it
+        if full_validation {
+            validate_preallocated_indexes_kept_on_removal(&self.document_types)?;
+            // Inert before protocol version 14: it judges only
+            // `summableOffCountIndex` indexes, which only meta-schema v3
+            // admits.
+            validate_summable_off_count_indexes_lossless(&self.document_types)?;
+        }
 
         Ok(())
     }

@@ -23,18 +23,22 @@ const PRIMARY_KEY_TREES: [ElementKind; 8] = [
     ElementKind::ProvableCountProvableSumTree,
 ];
 
-const INDEX_PROPERTY_TREES: [ElementKind; 8] = [
+const INDEX_PROPERTY_TREES: [ElementKind; 10] = [
     ElementKind::Tree,
     ElementKind::CountTree,
     ElementKind::ProvableCountTree,
+    ElementKind::SumTree,
     ElementKind::ProvableSumTree,
+    ElementKind::CountSumTree,
     ElementKind::ProvableCountProvableSumTree,
     ElementKind::ProvableCountIndexedTree,
     ElementKind::ProvableSumIndexedTree,
     ElementKind::ProvableCountProvableSumIndexedTree,
 ];
 const INDEX_PROPERTY_NOTE: &str = "A plain tree unless the index is range \
-                                   countable, range summable or ranked; see \
+                                   countable, range summable or ranked, or the \
+                                   level carries a ranking's counts or sums up \
+                                   to an earlier level; see \
                                    ranked_index_tree_type.rs.";
 
 /// One document type of a contract: its documents and its indexes
@@ -112,7 +116,8 @@ pub(crate) fn document_type() -> StructureNode {
             KeyMatcher::Any,
             KeyEncoding::Utf8,
             "The name of an index's next property; a time \
-                                    range property appends its grid as #range#step",
+                                    or integer range property appends its grid as \
+                                    #range#step",
         )
         .kinds(&INDEX_PROPERTY_TREES, INDEX_PROPERTY_NOTE)
         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
@@ -133,8 +138,8 @@ fn index_value() -> StructureNode {
         KeyMatcher::Any,
         KeyEncoding::SerializedValue,
         "The property's value serialized for ordering; \
-         empty for null; a bucket start for a time range \
-         property",
+         empty for null; a window start for a time or \
+         integer range property",
     )
     .kinds(
         &[
@@ -144,10 +149,14 @@ fn index_value() -> StructureNode {
             ElementKind::CountSumTree,
             ElementKind::ProvableCountSumTree,
             ElementKind::ProvableCountProvableSumTree,
+            ElementKind::SumItem,
         ],
         "A plain tree unless the index is countable or \
          summable, so each value carries its count or \
-         sum.",
+         sum. At the last property of a \
+         summableOffCountIndex index, a sum item \
+         counting the source index's entries for the \
+         value, in place of the tree.",
     )
     .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
     .describe(

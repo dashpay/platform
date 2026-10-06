@@ -1,6 +1,6 @@
 # Property Schemas
 
-Each entry of a document type's `properties` is a property schema: JSON Schema (draft 2020-12), limited to the keywords in this chapter, plus three Platform keywords that say how a value is stored (`position`, `byteArray` and `contentMediaType`). The schema is checked when the contract is registered, and every created or replaced document is validated against it. Platform keywords with more to them, such as [`maxBytes`](max-bytes.md), [`refersTo`](refers-to.md), [`distinctFrom`](distinct-from.md), [`encryptedFor`](encrypted-for.md), [`requiredSince`](required-since.md) and a typed array's [`items`](typed-arrays.md), have chapters of their own.
+Each entry of a document type's `properties` is a property schema: JSON Schema (draft 2020-12), limited to the keywords in this chapter, plus three Platform keywords that say how a value is stored (`position`, `byteArray` and `contentMediaType`). The schema is checked when the contract is registered, and every created or replaced document is validated against it. Platform keywords with more to them, such as [`maxBytes`](max-bytes.md), [`refersTo`](refers-to.md), [`distinctFrom`](distinct-from.md), [`encryptedFor`](encrypted-for.md), [`generatedFrom`](generated-from.md), [`requiredSince`](required-since.md) and a typed array's [`items`](typed-arrays.md), have chapters of their own.
 
 | Keyword | Applies to | On update |
 |---|---|---|

@@ -499,6 +499,7 @@ mod contract_owner_requirement_tests {
             gas_fees_paid_by: GasFeesPaidBy::default(),
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             declared_action_fee: None,
+            shielded_token_payment: None,
         });
         let platform_state = platform.state.load();
         let platform_ref = PlatformStateRef {
@@ -525,6 +526,8 @@ mod contract_owner_requirement_tests {
                 None,
                 &platform_ref,
                 &BlockInfo::default(),
+                &mut Vec::new(),
+                None,
                 None,
                 &mut execution_context,
                 platform_version,

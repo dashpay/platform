@@ -223,6 +223,20 @@ impl Drive {
             document_type.name().as_str(),
         );
 
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at, which the stored document
+        // does not hold: read again here, where they are what they were when the entries were
+        // written. Every other type passes through unchanged.
+        let document_info = self.document_info_with_derived_index_values(
+            document_info,
+            contract,
+            document_type,
+            estimated_costs_only_with_layer_info.is_some(),
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
         // third we need to delete the document for it's primary key
         self.remove_document_from_primary_storage(
             document_id,

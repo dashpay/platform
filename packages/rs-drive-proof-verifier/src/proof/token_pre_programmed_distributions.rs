@@ -86,7 +86,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
 
         let (root_hash, result): ([u8; 32], TokenPreProgrammedDistributions) =
             Drive::verify_token_pre_programmed_distributions(
-                supported_grovedb_proof_bytes(&proof, platform_version)?,
+                supported_grovedb_proof_bytes(&proof)?,
                 token_id,
                 start_at,
                 limit,
@@ -95,7 +95,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
             )
             .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         if result.0.is_empty() {
             Ok((None, metadata, proof))

@@ -1,12 +1,13 @@
+use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
     DocumentTypeV2Getters, DocumentTypeV2Setters,
 };
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
 
 use platform_value::{Identifier, Value};
@@ -240,6 +241,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.entry_payload
     }
 
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        self.documents_deleted_only_when_consumed
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         self.documents_can_be_deleted_by_moderators
     }
@@ -248,14 +253,50 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.documents_can_be_deleted_by_moderators_for
     }
 
+    fn moderator_deletions_keep_records(&self) -> bool {
+        self.moderator_deletions_keep_records
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        self.moderator_deletions_refund_owner
+    }
+
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        self.moderator_settled_deletion
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_deletion_kept_fields
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_changeable_fields
+    }
+
     fn documents_ttl_seconds(&self) -> Option<u32> {
         self.documents_ttl_seconds
     }
 
     fn documents_can_disappear(&self) -> bool {
         self.documents_can_be_deleted
+            || self.documents_deleted_only_when_consumed
             || self.documents_can_be_deleted_by_moderators
             || self.documents_ttl_seconds.is_some()
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        if !self.documents_can_disappear() {
+            DocumentReferenceKind::Permanent
+        } else if !self.documents_can_be_deleted
+            && !self.documents_deleted_only_when_consumed
+            && self.documents_ttl_seconds.is_none()
+            && self.documents_can_be_deleted_by_moderators
+            && self.moderator_deletions_keep_records
+        {
+            DocumentReferenceKind::Moderated
+        } else {
+            DocumentReferenceKind::Deletable
+        }
     }
 
     fn immutable_fields(&self) -> &BTreeSet<String> {
@@ -266,8 +307,16 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.distinct_from_fields
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
-        &self.immutable_fields_allow_setting
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        &self.generated_from_fields
+    }
+
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.immutable_field_conditions
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        self.retracted_when.as_ref()
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {
@@ -284,6 +333,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
         &self.property_constraints
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        &self.derived_index_properties
     }
 }
 

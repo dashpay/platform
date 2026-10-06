@@ -10,6 +10,8 @@
 //! path, not just *that* something did.
 
 use super::IndexLevel;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::index::{IndexBucketing, TIME_RANGE};
 
 impl IndexLevel {
     /// Recursively finds the first index path where a count-affecting
@@ -95,6 +97,20 @@ impl IndexLevel {
                     old_info.range_summable, new_info.range_summable,
                 ));
             }
+            // The source a `summableOffCountIndex` index counts names its
+            // summed value and fixes the properties its groups derive from.
+            // `None` on every index before protocol version 14, and only
+            // `validate_update` v0 (protocol versions up to 13) reaches this
+            // helper: protocol version 14's v1 refuses any changed index by
+            // comparing whole `Index` definitions, which is what freezes a
+            // counter's source there. Kept so `IndexLevel::validate_update`
+            // names every difference it can see.
+            if old_info.summable_off_count_index != new_info.summable_off_count_index {
+                return Some(format!(
+                    "(summable_off_count_index: {:?} -> {:?})",
+                    old_info.summable_off_count_index, new_info.summable_off_count_index,
+                ));
+            }
         }
 
         for (key, old_sub) in &self.sub_index_levels {
@@ -141,6 +157,29 @@ impl IndexLevel {
             return Some(format!(
                 "(count_propagating: {} -> {})",
                 self.count_propagating, new.count_propagating,
+            ));
+        }
+        // The Sum and Avg chain stamps of a `summableOffCountIndex` index
+        // decide the same layout on the other axes. Like every ranking
+        // stamp, they are unset before protocol version 14, whose
+        // `validate_update` v1 freezes them by comparing whole `Index`
+        // definitions; only v0 (protocol versions up to 13) reaches here.
+        if self.ranked_sum_grouping != new.ranked_sum_grouping {
+            return Some(format!(
+                "(ranked_sum_grouping: {} -> {})",
+                self.ranked_sum_grouping, new.ranked_sum_grouping,
+            ));
+        }
+        if self.ranked_average_grouping != new.ranked_average_grouping {
+            return Some(format!(
+                "(ranked_average_grouping: {} -> {})",
+                self.ranked_average_grouping, new.ranked_average_grouping,
+            ));
+        }
+        if self.sum_propagating != new.sum_propagating {
+            return Some(format!(
+                "(sum_propagating: {} -> {})",
+                self.sum_propagating, new.sum_propagating,
             ));
         }
         // The exempt-branch marker decides whether the level's
@@ -192,8 +231,9 @@ impl IndexLevel {
     }
 
     /// Time-range counterpart of [`Self::find_first_countability_change`].
-    /// Recursively finds the first index path where the `time_range`
-    /// transform differs between two `IndexLevel` trees. The transform
+    /// Recursively finds the first index path where the bucketing grid
+    /// (`timeRange` or `integerRange`) differs between two `IndexLevel`
+    /// trees. The grid
     /// dictates how many index entries each document produces and under
     /// which bucket keys, so changing it after creation would leave already
     /// stored documents indexed under stale buckets — it is immutable.
@@ -201,24 +241,65 @@ impl IndexLevel {
     /// Returns `None` if the transform is the same everywhere.
     #[cfg(feature = "validation")]
     pub(super) fn find_first_time_range_change(&self, new: &IndexLevel) -> Option<String> {
-        if self.time_range() != new.time_range() {
-            let fmt = |t: Option<&super::TimeRangeTransform>| match t {
-                Some(t) => format!(
+        if self.bucketing() != new.bucketing() {
+            let fmt = |bucketing: Option<&IndexBucketing>| match bucketing {
+                Some(IndexBucketing::Time(t)) => format!(
                     "Some(on: {:?}, range: {}s, step: {}s, phase: {}s)",
                     t.source, t.range_seconds, t.step_seconds, t.phase_seconds
                 ),
+                Some(IndexBucketing::Integer(t)) => format!(
+                    "Some(on: {:?}, range: {}, step: {}, phase: {})",
+                    t.source, t.range, t.step, t.phase
+                ),
                 None => "None".to_string(),
             };
+            // A level's source is either a timestamp or an integer, so the
+            // two sides never carry different kinds.
+            let keyword = self
+                .bucketing()
+                .or(new.bucketing())
+                .map_or(TIME_RANGE, IndexBucketing::keyword);
             return Some(format!(
-                "(timeRange: {} -> {})",
-                fmt(self.time_range()),
-                fmt(new.time_range()),
+                "({}: {} -> {})",
+                keyword,
+                fmt(self.bucketing()),
+                fmt(new.bucketing()),
             ));
         }
 
         for (key, old_sub) in &self.sub_index_levels {
             if let Some(new_sub) = new.sub_index_levels.get(key) {
                 if let Some(inner_path) = old_sub.find_first_time_range_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// `outlivesDelete` counterpart of [`Self::find_first_preallocated_change`]:
+    /// the first index path where the flag differs between two `IndexLevel`
+    /// trees. The flag decides what a delete carries and what an indexOnly
+    /// row commits to, so it is immutable.
+    ///
+    /// Returns `None` if the flag is the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_outlives_delete_change(&self, new: &IndexLevel) -> Option<String> {
+        if let (Some(old_info), Some(new_info)) =
+            (&self.has_index_with_type, &new.has_index_with_type)
+        {
+            if old_info.outlives_delete != new_info.outlives_delete {
+                return Some(format!(
+                    "(outlivesDelete: {} -> {})",
+                    old_info.outlives_delete, new_info.outlives_delete,
+                ));
+            }
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_outlives_delete_change(new_sub) {
                     return Some(format!("{} -> {}", key, inner_path));
                 }
             }

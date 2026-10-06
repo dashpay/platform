@@ -56,6 +56,7 @@ use std::sync::Arc;
 
 mod pot;
 mod reasons;
+mod settled;
 
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const CONTRACT_MODERATION_ABILITY_NOT_GRANTED: u32 = 41201;
@@ -83,6 +84,41 @@ const LATER: TimestampMillis = 4_000_000_000_000;
 const REPLY: &str = "reply";
 /// A document type whose creation charges a fixed fee, not moderated.
 const NOTE: &str = "note";
+/// A document type whose `label` only moderators write, moderated with field changes only.
+const BADGE: &str = "badge";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the leader and two members of the seated team approve, a member the leader
+/// added counting only for the stories written after its addition.
+const STORY: &str = "story";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the seated team's leader approves.
+const MEMO: &str = "memo";
+/// A story whose `label` only moderators write, the team holding both the deletion and the
+/// change of fields on it.
+const CHRONICLE: &str = "chronicle";
+/// A document type moderators delete for a minute after its last modification, and once
+/// settled when the leader and more members approve than the team can hold: all of them.
+const EPIC: &str = "epic";
+/// A story whose deletion once settled every member the leader added approves, whenever added
+/// (`approversPredateDocument: false`).
+const LEGEND: &str = "legend";
+/// The window the stories and memos give their moderators.
+const SETTLING_WINDOW_SECONDS: u64 = 60;
+const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
+
+/// A document with a `title` and a `label` only the contract's moderators write
+fn labelled_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "moderatorAbilities": { "changeFields": ["label"] },
+        "properties": {
+            "title": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
+            "label": { "type": "string", "minLength": 1, "maxLength": 20, "position": 1 },
+        },
+        "required": ["title"],
+        "additionalProperties": false,
+    })
+}
 
 /// An elected declaration keeping all three lists, moderating `post` with `abilities` and
 /// `reply` with bans, with `interim` until a team is seated, room for `MAX_ADDED_MODERATORS`
@@ -107,6 +143,33 @@ fn elected_posts(
             moderated_document_types: BTreeMap::from([
                 (POST.to_string(), abilities.iter().copied().collect()),
                 (REPLY.to_string(), BTreeSet::from([ModerationAbility::Ban])),
+                (
+                    BADGE.to_string(),
+                    BTreeSet::from([ModerationAbility::ChangeDocumentFields]),
+                ),
+                (
+                    STORY.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    MEMO.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    EPIC.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    LEGEND.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                ),
+                (
+                    CHRONICLE.to_string(),
+                    BTreeSet::from([
+                        ModerationAbility::DeleteDocuments,
+                        ModerationAbility::ChangeDocumentFields,
+                    ]),
+                ),
             ]),
             interim,
             owner_protected,
@@ -184,6 +247,17 @@ fn citing(
         } => ContractUserModerationAction::DeleteDocument {
             document_type_name,
             document_id,
+            reason: reason.with_reason_document(reason_document_id),
+        },
+        ContractUserModerationAction::ChangeDocumentFields {
+            document_type_name,
+            document_id,
+            fields,
+            reason,
+        } => ContractUserModerationAction::ChangeDocumentFields {
+            document_type_name,
+            document_id,
+            fields,
             reason: reason.with_reason_document(reason_document_id),
         },
         reversal => reversal,
@@ -336,6 +410,53 @@ impl Team {
                         })),
                     )
                 }
+                add_document_type(c, BADGE, labelled_schema());
+                for (name, rule) in [
+                    (STORY, platform_value!({ "leader": true, "approvals": 3 })),
+                    (MEMO, platform_value!({ "leader": true })),
+                    // The most a registration admits with MAX_ADDED_MODERATORS additions.
+                    (EPIC, platform_value!({ "leader": true, "approvals": 18 })),
+                    (
+                        LEGEND,
+                        platform_value!({
+                            "leader": true,
+                            "approvals": 3,
+                            "approversPredateDocument": false,
+                        }),
+                    ),
+                ] {
+                    add_document_type(
+                        c,
+                        name,
+                        post_schema_with(platform_value!({
+                            "moderatorAbilities": {
+                                "delete": true,
+                                "deleteWithin": SETTLING_WINDOW_SECONDS,
+                                "deleteSettled": rule,
+                            },
+                            "documentsMutable": true,
+                            "required": ["text", "$createdAt", "$updatedAt"],
+                        })),
+                    )
+                }
+                add_document_type(
+                    c,
+                    CHRONICLE,
+                    post_schema_with(platform_value!({
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            "label": { "type": "string", "maxLength": 20, "position": 1 },
+                        },
+                        "moderatorAbilities": {
+                            "delete": true,
+                            "deleteWithin": SETTLING_WINDOW_SECONDS,
+                            "deleteSettled": { "leader": true, "approvals": 3 },
+                            "changeFields": ["label"],
+                        },
+                        "documentsMutable": true,
+                        "required": ["text", "$createdAt", "$updatedAt"],
+                    })),
+                );
             },
         )
         .await;
@@ -516,9 +637,16 @@ impl Team {
         self.setup.commit(transaction);
     }
 
+    /// `transition`, processed in a block at `time_ms` and committed
+    fn process_and_commit_at(&self, transition: &StateTransition, time_ms: TimestampMillis) {
+        let transaction = self.setup.platform.drive.grove.start_transaction();
+        assert_success(&self.setup.process_at(transition, time_ms, &transaction));
+        self.setup.commit(transaction);
+    }
+
     /// Ends the contest for the seat as the block at the end of the join window does: with a
-    /// single contender, the charter is awarded there.
-    fn award(&self) {
+    /// single contender, the charter is awarded there. Returns the time of that block.
+    fn award(&self) -> TimestampMillis {
         let platform_version = PlatformVersion::latest();
         let platform = &self.setup.platform;
         let (end_time, _) = VotePollsByEndDateDriveQuery {
@@ -576,6 +704,7 @@ impl Team {
             Some(self.leader.id()),
             "the contest is awarded to its single contender, the leader"
         );
+        end_time
     }
 
     /// The charter contract's document of `document_type_name` stored at `document_id`
@@ -1189,6 +1318,59 @@ async fn should_refuse_a_seated_team_an_ability_the_declaration_does_not_give_it
             CONTRACT_MODERATION_ABILITY_NOT_GRANTED,
         );
     }
+}
+
+/// A seated team writes the fields a type keeps for its moderators, which the declaration must
+/// give it `changeDocumentFields` on, with a moderation transition and in its members' own
+/// documents; the interim owner, once a team is seated, no longer does.
+#[tokio::test]
+async fn should_let_a_seated_team_write_the_fields_kept_for_its_moderators() {
+    let team = Team::new(InterimModerators::ContractOwner).await;
+    let setup = &team.setup;
+    let unlabelled = |document: &mut Document| {
+        document.properties_mut().remove("label");
+    };
+    let (badge, create_badge) = setup
+        .create_document_of_type_with(&setup.user, BADGE, unlabelled)
+        .await;
+    team.process_and_commit(&create_badge);
+    let label = |document_type_name: &str, document_id: Identifier| {
+        ContractUserModerationAction::ChangeDocumentFields {
+            document_type_name: document_type_name.to_string(),
+            document_id,
+            fields: BTreeMap::from([("label".to_string(), Value::Text("verified".into()))]),
+            reason: ContractModerationReason::from_text("checked")
+                .with_reason_document(LISTED_REASON),
+        }
+    };
+
+    team.award();
+    let transaction = setup.platform.drive.grove.start_transaction();
+    // The team labels a badge; the owner, who moderated in the interim, no longer may.
+    let by_the_owner = setup.moderate(&setup.owner, label(BADGE, badge.id())).await;
+    assert_paid_with_code(
+        &setup.process(&by_the_owner, &transaction),
+        IDENTITY_NOT_CONTRACT_MODERATOR,
+    );
+    let by_the_leader = setup.moderate(&team.leader, label(BADGE, badge.id())).await;
+    assert_success(&setup.process(&by_the_leader, &transaction));
+
+    // A member labels its own badge as it creates it; the owner, off the team, can not.
+    let (_, by_a_member) = setup
+        .create_document_of_type_with(&team.member, BADGE, |document| {
+            document.set("label", Value::Text("staff".into()));
+        })
+        .await;
+    assert_success(&setup.process(&by_a_member, &transaction));
+    let (_, by_the_owner) = setup
+        .create_document_of_type_with(&setup.owner, BADGE, |document| {
+            document.set("label", Value::Text("staff".into()));
+        })
+        .await;
+    assert_paid_with_code(
+        &setup.process(&by_the_owner, &transaction),
+        DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
+    );
 }
 
 /// A `notYetUsable` interim blocks the moderated type until the contest for the seat is

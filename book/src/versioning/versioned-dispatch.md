@@ -705,8 +705,11 @@ The Drive helpers that build the initial state structure follow the same rule
 for the same reason: they run once, at chain creation, under the chain's
 initial protocol version, and a chain that already exists gets the same trees
 from its upgrade rung. `add_initial_withdrawal_state_structure_operations`
-adds the withdrawal sum trees behind `>= 4` and the credit history trees behind
-`>= 14`; replaying mainnet's genesis at protocol version 1 takes neither branch.
+adds the withdrawal sum trees behind `>= 4`, which replaying mainnet's genesis at
+protocol version 1 does not take. The withdrawal limit trees of protocol version
+14 are not in that batch: genesis and `transition_to_version_14` both add them
+one insert at a time through `Drive::insert_withdrawal_limit_trees`, so both
+build the withdrawals Merk in the same shape.
 
 ## Rules
 

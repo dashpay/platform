@@ -52,6 +52,41 @@ pub(in crate::execution) fn summed_u64_schema() -> Value {
     })
 }
 
+/// The fragment of the parser's message for a contested type summing a property whose values
+/// are not bounded within ±2^27.
+pub(in crate::execution) const CONTESTED_UNBOUNDED_SUM_MESSAGE: &str =
+    "awarding a contest adds the winner's value to the type's sums";
+
+/// An immutable document type with a contested unique index on `label` that sums `amount`, an
+/// integer with no bounds. Protocol version 14 refuses it at registration: awarding a contest
+/// writes the winner into the type's sum with no transition to refuse, so its values must be
+/// small enough that the sum stays in `i64`.
+pub(in crate::execution) fn contested_unbounded_sum_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "documentsSummable": "amount",
+        "properties": {
+            "label": { "type": "string", "maxLength": 20, "position": 0 },
+            "amount": { "type": "integer", "position": 1 },
+        },
+        "required": ["label", "amount"],
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{ "label": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [{ "field": "label", "regexPattern": "^[a-z]{3,5}$" }],
+                    "resolution": 0,
+                },
+            },
+        ],
+        "additionalProperties": false,
+    })
+}
+
 /// The fragment of the parser's message for a `terminal` outside an indexOnly type.
 pub(in crate::execution) const TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE: &str =
     "which is only allowed on indexOnly document types";

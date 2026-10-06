@@ -4,11 +4,10 @@
 # out a tree without this action. Keep those copies in sync with it.
 name: "Release Cargo target cache"
 description: >-
-  Point CARGO_TARGET_DIR at a per-workflow release cache outside the workspace
-  of a persistent self-hosted runner. Release jobs wipe the workspace before
-  checkout (PR jobs share it), so a cache inside it would never survive. The
-  cache is reset when it outgrows max-gib or the volume drops below
-  min-free-gib, so it cannot starve the PR jobs on the same runner of disk.
+  Point CARGO_TARGET_DIR at a per-workflow directory outside the checkout.
+  On disposable release runners this is job-local HOME state, destroyed with
+  the container, never a cache shared with PRs. Reset it when it outgrows
+  max-gib or available space drops below min-free-gib.
 inputs:
   name:
     description: Cache directory name, unique per release workflow

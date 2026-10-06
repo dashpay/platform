@@ -793,6 +793,93 @@ async fn should_move_the_end_to_the_join_and_vote_windows_when_a_second_applican
     assert!(end_dates(&platform, platform_version).is_empty());
 }
 
+/// Off mainnet a target may declare windows of 0: only the applicants of the block that opened
+/// the election get in, a second one moves no end, nobody has time to vote, and the next block
+/// awards the seat, the tie going to the earliest application (by document id within a block).
+#[tokio::test]
+async fn should_award_an_election_with_windows_of_zero_in_the_next_block() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let target = elected_target(&platform, 0xA9, 0, 0, platform_version);
+    let mut alice = applicant(&mut platform, &mut rng);
+    let mut bob = applicant(&mut platform, &mut rng);
+    let mut carol = applicant(&mut platform, &mut rng);
+    let poll = charter_poll(target);
+
+    let (start, _) = apply(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    // At the same block time, which a join window of 0 still admits
+    let (bob_start, _) = apply(
+        &platform,
+        &charters,
+        &mut bob,
+        target,
+        start - 1000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(bob_start, start);
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(
+            start,
+            VotePoll::ContestedDocumentResourceVotePoll(poll.clone())
+        )],
+        "the election ends at the time it opened, the second applicant moving nothing"
+    );
+
+    // A second later the join window is closed
+    let proposal_id = propose(
+        &platform,
+        &charters,
+        &mut carol,
+        target,
+        start,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let late = application(
+        &charters,
+        &mut carol,
+        target,
+        proposal_id,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let refusal = process_refused(&platform, late, start + 1000, platform_version);
+    let ConsensusError::StateError(StateError::DocumentContestNotJoinableError(error)) = refusal
+    else {
+        panic!("expected the contest not to be joinable, got {refusal:?}");
+    };
+    assert_eq!(
+        error.joinable_time(),
+        0,
+        "the refusal names the window of 0"
+    );
+
+    end_polls_at(&platform, start, 10, platform_version);
+    let ContestedDocumentVotePollStatus::Awarded(winner) =
+        status(&platform, &poll, platform_version)
+    else {
+        panic!("expected the seat to be awarded without a vote");
+    };
+    assert!(
+        winner == alice.id() || winner == bob.id(),
+        "the seat goes to an applicant of the first block"
+    );
+    assert!(end_dates(&platform, platform_version).is_empty());
+}
+
 #[tokio::test]
 async fn should_end_elections_of_targets_with_different_windows_at_different_heights() {
     let (mut platform, platform_version, charters, mut rng) = setup();

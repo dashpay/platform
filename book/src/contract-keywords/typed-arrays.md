@@ -84,7 +84,7 @@ The element schema (`items`):
 Where a typed array cannot be used:
 
 - in an index (`InvalidIndexPropertyTypeError`, 10206), or as an index-only type's terminal or entry payload: nothing is written per element;
-- on either side of a `propertyAgreement` in a reference;
+- on either side of a `where` entry in a reference;
 - as an operand of a [propertyConstraints](property-constraints.md) rule, other than in a `present` or `absent` test;
 - with [`encryptedFor`](encrypted-for.md), which only a byte array takes.
 

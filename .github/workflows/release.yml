@@ -28,9 +28,9 @@ jobs:
     if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
     permissions:
       contents: read
-    # Runner-group policy allows this protected reusable workflow only, never
-    # a copy supplied by a pull request. The checkout remains the caller SHA.
-    uses: dashpay/platform/.github/workflows/release-npm-build.yml@v4.2-dev
+    # Keep the workflow with its release source. The host controller supplies
+    # a fresh JIT runner bound to this run/attempt, independent of branch name.
+    uses: ./.github/workflows/release-npm-build.yml
 
   release-npm:
     name: Publish NPM packages
@@ -353,16 +353,15 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      # `npm publish` in release-npm returns before the registry makes the new
-      # versions resolvable; pack_dashmate.sh installs them from the registry.
-      - name: Wait for published NPM packages to become resolvable
-        run: "${GITHUB_WORKSPACE}/scripts/wait_for_npm_packages.sh"
-
       - name: Create package
         env:
           # Packaging executes dependency and lifecycle scripts, including
           # output from the persistent builder. Signing happens in a new job.
           DASHMATE_UNSIGNED: 'true'
+          # Install the workspace packages from the tarballs release-npm
+          # published, not from the registry: npm can take many minutes to
+          # serve a version it has just accepted.
+          DASHMATE_NPM_TARBALLS_DIR: ${{ github.workspace }}/npm-packages
         run: |
           "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 

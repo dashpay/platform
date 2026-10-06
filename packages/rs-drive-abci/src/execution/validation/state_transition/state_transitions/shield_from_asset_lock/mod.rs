@@ -10,6 +10,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::shield_from_asset_lock::transform_into_action::v0::ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0;
+use crate::execution::validation::state_transition::shield_from_asset_lock::transform_into_action::v1::ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
@@ -66,9 +67,17 @@ impl StateTransitionShieldFromAssetLockTransitionActionTransformer
                 check_tx_proof_verifier,
                 tx,
             ),
+            1 => self.transform_into_action_v1(
+                platform,
+                signable_bytes,
+                validation_mode,
+                execution_context,
+                check_tx_proof_verifier,
+                tx,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "shield from asset lock transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

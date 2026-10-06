@@ -45,7 +45,9 @@ pub trait BroadcastStateTransition {
     /// transition executed. For the transition families whose proofs can
     /// only authenticate the affected state (balance top-ups, credit
     /// transfers and withdrawals, address funds movements, shields,
-    /// no-history token operations, key limits updates), this returns
+    /// no-history token operations, key limits updates, contract updates,
+    /// contract moderation and fee claims, and creates and deletes of
+    /// indexOnly documents), this returns
     /// [`Error::ExecutionNotProved`] — use
     /// [`wait_for_affected_state`](Self::wait_for_affected_state) for those
     /// flows and treat the result as a height-pinned snapshot.
@@ -395,7 +397,7 @@ pub fn require_execution_proved(
         StateTransitionProofGuarantee::ExecutionProved => Ok(result),
         StateTransitionProofGuarantee::AffectedState => Err(Error::ExecutionNotProved(
             format!(
-                "received a verified {} snapshot for this transition family; use the *_affected_state wait APIs and treat the result as a height-pinned snapshot",
+                "received a verified {} snapshot for this transition family; wait with the affected-state APIs instead (wait_for_affected_state in Rust, waitForAffectedState or broadcastAndWaitForAffectedState in JavaScript) and treat the result as a height-pinned snapshot",
                 result
             ),
         )),
@@ -719,8 +721,18 @@ mod tests {
                 );
             }
             if round == 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(2100)).await;
-                assert_eq!(addresses.get_live_addresses().len(), addresses.len());
+                // Bans expire by the wall clock, which a CI runner can step
+                // back against the monotonic clock behind tokio's sleep, so
+                // a fixed sleep races the expiry. Poll instead: the deadline
+                // is far above the 2-second exclusion and far below the 60s
+                // first rung of the health ladder.
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while addresses.get_live_addresses().len() < addresses.len() {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .expect("every short exclusion expires");
             }
         }
     }

@@ -76,7 +76,7 @@ use super::drive_document_ranked_query::index_picker::{
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::{
-    path::indexed_property_name_tree_path_for_index, PrefixPin, RankedAxis,
+    path::indexed_property_name_tree_path_for_index, read_axis_for, PrefixPin, RankedAxis,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::drive::DriveError;
@@ -298,8 +298,9 @@ pub struct DriveDocumentHavingQuery<'a> {
     /// and the encoder's invariants hold on every externally obtainable
     /// value.
     pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
-    /// Inclusive bounds on the aggregate. Carry the axis; the index must
-    /// declare the matching `ranked_*` flag.
+    /// Inclusive bounds on the aggregate, as requested. Carry the axis the
+    /// entries are presented on; the walked secondary and its bounds are
+    /// [`Self::read_bounds`]'s, covered by `index`'s matching `ranked_*` flag.
     pub bounds: AxisRangeBounds,
     /// `true` walks the secondary from the largest matching aggregate
     /// down. Tie ordering is by group key in the direction of the walk,
@@ -319,6 +320,28 @@ pub struct DriveDocumentHavingQuery<'a> {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentHavingQuery<'_> {
+    /// The bounds this query reads with: [`Self::bounds`], except that a
+    /// document count over a `summableOffCountIndex` index reads the Sum
+    /// secondary, whose sums are its document counts (see
+    /// [`read_axis_for`]), with the same bounds as sums.
+    ///
+    /// An upper bound above `i64::MAX` reads as `i64::MAX`, the largest sum.
+    /// [`resolve_having_query_for_mode`] refuses a lower bound above it,
+    /// which matches no group, so the lower saturation is never reached.
+    pub fn read_bounds(&self) -> AxisRangeBounds {
+        match self.bounds {
+            AxisRangeBounds::Count { lo, hi }
+                if read_axis_for(RankedAxis::Count, self.index) == RankedAxis::Sum =>
+            {
+                AxisRangeBounds::Sum {
+                    lo: i64::try_from(lo).unwrap_or(i64::MAX),
+                    hi: i64::try_from(hi).unwrap_or(i64::MAX),
+                }
+            }
+            bounds => bounds,
+        }
+    }
+
     /// The resolved prefix branches, in canonical order — one per `IN`
     /// element (a single branch without an `IN`). Read-only: the field is
     /// crate-private so the resolver's encoder invariants cannot be
@@ -400,9 +423,25 @@ pub fn resolve_having_query_for_mode<'a>(
                 &mode.group_by_property,
                 &mode.prefix_pins,
                 &mode.aggregate_field,
+                document_type,
             ),
         ))
     })?;
+    // A document count over a `summableOffCountIndex` index reads its sums
+    // (`DriveDocumentHavingQuery::read_bounds`), which never exceed
+    // `i64::MAX`: a lower bound above that matches no group, refused like
+    // any other empty range.
+    if let AxisRangeBounds::Count { lo, .. } = mode.bounds {
+        if read_axis_for(RankedAxis::Count, index) == RankedAxis::Sum && i64::try_from(lo).is_err()
+        {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "the `having` lower bound {lo} matches no group: a document count over the \
+                 `summableOffCountIndex` index `{}` reads its sums, which never exceed {}",
+                index.name,
+                i64::MAX
+            ))));
+        }
+    }
     let prefix_branches =
         encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentHavingQuery {

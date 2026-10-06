@@ -62,6 +62,10 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   bumps `cleanup.remove_contested_resource_vote_poll_end_date_query_operations`
 ///   to 2, so the cleanup removes an end date only once none of its polls
 ///   remain.
+/// * **summableOffCountIndex counter batches**: `apply_drive_operations` 1
+///   and `convert_drive_operations_to_grove_operations` 1 refuse a batch
+///   moving one document type's summableOffCountIndex counters for more than
+///   one document; convert 1 then converts as 0 does.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
@@ -107,7 +111,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             add_estimation_costs_for_adding_asset_lock: 0,
             fetch_asset_lock_outpoint_info: 0,
         },
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed in v9: a document batch proof carries the owner's balance (verify state transition v1)
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed in v9: a document batch proof carries the owner's balance (verify state transition v1); the six range-total verifiers 1 (a proof that the range holds nothing verifies to zero) and the composite documents verifier 1 (sum-bearing items are documents)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)
         token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: add_pre_programmed_distributions v1 queues the release-time tree shared by a contract's tokens once; evonode_participation_rewards v1 pays an evonode's claim only through the epochs it read
         platform_system: DrivePlatformSystemMethodVersions {
@@ -126,8 +130,8 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)
         batch_operations: DriveBatchOperationsMethodVersion {
-            convert_drive_operations_to_grove_operations: 0,
-            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch is merged into one, a batch writing one token balance or supply twice is refused, and repaid identity debt goes to the processing fee pool
+            convert_drive_operations_to_grove_operations: 1, // changed: refuses a batch moving one document type's summableOffCountIndex counters for more than one document
+            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch is merged into one, a batch writing one token balance or supply twice is refused, a batch moving one document type's summableOffCountIndex counters for more than one document is refused, and repaid identity debt goes to the processing fee pool
         },
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,

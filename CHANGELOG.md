@@ -1,3 +1,267 @@
+## [5.0.0-beta.1](https://github.com/dashpay/platform/compare/v4.2.0-beta.7...v5.0.0-beta.1) (2026-09-30)
+
+The 4.2 release line was renamed 5.0. This release follows 4.2.0-beta.7.
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** review fixes for outlivesDelete (PV14) (#5233)
+* **platform:** index entries that outlive a delete (outlivesDelete, PV14) (#5232)
+* **platform:** preallocated indexes may be bound through moderatedDocument references (PV14) (#5229)
+* **platform:** a seated moderation team deletes settled documents by approval (PV14) (#5215)
+* **platform:** review fixes for derived index properties reading kept fields (PV14) (#5224)
+* **platform:** derived index properties read a removed document's kept fields (PV14) (#5223)
+* **dpp:** moderator removal records keep the fields a type lists (PV14) (#5219)
+* **platform:** immutable properties frozen under a condition (PV14) (#5217)
+* **platform:** index a value of the document a reference points at (PV14) (#5216)
+* **dpp:** refersTo moderatedDocument, a reference that outlives a moderator's removal (PV14) (#5214)
+
+### Features
+
+* **dpp:** moderator removal records keep the fields a type lists (PV14) ([#5219](https://github.com/dashpay/platform/issues/5219))
+* **dpp:** refersTo moderatedDocument, a reference that outlives a moderator's removal (PV14) ([#5214](https://github.com/dashpay/platform/issues/5214))
+* **platform:** a seated moderation team deletes settled documents by approval (PV14) ([#5215](https://github.com/dashpay/platform/issues/5215))
+* **platform:** derived index properties read a removed document's kept fields (PV14) ([#5223](https://github.com/dashpay/platform/issues/5223))
+* **platform:** immutable properties frozen under a condition (PV14) ([#5217](https://github.com/dashpay/platform/issues/5217))
+* **platform:** index a value of the document a reference points at (PV14) ([#5216](https://github.com/dashpay/platform/issues/5216))
+* **platform:** index entries that outlive a delete (outlivesDelete, PV14) ([#5232](https://github.com/dashpay/platform/issues/5232))
+* **platform:** moderation reads: approval counts, action counts and team seats (PV14) ([#5230](https://github.com/dashpay/platform/issues/5230))
+* **platform:** preallocated indexes may be bound through moderatedDocument references (PV14) ([#5229](https://github.com/dashpay/platform/issues/5229))
+
+
+### Bug Fixes
+
+* **platform:** review fixes for derived index properties reading kept fields (PV14) ([#5224](https://github.com/dashpay/platform/issues/5224))
+* **platform:** review fixes for outlivesDelete (PV14) ([#5233](https://github.com/dashpay/platform/issues/5233))
+* **swift-sdk:** settle a stopping pass's completion and refuse manual syncs
+* **swift-sdk:** stop shielded sync off the main thread, closes [#5201](https://github.com/dashpay/platform/issues/5201)
+* **wasm-sdk:** fetch the moderated contract before verifying moderation proofs ([#5213](https://github.com/dashpay/platform/issues/5213))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0
+
+
+### Tests
+
+* **rs-sdk:** poll for missing-owner exclusions to expire instead of racing a fixed sleep ([#5218](https://github.com/dashpay/platform/issues/5218))
+
+## [4.2.0-beta.7](https://github.com/dashpay/platform/compare/v4.2.0-beta.6...v4.2.0-beta.7) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** refersTo finds a document with findBy and checks it with where (#5197)
+* **drive:** index null flags follow each index's own path (PV14) (#5173)
+* **platform:** a refersTo may find its document by a hash the document reveals (PV14) (#5041)
+* **platform:** integerRange index buckets an integer property into windows (#5170)
+* **dpp:** $moderatedAt and $moderatedBy record the last moderator's write (PV14) (#5161)
+* **dpp:** skipIfAbsent at any position, true or an array, on every document type (PV14) (#5162)
+* **dpp:** moderator-only document fields and deletion record and refund options (PV14) (#5158)
+* **dpp:** refuse a dotted property path in sum and average keywords (PV14) (#5104)
+* **sdk:** DataContract.validateUpdate in @dashevo/wasm-dpp2 (#5140)
+* **drive:** refuse a duplicate value in a unique index on a nested property (PV14) (#5127)
+
+### Features
+
+* add Value::same_scalar_data for comparing single values across variants ([#5125](https://github.com/dashpay/platform/issues/5125))
+* **dpp:** $moderatedAt and $moderatedBy record the last moderator's write (PV14) ([#5161](https://github.com/dashpay/platform/issues/5161))
+* **dpp:** moderator-only document fields and deletion record and refund options (PV14) ([#5158](https://github.com/dashpay/platform/issues/5158))
+* **dpp:** refersTo finds a document with findBy and checks it with where ([#5197](https://github.com/dashpay/platform/issues/5197))
+* **dpp:** skipIfAbsent at any position, true or an array, on every document type (PV14) ([#5162](https://github.com/dashpay/platform/issues/5162))
+* **drive:** compute a document type's GroveDB layout for the SDKs ([#5153](https://github.com/dashpay/platform/issues/5153))
+* **drive:** compute what creating a document costs for the SDKs ([#5159](https://github.com/dashpay/platform/issues/5159))
+* **platform:** a refersTo may find its document by a hash the document reveals (PV14) ([#5041](https://github.com/dashpay/platform/issues/5041))
+* **platform:** integerRange index buckets an integer property into windows ([#5170](https://github.com/dashpay/platform/issues/5170))
+* **sdk:** DataContract.validateUpdate in @dashevo/wasm-dpp2 ([#5140](https://github.com/dashpay/platform/issues/5140))
+* **sdk:** let apps that build document creates by hand state the contest fund ([#5163](https://github.com/dashpay/platform/issues/5163))
+
+
+### Bug Fixes
+
+* bound doctest linker concurrency on CI runners
+* **ci:** isolate NPM and Kotlin releases in disposable runners
+* **ci:** keep wallet FFI test pointer cast portable on ARM64
+* **ci:** repair headless Swift keychains and PIC RocksDB
+* **ci:** resolve Kotlin release NDK from runner environment
+* **ci:** validate runner candidates using full commit statuses
+* **dpp:** refuse a dotted property path in sum and average keywords (PV14) ([#5104](https://github.com/dashpay/platform/issues/5104))
+* **drive-abci:** check_tx refuses a masternode vote a block would refuse ([#5137](https://github.com/dashpay/platform/issues/5137))
+* **drive:** index null flags follow each index's own path (PV14) ([#5173](https://github.com/dashpay/platform/issues/5173))
+* **drive:** refuse a duplicate value in a unique index on a nested property (PV14) ([#5127](https://github.com/dashpay/platform/issues/5127))
+* **drive:** refuse indexOnly prefix pivots whose pages could be incomplete ([#5103](https://github.com/dashpay/platform/issues/5103))
+* **kotlin-sdk:** prepare secure emulator state in nightly tests
+* **platform-wallet-ffi:** report an incomplete SPV stop, and stop before switching in the example app
+* **platform-wallet:** a ProUpServTx always carries an output ([#5105](https://github.com/dashpay/platform/issues/5105))
+* **platform-wallet:** keep broadcasts on the stop's client lock again
+* **platform-wallet:** read the stop counter under the run-loop handle lock
+* **platform-wallet:** refuse an SPV start while a parked run loop is live
+* **platform-wallet:** refuse an SPV start while a stop is still joining the run loop
+* **platform-wallet:** run SPV stops one at a time and bound taking the client
+* **sdk:** accept vote poll end-date timestamps ([#5139](https://github.com/dashpay/platform/issues/5139))
+* **sdk:** index-only document creates and deletes resolve once they land ([#5136](https://github.com/dashpay/platform/issues/5136))
+* **sdk:** masternodeVote takes the ProTxHash as an Identifier and returns the vote ([#5138](https://github.com/dashpay/platform/issues/5138))
+* **swift-sdk:** handle failed SPV stops in the example app's options
+* **swift-sdk:** keep the example app's devnet rebuild and Docker toggle out of a running network switch
+* **swift-sdk:** refuse overlapping SPV calls during an async stop and fix the example app build
+* **swift-sdk:** stop SPV off the main thread
+* update trusted runner image controller pin
+
+
+### Performance Improvements
+
+* **wasm-sdk:** optimize release WASM with a single -Oz pass
+
+
+### Documentation
+
+* **release:** fix NPM dry-run tag example
+* **swift-sdk:** state the SPV stop's real upper bound
+
+
+### Tests
+
+* compare current cross-architecture runner contracts
+* preserve legacy fixtures across ordinary recipe rollout
+* **swift-sdk:** bound the wait for the fake native SPV stop to start
+
+
+### Continuous Integration
+
+* adopt verified exact-contract candidate image reuse
+* deploy isolated PR Hygiene engine on v4.2
+* isolate ARM64 image updates from the ordinary runner pool
+* isolate new ordinary AMD64 image contracts from legacy pools
+* keep optional S3 cache export outages from failing builds
+* pin integrated runner controller revision
+* re-pin PR Hygiene engine to 3b98772
+* recheck the current PR before selecting its candidate
+* restore legacy runner image template compatibility
+* use pinned ARM64 Rust images on Mac-backed Linux runners
+* **wasm-sdk:** bound optimizer threads independently of compilation
+* **wasm-sdk:** default Binaryen to four threads
+* **wasm-sdk:** inline Binaryen thread cap as a bash step
+
+## [4.2.0-beta.6](https://github.com/dashpay/platform/compare/v4.2.0-beta.5...v4.2.0-beta.6) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** a preallocated agreement source must fit a tree key (PV14) (#5123)
+* **sdk:** countOf and sumOf totals in the rule descriptors of the JS, Swift and Kotlin SDKs (#5121)
+* **platform:** refuse own-type totals on contested types and fail loudly on unread totals (PV14) (#5115)
+* **drive:** subscription filters match generated properties a transition leaves out (#5114)
+* **platform:** generatedFrom, string properties the platform generates with a system function (PV14) (#5099)
+* **platform:** countOf and sumOf totals from count and sum trees in propertyConstraints rules (PV14) (#5109)
+* **dpp:** propertyConstraints read empty objects as absent and follow $defs refs (PV14) (#5101)
+* **platform:** elected moderation windows may be 0 off mainnet, mainnet keeps one day (PV14) (#5108)
+* **platform:** ifThen, ifThenElse, notIn, min, max and abs in propertyConstraints rules (PV14) (#5100)
+* **swift-sdk:** new propertyConstraints read kinds and system reads in the Swift SDK and iOS example app (#5098)
+* **kotlin-sdk:** new propertyConstraints read kinds and system reads in the Kotlin SDK and Android example app (#5097)
+* **dpp:** size estimates of strings of 16384 or more characters no longer overflow (PV14) (#5086)
+* **platform:** startsWith and endsWith in propertyConstraints rules (PV14) (#5085)
+* **platform:** contains in propertyConstraints rules (PV14) (#5083)
+* **dpp:** report contracts refused by parser generation 3 as consensus errors (PV14) (#5076)
+* **platform:** creation, update and transfer times and heights in propertyConstraints rules (PV14) (#5078)
+* **platform:** string length, byte length and array count operands in propertyConstraints rules (PV14) (#5071)
+* **dpp:** propertyConstraints compare identifier properties that declare refersTo (PV14) (#5073)
+* **dpp:** accept a reordered entryPayload and refuse unruled keywords as incompatible (PV14) (#5074)
+* **dpp:** refuse token cost and unruled keyword changes on update with a consensus error (PV14) (#5069)
+* **platform:** $ownerId comparisons in propertyConstraints rules (PV14) (#5048)
+* **platform:** identifier comparisons in propertyConstraints rules (PV14) (#5047)
+* **platform:** string ifAbsent defaults in propertyConstraints rules (PV14) (#5046)
+* **platform:** compare two string properties in propertyConstraints rules (PV14) (#5045)
+
+### Features
+
+* **kotlin-sdk:** new propertyConstraints read kinds and system reads in the Kotlin SDK and Android example app ([#5097](https://github.com/dashpay/platform/issues/5097))
+* **platform:** $ownerId comparisons in propertyConstraints rules (PV14) ([#5048](https://github.com/dashpay/platform/issues/5048))
+* **platform:** compare two string properties in propertyConstraints rules (PV14) ([#5045](https://github.com/dashpay/platform/issues/5045))
+* **platform:** contains in propertyConstraints rules (PV14) ([#5083](https://github.com/dashpay/platform/issues/5083))
+* **platform:** countOf and sumOf totals from count and sum trees in propertyConstraints rules (PV14) ([#5109](https://github.com/dashpay/platform/issues/5109))
+* **platform:** creation, update and transfer times and heights in propertyConstraints rules (PV14) ([#5078](https://github.com/dashpay/platform/issues/5078))
+* **platform:** elected moderation windows may be 0 off mainnet, mainnet keeps one day (PV14) ([#5108](https://github.com/dashpay/platform/issues/5108))
+* **platform:** generatedFrom, string properties the platform generates with a system function (PV14) ([#5099](https://github.com/dashpay/platform/issues/5099))
+* **platform:** identifier comparisons in propertyConstraints rules (PV14) ([#5047](https://github.com/dashpay/platform/issues/5047))
+* **platform:** ifThen, ifThenElse, notIn, min, max and abs in propertyConstraints rules (PV14) ([#5100](https://github.com/dashpay/platform/issues/5100))
+* **platform:** startsWith and endsWith in propertyConstraints rules (PV14) ([#5085](https://github.com/dashpay/platform/issues/5085))
+* **platform:** string ifAbsent defaults in propertyConstraints rules (PV14) ([#5046](https://github.com/dashpay/platform/issues/5046))
+* **platform:** string length, byte length and array count operands in propertyConstraints rules (PV14) ([#5071](https://github.com/dashpay/platform/issues/5071))
+* **sdk:** countOf and sumOf totals in the rule descriptors of the JS, Swift and Kotlin SDKs ([#5121](https://github.com/dashpay/platform/issues/5121))
+* **sdk:** propertyConstraints discovery and pre-check in the JS SDK ([#5051](https://github.com/dashpay/platform/issues/5051))
+* **sdk:** propertyConstraints rules and pre-check in the Kotlin SDK and Android example app ([#5066](https://github.com/dashpay/platform/issues/5066))
+* **sdk:** propertyConstraints rules and pre-check in the Swift SDK and iOS example app ([#5064](https://github.com/dashpay/platform/issues/5064))
+* **swift-sdk:** new propertyConstraints read kinds and system reads in the Swift SDK and iOS example app ([#5098](https://github.com/dashpay/platform/issues/5098))
+
+
+### Bug Fixes
+
+* **ci:** build release clients natively on unprivileged runners
+* **ci:** isolate release runners from PR build state
+* **dpp:** accept a reordered entryPayload and refuse unruled keywords as incompatible (PV14) ([#5074](https://github.com/dashpay/platform/issues/5074))
+* **dpp:** parse nested required and transient entries by prefix ([#5050](https://github.com/dashpay/platform/issues/5050))
+* **dpp:** pass the contract's $defs to the countOf and sumOf key enum check ([#5110](https://github.com/dashpay/platform/issues/5110))
+* **dpp:** propertyConstraints compare identifier properties that declare refersTo (PV14) ([#5073](https://github.com/dashpay/platform/issues/5073))
+* **dpp:** propertyConstraints read empty objects as absent and follow $defs refs (PV14) ([#5101](https://github.com/dashpay/platform/issues/5101))
+* **dpp:** refuse token cost and unruled keyword changes on update with a consensus error (PV14) ([#5069](https://github.com/dashpay/platform/issues/5069))
+* **dpp:** report contracts refused by parser generation 3 as consensus errors (PV14) ([#5076](https://github.com/dashpay/platform/issues/5076))
+* **dpp:** restore the shipped order of basic consensus errors ([#5053](https://github.com/dashpay/platform/issues/5053))
+* **dpp:** size estimates of strings of 16384 or more characters no longer overflow (PV14) ([#5086](https://github.com/dashpay/platform/issues/5086))
+* **drive-abci:** finalize a block accepted in an earlier round after a later proposal was refused ([#5081](https://github.com/dashpay/platform/issues/5081))
+* **drive-abci:** sign a locked block when a later proposal left no execution context ([#5079](https://github.com/dashpay/platform/issues/5079))
+* **drive-abci:** sign vote extensions only for blocks this node accepted ([#5084](https://github.com/dashpay/platform/issues/5084))
+* **drive:** subscription filters match generated properties a transition leaves out ([#5114](https://github.com/dashpay/platform/issues/5114))
+* **platform:** a preallocated agreement source must fit a tree key (PV14) ([#5123](https://github.com/dashpay/platform/issues/5123))
+* **platform:** refuse own-type totals on contested types and fail loudly on unread totals (PV14) ([#5115](https://github.com/dashpay/platform/issues/5115))
+* **release:** require all generated clients in packed archives
+* **sdk:** bound each DAPI request attempt, including the response body ([#4973](https://github.com/dashpay/platform/issues/4973))
+* **sdk:** consensus errors reach JS with their code ([#5112](https://github.com/dashpay/platform/issues/5112))
+* **sdk:** consensus errors reach Swift and Kotlin apps with their code ([#5116](https://github.com/dashpay/platform/issues/5116))
+* **swift-sdk:** documentTransfer handles a missing document and signs once ([#5120](https://github.com/dashpay/platform/issues/5120))
+* **swift-sdk:** free FFI errors in state-transition wrappers ([#5117](https://github.com/dashpay/platform/issues/5117))
+* **swift-sdk:** take migration copies out of WAL mode
+* **wasm-sdk:** keep StateTransitionResult.ownerBalance exact in JSON ([#5059](https://github.com/dashpay/platform/issues/5059))
+* **wasm-sdk:** leave price tier validation to rs-dpp ([#5058](https://github.com/dashpay/platform/issues/5058))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0
+
+
+### Continuous Integration
+
+* bootstrap PR-first runner images on v4.2-dev
+* reconcile rootless runner workflows with v4.2-dev, closes [#4702](https://github.com/dashpay/platform/issues/4702)
+
+
+### Code Refactoring
+
+* **dpp:** restore shipped registration_cost v1 index parsing ([#5055](https://github.com/dashpay/platform/issues/5055))
+* **drive:** create once-per-identity claim trees in insert_contract v2 ([#5056](https://github.com/dashpay/platform/issues/5056))
+* **platform:** fold DRIVE_ABCI_QUERY_VERSIONS_V3 into V2 ([#5057](https://github.com/dashpay/platform/issues/5057))
+* **platform:** import instead of inline crate paths in 4.1 and 4.2 code ([#5065](https://github.com/dashpay/platform/issues/5065))
+
+
+### Documentation
+
+* add a contract keywords reference page to the book ([#5067](https://github.com/dashpay/platform/issues/5067))
+* encrypt the 69-byte compact xpub in the contact-request guide ([#5087](https://github.com/dashpay/platform/issues/5087))
+* give every contract keyword its own chapter in the book ([#5075](https://github.com/dashpay/platform/issues/5075))
+* list the complete contract language in the keywords overview ([#5082](https://github.com/dashpay/platform/issues/5082))
+* **platform:** add Parameters and Returns sections to 4.1 and 4.2 dispatchers ([#5063](https://github.com/dashpay/platform/issues/5063))
+* **platform:** document the genesis protocol version exception and Swift/Kotlin indentation ([#5061](https://github.com/dashpay/platform/issues/5061))
+* **platform:** say why in-place edits to shipped generations are inert ([#5054](https://github.com/dashpay/platform/issues/5054))
+* remove committed working specs and plans ([#5060](https://github.com/dashpay/platform/issues/5060))
+* **swift-sdk:** say the migration copy is switched out of WAL mode
+
+
+### Tests
+
+* **drive:** pin that a cached contract read after an in-block update bills like a cold read ([#5052](https://github.com/dashpay/platform/issues/5052))
+* follow the test conventions in tests added in 4.1 and 4.2 ([#5062](https://github.com/dashpay/platform/issues/5062))
+* **sdk:** ifThen and ifThenElse rules through rs-sdk-ffi and the Swift and Kotlin SDKs ([#5106](https://github.com/dashpay/platform/issues/5106))
+
 ## [4.2.0-beta.5](https://github.com/dashpay/platform/compare/v4.2.0-beta.4...v4.2.0-beta.5) (2026-09-27)
 
 

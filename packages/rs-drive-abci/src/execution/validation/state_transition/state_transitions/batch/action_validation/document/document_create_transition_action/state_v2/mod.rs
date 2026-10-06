@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
@@ -21,17 +22,19 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::{ConsumedLookupDocument, DocumentReferenceValidation};
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStateValidationV2
 {
+    #[allow(clippy::too_many_arguments)]
     fn validate_state_v2(
         &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -44,6 +47,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -123,7 +127,11 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             self.set_prefunded_voting_fund(fund_to_join);
         }
 
-        // The creator of a document being created is its writer
+        // The creator of a document being created is its writer; the commitments the create
+        // reveals and consumes are collected for the batch to delete with it, and the values
+        // of the type's derived index properties, from the documents the references fetched,
+        // for Drive to key the document by without reading those documents again
+        let mut derived_index_values = BTreeMap::new();
         let reference_result = self.base().validate_document_references(
             self.data(),
             owner_id,
@@ -132,6 +140,8 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             None,
             platform,
             block_info,
+            consumed_documents,
+            Some(&mut derived_index_values),
             transaction,
             execution_context,
             platform_version,
@@ -139,6 +149,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         if !reference_result.is_valid() {
             return Ok(reference_result);
         }
+        self.set_derived_index_values(derived_index_values);
 
         // A non-contested create must not take the id of a live contested
         // document. Both derive the id from the same owner, document type and

@@ -7,9 +7,10 @@
 
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
@@ -34,8 +35,29 @@ impl Sdk {
         document_type: DocumentTypeRef<'_>,
         document: &Document,
     ) -> Result<Option<Credits>, Error> {
+        Ok(self
+            .prefunded_voting_balance_to_join(document_type, document)
+            .await?
+            .map(|(_, contest_fund)| contest_fund))
+    }
+
+    /// The prefunded voting balance a create of `document` states to join its contest now:
+    /// the name of the contested index the document falls under and [`Self::contest_fund_to_join`],
+    /// or `None` when the document joins no contest. It is what a create transition built by
+    /// hand carries, the pair [`DocumentCreateTransition`] keeps as `prefunded_voting_balance`.
+    ///
+    /// [`DocumentCreateTransition`]: dpp::state_transition::batch_transition::DocumentCreateTransition
+    pub async fn prefunded_voting_balance_to_join(
+        &self,
+        document_type: DocumentTypeRef<'_>,
+        document: &Document,
+    ) -> Result<Option<(String, Credits)>, Error> {
+        // The contest is resolved on the document the transition builder sends, with every
+        // `generatedFrom` property generated from its params as the platform generates it
+        let mut document = document.clone();
+        document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
         let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
-            document_type.contested_vote_poll_for_document(document, self.version())?
+            document_type.contested_vote_poll_for_document(&document, self.version())?
         else {
             return Ok(None);
         };
@@ -70,10 +92,9 @@ impl Sdk {
             }
         }
 
-        Ok(Some(vote_poll.required_vote_resolution_fund_to_join(
-            contenders,
-            self.version(),
-        )))
+        let contest_fund =
+            vote_poll.required_vote_resolution_fund_to_join(contenders, self.version());
+        Ok(Some((vote_poll.index_name, contest_fund)))
     }
 }
 
@@ -187,7 +208,7 @@ mod tests {
     }
 
     /// The fund to join a contest of 250 contenders is twice the contest's fund, read page by
-    /// page, and it is what a create naming no maximum states
+    /// page, and it is what a create naming no maximum states, on the contested index
     #[tokio::test]
     async fn should_state_the_fund_to_join_a_contest_read_page_by_page() {
         let mut sdk = SdkBuilder::new_mock()
@@ -225,9 +246,16 @@ mod tests {
             options.and_then(|options| options.contest_fund),
             Some(2 * fund)
         );
+        assert_eq!(
+            sdk.prefunded_voting_balance_to_join(document_type, &domain("quantum"))
+                .await
+                .expect("expected to read the prefunded voting balance to join"),
+            Some(("parentNameAndLabel".to_string(), 2 * fund))
+        );
     }
 
-    /// Nothing is read for a create joining no contest, or one naming the most it pays
+    /// Nothing is read for a create joining no contest (its type has no contested index, or its
+    /// values match none), or one naming the most it pays
     #[tokio::test]
     async fn should_read_nothing_when_the_create_joins_no_contest_or_names_its_maximum() {
         let sdk = SdkBuilder::new_mock().build().expect("expected a mock sdk");
@@ -250,6 +278,21 @@ mod tests {
                 .expect("expected no read"),
             None
         );
+        assert_eq!(
+            sdk.prefunded_voting_balance_to_join(preorder_type, &preorder)
+                .await
+                .expect("expected no read"),
+            None
+        );
+        // A label of 20 characters or with digits other than 0 and 1 is not contested
+        for label in ["quantumexplorerdashx", "quantum2"] {
+            assert_eq!(
+                sdk.prefunded_voting_balance_to_join(domain_type, &domain(label))
+                    .await
+                    .expect("expected no read"),
+                None
+            );
+        }
 
         let naming_its_maximum = Some(StateTransitionCreationOptions {
             contest_fund: Some(5),

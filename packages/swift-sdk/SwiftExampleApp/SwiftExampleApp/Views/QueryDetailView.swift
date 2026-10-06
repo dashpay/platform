@@ -201,6 +201,8 @@ struct QueryDetailView: View {
                         self.error = "Not Implemented: \(message)"
                     case .internalError(let message):
                         self.error = "Internal Error: \(message)"
+                    case .consensusRejection(let consensus, let message):
+                        self.error = "Rejected by Platform (code \(consensus.code)): \(message)"
                     case .unknown(let message):
                         self.error = "Unknown Error: \(message)"
                     }

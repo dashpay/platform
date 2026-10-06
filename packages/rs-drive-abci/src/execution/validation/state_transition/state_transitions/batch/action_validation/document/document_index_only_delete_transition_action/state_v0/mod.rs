@@ -103,7 +103,15 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
             FunctionOp::new_with_byte_count(HashFunction::Sha256_2, preimage_size),
         )];
         let mut missing_entry = false;
-        for index in document_type.indexes().values() {
+        // A delete leaves the entries of an index that outlives it, and
+        // carries no value only such an index is keyed by: it neither
+        // checks nor clears them. A summableOffCountIndex index keeps no entry to
+        // check: it yields no paths.
+        for index in document_type
+            .indexes()
+            .values()
+            .filter(|index| !index.outlives_delete)
+        {
             let entry_exists = platform
                 .drive
                 .index_only_entry_commitment_matches(

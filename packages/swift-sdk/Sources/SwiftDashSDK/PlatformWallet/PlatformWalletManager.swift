@@ -777,10 +777,48 @@ public class PlatformWalletManager: ObservableObject {
     /// store lock. Stop must run on an independent thread to release that
     /// scan before shutdown drains admitted snapshots. Per-manager so a
     /// slow stop cannot prevent another manager from stopping its scan.
-    private let shieldedStopQueue = DispatchQueue(
+    /// Serial and shared by shutdown's early stop and the async
+    /// [`stopShieldedSync()`], so the two never quiesce the loop at once.
+    /// Internal so the shielded-sync extension can dispatch to it.
+    let shieldedStopQueue = DispatchQueue(
         label: "org.dash.platform-wallet.shielded-stop",
         qos: .userInitiated
     )
+
+    /// Runs the blocking native stop behind the async [`stopSpv()`]. The
+    /// Rust stop waits for the SPV run loop to finish its current sync tick
+    /// and drain its tasks — up to 15 s for the client stop and 15 s for the
+    /// run-loop join plus a 2 s abort grace, about 32 s in all, after any SPV
+    /// broadcast still waiting for acceptance — so it must park a plain GCD
+    /// thread: never the main thread, and never
+    /// a Swift Concurrency cooperative-pool thread. Per-manager, not
+    /// [`destroyQueue`]: a slow SPV stop must not hold up other managers'
+    /// creates, loads and teardowns on that process-wide queue. Internal so
+    /// the SPV extension can dispatch to it.
+    let spvStopQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.spv-stop",
+        qos: .userInitiated
+    )
+
+    /// Async SPV stops between admission and completion.
+    /// [`startSpv(config:)`] refuses to start while one is in flight.
+    /// Internal so the SPV extension can maintain it.
+    var spvStopsInFlight = 0
+
+    /// Async shielded-sync stops between admission and completion. While one
+    /// is in flight the shielded progress events are dropped, a completion is
+    /// held in [`shieldedCompletionHeldByStop`], and the shielded calls that
+    /// would race the drain throw. Internal so the shielded-sync extension
+    /// can maintain it.
+    var shieldedStopsInFlight = 0
+
+    /// The latest shielded sync completion that reached the main actor while
+    /// an async stop was in flight, with its generation. The last stop to
+    /// return settles it: a stop that drained the pass has bumped the
+    /// generation, so the completion is stale and dropped; after a timed-out
+    /// stop the pass keeps running, so its completion is published. Internal
+    /// so the shielded-sync extension can maintain it.
+    var shieldedCompletionHeldByStop: (event: ShieldedSyncEvent, generation: UInt64)?
 
     // MARK: - Init
 

@@ -1,3 +1,4 @@
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::document_type::DocumentTypeRef;
@@ -5,6 +6,7 @@ use crate::document::DocumentV0Getters;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::Value;
 
 pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
     /// Return a value given the path to its key for a document type.
@@ -74,7 +76,37 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
                     .transferred_at_core_block_height()
                     .map(DocumentPropertyType::encode_u32))
             }
+            // Only a type keeping fields for its moderators indexes these (protocol version
+            // 14); before, the names fell through to the properties, where no `$` name is.
+            "$moderatedAt" => {
+                return Ok(self
+                    .moderated_at()
+                    .map(DocumentPropertyType::encode_date_timestamp))
+            }
+            "$moderatedBy" => return Ok(self.moderated_by().map(|id| id.to_vec())),
             _ => {}
+        }
+        // A derived index property (protocol version 14) is read from the document a reference
+        // points at, not stored: Drive puts the value it read into the properties under the
+        // property's own name before it keys the document (`Value::Null` when the referenced
+        // document has none). No property name holds a `.`, so the name can not collide with a
+        // stored property, and a document Drive did not complete is refused rather than keyed
+        // under null.
+        if document_type
+            .derived_index_properties()
+            .contains_key(key_path)
+        {
+            return match self.properties().get(key_path) {
+                Some(Value::Null) => Ok(None),
+                Some(value) => document_type
+                    .serialize_value_for_key(key_path, value, platform_version)
+                    .map(Some),
+                None => Err(ProtocolError::CorruptedCodeExecution(format!(
+                    "the value of the derived index property {key_path} was not read from the \
+                     referenced document before keying document {}",
+                    self.id()
+                ))),
+            };
         }
         self.properties()
             .get_optional_at_path(key_path)?
@@ -111,6 +143,8 @@ mod tests {
             updated_at_core_block_height: Some(60),
             transferred_at_core_block_height: Some(70),
             creator_id: Some(Identifier::new([0xCC; 32])),
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 
@@ -189,6 +223,42 @@ mod tests {
             raw,
             Some(Vec::from(override_owner)),
             "explicit owner_id should override the document's owner_id"
+        );
+    }
+
+    #[test]
+    fn should_return_the_moderation_stamp_only_once_set() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected document type");
+
+        let mut doc = make_document_with_known_ids();
+        for key in ["$moderatedAt", "$moderatedBy"] {
+            let raw = doc
+                .get_raw_for_document_type_v0(key, document_type, None, platform_version)
+                .expect("should succeed");
+            assert_eq!(raw, None, "{key} is absent until a moderator writes");
+        }
+        doc.moderated_at = Some(1_700_000_300_000);
+        doc.moderated_by = Some(Identifier::new([0xDD; 32]));
+        assert_eq!(
+            doc.get_raw_for_document_type_v0("$moderatedAt", document_type, None, platform_version)
+                .expect("should succeed"),
+            Some(DocumentPropertyType::encode_date_timestamp(
+                1_700_000_300_000
+            ))
+        );
+        assert_eq!(
+            doc.get_raw_for_document_type_v0("$moderatedBy", document_type, None, platform_version)
+                .expect("should succeed"),
+            Some(vec![0xDD; 32])
         );
     }
 
@@ -415,6 +485,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

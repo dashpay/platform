@@ -87,6 +87,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             apply_max_bytes: Some(0), // changed: the meta-schema v3 `maxBytes` keyword (the most UTF-8 bytes a string property, or each string element of a typed array, may hold) is folded into the string's `StringPropertySizes`; None before this version means the keyword is ignored, as it was before it existed
             parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
             parse_property_constraints: Some(0), // changed: the meta-schema v3 `propertyConstraints` doctype keyword (named comparisons between integer expressions over the document's properties) is parsed onto the document type and the properties it reads are checked; None before this version means the keyword is ignored, as it was before it existed
+            apply_generated_from: Some(0), // changed: the meta-schema v3 `generatedFrom` keyword (a string property whose value a built-in function generates from other properties of the same document) is parsed onto the property and the properties it reads are checked at registration; None before this version means the keyword is ignored, as it was before it existed
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -120,11 +121,18 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result
             validate_property_constraints: Some(0), // changed: `validate_property_constraints` refuses a created or replaced document that breaks one of its type's `propertyConstraints` (DocumentPropertyConstraintViolatedError, 10422); None before this version returns an empty result
             canonical_contested_index_values: Some(0), // new: identifier index values of a contest are written as identifiers
+            fill_generated_properties: Some(0), // new: a created or replaced document that leaves out a `generatedFrom` property whose params it supplies gets the property generated on arrival; None before this version leaves the data as sent
+            validate_generated_from: Some(0), // new: `validate_generated_from_properties` refuses a document whose `generatedFrom` property is not what its function generates from its params, or is present without them (DocumentPropertyNotGeneratedError, 10424); None before this version returns an empty result
         },
     },
     token_versions: TokenVersions {
         // 1: an epoch-based perpetual distribution needs an interval of at least one epoch.
         validate_structure_interval: 1,
         validate_pre_programmed_distribution_amounts: 0,
+        token_configuration_format: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 1,
+            default_current_version: 0,
+        },
     },
 };

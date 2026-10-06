@@ -69,6 +69,14 @@ pub mod shielded_common;
 pub mod shielded_transfer;
 /// Module for shielded withdrawal transition validation
 pub mod shielded_withdrawal;
+/// Checks shared by the identity-less token pool transitions
+pub mod token_pool_paid_common;
+/// Token purchase paid from the credit shielded pool into a token's pool
+pub mod token_purchase_from_shielded_pool;
+/// Token shielded transfer with the fee paid from the credit shielded pool
+pub mod token_shielded_transfer_with_shielded_fee;
+/// Token unshield with the fee paid from the credit shielded pool
+pub mod token_unshield_with_shielded_fee;
 /// Module for unshield transition validation
 pub mod unshield;
 
@@ -200,6 +208,9 @@ pub(in crate::execution) mod tests {
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::expect_match;
+    use crate::execution::check_tx::CheckTxLevel;
+    use dpp::consensus::ConsensusError;
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
@@ -748,7 +759,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -756,14 +767,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address,
+                    owner_address: Some(owner_address),
                     voting_address: rng.gen(),
-                    payout_address,
+                    payout_address: Some(payout_address),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -837,7 +852,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -845,14 +860,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address: rng.gen(),
+                    owner_address: Some(rng.gen()),
                     voting_address,
-                    payout_address: rng.gen(),
+                    payout_address: Some(rng.gen()),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -2383,6 +2402,29 @@ pub(in crate::execution) mod tests {
         .expect("expected to serialize the masternode vote")
     }
 
+    /// The errors check_tx refuses a serialized transition with when it is first broadcast
+    pub(in crate::execution) fn first_time_check_tx_errors(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        serialized_transition: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Vec<ConsensusError> {
+        platform
+            .check_tx(
+                serialized_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &PlatformRef {
+                    drive: &platform.drive,
+                    state: platform_state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                },
+                platform_version,
+            )
+            .expect("expected check_tx to run")
+            .errors
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) async fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -2417,6 +2459,19 @@ pub(in crate::execution) mod tests {
                 platform,
                 &masternode_vote_serialized_transition,
                 "masternode vote",
+            );
+        } else {
+            // A block refuses a failed vote without charging anyone, and its proposer drops it
+            // silently, so check_tx must refuse it first or the voter never learns why.
+            assert!(
+                !first_time_check_tx_errors(
+                    platform,
+                    platform_state,
+                    &masternode_vote_serialized_transition,
+                    platform_version,
+                )
+                .is_empty(),
+                "check_tx must refuse a vote that a block refuses"
             );
         }
 

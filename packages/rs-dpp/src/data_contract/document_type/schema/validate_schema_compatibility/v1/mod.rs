@@ -46,10 +46,10 @@
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
 
 use crate::data_contract::document_type::property_names::{
-    ACTION_FEES, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR, CONTAINS,
-    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES,
-    MIN_PROPERTIES, PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE,
+    ACTION_FEES, CONTAINS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE,
+    ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
+    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
     TOKEN_COST, TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
@@ -157,8 +157,8 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
     RANGE_SUMMABLE,
     DOCUMENTS_AVERAGEABLE,
     RANGE_AVERAGEABLE,
-    CAN_BE_DELETED_BY_MODERATORS,
-    CAN_BE_DELETED_BY_MODERATORS_FOR,
+    MODERATOR_ABILITIES,
+    RETRACTED_WHEN,
     MIN_PROPERTIES,
     MAX_PROPERTIES,
     CONTAINS,
@@ -168,13 +168,12 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
 /// dedicated checks in `validate_update` v1 instead of the JSON diff:
 /// `indices` (index definitions compared by name), `required`
 /// (`validate_required_fields_update`, which admits new-property additions
-/// annotated with `requiredSince`), and `immutable` together with
-/// `immutableAllowSetting` (`validate_immutable_fields_update`: the first may
-/// only grow, the second may only shrink except for newly immutable
-/// properties). The differ has no rule for the last three at all and would
-/// hard-error on any change to them.
-const TOP_LEVEL_VALIDATED_KEYS: [&str; 4] =
-    ["indices", "required", "immutable", "immutableAllowSetting"];
+/// annotated with `requiredSince`), and `immutable`
+/// (`validate_immutable_fields_update`: the properties it lists without a
+/// condition may only grow, and a condition may only be dropped for listing
+/// the property without one). The differ has no rule for the last two at all
+/// and would hard-error on any change to them.
+const TOP_LEVEL_VALIDATED_KEYS: [&str; 3] = ["indices", "required", "immutable"];
 
 /// The document type's own top-level lists of property names that the parse
 /// reads as sets: `transient`, and `entryPayload`, whose properties are framed
@@ -218,7 +217,7 @@ fn prepared_for_diff(schema: &JsonValue) -> Cow<'_, JsonValue> {
 /// selects a `validate_update` generation of at least 1
 /// (`dpp.validation.document_type.validate_update`), which rejects every
 /// real index change, every disallowed required-set change and every
-/// shrinking of the immutable list before this check runs. A future version
+/// loosening of what `immutable` freezes before this check runs. A future version
 /// table that bumps one without the other would let those changes bypass
 /// compatibility validation entirely.
 pub(super) fn validate_schema_compatibility_v1(
@@ -344,8 +343,7 @@ mod tests {
                 "a": {"type": "string", "position": 0},
                 "b": {"type": "string", "position": 1},
             },
-            "immutable": ["a", "b"],
-            "immutableAllowSetting": ["b"],
+            "immutable": ["a", { "property": "b", "when": { "present": "$old.b" } }],
             "additionalProperties": false,
         });
 
@@ -679,6 +677,24 @@ mod tests {
                 "/entryPayload/1",
             ),
             (
+                "/moderatorAbilities",
+                json!({"delete": true}),
+                json!({"delete": false}),
+                "/moderatorAbilities/delete",
+            ),
+            (
+                "/moderatorAbilities",
+                json!({"delete": true, "deleteWithin": 3600}),
+                json!({"delete": true, "deleteWithin": 7200}),
+                "/moderatorAbilities/deleteWithin",
+            ),
+            (
+                "/moderatorAbilities",
+                json!({"changeFields": ["a", "b"]}),
+                json!({"changeFields": ["a", "c"]}),
+                "/moderatorAbilities/changeFields/1",
+            ),
+            (
                 "/properties/list/contains",
                 json!({"minimum": 1}),
                 json!({"minimum": 0}),
@@ -698,8 +714,6 @@ mod tests {
             ("/rangeSummable", json!(true), json!(false)),
             ("/documentsAverageable", json!("a"), json!("b")),
             ("/rangeAverageable", json!(true), json!(false)),
-            ("/canBeDeletedByModerators", json!(true), json!(false)),
-            ("/canBeDeletedByModeratorsFor", json!(3600), json!(7200)),
             ("/minProperties", json!(1), json!(0)),
             ("/maxProperties", json!(2), json!(3)),
             ("/properties/object/minProperties", json!(1), json!(0)),

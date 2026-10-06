@@ -6,6 +6,9 @@ pub mod v2;
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionMethodVersions {
     pub public_key_in_creation_methods: PublicKeyInCreationMethodVersions,
+    /// `StateTransition::verify_identity_signed_signature`: 0 accepts a BLS12_381 signature
+    /// that is well formed but does not verify, 1 refuses it.
+    pub verify_identity_signed_signature: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

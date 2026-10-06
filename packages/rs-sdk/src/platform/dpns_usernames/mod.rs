@@ -194,6 +194,8 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Create domain document
@@ -242,6 +244,8 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Submit preorder document first
@@ -347,6 +351,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],
@@ -408,6 +413,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],

@@ -34,6 +34,7 @@
 - [Fee System Overview](fees/overview.md)
 - [Platform Address Fees](fees/platform-address-fees.md)
 - [Shielded Transaction Fees](fees/shielded-fees.md)
+- [What a Document Costs](fees/document-cost.md)
 
 # Error Handling
 
@@ -61,6 +62,7 @@
 - [Contested Documents](data-model/contested-documents.md)
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)
+- [Token Shielded Pools](data-model/token-shielded-pools.md)
 
 # Contract Keywords
 
@@ -73,17 +75,19 @@
 - [transient](contract-keywords/transient.md)
 - [Mutability](contract-keywords/mutability.md)
 - [Deletion](contract-keywords/deletion.md)
+- [Moderator Abilities](contract-keywords/moderator-abilities.md)
 - [Time To Live (ttl)](contract-keywords/ttl.md)
 - [Creation, Transfers and Trading](contract-keywords/ownership-and-trading.md)
 - [History](contract-keywords/history.md)
 - [Signing and Keys](contract-keywords/signing-keys.md)
 - [References (refersTo)](contract-keywords/refers-to.md)
-  - [Lookups](contract-keywords/refers-to-lookup.md)
+  - [Finding by Properties (findBy)](contract-keywords/refers-to-lookup.md)
   - [Expressions](contract-keywords/refers-to-expressions.md)
-  - [List Elements](contract-keywords/refers-to-list-element.md)
+  - [List Elements (inList)](contract-keywords/refers-to-list-element.md)
   - [Writer and Creator References](contract-keywords/owner-refers-to.md)
 - [distinctFrom](contract-keywords/distinct-from.md)
 - [maxBytes](contract-keywords/max-bytes.md)
+- [generatedFrom](contract-keywords/generated-from.md)
 - [encryptedFor](contract-keywords/encrypted-for.md)
 - [propertyConstraints](contract-keywords/property-constraints.md)
 - [Token Costs (tokenCost)](contract-keywords/token-cost.md)
@@ -93,7 +97,9 @@
   - [Counts, Sums and Averages](contract-keywords/aggregates.md)
   - [Ranked Indexes](contract-keywords/ranked.md)
   - [Time-Range Indexes](contract-keywords/time-range.md)
+  - [Integer-Range Indexes](contract-keywords/integer-range.md)
   - [Index-Only Types](contract-keywords/index-only.md)
+  - [Values of Referenced Documents](contract-keywords/derived-index-properties.md)
 - [Contract-Level Keys and config](contract-keywords/contract-config.md)
 
 # Drive

@@ -507,6 +507,7 @@ mod distinct_from_tests {
                 document_type_name: "delegation".to_string(),
                 data_contract: contract_fetch_info,
                 token_cost: None,
+                shielded_token_payment: None,
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,
@@ -526,10 +527,12 @@ mod distinct_from_tests {
                 ("delegateId".to_string(), fixture.owner_id()),
             ]),
             changed_data_fields: BTreeSet::new(),
-            added_data_fields: BTreeSet::new(),
             removed_identifier_fields: BTreeMap::new(),
             stored_changed_values: BTreeMap::new(),
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+            property_constraint_aggregates: Default::default(),
         });
 
         let before = action
@@ -600,6 +603,7 @@ mod distinct_from_tests {
                 document_type_name: "delegation".to_string(),
                 data_contract: contract_fetch_info.clone(),
                 token_cost: None,
+                shielded_token_payment: None,
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,
@@ -609,12 +613,14 @@ mod distinct_from_tests {
         let transfer = DocumentTransferTransitionAction::V0(DocumentTransferTransitionActionV0 {
             base: base(),
             document: transferred.clone(),
+            property_constraint_aggregates: Default::default(),
         });
         let purchase = DocumentPurchaseTransitionAction::V0(DocumentPurchaseTransitionActionV0 {
             base: base(),
             document: transferred.clone(),
             original_owner_id: fixture.identity.id(),
             price: 1,
+            property_constraint_aggregates: Default::default(),
         });
 
         for (name, before, at) in [

@@ -93,7 +93,17 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
 
             let mut probe_operations = vec![];
             let mut duplicate_index = None;
-            for index in document_type.indexes().values() {
+            // An index whose entries outlive a delete may hold an entry an
+            // earlier document with the same values left: the create keeps
+            // it rather than colliding, so it is not probed. The rest of the
+            // create's entries still decide whether it is a duplicate. A
+            // summableOffCountIndex index keeps no entries (it yields no paths),
+            // so it decides nothing.
+            for index in document_type
+                .indexes()
+                .values()
+                .filter(|index| !index.outlives_delete)
+            {
                 let entry_exists = platform
                     .drive
                     .has_index_only_document_entry(
