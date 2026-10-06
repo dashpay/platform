@@ -655,8 +655,14 @@ fn rating_contract(maximum: u64, version: u32) -> dpp::data_contract::DataContra
     contract
 }
 
-#[tokio::test]
-async fn should_follow_a_contract_update_committed_while_a_live_stream_starts() {
+/// A stream of ratings over 3 stars, bound to the contract read at height 1 with `stars` a u8.
+/// An update widening `stars` commits at 2, then `blocks_after_update` empty blocks, then the
+/// stream starts `ahead` blocks after the tip (just after it when `None`). A 300-star rating at
+/// the start must match: it is a rating only under the widened schema.
+async fn should_follow_an_update_between_binding_and_start(
+    blocks_after_update: usize,
+    ahead: Option<u64>,
+) {
     use dash_platform_queries::subscriptions::{DocumentAction, DocumentActionMatch, DocumentFilter};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::platform_value::Value;
@@ -704,18 +710,26 @@ async fn should_follow_a_contract_update_committed_while_a_live_stream_starts() 
     .serialize_to_bytes()
     .unwrap();
     harness.commit(vec![update]);
+    for _ in 0..blocks_after_update {
+        harness.commit(vec![]);
+    }
+    let tip = *harness.tip.borrow();
+    let start = tip + ahead.unwrap_or(1);
     let mut stream = harness
         .service
         .start(
             harness.service.admit(None).unwrap(),
             filters,
-            None,
+            ahead.map(|_| start),
             Some(read_at),
         )
         .await
         .unwrap();
     // Nothing before the start is delivered...
-    expect_checkpoint(&mut stream, 2).await;
+    expect_checkpoint(&mut stream, start - 1).await;
+    while *harness.tip.borrow() + 1 < start {
+        harness.commit(vec![]);
+    }
 
     // ...but the update was followed: 300 stars is a rating only under the widened schema.
     let rating = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
@@ -738,7 +752,24 @@ async fn should_follow_a_contract_update_committed_while_a_live_stream_starts() 
     .serialize_to_bytes()
     .unwrap();
     let height = harness.commit(vec![rating]);
+    assert_eq!(height, start);
     expect_match(&mut stream, height, 0).await;
+}
+
+#[tokio::test]
+async fn should_follow_a_contract_update_committed_while_a_live_stream_starts() {
+    should_follow_an_update_between_binding_and_start(0, None).await;
+}
+
+#[tokio::test]
+async fn should_follow_a_contract_update_more_than_a_page_before_a_live_start() {
+    should_follow_an_update_between_binding_and_start(META_PAGE as usize, None).await;
+}
+
+#[tokio::test]
+async fn should_follow_a_contract_update_before_a_start_ahead_of_the_tip() {
+    should_follow_an_update_between_binding_and_start(0, Some(5)).await;
+    should_follow_an_update_between_binding_and_start(0, Some(META_PAGE + 10)).await;
 }
 
 #[tokio::test]

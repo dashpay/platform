@@ -827,18 +827,29 @@ pub fn canonicalize_where_clause(
     clause: &mut WhereClause,
     platform_version: &PlatformVersion,
 ) -> Result<(), QuerySyntaxError> {
-    // A `u8` field's IN candidates may come packed as bytes, already canonical.
-    if clause.operator == WhereOperator::In
-        && matches!(clause.value, Value::Bytes(_))
-        && matches!(
-            document_type
-                .flattened_properties()
-                .get(&clause.field)
-                .map(|property| &property.property_type),
-            Some(DocumentPropertyType::U8)
-        )
-    {
-        return Ok(());
+    // IN candidates packed as bytes are `u8`s (as `WhereClause::in_values` reads them): already
+    // canonical for a `u8` field, and converted one by one for any other numeric field, such
+    // as one an update widened from `u8`.
+    if let (WhereOperator::In, Value::Bytes(bytes)) = (clause.operator, &clause.value) {
+        match document_type
+            .flattened_properties()
+            .get(&clause.field)
+            .map(|property| &property.property_type)
+        {
+            Some(DocumentPropertyType::U8) => return Ok(()),
+            Some(property_type)
+                if property_type.is_integer()
+                    || matches!(
+                        property_type,
+                        DocumentPropertyType::U128
+                            | DocumentPropertyType::I128
+                            | DocumentPropertyType::F64
+                    ) =>
+            {
+                clause.value = Value::Array(bytes.iter().copied().map(Value::U8).collect());
+            }
+            _ => {}
+        }
     }
     clause.value = canonical_operand(clause.operator, &clause.value, |value| {
         canonical_value_for_key(document_type, &clause.field, value, platform_version)

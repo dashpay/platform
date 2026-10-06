@@ -854,3 +854,107 @@ fn should_send_operands_as_the_schema_stores_them() {
     let wire = StateTransitionFilter::from_proto(0, canonical.to_proto().unwrap()).unwrap();
     resolve(vec![wire], &contract).expect("resolves after the wire round trip");
 }
+
+/// The `rating` contract with `stars` and `votes` up to `maximum`: u8 fields up to 255, u16
+/// fields once an update widens them.
+fn widening_contract(maximum: u64, version: u32) -> DataContract {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    let documents = platform_value!({
+        "rating": {
+            "type": "object",
+            "properties": {
+                "stars": { "type": "integer", "minimum": 0, "maximum": maximum, "position": 0 },
+                "votes": { "type": "integer", "minimum": 0, "maximum": maximum, "position": 1 }
+            },
+            "additionalProperties": false
+        }
+    });
+    let mut contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(id(1), 1, documents, None, None)
+        .expect("the contract parses")
+        .data_contract_owned();
+    contract.set_version(version);
+    contract
+}
+
+fn rating(contract: &DataContract, stars: u64, votes: u64) -> StateTransition {
+    batch(
+        id(2),
+        vec![BatchedTransition::Document(DocumentTransition::Create(
+            DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: document_base(contract, "rating", 3),
+                entropy: [0u8; 32],
+                data: BTreeMap::from([
+                    ("stars".to_string(), Value::U64(stars)),
+                    ("votes".to_string(), Value::U64(votes)),
+                ]),
+                prefunded_voting_balance: None,
+            }),
+        ))],
+    )
+}
+
+#[test]
+fn should_rebind_packed_in_candidates_to_a_widened_field() {
+    let narrow = Arc::new(widening_contract(255, 1));
+    let filter = StateTransitionFilter::Documents(
+        DocumentFilter::new(narrow.id())
+            .with_document_type("rating")
+            .with_action(
+                DocumentActionMatch::new(DocumentAction::Create)
+                    .with_new_document_where(drive::query::WhereClause {
+                        field: "stars".to_string(),
+                        operator: WhereOperator::In,
+                        value: Value::Bytes(vec![1, 2]),
+                    })
+                    .with_new_document_where(drive::query::WhereClause {
+                        field: "votes".to_string(),
+                        operator: WhereOperator::GreaterThan,
+                        value: Value::U64(3),
+                    }),
+            ),
+    );
+    let mut filters = resolve(vec![filter], &narrow).expect("packed u8 candidates");
+    assert!(matches(&filters, &rating(&narrow, 1, 300)).is_none());
+
+    // The update widens both fields; the packed candidates are read as u16s.
+    let wide = widening_contract(1000, 2);
+    filters
+        .follow(&contract_update(wide.clone()), PlatformVersion::latest())
+        .expect("the filter applies to the widened contract");
+    assert_eq!(filters.data_contract(narrow.id()).unwrap().version(), 2);
+    assert!(matches(&filters, &rating(&wide, 1, 300)).is_some());
+    assert!(matches(&filters, &rating(&wide, 3, 300)).is_none());
+}
+
+#[test]
+fn should_fail_to_rebind_to_a_newer_version_the_filter_does_not_apply_to() {
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    let contract = contract();
+    let mut filters = resolve(
+        vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(contract.id()).with_document_type("niceDocument"),
+        )],
+        &contract,
+    )
+    .unwrap();
+    // A version without the filtered document type, no newer than the binding (as met
+    // replaying history), leaves the binding as it is...
+    let mut without_type = widening_contract(255, contract.version());
+    without_type.set_id(contract.id());
+    assert!(filters
+        .rebind_data_contract(Arc::new(without_type.clone()), PlatformVersion::latest())
+        .is_ok());
+    assert_eq!(
+        filters.data_contract(contract.id()).unwrap().version(),
+        contract.version()
+    );
+    // ...but a newer one it should apply to is an error, not a silently stale binding.
+    without_type.set_version(contract.version() + 1);
+    assert!(filters
+        .rebind_data_contract(Arc::new(without_type), PlatformVersion::latest())
+        .is_err());
+}

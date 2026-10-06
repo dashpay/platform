@@ -15,8 +15,8 @@
 //!
 //! Every transition a node sends is checked here: its hash, and that it matches the filters,
 //! evaluated against data contracts fetched with proofs. A data contract update in the stream
-//! is only a signal: the contract is read again with a proof before the filters on it rebind. A node that sends a transition the
-//! filters do not match is skipped. What a node cannot be held to is completeness: it may
+//! is only a signal: the contract is read again with a proof before the filters on it rebind.
+//! A node that sends a transition the filters do not match is skipped. What a node cannot be held to is completeness: it may
 //! leave a matching transition out, and block heights and times are its word. To act on a
 //! transition, read the state it changed with a proved query; to catch up on what happened
 //! while offline, start from a proved read's height (`metadata.height + 1`).
@@ -103,6 +103,9 @@ pub struct StateTransitionSubscription {
     stream_address: Option<Address>,
     /// Where the next stream starts; `None` until the first checkpoint of a live-only start.
     resume_from: Option<u64>,
+    /// The start the caller asked for: blocks before it are read only to follow updates of
+    /// the bound contracts, and nothing in them is reported.
+    report_from: u64,
     consecutive_failures: u32,
     /// The wait before the next stream is opened, after a failure. Kept here, like `idle`, so
     /// a caller cancelling `next()` does not restart it.
@@ -122,6 +125,16 @@ pub struct StateTransitionSubscription {
 
 /// The deepest value nesting the SDK decodes, whatever the protocol version a node reports.
 const MAX_VALUE_DEPTH: usize = dpp::platform_value::DEFAULT_MAX_VALUE_DECODE_DEPTH;
+
+/// Where a subscription starting at `from_block_height` (after the tip when `None`) reads from,
+/// with its contracts proved at `bound_at`: the earlier of its start and the block after.
+fn read_from(from_block_height: Option<u64>, bound_at: Option<u64>) -> Option<u64> {
+    let Some(bound_at) = bound_at else {
+        return from_block_height;
+    };
+    let after_binding = bound_at.saturating_add(1);
+    Some(from_block_height.map_or(after_binding, |from| from.min(after_binding)))
+}
 
 /// A pending wait, kept across reads.
 type Timer = Pin<Box<dyn Future<Output = ()> + Send>>;
@@ -169,9 +182,10 @@ impl Sdk {
     /// `filters` asks for them. Following takes one of the request's filters, so with document
     /// filters at most `MAX_FILTERS - 1` filters may be given.
     ///
-    /// Without a `from_block_height`, a subscription with document filters starts just after
-    /// the height its contracts were proved at, usually a block or two before the tip, so that
-    /// an update of one committed while subscribing is still followed.
+    /// A subscription with document filters reads from just after the height its contracts
+    /// were proved at, so that it sees every update of them after the version it bound, and
+    /// reports nothing before `from_block_height`. Without one it reports from that height, a
+    /// block or two before the tip.
     pub async fn subscribe_to_state_transitions(
         &self,
         mut filters: Vec<StateTransitionFilter>,
@@ -204,8 +218,7 @@ impl Sdk {
             }
             bound_at = Some(bound_at.map_or(metadata.height, |height| height.min(metadata.height)));
         }
-        let from_block_height =
-            from_block_height.or_else(|| bound_at.map(|height| height.saturating_add(1)));
+        let read_from = read_from(from_block_height, bound_at);
         if !data_contract_ids.is_empty() {
             filters.push(StateTransitionFilter::DataContracts {
                 data_contract_ids: data_contract_ids.into_iter().collect(),
@@ -234,7 +247,8 @@ impl Sdk {
             stream: None,
             stream_messages: 0,
             stream_address: None,
-            resume_from: from_block_height,
+            resume_from: read_from,
+            report_from: from_block_height.unwrap_or(0),
             consecutive_failures: 0,
             retry: None,
             contracts_to_refresh: BTreeMap::new(),
@@ -478,7 +492,8 @@ impl StateTransitionSubscription {
             }
             self.stale_reads = 0;
             self.resolved
-                .rebind_data_contract(Arc::new(contract), self.sdk.version());
+                .rebind_data_contract(Arc::new(contract), self.sdk.version())
+                .map_err(Error::Generic)?;
             self.contracts_to_refresh.remove(&data_contract_id);
         }
         Ok(())
@@ -514,7 +529,7 @@ impl StateTransitionSubscription {
                     ))
                 })?;
                 self.resume_from = Some(resume_from);
-                Some(SubscriptionEvent::Checkpoint {
+                (resume_from >= self.report_from).then_some(SubscriptionEvent::Checkpoint {
                     block_height: checkpoint.block_height,
                 })
             }
@@ -549,6 +564,9 @@ impl StateTransitionSubscription {
                         .entry(data_contract_id)
                         .or_insert(updated_version);
                     *pending = (*pending).max(updated_version);
+                }
+                if matched.block_height < self.report_from {
+                    return Ok(None);
                 }
                 let Some(mut local_match) = local_match else {
                     tracing::warn!(
@@ -660,6 +678,7 @@ mod tests {
             stream_messages: 0,
             stream_address: None,
             resume_from: None,
+            report_from: 0,
             consecutive_failures: 0,
             retry: None,
             contracts_to_refresh: BTreeMap::new(),
@@ -1074,6 +1093,175 @@ mod tests {
         assert!(error.to_string().contains("try again"), "{error}");
         assert!(started.elapsed() >= FIRST_RETRY_DELAY * (MAX_CONSECUTIVE_FAILURES - 1));
         assert_eq!(subscription.contracts_to_refresh.get(&id), Some(&3));
+    }
+
+    #[test]
+    fn should_read_from_the_earlier_of_the_start_and_the_contract_binding() {
+        assert_eq!(read_from(None, None), None);
+        assert_eq!(read_from(Some(7), None), Some(7));
+        assert_eq!(read_from(None, Some(40)), Some(41));
+        // A start ahead of the binding reads the blocks in between (reporting nothing there).
+        assert_eq!(read_from(Some(60), Some(40)), Some(41));
+        assert_eq!(read_from(Some(7), Some(40)), Some(7));
+    }
+
+    #[test]
+    fn should_follow_updates_before_the_start_without_reporting_them() {
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::version::TryFromPlatformVersioned;
+
+        let (subscription, [_, updated]) = subscription_on_contract();
+        let mut subscription = StateTransitionSubscription {
+            report_from: 10,
+            ..subscription
+        };
+        let id = updated.id();
+        let update = StateTransition::DataContractUpdate(
+            DataContractUpdateTransition::try_from_platform_versioned(
+                ((*updated).clone(), 1),
+                PlatformVersion::latest(),
+            )
+            .expect("update transition"),
+        )
+        .serialize_to_bytes()
+        .expect("serializable");
+        let at = |height: u64, bytes: Vec<u8>| {
+            let mut matched = matched(bytes);
+            matched.block_height = height;
+            response(Responses::StateTransition(matched))
+        };
+        let checkpoint = |height: u64| {
+            response(Responses::Checkpoint(Checkpoint {
+                block_height: height,
+            }))
+        };
+
+        // Before the start: the update is queued for a proved refresh but not reported, and
+        // checkpoints move the cursor without being reported.
+        assert!(subscription
+            .accept(at(5, update))
+            .expect("accepted")
+            .is_none());
+        assert_eq!(subscription.contracts_to_refresh.get(&id), Some(&3));
+        assert!(subscription
+            .accept(checkpoint(5))
+            .expect("accepted")
+            .is_none());
+        assert_eq!(subscription.resume_height(), Some(6));
+        // From the start on, as usual.
+        assert!(matches!(
+            subscription.accept(checkpoint(9)).expect("accepted"),
+            Some(SubscriptionEvent::Checkpoint { block_height: 9 })
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_refresh_packed_in_candidates_onto_a_widened_field() {
+        use dash_platform_queries::subscriptions::{
+            DocumentAction, DocumentActionMatch, DocumentFilter,
+        };
+        use dpp::data_contract::accessors::v0::DataContractV0Setters;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::{platform_value, Value};
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+        use drive::query::{WhereClause, WhereOperator};
+
+        let rating = |maximum: u64, version: u32| {
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": maximum, "position": 0 },
+                        "votes": { "type": "integer", "minimum": 0, "maximum": maximum, "position": 1 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let mut contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            contract.set_version(version);
+            Arc::new(contract)
+        };
+        let (narrow, wide) = (rating(255, 1), rating(1000, 2));
+        let id = narrow.id();
+        let filters = vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(id)
+                .with_document_type("rating")
+                .with_action(
+                    DocumentActionMatch::new(DocumentAction::Create)
+                        .with_new_document_where(WhereClause {
+                            field: "stars".to_string(),
+                            operator: WhereOperator::In,
+                            value: Value::Bytes(vec![1, 2]),
+                        })
+                        .with_new_document_where(WhereClause {
+                            field: "votes".to_string(),
+                            operator: WhereOperator::GreaterThan,
+                            value: Value::U64(3),
+                        }),
+                ),
+        )];
+        let mut subscription = StateTransitionSubscription {
+            resolved: ResolvedFilters::resolve(
+                filters.clone(),
+                |_| Some(narrow.clone()),
+                PlatformVersion::latest(),
+            )
+            .expect("filters resolve"),
+            filters,
+            ..subscription()
+        };
+        subscription.contracts_to_refresh.insert(id, 2);
+        subscription
+            .sdk
+            .mock()
+            .expect_fetch(id, Some((*wide).clone()))
+            .await
+            .expect("expectation");
+        subscription.refresh_contracts().await.expect("refreshed");
+        assert_eq!(bound_version(&subscription, id), 2);
+
+        let rating_of = |stars: u64, votes: u64| {
+            StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Identifier::from([2u8; 32]),
+                transitions: vec![BatchedTransition::Document(DocumentTransition::Create(
+                    DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                        base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                            id: Identifier::from([3u8; 32]),
+                            document_type_name: "rating".to_string(),
+                            data_contract_id: id,
+                            identity_contract_nonce: 1,
+                            token_payment_info: None,
+                        }),
+                        entropy: [0; 32],
+                        data: [
+                            ("stars".to_string(), Value::U64(stars)),
+                            ("votes".to_string(), Value::U64(votes)),
+                        ]
+                        .into(),
+                        prefunded_voting_balance: None,
+                    }),
+                ))],
+                ..Default::default()
+            }))
+            .serialize_to_bytes()
+            .expect("serializable")
+        };
+        assert!(matches!(
+            subscription.accept(response(Responses::StateTransition(matched(rating_of(
+                1, 300
+            ))))),
+            Ok(Some(SubscriptionEvent::StateTransition(_)))
+        ));
     }
 
     fn bound_version(subscription: &StateTransitionSubscription, id: Identifier) -> u32 {

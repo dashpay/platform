@@ -215,8 +215,8 @@ impl ResolvedFilters {
             &mut vec![],
             platform_version,
         )?;
-        self.rebind_data_contract(Arc::new(contract), platform_version);
-        Ok(())
+        self.rebind_data_contract(Arc::new(contract), platform_version)
+            .map_err(ProtocolError::Generic)
     }
 
     /// The bound data contract a transition updates, if any, and the version it updates it
@@ -259,13 +259,15 @@ impl ResolvedFilters {
     }
 
     /// Rebind the document filters on `data_contract` to this version of it, as carried by a
-    /// data contract update the stream has just passed. A filter the new version cannot serve
-    /// (an older contract lacking its document type or a clause's field) keeps its binding.
+    /// data contract update the stream has just passed. A filter an older version cannot serve
+    /// (one from before its document type or a clause's field existed, met replaying history)
+    /// keeps its binding; one a newer version cannot serve is an error, since matching under
+    /// the outdated schema could drop what the node matches.
     pub fn rebind_data_contract(
         &mut self,
         data_contract: Arc<DataContract>,
         platform_version: &PlatformVersion,
-    ) {
+    ) -> Result<(), String> {
         for filter in &mut self.filters {
             let ResolvedFilter::Documents(document_filter) = filter else {
                 continue;
@@ -273,14 +275,23 @@ impl ResolvedFilters {
             if document_filter.contract.id() != data_contract.id() {
                 continue;
             }
-            if let Ok(rebound) = resolve_document_filter(
+            match resolve_document_filter(
                 &document_filter.source,
                 data_contract.clone(),
                 platform_version,
             ) {
-                *document_filter = rebound;
+                Ok(rebound) => *document_filter = rebound,
+                Err(_) if data_contract.version() <= document_filter.contract.version() => {}
+                Err(error) => {
+                    return Err(format!(
+                        "the filter on data contract {} does not apply to its version {}: {error}",
+                        data_contract.id(),
+                        data_contract.version()
+                    ))
+                }
             }
         }
+        Ok(())
     }
 }
 

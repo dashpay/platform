@@ -207,16 +207,10 @@ impl SubscriptionService {
             }
         };
 
-        // Drive commits each block right after Tenderdash stores it, so the contracts were read
-        // at most a block or two before the tip; going back further than a page (which would
-        // count as catching up) is not worth delaying the start for.
-        let first_scanned = bound_at.map_or(start, |bound_at| {
-            start.min(
-                bound_at
-                    .saturating_add(1)
-                    .max(start.saturating_sub(META_PAGE)),
-            )
-        });
+        // However far back the contracts were read (a slow setup, a start ahead of the tip),
+        // every update after their bound version is followed before the start.
+        let first_scanned =
+            bound_at.map_or(start, |bound_at| start.min(bound_at.saturating_add(1)));
 
         let (sender, receiver) = mpsc::channel(STREAM_BUFFER);
         let scan = Scan {
