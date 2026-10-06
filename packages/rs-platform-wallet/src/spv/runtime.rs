@@ -53,7 +53,7 @@ pub struct SpvRuntime {
     last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
     /// Teardown state. Held across client construction, run-loop spawning and
-    /// each stop call, so the three never interleave.
+    /// each stop or storage clear, so none of them interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
     peer_tracker: Arc<PeerTracker>,
 }
@@ -334,6 +334,19 @@ impl SpvRuntime {
         Fut: Future<Output = ()> + Send + 'static,
     {
         let mut shutdown = self.shutdown.lock().await;
+        self.stop_locked(&mut shutdown, stop_client).await
+    }
+
+    /// Run or rejoin teardown. The caller holds the `shutdown` lock.
+    async fn stop_locked<F, Fut>(
+        &self,
+        shutdown: &mut Shutdown,
+        stop_client: F,
+    ) -> Result<(), PlatformWalletError>
+    where
+        F: FnOnce(SpvClient) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
         if matches!(*shutdown, Shutdown::Idle) {
             let client = self.client.write().await.take();
             let startup = self.task_slot().take();
@@ -353,7 +366,7 @@ impl SpvRuntime {
             }));
         }
 
-        if let Shutdown::Running(task) = &mut *shutdown {
+        if let Shutdown::Running(task) = shutdown {
             match tokio::time::timeout(SPV_STOP_TIMEOUT, task).await {
                 Ok(Ok(Ok(()))) => *shutdown = Shutdown::Idle,
                 Ok(result) => {
@@ -366,7 +379,7 @@ impl SpvRuntime {
                 }
             }
         }
-        match &*shutdown {
+        match shutdown {
             Shutdown::Failed(error) => Err(PlatformWalletError::SpvError(error.clone())),
             _ => Ok(()),
         }
@@ -601,20 +614,22 @@ impl SpvRuntime {
 
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
-    /// If the SPVClient is running it will be stopped and the
-    /// storage will be cleaned. If it is not running a tmp
-    /// Storage Manager built from the cached config will be used.
+    /// A running client is stopped first, as by [`Self::stop`], and stays
+    /// stopped: start SPV again to resync. Nothing is cleared unless that
+    /// stop completes.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
-        // Fast path: a live client holds the storage lock; clear through it.
-        {
-            let client_guard = self.client.read().await;
-            if let Some(client) = client_guard.as_ref() {
-                return client
-                    .clear_storage()
-                    .await
-                    .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
-            }
-        }
+        self.clear_storage_with(|client| async move { client.stop().await })
+            .await
+    }
+
+    async fn clear_storage_with<F, Fut>(&self, stop_client: F) -> Result<(), PlatformWalletError>
+    where
+        F: FnOnce(SpvClient) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        // Held to the end so no start can reopen the storage mid-clear.
+        let mut shutdown = self.shutdown.lock().await;
+        self.stop_locked(&mut shutdown, stop_client).await?;
 
         let config = self.last_config.read().await.clone().ok_or_else(|| {
             PlatformWalletError::SpvError(
@@ -1117,6 +1132,73 @@ mod tests {
         release
             .send(())
             .expect("cancelled caller must leave upstream stop owned");
+        runtime.stop().await.unwrap();
+    }
+
+    /// Clearing stops the client, so the runtime must not keep reporting it
+    /// as started or holding its startup task.
+    #[tokio::test]
+    async fn should_leave_spv_stopped_and_restartable_after_clearing_a_running_client() {
+        let (runtime, storage) = offline_runtime().await;
+        runtime.finish_startup(Ok(())).await.unwrap();
+        *runtime.task.lock().unwrap() = Some(tokio::spawn(async {}));
+
+        runtime.clear_storage().await.unwrap();
+
+        assert!(
+            !runtime.is_started(),
+            "a cleared client is stopped and must not be reported as started"
+        );
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .expect("restart after clearing a running client");
+        runtime.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_keep_teardown_tracked_when_a_clear_storage_caller_is_cancelled() {
+        let (runtime, storage) = offline_runtime().await;
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, pending) = tokio::sync::oneshot::channel();
+        let clearing = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move {
+                runtime
+                    .clear_storage_with(move |client| async move {
+                        entered.send(()).unwrap();
+                        let _ = pending.await;
+                        client.stop().await;
+                    })
+                    .await
+            })
+        };
+        started.await.unwrap();
+        clearing.abort();
+        let _ = clearing.await;
+        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), runtime.clear_storage())
+                .await
+                .is_err(),
+            "a retried clear must wait for the teardown it left running"
+        );
+        release
+            .send(())
+            .expect("cancelled caller must leave upstream stop owned");
+        runtime.clear_storage().await.unwrap();
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .expect("restart after the retried clear joins teardown");
         runtime.stop().await.unwrap();
     }
 

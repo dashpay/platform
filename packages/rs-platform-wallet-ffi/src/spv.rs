@@ -650,6 +650,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
 }
 
 /// Clear all persisted SPV storage (headers, filters, state).
+///
+/// A running SPV client is stopped first and stays stopped; nothing is
+/// cleared, and an error is returned, when that stop does not complete.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
