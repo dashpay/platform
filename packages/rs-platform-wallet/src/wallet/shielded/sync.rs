@@ -26,7 +26,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
@@ -808,16 +808,31 @@ where
         // Gate on THIS subwallet's own watermark (not the network
         // min): a caught-up subwallet skips re-deriving nullifiers
         // for notes it already stored, while a lagging one still
-        // saves everything from its own start. `save_note` is an
-        // idempotent overwrite-by-nullifier, so a stray re-save is
-        // harmless — but gating per-subwallet keeps the
+        // saves everything from its own start, which also keeps the
         // `per_subwallet_new_notes` count honest.
         let sub_watermark = watermarks.get(id).copied().unwrap_or(0);
+        // A re-scanned receipt can already be on file, and a send may have
+        // confirmed it spent (`mark_notes_spent`) while this pass was
+        // downloading without the lock. `save_note` replaces the stored
+        // note wholesale, so carry that spent flag over; scan data that
+        // predates the spend can't restore it.
+        let already_spent: BTreeSet<[u8; 32]> =
+            if discovered.iter().any(|d| d.position >= sub_watermark) {
+                store
+                    .get_all_notes(*id)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                    .into_iter()
+                    .filter(|n| n.is_spent)
+                    .map(|n| n.nullifier)
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
         for d in discovered {
             if d.position < sub_watermark {
                 continue;
             }
-            let nullifier = d.note.nullifier(&views.full_viewing_key);
+            let nullifier = d.note.nullifier(&views.full_viewing_key).to_bytes();
             let value = d.note.value().inner();
             debug!(
                 wallet_id = %hex::encode(id.wallet_id),
@@ -837,9 +852,9 @@ where
                 note_data,
                 position: d.position,
                 cmx: d.cmx,
-                nullifier: nullifier.to_bytes(),
+                nullifier,
                 block_height: d.block_height,
-                is_spent: false,
+                is_spent: already_spent.contains(&nullifier),
                 value,
             };
             store
