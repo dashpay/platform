@@ -366,13 +366,18 @@ impl StateTransitionSubscription {
         self.resume_from
     }
 
-    /// Consume the subscription as a stream of events.
+    /// Consume the subscription as a stream of events. Like [`Self::next`], an error the
+    /// subscription survives (a failed proved re-read of an updated contract) is followed by
+    /// further items when polled again; the stream ends after an error that ends it.
     pub fn into_stream(self) -> impl futures::Stream<Item = Result<SubscriptionEvent, Error>> {
         futures::stream::unfold(Some(self), |subscription| async move {
             let mut subscription = subscription?;
             match subscription.next().await {
                 Ok(event) => Some((Ok(event), Some(subscription))),
-                Err(error) => Some((Err(error), None)),
+                Err(error) => {
+                    let next = subscription.terminated.is_none().then_some(subscription);
+                    Some((Err(error), next))
+                }
             }
         })
     }
@@ -1346,6 +1351,41 @@ mod tests {
             assert_eq!(bound_version(&subscription, id), 1);
             assert_eq!(subscription.contracts_to_refresh.get(&id), Some(&2));
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_streaming_after_an_error_the_subscription_survives() {
+        use futures::StreamExt;
+        let (mut subscription, [lagging, updated]) = subscription_on_contract();
+        let id = updated.id();
+        subscription.resume_from = Some(42);
+        subscription.contracts_to_refresh.insert(id, 3);
+        let mut mock = subscription.sdk.clone();
+        mock.mock()
+            .expect_fetch(id, Some((*lagging).clone()))
+            .await
+            .expect("expectation");
+        let mut stream = Box::pin(subscription.into_stream());
+
+        // Proved reads stay behind the update: a retryable error, after which the stream goes on.
+        let error = stream.next().await.expect("an item").expect_err("stale");
+        assert!(error.to_string().contains("try again"), "{error}");
+
+        // Once a node has caught up, polling again retries the refresh and carries on to the
+        // stream reopen (refused for good here by the mock SDK, which ends the stream).
+        mock.mock()
+            .remove_fetch_expectation::<DataContract, _>(id)
+            .await;
+        mock.mock()
+            .expect_fetch(id, Some((*updated).clone()))
+            .await
+            .expect("expectation");
+        let error = stream.next().await.expect("an item").expect_err("refused");
+        assert!(!error.to_string().contains("try again"), "{error}");
+        assert!(
+            stream.next().await.is_none(),
+            "an ending error ends the stream"
+        );
     }
 
     fn bound_version(subscription: &StateTransitionSubscription, id: Identifier) -> u32 {
