@@ -19,7 +19,7 @@ impl DriveDocumentCountQuery<'_> {
         // A `summableOffCountIndex` index's range is proved by the sum surface,
         // whose verifier is at version 1 wherever this one is and has already
         // read an empty range.
-        if self.counter_sums_query().is_some() {
+        if self.index.is_summable_off_count_index() {
             return verified;
         }
         or_empty_range_total(

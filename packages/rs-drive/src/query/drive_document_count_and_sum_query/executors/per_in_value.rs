@@ -80,17 +80,18 @@ impl Drive {
             .cloned()
             .collect();
 
-        // Open a short-lived shared read transaction if the caller
-        // didn't provide one. Multiple per-In branches read grovedb
-        // separately; without a shared snapshot a concurrent block
-        // commit could slip between branches and produce a
-        // `(count, sum)` pair from inconsistent state. Read-only; the
-        // local transaction is dropped without commit at the end.
+        // Open a short-lived shared snapshot read transaction if the
+        // caller didn't provide one (a plain transaction reads the latest
+        // committed state on every read). Multiple per-In branches read
+        // grovedb separately; without a shared snapshot a concurrent block
+        // commit could slip between branches and produce a `(count, sum)`
+        // pair from inconsistent state. Read-only; the local transaction
+        // is dropped without commit at the end.
         let local_tx;
         let effective_transaction: TransactionArg = if transaction.is_some() {
             transaction
         } else {
-            local_tx = self.grove.start_transaction();
+            local_tx = self.grove.start_snapshot_read_transaction();
             Some(&local_tx)
         };
 

@@ -109,15 +109,20 @@ pub(super) fn assert_grovedb_is_consistent(drive: &Drive) {
     );
 }
 
+/// The live grovedb root hash, which a verified proof must reconstruct.
+pub(super) fn live_root_hash(drive: &Drive) -> [u8; 32] {
+    drive
+        .grove
+        .root_hash(None, &platform_version().drive.grove_version)
+        .unwrap()
+        .expect("root hash must be readable")
+}
+
 /// A verified proof's root hash must be the live grovedb root.
 pub(super) fn assert_live_root_hash(drive: &Drive, root_hash: [u8; 32]) {
     assert_eq!(
         root_hash,
-        drive
-            .grove
-            .root_hash(None, &platform_version().drive.grove_version)
-            .unwrap()
-            .expect("root hash must be readable"),
+        live_root_hash(drive),
         "the proof must reconstruct the live grovedb root hash"
     );
 }
@@ -2951,6 +2956,60 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
             .contains("IN_TIME_RANGE document queries are not supported on an indexOnly type"),
         "expected the bucketed-synthesis refusal, got: {error}"
     );
+}
+
+/// A beat requires `$createdAt`, which `byHashtag` does not hold, so no beat it
+/// synthesizes can be serialized: a read without a proof through it is
+/// refused before reading, whether or not a beat matches, rather than
+/// answering an empty page and refusing once one exists.
+#[test]
+fn beat_read_without_a_proof_through_an_index_lacking_created_at_is_refused() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+
+    let (drive, contract) = setup_likes();
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let by_hashtag = || DriveDocumentQuery {
+        contract: &contract,
+        document_type,
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(10),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let assert_refused = |drive: &Drive| {
+        let error = by_hashtag()
+            .execute_raw_results_no_proof(drive, None, None, platform_version())
+            .expect_err("a beat without its $createdAt cannot be serialized");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::Unsupported(message))
+                    if message.contains("does not cover every required property")
+            ),
+            "expected the required-property refusal, got: {error}"
+        );
+    };
+    assert_refused(&drive);
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+    assert_refused(&drive);
 }
 
 /// Delete-by-values removes every bucket entry (the carried `$createdAt`

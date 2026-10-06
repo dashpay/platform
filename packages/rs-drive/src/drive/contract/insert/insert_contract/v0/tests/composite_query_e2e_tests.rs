@@ -773,7 +773,11 @@ fn should_preserve_descending_documents_and_key_ordered_counts() {
 /// Documents of a `documentsSummable` type are stored as items carrying a
 /// sum: the composite verifier from version 1 (protocol version 14) reads them
 /// as documents, page and sub-query alike, against the live root, where
-/// version 0 reads them as counts no component selected.
+/// version 0, as released, reads them as counts no component selected and
+/// refuses the proof. Version 0 is reached through the dispatcher on a
+/// version table selecting it: protocol version 13's grovedb serves no
+/// per-instance limit, so a composite with a bounded sub-query proves only
+/// from 14.
 #[test]
 fn should_verify_a_composition_over_documents_that_carry_a_sum() {
     let drive = setup_drive_with_initial_state_structure(None);
@@ -848,6 +852,20 @@ fn should_verify_a_composition_over_documents_that_carry_a_sum() {
     assert_live_root_hash(&drive, root_hash);
     assert_eq!(verified.page_documents, materialized.page_documents);
     assert_eq!(verified.sub_results, materialized.sub_results);
+
+    let mut version_0 = pv.clone();
+    version_0
+        .drive
+        .methods
+        .verify
+        .composite_document
+        .verify_composite_documents_proof = 0;
+    assert!(
+        query
+            .verify_composite_documents_proof(&proof, &version_0)
+            .is_err(),
+        "the composite verifier's version 0 refuses the sum-carrying documents"
+    );
 }
 
 /// The full round trip: the server's materialized result and the
@@ -869,6 +887,23 @@ fn should_answer_the_feed_composition_with_proof_parity() {
     let (_root, verified) = query
         .verify_composite_documents_proof(&proof, pv)
         .expect("the merged proof verifies");
+    // The composite verifier's version 0, as released, classifies the feed's
+    // items as version 1 does: none of them carries a sum
+    let mut version_0 = pv.clone();
+    version_0
+        .drive
+        .methods
+        .verify
+        .composite_document
+        .verify_composite_documents_proof = 0;
+    let (_root, verified_by_version_0) = query
+        .verify_composite_documents_proof(&proof, &version_0)
+        .expect("version 0 verifies the merged proof");
+    assert_eq!(
+        verified_by_version_0.page_documents,
+        verified.page_documents
+    );
+    assert_eq!(verified_by_version_0.sub_results, verified.sub_results);
 
     // The page: the three `dash` posts, in index order.
     assert_eq!(
@@ -950,10 +985,10 @@ fn should_prove_the_viewers_marks_as_an_index_only_lookup() {
 }
 
 /// An empty page derives nothing: every sub-query is empty and the proof
-/// is the page's alone. Without a proof the composition is refused before
-/// any read, empty page or not: the viewer's likes are read through
-/// `byLiker`, which lacks the like's required hashtag, as a documents query
-/// through that index is.
+/// is the page's alone. Without a proof the viewer's composition is refused
+/// before any read, empty page or not: the viewer's likes are read through
+/// `byLiker`, which lacks the like's hashtag, as a documents query through
+/// that index is; the composition without them reads an empty page.
 #[test]
 fn should_prove_an_empty_page_alone() {
     let (drive, feed, dashpay) = setup();
@@ -968,6 +1003,21 @@ fn should_prove_an_empty_page_alone() {
         matches!(refused, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
         "got {refused:?}"
     );
+
+    // Without the viewer's likes the composition reads without a proof, and
+    // the empty page derives nothing for any sub-query, the count included
+    let mut anonymous = feed_query(&feed, &dashpay, None);
+    let anonymous_sub_queries = std::mem::take(&mut anonymous.sub_queries);
+    anonymous = page_by_hashtag(&feed, "nothing", Some(10)).with_sub_queries(anonymous_sub_queries);
+    let materialized = drive
+        .query_composite_documents(&anonymous, None, None, pv)
+        .expect("executes")
+        .result;
+    assert!(materialized.page_documents.is_empty());
+    assert!(materialized
+        .sub_results
+        .iter()
+        .all(|result| result.documents().is_empty() && result.counts().is_empty()));
 
     let (proof, page) = drive
         .query_composite_documents_with_proof(&query, pv)

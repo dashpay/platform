@@ -1931,9 +1931,13 @@ impl<'a> DriveDocumentQuery<'a> {
             let Some(path_query) = &sub_path_queries[index] else {
                 continue;
             };
+            // Only the covering index is read here, which the bound field's
+            // clause resolves whatever identifiers it holds: one value spares
+            // sorting every derived value into a clause again
+            let values = &derived[index];
             let count_query = self.sub_query_count_query(
                 &self.sub_queries[index],
-                &derived[index],
+                &values[..values.len().min(1)],
                 platform_version,
             )?;
             let entries =
@@ -2213,11 +2217,14 @@ impl<'a> DriveDocumentQuery<'a> {
         let direction = page_path_query.query.query.left_to_right;
         // Documents are serialized whole, as a documents query's are: refused
         // before any read when an indexOnly page or documents sub-query reads
-        // through an index lacking a property. A sub-query's index follows from
-        // its shape, so a representative value resolves it.
+        // through an index lacking a property. A sub-query is judged with one
+        // representative value: the index it resolves may be a pivot index the
+        // read itself, binding more values than its limit, passes over for one
+        // holding more properties, so this can refuse a read its real values
+        // would have served, never admit one they would not.
         self.refuse_an_uncovered_index_only_projection(platform_version)?;
         for sub_query in &self.sub_queries {
-            if sub_query.kind == SubQueryKind::Documents {
+            if sub_query.kind == SubQueryKind::Documents && sub_query.document_type.index_only() {
                 self.sub_query_document_query_with_direction(
                     sub_query,
                     &[Identifier::default()],

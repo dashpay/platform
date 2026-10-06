@@ -103,13 +103,20 @@ fn setup_with(
 
 /// The fixture with the like type's index list edited by `edit`.
 fn setup_with_indices(edit: impl Fn(&mut Vec<serde_json::Value>)) -> (Drive, DataContract) {
+    setup_with_schema(|schema| {
+        edit(
+            schema["documentSchemas"]["like"]["indices"]
+                .as_array_mut()
+                .expect("like indices"),
+        )
+    })
+}
+
+/// The fixture with its contract serialization format edited by `edit`.
+fn setup_with_schema(edit: impl FnOnce(&mut serde_json::Value)) -> (Drive, DataContract) {
     let pv = platform_version();
     let mut schema = json_document_to_json_value(FIXTURE).expect("read contract fixture");
-    edit(
-        schema["documentSchemas"]["like"]["indices"]
-            .as_array_mut()
-            .expect("like indices"),
-    );
+    edit(&mut schema);
     let contract = DataContract::try_from_platform_versioned(
         serde_json::from_value(schema).expect("contract serialization format"),
         true,
@@ -732,8 +739,6 @@ fn should_preallocate_a_value_tree_two_counter_indexes_share_once() {
 /// consistency check (on in these tests).
 #[test]
 fn should_preallocate_a_counter_two_bindings_of_one_index_resolve_once() {
-    let pv = platform_version();
-    let mut schema = json_document_to_json_value(FIXTURE).expect("read contract fixture");
     let post_reference = |other: &str, position: u64| {
         serde_json::json!({
             "type": "array",
@@ -749,50 +754,34 @@ fn should_preallocate_a_counter_two_bindings_of_one_index_resolve_once() {
             },
         })
     };
-    schema["documentSchemas"]["like"] = serde_json::json!({
-        "type": "object",
-        "indexOnly": true,
-        "documentsMutable": false,
-        "canBeDeleted": true,
-        "properties": {
-            "postA": post_reference("postB", 0),
-            "postB": post_reference("postA", 1),
-        },
-        "indices": [
-            {
-                "name": "byPair",
-                "properties": [{ "postA": "asc" }, { "postB": "asc" }],
-                "terminal": "$ownerId",
+    let (drive, contract) = setup_with_schema(|schema| {
+        schema["documentSchemas"]["like"] = serde_json::json!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "postA": post_reference("postB", 0),
+                "postB": post_reference("postA", 1),
             },
-            {
-                "name": "byPairCounter",
-                "properties": [{ "postB": "asc" }, { "postA": "asc" }],
-                "summableOffCountIndex": "byPair",
-                "rangeSummable": true,
-                "preallocated": true,
-            },
-        ],
-        "required": ["postA", "postB"],
-        "additionalProperties": false,
+            "indices": [
+                {
+                    "name": "byPair",
+                    "properties": [{ "postA": "asc" }, { "postB": "asc" }],
+                    "terminal": "$ownerId",
+                },
+                {
+                    "name": "byPairCounter",
+                    "properties": [{ "postB": "asc" }, { "postA": "asc" }],
+                    "summableOffCountIndex": "byPair",
+                    "rangeSummable": true,
+                    "preallocated": true,
+                },
+            ],
+            "required": ["postA", "postB"],
+            "additionalProperties": false,
+        });
     });
-    let contract = DataContract::try_from_platform_versioned(
-        serde_json::from_value(schema).expect("contract serialization format"),
-        true,
-        &mut vec![],
-        pv,
-    )
-    .expect("parse the pair contract");
-    let drive = setup_drive_with_initial_state_structure(None);
-    drive
-        .apply_contract(
-            &contract,
-            BlockInfo::default(),
-            true,
-            StorageFlags::optional_default_as_cow(),
-            None,
-            pv,
-        )
-        .expect("apply the contract");
 
     let post = insert_post(&drive, &contract, AUTHOR_A, "dash", 1);
     let counter = read_grove_element(

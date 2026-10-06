@@ -186,43 +186,6 @@ pub(crate) mod tests {
         contract
     }
 
-    /// `contract` with its `like` type read whole through `byLiker`: without a
-    /// proof, a chained read is refused when its inner index lacks a property,
-    /// as a documents query through that index is, and `byLiker` lacks the
-    /// like's optional hashtag; so the like keeps only what `byLiker` holds (no
-    /// hashtag, no `byHashtagPost`, no `where` on `postId`, which takes the
-    /// first position).
-    pub fn with_likes_read_whole_through_by_liker(
-        mut contract: DataContract,
-        platform_version: &PlatformVersion,
-    ) -> DataContract {
-        let mut schemas = BTreeMap::new();
-        for (name, schema) in contract.document_schemas() {
-            let mut json: serde_json::Value = schema.clone().try_into().expect("a JSON schema");
-            if name == "like" {
-                json["properties"]
-                    .as_object_mut()
-                    .expect("like properties")
-                    .remove("hashtag");
-                json["properties"]["postId"]["position"] = 0.into();
-                json["properties"]["postId"]["refersTo"]
-                    .as_object_mut()
-                    .expect("postId refersTo")
-                    .remove("where");
-                json["indices"]
-                    .as_array_mut()
-                    .expect("like indices")
-                    .retain(|index| index["name"] != "byHashtagPost");
-            }
-            schemas.insert(name, Value::from(json));
-        }
-        let defs = contract.schema_defs().cloned();
-        contract
-            .set_document_schemas(schemas, defs, true, &mut vec![], platform_version)
-            .expect("expected the like read whole through byLiker to parse");
-        contract
-    }
-
     /// The record a moderator's removal of the post `id`, owned by `owner`, leaves.
     pub fn removal_of(id: [u8; 32], owner: [u8; 32]) -> ContractDocumentRemoval {
         ContractDocumentRemoval {

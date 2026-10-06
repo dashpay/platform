@@ -33,8 +33,8 @@ use crate::data_contract::document_type::property::{
 /// (`moderatorAbilities.changeFields`): no replace is needed to change it.
 const MODERATORS_CHANGE: &str = "the contract's moderators change";
 
-/// Why a key part moves when it is an immutable `deletableDocument` reference
-/// by id: a replace may clear it once its document is deleted.
+/// Why a key part moves when it is an immutable, optional `deletableDocument`
+/// reference by id: a replace may clear it once its document is deleted.
 const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
@@ -659,7 +659,8 @@ impl DocumentReferenceLookup {
             let hint = if why == MODERATORS_CHANGE {
                 "find it by a property only its owner writes"
             } else if why == CLEARED_ONCE_DELETED {
-                "find it by a property that is no `deletableDocument` reference"
+                "make the reference required or find it by a property that is no optional \
+                 `deletableDocument` reference"
             } else {
                 "make the type immutable or list the property under `immutable`"
             };
@@ -810,23 +811,32 @@ pub(crate) fn schema_property_is_fixed_once_written(
 }
 
 /// Whether a replace may clear the top-level property of `path` of a document
-/// of `document_type` though `immutable` lists it: a `deletableDocument`
-/// reference by id, which document replace state validation 1 lets a replace
-/// clear once its document is deleted, so that the document can still be
-/// replaced. Clearing changes the value to absent, so a value that must stay
-/// as written (a lookup's key part, a value a `summableOffCountIndex` index's
-/// group is fixed by) may not be one.
-fn clearable_once_its_document_is_deleted(document_type: DocumentTypeRef, path: &str) -> bool {
+/// of `document_type` though `immutable` lists it: an optional
+/// `deletableDocument` reference by id, which document replace state
+/// validation 1 lets a replace clear once its document is deleted, so that the
+/// document can still be replaced. A required one is never cleared: replace
+/// advanced structure validation refuses a document missing a required
+/// property before state validation reads the clear. Clearing changes the
+/// value to absent, so a value that must stay as written (a lookup's key part,
+/// a param or `where` value a findBy function's key is judged by on the create,
+/// a value a `summableOffCountIndex` index's group is fixed by) may not be one.
+pub(crate) fn clearable_once_its_document_is_deleted(
+    document_type: DocumentTypeRef,
+    path: &str,
+) -> bool {
     document_type.documents_mutable()
-        && matches!(
-            document_type
-                .flattened_properties()
-                .get(top_level_property(path))
-                .map(|property| &property.property_type),
-            Some(DocumentPropertyType::IdentifierWithReference(
-                DocumentPropertyReferenceTarget::DeletableDocument { .. }
-            ))
-        )
+        && document_type
+            .flattened_properties()
+            .get(top_level_property(path))
+            .is_some_and(|property| {
+                !property.required
+                    && matches!(
+                        property.property_type,
+                        DocumentPropertyType::IdentifierWithReference(
+                            DocumentPropertyReferenceTarget::DeletableDocument { .. }
+                        )
+                    )
+            })
 }
 
 /// The kind of value an index property of `document_type` holds: a system

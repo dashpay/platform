@@ -1477,8 +1477,7 @@ pub(crate) fn is_absent_path(error: &Error) -> bool {
 /// The refusal of a non-proof read whose indexOnly documents lack a required
 /// property their index does not hold, so they cannot be serialized: the
 /// query's doing, refused with a query error (`Unsupported`), not an internal
-/// one. The documents query and drive-abci's chained and composite handlers
-/// share it.
+/// one.
 #[cfg(feature = "server")]
 pub fn uncovered_required_property_refusal() -> QuerySyntaxError {
     QuerySyntaxError::Unsupported(
@@ -1487,6 +1486,23 @@ pub fn uncovered_required_property_refusal() -> QuerySyntaxError {
          through an index covering all properties, or use a proved query"
             .to_string(),
     )
+}
+
+/// The query error a failure serializing a document an indexOnly index
+/// synthesized answers a non-proof read with, `None` when the failure is no
+/// query's doing: a missing required property, which
+/// `DriveDocumentQuery::refuse_an_uncovered_index_only_projection` refuses
+/// before the read, so this only guards a read that check let through. The
+/// documents query and drive-abci's chained and composite handlers share it.
+#[cfg(feature = "server")]
+pub fn index_only_serialization_refusal(error: &ProtocolError) -> Option<QuerySyntaxError> {
+    matches!(
+        error,
+        ProtocolError::DataContractError(
+            dpp::data_contract::errors::DataContractError::MissingRequiredKey(_)
+        )
+    )
+    .then(uncovered_required_property_refusal)
 }
 
 /// A range total's aggregate read without a proof (the tree at `path`), or
@@ -3594,9 +3610,11 @@ impl<'a> DriveDocumentQuery<'a> {
     /// an optional property cannot distinguish "absent on the row" from "not
     /// in this index", so serializing it would assert an absence the index
     /// cannot know (and a delete built from it would not match the row).
-    /// Checked from the schema before any read, by the documents query and by
-    /// the chained and composite reads of indexOnly documents. Does nothing on
-    /// any other type.
+    /// Every required system property must be one synthesis fills too. Checked
+    /// from the schema before any read, by the documents query and by the
+    /// chained and composite reads of indexOnly documents, so the answer does
+    /// not depend on whether a document matches. Does nothing on any other
+    /// type.
     pub(crate) fn refuse_an_uncovered_index_only_projection(
         &self,
         platform_version: &PlatformVersion,
@@ -3631,6 +3649,27 @@ impl<'a> DriveDocumentQuery<'a> {
                         .iter()
                         .any(|index_property| index_property.name == *name)
             });
+        // Synthesis fills `$id`, `$ownerId` (every entry index involves it) and
+        // `$createdAt` where the index holds it, so any other required system
+        // property, or a required `$createdAt` the index lacks, would fail the
+        // serialization of every document read: refused here, before the read,
+        // so the answer does not depend on whether a document matches
+        let covers_required_system_properties = self
+            .document_type
+            .required_fields()
+            .iter()
+            .filter(|name| {
+                name.starts_with('$')
+                    && name.as_str() != document::property_names::ID
+                    && name.as_str() != document::property_names::OWNER_ID
+            })
+            .all(|name| {
+                name.as_str() == document::property_names::CREATED_AT
+                    && index.involves(document::property_names::CREATED_AT)
+            });
+        if !covers_required_system_properties {
+            return Err(Error::Query(uncovered_required_property_refusal()));
+        }
         if covers_every_property {
             return Ok(());
         }
@@ -3672,11 +3711,9 @@ impl<'a> DriveDocumentQuery<'a> {
                     .map(|document| {
                         document
                             .serialize(self.document_type, self.contract, platform_version)
-                            .map_err(|error| match error {
-                                ProtocolError::DataContractError(
-                                    dpp::data_contract::errors::DataContractError::MissingRequiredKey(_),
-                                ) => Error::Query(uncovered_required_property_refusal()),
-                                other => other.into(),
+                            .map_err(|error| match index_only_serialization_refusal(&error) {
+                                Some(refusal) => Error::Query(refusal),
+                                None => error.into(),
                             })
                     })
                     .collect::<Result<Vec<_>, Error>>()?;

@@ -799,8 +799,8 @@ fn should_refuse_a_referenced_value_that_can_change() {
 
 #[test]
 fn should_refuse_a_referenced_value_a_replace_can_clear() {
-    // An `immutable` `deletableDocument` reference may still be cleared by a replace once its
-    // target is deleted: likes before and after would land in two groups of one post
+    // An optional `immutable` `deletableDocument` reference may still be cleared by a replace
+    // once its target is deleted: likes before and after would land in two groups of one post
     let post = platform_value!({
         "type": "object",
         "documentsMutable": true,
@@ -853,17 +853,28 @@ fn should_refuse_a_referenced_value_a_replace_can_clear() {
         "required": ["postId", "postAuthor"],
         "additionalProperties": false,
     });
+    let schemas = |post: Value| {
+        BTreeMap::from([
+            ("post".to_string(), post),
+            ("draft".to_string(), draft.clone()),
+            ("like".to_string(), like.clone()),
+        ])
+    };
     assert_refused(
-        parse_schemas(
-            BTreeMap::from([
-                ("post".to_string(), post),
-                ("draft".to_string(), draft),
-                ("like".to_string(), like),
-            ]),
-            true,
-        ),
-        "can change after a document is written",
+        parse_schemas(schemas(post.clone()), true),
+        "\"draftId\", which a replace can clear once its document is deleted, can change after \
+         a document is written",
     );
+
+    // A required reference is never cleared: no replace may drop a required property
+    let mut required = post;
+    required
+        .set_value(
+            "required",
+            platform_value!(["$createdAt", "$updatedAt", "draftId"]),
+        )
+        .expect("required set");
+    parse_schemas(schemas(required), true).expect("a required reference fixes the group");
 }
 
 #[test]

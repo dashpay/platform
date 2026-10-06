@@ -280,7 +280,7 @@ mod tests {
     use super::*;
     use crate::query::tests::{
         removal_of, remove_post_by_moderator, setup_platform, store_data_contract, store_document,
-        with_likes_read_whole_through_by_liker, with_moderated_posts,
+        with_moderated_posts,
     };
     use dapi_grpc::platform::v0::get_documents_request::document_field_value;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::select::Function as SelectFunction;
@@ -295,6 +295,7 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+    use drive::util::test_helpers::with_likes_read_whole_through_by_liker;
 
     const YAPPR_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";

@@ -212,17 +212,17 @@ impl Drive {
     ) -> Result<DocumentAverageResponse, Error> {
         let drive_version = &platform_version.drive;
 
-        // Open a shared read transaction across per-In branches in
-        // the compound shape so each branch's accumulator call sees
-        // the same grovedb snapshot. The flat path issues a single
-        // read and gets atomicity for free; the transaction is
-        // harmless there. Read-only; dropped without commit at scope
-        // end.
+        // Open a shared snapshot read transaction across per-In branches
+        // in the compound shape so each branch's accumulator call sees
+        // the same grovedb snapshot (a plain transaction reads the latest
+        // committed state on every read). The flat path issues a single
+        // read and gets atomicity for free; the transaction is harmless
+        // there. Read-only; dropped without commit at scope end.
         let local_tx;
         let effective_transaction: TransactionArg = if transaction.is_some() {
             transaction
         } else {
-            local_tx = self.grove.start_transaction();
+            local_tx = self.grove.start_snapshot_read_transaction();
             Some(&local_tx)
         };
 

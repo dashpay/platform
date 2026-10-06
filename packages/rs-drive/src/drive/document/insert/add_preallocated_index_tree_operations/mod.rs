@@ -117,9 +117,11 @@ impl Drive {
         // Each binding walks its own index, so two preallocated indexes sharing
         // leading properties reach the same trees: each binding's inserts are
         // checked against the operations the earlier ones queued (after the
-        // earlier documents' of the batch), so a tree is queued and its
-        // existence read once, as the entry walkers, walking the shared index
-        // levels once, do.
+        // earlier documents' of the batch), so a tree is queued once, as the
+        // entry walkers, walking the shared index levels once, do. A tree
+        // already in state is not queued, so each binding reaching it reads its
+        // existence again (a billed read per binding, where the entry walkers
+        // read it once).
         let mut queued = Vec::new();
         for (referring_type, index, binding) in
             preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
@@ -405,9 +407,7 @@ impl Drive {
                     property_name_tree_type,
                     property_name_tree_created || binding.kind == DocumentReferenceKind::Permanent,
                     storage_flags,
-                    previous_batch_operations
-                        .as_ref()
-                        .map_or(&[][..], |pending| pending.as_slice()),
+                    previous_batch_operations,
                     || {
                         document_info.get_estimated_size_for_document_type(
                             property_name,

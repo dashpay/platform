@@ -834,8 +834,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     no `timeRange` and is not on an indexOnly type, the keys cover it
 ///     exactly, every source shares its index property's value kind, and the
 ///     key cannot move off the document it found: its schema properties are
-///     immutable, and `$ownerId` is only a part on a type that is neither
-///     transferable nor tradeable), and the contract reference validation
+///     immutable, none an optional `deletableDocument` reference by id, which
+///     a replace may clear once its document is deleted (item 73), and
+///     `$ownerId` is only a part on a type that is neither transferable nor
+///     tradeable), and the contract reference validation
 ///     checks one into another contract, refusing it with
 ///     `ReferencedDocumentLookupInvalidError` (40137). The document
 ///     reference validation (generation 0, reached only from this version)
@@ -1961,8 +1963,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     that holds every document once; its other properties must be fixed by
 ///     the source through unchanging `where` values of same-contract
 ///     `permanentDocument` or `moderatedDocument` references
-///     (`validate_summable_off_count_indexes_lossless`), and one summed value
-///     per type is kept. Such an index keeps one `Element::SumItem` per group
+///     (`validate_summable_off_count_indexes_lossless`, judging a value as a
+///     lookup's key part is judged, `why_value_can_change`: an optional
+///     `deletableDocument` reference by id a replace may clear once its
+///     document is deleted is not fixed, and from this version neither is a
+///     findBy key part, a findBy function's param or a `where` value beside
+///     one), and one summed value per type is kept. Such an index keeps one `Element::SumItem` per group
 ///     in place of a value tree and entries: the index walkers (insert and
 ///     delete index level 2) move it by one per document, preallocation
 ///     creates it at zero, and document create state validation 1, document index-only delete
@@ -1970,7 +1976,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     index never use it. `rankedSummable` and `rankedAverageable` gain the
 ///     `{ "at": ... }` form on such an index only, stamped on the index
 ///     levels (`IndexLevel::ranked_sum_grouping`, `ranked_average_grouping`,
-///     `sum_propagating`) and laid out by Drive as count-and-sum chains
+///     `sum_propagating`) and laid out by Drive as sum chains, count-and-sum
+///     chains where an average ranking or `rangeCountable` adds counts
 ///     (`property_name_tree_type_and_ranked_axes_for_level`,
 ///     `ranked_chain_value_tree_type`); its `rankedCountable` is parsed into
 ///     that Sum ranking, since a document count there is its sums (no

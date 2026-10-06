@@ -21,9 +21,8 @@ use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::errors::DataContractError;
 use dpp::ProtocolError;
-use drive::query::uncovered_required_property_refusal;
+use drive::query::index_only_serialization_refusal;
 use drive::query::{RankedEntry as DriveRankedEntry, RankedEntryValue};
 
 /// Translate an rs-drive `RankedEntry` into the wire `RankedEntry`.
@@ -121,23 +120,20 @@ fn empty_ranking_proof_rejection(error: &drive::error::Error) -> Option<QueryErr
 
 /// A failure serializing a document a non-proof chained or composite read
 /// returns, of `document_type`. Drive refuses such a read before reading when
-/// an indexOnly index lacks a property (`refuse_an_uncovered_index_only_projection`),
-/// but a document an indexOnly index synthesizes can still lack a required
-/// system property the index does not hold (`$createdAt`, say), which cannot
-/// be serialized: that is the query's doing, refused with the query error a
-/// plain documents query through such an index returns. Anything else, a
-/// stored document of a regular type included, stays an internal error.
+/// an indexOnly index lacks a property or a required system property
+/// synthesis cannot fill (`refuse_an_uncovered_index_only_projection`); should
+/// a synthesized document still miss a required property, that is the query's
+/// doing, answered as a plain documents query answers it
+/// (`index_only_serialization_refusal`). Anything else, a stored document of a
+/// regular type included, stays an internal error, as released before
+/// protocol version 14, which alone admits indexOnly types.
 fn document_serialization_failure(
     error: ProtocolError,
     document_type: DocumentTypeRef,
 ) -> Result<QueryError, Error> {
-    match error {
-        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_))
-            if document_type.index_only() =>
-        {
-            Ok(QueryError::Query(uncovered_required_property_refusal()))
-        }
-        other => Err(Error::Protocol(other)),
+    match index_only_serialization_refusal(&error) {
+        Some(refusal) if document_type.index_only() => Ok(QueryError::Query(refusal)),
+        _ => Err(Error::Protocol(error)),
     }
 }
 
@@ -145,6 +141,7 @@ fn document_serialization_failure(
 mod tests {
     use super::*;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::errors::DataContractError;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
     use drive::error::query::QuerySyntaxError;

@@ -4,10 +4,11 @@
 //! position of its last property, where another index would grow a value
 //! tree, a `0` bucket and one member entry per document, it keeps one
 //! `Element::SumItem` holding the number of its source index's entries in
-//! that group. In the count-and-sum trees it sits in, the item counts one
-//! group and adds its entries to the sum, so every level above reads groups
-//! as the count (posts) and entries as the sum (likes), and an average reads
-//! entries per group (likes per post).
+//! that group. The item adds its entries to the sum of every tree above it, so
+//! every level above reads entries as the sum (likes); in count-and-sum trees
+//! (an average ranking or `rangeCountable` adds counts) it also counts one
+//! group, so those levels read groups as the count (posts) and an average
+//! reads entries per group (likes per post).
 //!
 //! A create moves the counter up by one and a delete down by one, each in the
 //! same batch as the document's other entries. A create is refused before it
@@ -38,6 +39,7 @@ use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyElementSize};
 use crate::util::object_size_info::{DriveKeyInfo, KeyElementInfo, PathInfo, PathKeyElementInfo};
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::PlatformVersion;
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllItems;
@@ -250,18 +252,14 @@ impl Drive {
                 )))
             }
         };
+        let counter_key_info_path = KeyInfoPath::from_known_owned_path(counter_path.clone());
+        let counter_key_info = KeyInfo::KnownKey(counter_key.clone());
         let already_written = previous_batch_operations
             .as_deref()
-            .into_iter()
-            .flat_map(|operations| pending_grove_operations(operations))
-            .chain(pending_grove_operations(batch_operations))
-            .any(|operation| {
-                operation
-                    .key
-                    .as_ref()
-                    .is_some_and(|key| key.as_slice() == counter_key.as_slice())
-                    && operation.path.eq_path_vec(&counter_path)
-            });
+            .is_some_and(|operations| {
+                counter_queued(operations, &counter_key_info_path, &counter_key_info)
+            })
+            || counter_queued(batch_operations, &counter_key_info_path, &counter_key_info);
         if already_written {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "a summableOffCountIndex index's counter is written twice in one batch",
@@ -359,10 +357,11 @@ impl Drive {
     /// key is the inserted document's `$id`, inserted once and never
     /// restored. An estimation call registers the counter's layer and prices
     /// the existence read either way, so it bounds every stateful write.
-    /// `pending_operations` are the operations the document's insert already
-    /// queued: two bindings of one index can resolve the same counter (their
-    /// `where` agreements meeting at one path), and a counter an earlier
-    /// binding queued is neither read nor queued again, estimated or not.
+    /// `previous_batch_operations` are the operations the batch already
+    /// queued, the document's earlier bindings' among them: two bindings of
+    /// one index can resolve the same counter (their `where` agreements
+    /// meeting at one path), and a counter an earlier binding queued is
+    /// neither read nor queued again, estimated or not.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_summable_off_count_zero_counter_operations(
         &self,
@@ -371,7 +370,7 @@ impl Drive {
         counter_tree_type: TreeType,
         cannot_exist: bool,
         storage_flags: Option<&StorageFlags>,
-        pending_operations: &[LowLevelDriveOperation],
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_key_size: impl FnOnce() -> Result<u16, Error>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -381,21 +380,19 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
-        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
-        let mut zero_counter = Vec::with_capacity(1);
-        self.batch_insert(
-            PathKeyElementInfo::from_path_info_and_key_element(
-                counter_path_info.clone(),
-                zero_counter_key_element(&counter_key, element_flags.clone()),
-            )?,
-            &mut zero_counter,
-            drive_version,
-        )?;
-        if pending_grove_operations(&zero_counter).any(|counter| {
-            pending_grove_operations(pending_operations).any(|queued| queued == counter)
-        }) {
+        if previous_batch_operations
+            .as_deref()
+            .is_some_and(|operations| {
+                counter_queued(
+                    operations,
+                    &counter_path_info.clone().convert_to_key_info_path(),
+                    &counter_key.to_key_info(),
+                )
+            })
+        {
             return Ok(());
         }
+        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
         let estimating = estimated_costs_only_with_layer_info.is_some();
         if let Some(layers) = estimated_costs_only_with_layer_info.as_mut() {
             insert_summable_off_count_counter_layer(
@@ -435,4 +432,17 @@ impl Drive {
         }
         Ok(())
     }
+}
+
+/// Whether `operations` already queue a write of the counter at `path` and
+/// `key`. The one test both counter writes read: a create's move refuses a
+/// second write of one counter in a batch, and a preallocation skips a zero
+/// counter an earlier binding queued.
+fn counter_queued(
+    operations: &[LowLevelDriveOperation],
+    path: &KeyInfoPath,
+    key: &KeyInfo,
+) -> bool {
+    pending_grove_operations(operations)
+        .any(|operation| operation.path == *path && operation.key.as_ref() == Some(key))
 }

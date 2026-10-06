@@ -1072,23 +1072,22 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
                 };
                 let referenced_type = referenced_type.as_ref();
                 let referenced = derivation.referenced;
-                let fixed = why_value_can_change(referenced_type, referenced).is_none();
                 let kept = referenced_value_kept_on_removal(
                     derivation.kind,
                     referenced,
                     referenced_type.moderator_deletion_kept_fields(),
                 );
-                let reason = if !fixed {
-                    "can change after a document is written (a mutable property, a moderator's \
-                     `changeFields`, an immutable `deletableDocument` reference a replace may \
-                     clear once its document is deleted, or an `$ownerId` a transfer or purchase \
-                     changes), so the documents of one source group would spread over several \
-                     groups"
+                let reason = if let Some(why) = why_value_can_change(referenced_type, referenced) {
+                    format!(
+                        ", which {why}, can change after a document is written, so the \
+                         documents of one source group would spread over several groups"
+                    )
                 } else if !kept {
-                    "is not kept by a moderator's removal, which replaces the document with a \
+                    " is not kept by a moderator's removal, which replaces the document with a \
                      record keeping its id, its owner and only the fields its type lists under \
                      `moderatorAbilities.deleteKeepsFields`, so a removed document's value could \
                      no longer be read back"
+                        .to_string()
                 } else {
                     lossless.insert(derivation.property);
                     continue;
@@ -1105,7 +1104,7 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
                     DataContractError::InvalidContractStructure(format!(
                         "summableOffCountIndex index \"{}\" of document type \"{name}\" groups by \"{}\", \
                          which its source \"{}\" fixes through the reference \"{}\" to \
-                         \"{referenced}\" of \"{target}\", but \"{referenced}\" {reason}",
+                         \"{referenced}\" of \"{target}\", but \"{referenced}\"{reason}",
                         index.name,
                         derivation.property,
                         source.name,

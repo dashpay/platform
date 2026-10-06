@@ -15,6 +15,7 @@ use super::index_only_e2e_tests::{
     setup_likes as setup_tagged_likes,
 };
 use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::moderated_join::removals_path_query;
@@ -26,6 +27,7 @@ use crate::util::object_size_info::{
 };
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use crate::util::test_helpers::with_likes_read_whole_through_by_liker;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{
@@ -33,7 +35,7 @@ use dpp::data_contract::config::moderation::{
 };
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
@@ -50,48 +52,14 @@ const OWNER_3: [u8; 32] = [0x33; 32];
 const LIKES_CONTRACT: &str =
     "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
 
-/// `contract` with its `like` type read whole through `byLiker`. Without a
-/// proof, a chained read is refused when its inner index lacks a property,
-/// as a documents query through that index is, and `byLiker` lacks the
-/// like's optional hashtag: so the like keeps only what `byLiker` holds (no
-/// hashtag, no `byHashtagPost`, no `where` on `postId`, which takes the
-/// first position).
-fn with_likes_read_whole_through_by_liker(mut contract: DataContract) -> DataContract {
-    let pv = platform_version();
-    let mut schemas = BTreeMap::new();
-    for (name, schema) in contract.document_schemas() {
-        let mut json: serde_json::Value = schema.clone().try_into().expect("a JSON schema");
-        if name == "like" {
-            json["properties"]
-                .as_object_mut()
-                .expect("like properties")
-                .remove("hashtag");
-            json["properties"]["postId"]["position"] = 0.into();
-            json["properties"]["postId"]["refersTo"]
-                .as_object_mut()
-                .expect("postId refersTo")
-                .remove("where");
-            json["indices"]
-                .as_array_mut()
-                .expect("like indices")
-                .retain(|index| index["name"] != "byHashtagPost");
-        }
-        schemas.insert(name, Value::from(json));
-    }
-    let defs = contract.schema_defs().cloned();
-    contract
-        .set_document_schemas(schemas, defs, true, &mut vec![], pv)
-        .expect("expected the like read whole through byLiker to parse");
-    contract
-}
-
 /// A drive with the likes contract, its `like` read whole through `byLiker`.
-fn setup_likes() -> (crate::drive::Drive, DataContract) {
+fn setup_likes() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
     let contract = with_likes_read_whole_through_by_liker(
         json_document_to_contract(LIKES_CONTRACT, false, pv)
             .expect("expected to parse the yappr-likes contract"),
+        pv,
     );
     drive
         .apply_contract(
@@ -108,12 +76,7 @@ fn setup_likes() -> (crate::drive::Drive, DataContract) {
 
 /// A like of `post` by `owner`, of a `like` read whole through `byLiker`
 /// (no hashtag).
-fn build_like(
-    contract: &DataContract,
-    post: [u8; 32],
-    owner: [u8; 32],
-    seed: u64,
-) -> dpp::document::Document {
+fn build_like(contract: &DataContract, post: [u8; 32], owner: [u8; 32], seed: u64) -> Document {
     let mut like = build_tagged_like(contract, "", post, owner, seed);
     like.set_properties(BTreeMap::from([(
         "postId".to_string(),
@@ -125,7 +88,7 @@ fn build_like(
 /// Inserts a `post` document (regular, non-indexOnly type) with an
 /// explicit id so likes can reference it.
 fn insert_post(
-    drive: &crate::drive::Drive,
+    drive: &Drive,
     contract: &DataContract,
     id: [u8; 32],
     hashtag: &str,
@@ -328,6 +291,7 @@ fn should_verify_liked_posts_that_carry_a_sum() {
     let mut contract = with_likes_read_whole_through_by_liker(
         json_document_to_contract(LIKES_CONTRACT, false, pv)
             .expect("expected to parse the yappr-likes contract"),
+        pv,
     );
     let mut schemas = BTreeMap::new();
     for (name, schema) in contract.document_schemas() {
@@ -636,7 +600,7 @@ const POSTS: [[u8; 32]; 7] = [
 
 /// Inserts every post of [`POSTS`] except `missing`, and OWNER_1's like
 /// of every post of [`POSTS`], the missing ones included.
-fn setup_liked_posts(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+fn setup_liked_posts(missing: &[[u8; 32]]) -> (Drive, DataContract) {
     let (drive, contract) = setup_likes();
     for (i, post) in POSTS.iter().enumerate() {
         if !missing.contains(post) {
@@ -763,12 +727,13 @@ fn should_reject_a_proof_withholding_an_existing_referenced_post() {
 const DELETABLE_POSTS_CONTRACT: &str =
     "tests/supporting_files/contract/yappr-likes/yappr-likes-deletable-posts-contract.json";
 
-fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
+fn setup_likes_with_deletable_posts() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
     let contract = with_likes_read_whole_through_by_liker(
         json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
             .expect("expected to parse the deletable posts contract"),
+        pv,
     );
     drive
         .apply_contract(
@@ -783,7 +748,7 @@ fn setup_likes_with_deletable_posts() -> (crate::drive::Drive, DataContract) {
     (drive, contract)
 }
 
-fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+fn delete_post(drive: &Drive, contract: &DataContract, id: [u8; 32]) {
     drive
         .delete_document_for_contract(
             Identifier::from(id),
@@ -984,12 +949,13 @@ pub(super) fn with_moderated_posts(mut contract: DataContract) -> DataContract {
     contract
 }
 
-fn setup_likes_with_moderated_posts() -> (crate::drive::Drive, DataContract) {
+fn setup_likes_with_moderated_posts() -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let pv = platform_version();
     let contract = with_moderated_posts(with_likes_read_whole_through_by_liker(
         json_document_to_contract(DELETABLE_POSTS_CONTRACT, false, pv)
             .expect("expected to parse the deletable posts contract"),
+        pv,
     ));
     drive
         .apply_contract(
@@ -1020,7 +986,7 @@ pub(super) fn removal_of(id: [u8; 32]) -> ContractDocumentRemoval {
 /// A moderator's removal of the post `id`, as the moderation transition writes it: the post
 /// deleted past `canBeDeleted: false`, and, when given, its removal record.
 pub(super) fn remove_post(
-    drive: &crate::drive::Drive,
+    drive: &Drive,
     contract: &DataContract,
     id: [u8; 32],
     record: Option<ContractDocumentRemoval>,
