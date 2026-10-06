@@ -1,12 +1,15 @@
 //! Hydrate a [`PlatformWalletManager`] from its persister.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, ClientWalletStartState, PersistenceError, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
+use crate::wallet::persisted_core::{restore_core_wallet, PersistedCoreState};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -15,6 +18,7 @@ use std::time::Duration;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use super::{run_blocking_load, PlatformWalletManager};
 
@@ -129,34 +133,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
+                mut unconfirmed_outgoing_inputs,
             } = wallet_state;
 
-            // Replay the sends the host still holds as unconfirmed, before
-            // anything reads the restored balance.
-            //
-            // Their spend effect is never persisted: `isSpent` stays `false`
-            // on the input row until the spending transaction reaches a
-            // block, because a mempool-only sighting is reversible by
-            // eviction. So the UTXO restore above has just handed those
-            // inputs back as spendable. A live process was still correct —
-            // it held the effect in memory — and until now a restart
-            // recovered it only by re-observing the transaction on the
-            // network. A transaction that never reached the network cannot
-            // be re-observed, so its input stayed spendable for good and the
-            // balance re-counted the coin.
-            //
-            // Routing each record through the ordinary mempool check (rather
-            // than inserting it into `transactions_mut()` raw, the way the
-            // asset-lock record restore does) is the whole point: it runs
-            // `update_utxos`, which drops the input from `utxos` and records
-            // it in `spent_outpoints`, reproducing exactly the state the
-            // live process held. A raw insert would leave `spent_outpoints`
-            // empty AND make every later re-dispatch a no-op, because
-            // `has_transaction` would then report the record as not new.
-            //
-            // `update_state` and `update_balance` are both on: the balance
-            // this produces is what `generation.set(..)` mirrors a few lines
-            // below, and the UI reads that.
+            let guards = wallet_info.spent_outpoint_claims();
+            unconfirmed_outgoing_inputs.retain(|(_, coin)| guards.contains_key(&coin.outpoint));
+            let staged: BTreeSet<_> = unconfirmed_outgoing_inputs
+                .iter()
+                .map(|(_, coin)| coin.outpoint)
+                .collect();
+            if let Err(error) = restore_core_wallet(
+                &mut wallet_info,
+                PersistedCoreState {
+                    utxos: unconfirmed_outgoing_inputs,
+                    ..Default::default()
+                },
+            ) {
+                load_error = Some(PlatformWalletError::from_load_failure(
+                    PersistenceError::backend(error),
+                ));
+                break 'load;
+            }
+            // Guarded inputs supply accounting evidence but never become spendable.
             if !unconfirmed_outgoing_txs.is_empty() {
                 let mut replayed = 0usize;
                 for tx in &unconfirmed_outgoing_txs {
@@ -180,6 +178,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "load: replayed unconfirmed outgoing sends"
                 );
             }
+
+            for account in wallet_info.accounts.all_funding_accounts_mut() {
+                account
+                    .utxos
+                    .retain(|outpoint, _| !staged.contains(outpoint));
+            }
+            wallet_info.update_balance();
 
             // Flatten the (account → outpoint → lock) map into the flat
             // OutPoint → TrackedAssetLock map that `PlatformWalletInfo`
@@ -693,6 +698,7 @@ mod idempotent_load_tests {
         wallet: Wallet,
         managed: ManagedWalletInfo,
         pending: Vec<dashcore::Transaction>,
+        replay_inputs: Vec<(key_wallet::AccountType, key_wallet::Utxo)>,
     }
 
     impl PlatformWalletPersistence for PendingSendPersister {
@@ -718,6 +724,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
+                    unconfirmed_outgoing_inputs: self.replay_inputs.clone(),
                 },
             );
             Ok(ClientStartState {
@@ -784,6 +791,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    unconfirmed_outgoing_inputs: Vec::new(),
                 },
             );
             Ok(ClientStartState {
@@ -823,6 +831,7 @@ mod idempotent_load_tests {
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
+                unconfirmed_outgoing_inputs: Vec::new(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
@@ -1109,6 +1118,7 @@ mod idempotent_load_tests {
             wallet: ctx.wallet,
             managed: ctx.managed_wallet,
             pending: vec![spend],
+            replay_inputs: vec![],
         });
 
         manager
@@ -1128,6 +1138,135 @@ mod idempotent_load_tests {
              spendable; {} duffs left means the input came back",
             total
         );
+    }
+
+    #[tokio::test]
+    async fn should_restore_external_only_pending_record_with_authoritative_input_guard() {
+        use crate::wallet::persisted_core::restore_spent_claims;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let outpoint = dashcore::OutPoint::new(funding.txid(), 0);
+        let pending = spend_to(outpoint, 74_000);
+        let mut managed = ctx.managed_wallet;
+        let input = managed.accounts.standard_bip44_accounts[&0].utxos[&outpoint].clone();
+        let owner = ctx.wallet.accounts.standard_bip44_accounts[&0].account_type;
+        restore_spent_claims(&mut managed, &[(outpoint, Some(pending.txid()))]).unwrap();
+        let manager = make_pending_manager(PendingSendPersister {
+            wallet: ctx.wallet,
+            managed,
+            pending: vec![pending.clone()],
+            replay_inputs: vec![(owner, input)],
+        });
+        manager.load_from_persistor().await.unwrap();
+        let guard = manager.wallet_manager.read().await;
+        let info = &guard.get_wallet_info(&wallet_id).unwrap().core_wallet;
+        let account = &info.accounts.standard_bip44_accounts[&0];
+        let record = account
+            .transactions()
+            .get(&pending.txid())
+            .expect("guarded external send must retain its record");
+        assert_eq!(record.net_amount, -100_000);
+        assert_eq!(info.balance.total(), 0);
+        assert_eq!(
+            info.spent_outpoint_claims().get(&outpoint),
+            Some(&Some(pending.txid()))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_persisted_claim_through_manager_replay_and_unrelated_sweep() {
+        use crate::wallet::persisted_core::{restore_core_wallet, PersistedCoreState};
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, OutPoint, Txid};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        for claimant in [None, Some(Txid::from_byte_array([91; 32]))] {
+            let (ctx, funding) = TestWalletContext::new_random()
+                .with_mempool_funding(100_000)
+                .await;
+            let wallet_id = ctx.wallet.compute_wallet_id();
+            let guarded = OutPoint::new(funding.txid(), 0);
+            let other = OutPoint::new(Txid::from_byte_array([92; 32]), 0);
+            let mut pending = spend_to(guarded, 50_000);
+            pending.input.push(dashcore::TxIn {
+                previous_output: other,
+                ..Default::default()
+            });
+            pending.output[0].script_pubkey = funding.output[0].script_pubkey.clone();
+            let mut managed = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+            restore_core_wallet(
+                &mut managed,
+                PersistedCoreState {
+                    spent_claims: vec![(guarded, claimant)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let manager = make_pending_manager(PendingSendPersister {
+                wallet: ctx.wallet,
+                managed,
+                pending: vec![pending.clone()],
+                replay_inputs: vec![],
+            });
+            manager
+                .load_from_persistor()
+                .await
+                .expect("restore including pending replay");
+            let (mut wallet, mut info) = {
+                let guard = manager.wallet_manager.read().await;
+                (
+                    guard.get_wallet(&wallet_id).unwrap().clone(),
+                    guard
+                        .get_wallet_info(&wallet_id)
+                        .unwrap()
+                        .core_wallet
+                        .clone(),
+                )
+            };
+            assert!(
+                info.accounts
+                    .all_funding_accounts()
+                    .iter()
+                    .any(|account| account.transactions().contains_key(&pending.txid())),
+                "manager replay must run"
+            );
+            let winner = spend_to(other, 40_000);
+            let result = info
+                .check_core_transaction(
+                    &winner,
+                    TransactionContext::InBlock(BlockInfo::new(200, BlockHash::all_zeros(), 200)),
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await;
+            assert!(
+                result.swept_transactions.contains(&pending.txid()),
+                "unrelated input conflict must sweep the pending record"
+            );
+            info.apply_chain_lock(dashcore::ephemerealdata::chain_lock::ChainLock {
+                block_height: 300,
+                block_hash: BlockHash::all_zeros(),
+                signature: dashcore::bls_sig_utils::BLSSignature::from([0; 96]),
+            });
+            info.check_core_transaction(
+                &funding,
+                TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 100)),
+                &mut wallet,
+                true,
+                true,
+            )
+            .await;
+            assert!(info.accounts.all_funding_accounts().iter().all(|a| !a.utxos.contains_key(&guarded)),
+                "unrelated/unknown durable claimant must survive replay, sweep, finality and funding redelivery");
+        }
     }
 
     fn make_pending_manager(

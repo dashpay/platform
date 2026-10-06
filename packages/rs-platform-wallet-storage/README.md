@@ -231,10 +231,17 @@ reconstructed from these per-area readers:
 | `network` / `birth_height` | `schema::wallets::fetch` |
 | `account_manifest` | `schema::accounts::load_state` |
 | `core_state` | `schema::core_state::load_state` |
+| authoritative spend claims | `schema::spent_claims::load` (one grouped read per wallet; restored before funding replay) |
 | `identity_manager` | `schema::identities::load_prekeyed` (folds persisted identities, public identity keys, and contacts into each `ManagedIdentity`) |
 | `unused_asset_locks` | `schema::asset_locks::load_unconsumed` (`Consumed`-filtered — spent locks stay on disk but are never resurrected) |
 | `contacts` | folded into `identity_manager` by `load_prekeyed`; the standalone field stays empty |
 | `identity_keys` | folded into `identity_manager` by `load_prekeyed`; the standalone field stays empty |
+
+V020 requires a fresh authoritative-claim store. Pre-format wallet rows fail load
+with `SpentClaimsUnavailable`; metadata updates and partial deltas never certify
+an old wallet. New registrations initialize an empty claim mirror. Historical TXO
+spend stamps remain for UI/accounting but are not used as engine claimant IDs.
+The existing upstream late-InstantSend sweep-event gap remains (#976/#1106).
 
 The persisted payload stores **no** `Wallet` and no key material. `load()`
 reconstructs the full keyless payload, rebuilding each wallet

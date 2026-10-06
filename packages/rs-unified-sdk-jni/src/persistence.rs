@@ -58,9 +58,9 @@ use platform_wallet_ffi::{
     IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
     InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
     PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
-    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
-    WalletChangeSetFFI, WalletRestoreEntryFFI,
+    SpentClaimRestoreFFI, SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -207,7 +207,13 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// subclass would make "slot present" prove nothing.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
     let sweeps_overridden = bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept");
+    let claims_overridden = bridge_overrides(env, bridge, "onPersistSpentClaims");
     PersistenceCallbacksExtension {
+        on_persist_spent_claims_fn: if claims_overridden {
+            Some(tramp_persist_spent_claims)
+        } else {
+            None
+        },
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
         on_persist_wallet_changeset_sweeps_fn: if sweeps_overridden {
             Some(tramp_persist_wallet_changeset_sweeps)
@@ -760,6 +766,56 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
             }
         }
         Ok(0)
+    })
+}
+
+const SPENT_CLAIMS_DESCRIPTOR: &str = "([B[B[B[B[B)I";
+
+/// Copies one ordered authoritative claim batch into JVM-owned arrays.
+unsafe extern "C" fn tramp_persist_spent_claims(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    claimed: *const SpentClaimRestoreFFI,
+    claimed_count: usize,
+    released: *const OutPointFFI,
+    released_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        if (claimed_count != 0 && claimed.is_null()) || (released_count != 0 && released.is_null())
+        {
+            return Err(jni::errors::Error::NullPtr("spent claim batch"));
+        }
+        let wid = id32(env, wallet_id)?;
+        let mut outpoints = Vec::new();
+        let mut present = Vec::new();
+        let mut claimants = Vec::new();
+        for claim in slice_or_empty(claimed, claimed_count) {
+            outpoints.extend_from_slice(&claim.txid);
+            outpoints.extend_from_slice(&claim.vout.to_le_bytes());
+            present.push(u8::from(claim.has_claimant));
+            claimants.extend_from_slice(&claim.claimant);
+        }
+        let mut releases = Vec::new();
+        for outpoint in slice_or_empty(released, released_count) {
+            releases.extend_from_slice(&pack_outpoint_key(outpoint));
+        }
+        let outpoints = env.byte_array_from_slice(&outpoints)?;
+        let present = env.byte_array_from_slice(&present)?;
+        let claimants = env.byte_array_from_slice(&claimants)?;
+        let releases = env.byte_array_from_slice(&releases)?;
+        env.call_method(
+            bridge,
+            "onPersistSpentClaims",
+            SPENT_CLAIMS_DESCRIPTOR,
+            &[
+                (&wid).into(),
+                (&outpoints).into(),
+                (&present).into(),
+                (&claimants).into(),
+                (&releases).into(),
+            ],
+        )?
+        .i()
     })
 }
 
@@ -1944,6 +2000,7 @@ struct WalletRestoreStaged {
     /// freed with a single `free_raw_slice` — no nested buffers, mirroring
     /// the flat `ignored_senders` array.
     platform_address_balances: Vec<AddressBalanceEntryFFI>,
+    spent_claims: Vec<SpentClaimRestoreFFI>,
     /// Unspent Core UTXOs. Each row carries an owned `script_pubkey`
     /// buffer (variable length), so it stages like the account xpubs —
     /// per-row buffer pointer minted at seal, freed row-by-row before
@@ -2163,6 +2220,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  specs,
                  identities,
                  platform_address_balances,
+                 spent_claims,
                  utxos,
                  core_address_pools,
                  tracked_asset_locks,
@@ -2178,6 +2236,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     entry.platform_address_balances,
                     entry.platform_address_balances_count,
                 ) = vec_into_raw(platform_address_balances);
+                (entry.spent_claims, entry.spent_claims_count) = vec_into_raw(spent_claims);
 
                 let specs: Vec<AccountSpecFFI> = specs
                     .into_iter()
@@ -2541,6 +2600,7 @@ fn build_wallet_restore_entry(
     // Core balance on cold start; see CORE-06). Each row's script buffer
     // stays owned until seal.
     let utxos = build_utxo_restore_entries(env, holder)?;
+    let spent_claims = build_spent_claim_restore_entries(env, holder)?;
 
     // Persisted Core address pools (re-seed each funds account's
     // `AddressPool` so out-of-window restored addresses keep their
@@ -2599,6 +2659,8 @@ fn build_wallet_restore_entry(
         // inert here, exactly as it was before the field existed.
         unconfirmed_outgoing_tx_records: ptr::null(),
         unconfirmed_outgoing_tx_records_count: 0,
+        spent_claims: ptr::null(),
+        spent_claims_count: 0,
         core_address_pools: ptr::null(),
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),
@@ -2611,6 +2673,7 @@ fn build_wallet_restore_entry(
         specs,
         identities,
         platform_address_balances,
+        spent_claims,
         utxos,
         core_address_pools,
         tracked_asset_locks,
@@ -2618,6 +2681,43 @@ fn build_wallet_restore_entry(
         provider_special_txs,
         last_applied_chain_lock,
     })
+}
+
+/// Stages claims without converting an unknown claimant into an absent claim.
+fn build_spent_claim_restore_entries(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<Vec<SpentClaimRestoreFFI>, jni::errors::Error> {
+    let rows: JObjectArray = env
+        .get_field(
+            holder,
+            "spentClaims",
+            "[Lorg/dashfoundation/dashsdk/ffi/SpentClaimRestoreData;",
+        )?
+        .l()?
+        .into();
+    let count = env.get_array_length(&rows)?;
+    let mut claims = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        claims.push(env.with_local_frame(
+            8,
+            |env| -> Result<SpentClaimRestoreFFI, jni::errors::Error> {
+                let row = env.get_object_array_element(&rows, i)?;
+                let has_claimant = !env.get_field(&row, "claimant", "[B")?.l()?.is_null();
+                Ok(SpentClaimRestoreFFI {
+                    txid: read_id32_field(env, &row, "txid")?,
+                    vout: env.get_field(&row, "vout", "I")?.i()? as u32,
+                    has_claimant,
+                    claimant: if has_claimant {
+                        read_id32_field(env, &row, "claimant")?
+                    } else {
+                        [0; 32]
+                    },
+                })
+            },
+        )?);
+    }
+    Ok(claims)
 }
 
 /// Read the Kotlin `WalletRestoreData.utxos` array into staged
@@ -3502,6 +3602,7 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
             std::ptr::slice_from_raw_parts_mut(entries as *mut WalletRestoreEntryFFI, count),
         );
         for e in boxed.iter() {
+            free_raw_slice(e.spent_claims, e.spent_claims_count);
             // Cached platform-address balances — flat POD slice minted by
             // `seal_wallet_entries` (`AddressBalanceEntryFFI` is `Copy`
             // with an inline `[u8; 20]` hash, no nested buffers).
@@ -4529,6 +4630,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "([B[BIJLjava/lang/String;[BIZZZZ)I",
     ),
     ("onWalletChangesetUtxoSpent", "([B[BI[B)I"),
+    ("onPersistSpentClaims", SPENT_CLAIMS_DESCRIPTOR),
     (
         "onWalletChangesetTransaction",
         WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,

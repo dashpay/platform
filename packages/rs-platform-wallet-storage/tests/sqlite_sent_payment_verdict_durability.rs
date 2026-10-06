@@ -143,6 +143,7 @@ async fn a_swept_sent_payments_failed_verdict_survives_a_reopen() {
         // and exits on `Disconnected`. No sleeping, no polling.
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<WalletEvent>();
         tx.send(WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             txids: vec![loser_txid()],
             superseded_by: {

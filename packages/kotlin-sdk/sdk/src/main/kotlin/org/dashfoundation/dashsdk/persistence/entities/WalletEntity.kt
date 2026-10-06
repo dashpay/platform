@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.persistence.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -68,6 +69,9 @@ data class WalletEntity(
      * has been persisted".
      */
     val lastAppliedChainLockHeight: Int? = null,
+    /** True only for wallets registered with the authoritative claim store. */
+    @ColumnInfo(defaultValue = "0")
+    val spentClaimsComplete: Boolean = false,
     val isImported: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),

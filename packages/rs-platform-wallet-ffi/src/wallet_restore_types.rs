@@ -606,6 +606,23 @@ pub struct UnconfirmedOutgoingTxRecordFFI {
     pub first_seen: u64,
 }
 
+/// An authoritative persisted spend guard, including claims without a transaction body.
+///
+/// `claimant` must identify the actual spending transaction, not a sweep winner
+/// inferred from an unrelated conflict. Legacy host tombstone stamps are not
+/// sufficient provenance. Hosts without authoritative rows leave this slice empty.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SpentClaimRestoreFFI {
+    /// Wire-order funding transaction id.
+    pub txid: [u8; 32],
+    pub vout: u32,
+    /// False when persistence knows the output is spent but not its claimant.
+    pub has_claimant: bool,
+    /// Wire-order claimant id, ignored when `has_claimant` is false.
+    pub claimant: [u8; 32],
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -718,6 +735,11 @@ pub struct WalletRestoreEntryFFI {
     /// leaves every existing field where it was.
     pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
     pub unconfirmed_outgoing_tx_records_count: usize,
+    /// Host-owned durable claims; valid until the matching load-free callback.
+    /// Appended to preserve offsets; old, smaller structs are incompatible.
+    /// Rebuild the host and native library/header together.
+    pub spent_claims: *const SpentClaimRestoreFFI,
+    pub spent_claims_count: usize,
 }
 
 /// Every field named explicitly so that adding a field to this ABI struct
@@ -758,6 +780,8 @@ impl Default for WalletRestoreEntryFFI {
             last_applied_chain_lock_bytes_len: 0,
             unconfirmed_outgoing_tx_records: std::ptr::null(),
             unconfirmed_outgoing_tx_records_count: 0,
+            spent_claims: std::ptr::null(),
+            spent_claims_count: 0,
         }
     }
 }

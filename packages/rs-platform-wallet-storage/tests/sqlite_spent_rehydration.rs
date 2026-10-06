@@ -160,6 +160,10 @@ impl Fixture {
                         })
                         .collect(),
                     core: Some(CoreChangeSet {
+                        spent_claim_batches: vec![platform_wallet::changeset::SpentClaimBatch {
+                            claimed: info.spent_outpoint_claims().into_iter().collect(),
+                            released: vec![],
+                        }],
                         records,
                         new_utxos: coins,
                         spent_utxos: vec![spent_coin],
@@ -934,6 +938,10 @@ async fn assert_conflict_restart(case: ConflictCase) {
                     })
                     .collect(),
                 core: Some(CoreChangeSet {
+                    spent_claim_batches: vec![platform_wallet::changeset::SpentClaimBatch {
+                        claimed: info.spent_outpoint_claims().into_iter().collect(),
+                        released: vec![],
+                    }],
                     records,
                     new_utxos: coins
                         .iter()
@@ -983,11 +991,23 @@ async fn assert_conflict_restart(case: ConflictCase) {
     }
     if let ConflictCase::UnknownClaim { height, .. } = case {
         persister.lock_conn_for_test().execute(
+            "UPDATE core_spent_claims SET claimant = NULL WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
+        ).unwrap();
+        persister.lock_conn_for_test().execute(
             "UPDATE core_utxos SET spent_in_txid = NULL, winner_mined_height = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
             rusqlite::params![height, wallet.wallet_id.as_slice(), &extra_key],
         ).unwrap();
     }
     if matches!(case, ConflictCase::MalformedClaim) {
+        persister
+            .lock_conn_for_test()
+            .execute_batch("PRAGMA ignore_check_constraints = ON")
+            .unwrap();
+        persister.lock_conn_for_test().execute(
+            "UPDATE core_spent_claims SET claimant = zeroblob(31) WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
+        ).unwrap();
         persister.lock_conn_for_test().execute(
             "UPDATE core_utxos SET spent_in_txid = zeroblob(31) WHERE wallet_id = ?1 AND outpoint = ?2",
             rusqlite::params![wallet.wallet_id.as_slice(), &extra_key],
@@ -1005,6 +1025,15 @@ async fn assert_conflict_restart(case: ConflictCase) {
     let missing_winner = Txid::from_byte_array([72; 32]);
     if recordless_claim {
         let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "UPDATE core_spent_claims SET claimant = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
+            rusqlite::params![
+                missing_winner.as_byte_array().as_slice(),
+                wallet.wallet_id.as_slice(),
+                &extra_key
+            ],
+        )
+        .unwrap();
         conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized) VALUES (?1, ?2, 101, 0)",
             rusqlite::params![wallet.wallet_id.as_slice(), missing_winner.as_byte_array().as_slice()]).unwrap();
         conn.execute(
@@ -1315,6 +1344,8 @@ async fn should_guard_recordless_spends_with_missing_funding_and_finality() {
                             .unwrap();
                         }
                         if !known_claimant {
+                            conn.execute("UPDATE core_spent_claims SET claimant = NULL", [])
+                                .unwrap();
                             conn.execute(
                                 "UPDATE core_utxos SET spent_in_txid = NULL WHERE spent = 1",
                                 [],

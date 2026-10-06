@@ -370,6 +370,7 @@ mod tests {
         matured: Vec<TransactionRecord>,
     ) -> WalletEvent {
         WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: [0u8; 32],
             height: 1,
             chain_lock: None,
@@ -416,6 +417,7 @@ mod tests {
     #[test]
     fn dashpay_payment_records_covers_transaction_detected() {
         let event = WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id: [0u8; 32],
             record: Box::new(record(0x07)),
             balance: WalletCoreBalance::default(),
@@ -472,6 +474,7 @@ mod tests {
     #[test]
     fn transactions_swept_does_not_drive_payment_hooks() {
         let event = WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id: [0u8; 32],
             txids: vec![dashcore::Txid::from([0x21; 32])],
             superseded_by: dashcore::Txid::from([0x22; 32]),
