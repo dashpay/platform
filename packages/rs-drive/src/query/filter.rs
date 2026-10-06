@@ -209,6 +209,10 @@ impl DriveDocumentQueryFilter<'_> {
                     new_document_clauses,
                 } = &self.action_clauses
                 {
+                    // No clause reads the document: skip building its stored form.
+                    if new_document_clauses.is_empty() {
+                        return TransitionCheckResult::Pass;
+                    }
                     let Some(data) = self.data_as_stored(create.data(), platform_version) else {
                         return TransitionCheckResult::Fail;
                     };
