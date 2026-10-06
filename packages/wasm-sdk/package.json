@@ -25,7 +25,7 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=18.18"
+    "node": ">=22"
   },
   "scripts": {
     "build": "./scripts/build.sh && node ./scripts/bundle.cjs",
