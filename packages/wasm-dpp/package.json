@@ -4,9 +4,6 @@
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
     "build": "yarn run build:wasm && yarn run build:js",
     "build:wasm": "yarn exec scripts/build-wasm.sh",

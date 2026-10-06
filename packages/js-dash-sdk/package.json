@@ -6,9 +6,6 @@
   "unpkg": "dist/dash.min.js",
   "browser": "dist/dash.min.js",
   "types": "build/index.d.ts",
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
     "start:dev": "nodemon --exec 'yarn run build && yarn run test:unit'",
     "start:ts": "tsc -p tsconfig.build.json --watch",

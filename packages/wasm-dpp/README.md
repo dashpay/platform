@@ -7,8 +7,6 @@
 
 The WASM JavaScript binding of the Rust implementation of the [Dash Platform Protocol](https://dashplatform.readme.io/docs/explanation-platform-protocol)
 
-Requires Node.js >= 20 when used in Node.js.
-
 ### THIS IS A DEV VERSION, NOT INTENDED FOR A PRODUCTION USAGE JUST YET
 
 ## Dev environment
