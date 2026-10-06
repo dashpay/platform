@@ -402,9 +402,8 @@ fn parse_generation_3(
     let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
     let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable = common::parse_immutable_keyword(&schema, name)?;
-    let deleted_only_when_consumed = schema
-        .to_map()
-        .is_ok_and(|schema_map| common::is_can_be_deleted_only_when_consumed(schema_map));
+    let deleted_only_when_consumed =
+        common::parse_can_be_deleted_only_when_consumed_keyword(&schema);
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -421,6 +420,10 @@ fn parse_generation_3(
         // born normalized (`apply_index_only` below validates the
         // already-normalized set).
         index_only,
+        // Lets the core read the owner's delete as refused for
+        // `canBeDeleted: "onlyWhenConsumed"` instead of reading a boolean;
+        // `apply_deleted_only_when_consumed` below records the consumption.
+        deleted_only_when_consumed,
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
@@ -481,9 +484,6 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
-            // ONLY WHEN CONSUMED: `canBeDeleted: "onlyWhenConsumed"`, documents only a
-            // `refersTo` with `consume` deletes (`apply_deleted_only_when_consumed`).
-            admit_can_be_deleted_only_when_consumed: true,
         },
         platform_version,
     )?;

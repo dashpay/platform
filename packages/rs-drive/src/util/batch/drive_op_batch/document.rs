@@ -121,10 +121,12 @@ pub enum DocumentOperationType<'a> {
     },
     /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
     /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
-    /// caller has checked that the document type sets `moderatorAbilities.delete`) and for the
-    /// platform's deletion of a document whose type declares a `ttl` once it has passed
-    /// (protocol version 14), which also removes the document's expirations tree entry. A
-    /// document type that keeps history is still refused, as both keywords are on such a type.
+    /// caller has checked that the document type sets `moderatorAbilities.delete`), for a
+    /// document a contested create consumes (the consume rules admitted it, protocol version
+    /// 14), and for the platform's deletion of a document whose type declares a `ttl` once it
+    /// has passed (protocol version 14), which also removes the document's expirations tree
+    /// entry. A document type that keeps history is still refused, as both keywords are on
+    /// such a type.
     ForceDeleteDocument {
         /// The document id
         document_id: Identifier,
@@ -544,21 +546,23 @@ impl DocumentOperationType<'_> {
                 )?;
                 drive_operations.append(&mut operations);
                 // Each delete sees the add and the earlier deletes as pending: a tree
-                // holding a pending insert is not empty
+                // holding a pending insert is not empty. A consumed document is deleted
+                // without its owner's `canBeDeleted` guard: the consume rules admitted it,
+                // and a type whose documents only a consume deletes
+                // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
                 for (document_id, document_type_name) in consumed_documents {
                     let consumed_document_type =
                         DocumentTypeInfo::DocumentTypeName(document_type_name).resolve(contract)?;
-                    let mut operations = drive
-                        .delete_document_for_contract_operations_without_ttl_drain(
-                            document_id,
-                            contract,
-                            consumed_document_type,
-                            Some(&mut drive_operations),
-                            estimated_costs_only_with_layer_info,
-                            block_info.time_ms,
-                            transaction,
-                            platform_version,
-                        )?;
+                    let mut operations = drive.force_delete_document_for_contract_operations(
+                        document_id,
+                        contract,
+                        consumed_document_type,
+                        Some(&mut drive_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
                     drive_operations.append(&mut operations);
                 }
                 Ok(drive_operations)

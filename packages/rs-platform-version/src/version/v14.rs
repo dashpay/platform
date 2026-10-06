@@ -1942,7 +1942,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 71. **Documents deleted only when consumed (`canBeDeleted:
 ///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
 ///     and parser generation 3, in place
-///     (`ParserGeneration::admit_can_be_deleted_only_when_consumed`,
+///     (`parse_can_be_deleted_only_when_consumed_keyword`, passed to the core
+///     parse as `indexOnly` is, `false` for generations 1 and 2;
 ///     `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). The
 ///     owner's delete reads it as `false` (document delete advanced structure
 ///     validation refuses it, 10404), and a `refersTo` with `consume` may
@@ -1950,12 +1951,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     which refused every type its owner can not delete). Its documents can
 ///     leave state, so the type is a `deletableDocument` target, never a
 ///     `permanentDocument` or `moderatedDocument` one
-///     (`documents_can_disappear`, `document_reference_kind`). Drive's delete
-///     guard (`delete_document_for_contract_operations` 0, in place) lets
-///     such a document go, as the consume's delete needs. Refused on a
-///     type that keeps history or is indexOnly (10231), and fixed on update
-///     (`validate_update` v1, 40212). Inert for every contract without the
-///     value, which every earlier grammar refuses.
+///     (`documents_can_disappear`, `document_reference_kind`). A consumed
+///     document is deleted without its owner's `canBeDeleted` guard
+///     (`ForceDeleteDocument` beside a contested create,
+///     `force_delete_document_for_contract_operations` in
+///     `AddDocumentAndDeleteConsumed`), so Drive's delete guard stays strict
+///     for the owner's delete. Refused on a type that keeps history or is
+///     indexOnly (10231), and fixed on update (`validate_update` v1, 40212).
+///     Inert for every contract without the value, which every earlier grammar
+///     refuses.
 ///
 /// 72. **A barred author may still retract (`retractedWhen`)**: a document
 ///     type of meta-schema v3 and parser generation 3, in place, may declare

@@ -276,11 +276,6 @@ pub(super) struct ParserGeneration {
     /// `apply_derived_index_properties` then judges the reference and the index, and the
     /// contract's parse the referenced field.
     pub admit_derived_index_properties: bool,
-    /// Whether `canBeDeleted` may be `"onlyWhenConsumed"` as well as a boolean: the owner
-    /// can not delete a document, and a `refersTo` with `consume` can. Read as `false` for
-    /// the owner's delete here; the generation-3 driver records the consumption on the
-    /// parsed type.
-    pub admit_can_be_deleted_only_when_consumed: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -465,6 +460,13 @@ struct CoreParseContext<'a> {
     /// generation admitting the keyword can ever pass `true` (the caller
     /// reads it off the schema); generations 1 and 2 always pass `false`.
     index_only: bool,
+    /// Whether the document type being parsed declared `canBeDeleted: "onlyWhenConsumed"`,
+    /// which [`parse_document_type_flags`] reads as `false` for the owner's delete instead of
+    /// reading `canBeDeleted` as a boolean. Only a generation admitting the value can ever pass
+    /// `true` (the caller reads it off the schema with
+    /// [`parse_can_be_deleted_only_when_consumed_keyword`]); generations 1 and 2 always pass
+    /// `false`.
+    deleted_only_when_consumed: bool,
     generation: &'a ParserGeneration,
     platform_version: &'a PlatformVersion,
 }
@@ -525,6 +527,7 @@ pub(super) fn parse_document_type_core(
     data_contact_config: &DataContractConfig,
     full_validation: bool, // we don't need to validate if loaded from state
     index_only: bool,
+    deleted_only_when_consumed: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
@@ -538,6 +541,7 @@ pub(super) fn parse_document_type_core(
         data_contact_config,
         full_validation,
         index_only,
+        deleted_only_when_consumed,
         generation,
         platform_version,
     };
@@ -717,9 +721,7 @@ fn parse_document_type_flags(
 
     // Can documents of this type be deleted by their owners? (Overrides contract value)
     // `"onlyWhenConsumed"` says they can not: only a `refersTo` with `consume` deletes them
-    let documents_can_be_deleted: bool = if ctx.generation.admit_can_be_deleted_only_when_consumed
-        && is_can_be_deleted_only_when_consumed(schema_map)
-    {
+    let documents_can_be_deleted: bool = if ctx.deleted_only_when_consumed {
         false
     } else {
         Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
@@ -3096,13 +3098,17 @@ pub(super) fn apply_documents_ttl(
     Ok(())
 }
 
-/// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`. The shared flag
-/// parse of a generation admitting the value reads it as `false` for the owner's delete, and
-/// the generation-3 driver records it on the parsed type ([`apply_deleted_only_when_consumed`]).
-pub(super) fn is_can_be_deleted_only_when_consumed(schema_map: &[(Value, Value)]) -> bool {
-    schema_map.iter().any(|(key, value)| {
-        key.as_text() == Some(CAN_BE_DELETED)
-            && value.as_text() == Some(CAN_BE_DELETED_ONLY_WHEN_CONSUMED)
+/// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`, read before the
+/// core parser consumes `schema`, through the map accessor every doctype keyword is read with
+/// (the first entry under the key), same shape as [`parse_index_only_keyword`]. Only the
+/// generation-3 driver calls this: it passes the answer to the core parse, which then reads
+/// the owner's delete as `false`, and records it on the parsed type
+/// ([`apply_deleted_only_when_consumed`]). Any other value is left to the core parse, which
+/// reads `canBeDeleted` as a boolean.
+pub(super) fn parse_can_be_deleted_only_when_consumed_keyword(schema: &Value) -> bool {
+    schema.to_map().ok().is_some_and(|schema_map| {
+        Value::get_optional_from_map(schema_map, CAN_BE_DELETED).and_then(Value::as_text)
+            == Some(CAN_BE_DELETED_ONLY_WHEN_CONSUMED)
     })
 }
 

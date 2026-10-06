@@ -491,6 +491,7 @@ mod commit_reveal_lookup_tests {
             contract["documentSchemas"]["preorder"]["canBeDeleted"] =
                 serde_json::json!("onlyWhenConsumed");
         });
+        let alice = fixture.id(Who::Alice);
         let salt = [0x15; 32];
         let preorder = fixture
             .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
@@ -518,11 +519,68 @@ mod commit_reveal_lookup_tests {
                 REVEAL_HEIGHT,
             )
             .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        );
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the reveal to be accepted, got {result:?}");
+        };
+        // Consumed as a delete by its owner would be: gone, its storage refunded to its owner
         assert!(!fixture.preorder_exists(preorder.id()));
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .is_some_and(|refund| refund > 0),
+            "expected the consumed commitment's storage to be refunded to its owner"
+        );
+    }
+
+    /// The same through a contested create, whose consumed commitments are deleted beside
+    /// the contest's own trees rather than with a plain insert.
+    #[tokio::test]
+    async fn should_consume_a_commitment_its_owner_can_not_delete_through_a_contested_create() {
+        let mut fixture = CommitRevealFixture::new_with(|contract| {
+            contract["documentSchemas"]["preorder"]["canBeDeleted"] =
+                serde_json::json!("onlyWhenConsumed");
+            contract["documentSchemas"]["domain"]["indices"] = serde_json::json!([{
+                "name": "byNormalizedLabel",
+                "properties": [{ "normalizedLabel": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                    ],
+                    "resolution": 0
+                }
+            }]);
+        });
+        let alice = fixture.id(Who::Alice);
+        let salt = [0x16; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+            .await;
+
+        let (domain, result) = fixture
+            .create(
+                Who::Alice,
+                "domain",
+                &subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the contested reveal to be accepted, got {result:?}");
+        };
+        // The domain waits in its contest, not in the type's storage, and the commitment is
+        // consumed, its storage refunded to its owner
+        assert!(!fixture.document_exists("domain", domain.id()));
+        assert!(!fixture.preorder_exists(preorder.id()));
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .is_some_and(|refund| refund > 0),
+            "expected the consumed commitment's storage to be refunded to its owner"
+        );
     }
 
     #[tokio::test]

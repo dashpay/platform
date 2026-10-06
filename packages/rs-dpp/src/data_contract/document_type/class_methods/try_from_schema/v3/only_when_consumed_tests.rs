@@ -121,6 +121,31 @@ fn should_leave_both_booleans_as_they_were() {
 }
 
 #[test]
+fn should_read_the_first_can_be_deleted_entry_as_every_keyword_does() {
+    // A schema map may repeat a key; like every doctype keyword, `canBeDeleted` is read from
+    // its first entry, so a later "onlyWhenConsumed" does not make a permanent type consumable
+    let mut schema = commitment_schema(platform_value!({}));
+    if let Value::Map(schema_map) = &mut schema {
+        schema_map.retain(|(key, _)| key.as_text() != Some("canBeDeleted"));
+        schema_map.insert(
+            0,
+            (Value::Text("canBeDeleted".to_string()), Value::Bool(false)),
+        );
+        schema_map.push((
+            Value::Text("canBeDeleted".to_string()),
+            Value::Text("onlyWhenConsumed".to_string()),
+        ));
+    }
+    let document_type = parse(schema, false).expect("the stored path reads the first entry");
+    assert!(!document_type.documents_can_be_deleted());
+    assert!(!document_type.documents_deleted_only_when_consumed());
+    assert_eq!(
+        document_type.document_reference_kind(),
+        DocumentReferenceKind::Permanent
+    );
+}
+
+#[test]
 fn should_make_a_type_its_moderators_remove_with_records_deletable_when_a_consume_deletes_it() {
     // A consume removes a document without a removal record, so the type is no longer one
     // whose documents leave state only on the record: a `moderatedDocument` reference could
@@ -219,13 +244,33 @@ fn should_refuse_it_on_an_index_only_type_on_both_paths() {
 
 #[test]
 fn should_refuse_the_value_before_protocol_version_14() {
-    // Meta-schema v2 (protocol versions 12 and 13) admits only a boolean
+    // Meta-schema v2 (protocol versions 12 and 13) admits only a boolean, and the generation 2
+    // core reads `canBeDeleted` as one on the stored path too. The same schema with `false`
+    // parses there on both paths, so the refusal is the value's.
     let platform_version = PlatformVersion::get(13).expect("expected platform version");
     let config = DataContractConfig::default_for_version(platform_version)
         .expect("default config available");
-    let result = parse_with_config(commitment_schema(platform_value!({})), &config, 13, true);
-    assert!(
-        result.is_err(),
-        "\"onlyWhenConsumed\" must not pass meta-schema v2"
-    );
+    for full_validation in [true, false] {
+        parse_with_config(
+            commitment_schema(platform_value!({ "canBeDeleted": false })),
+            &config,
+            13,
+            full_validation,
+        )
+        .expect("a boolean canBeDeleted parses before protocol version 14");
+        let error = parse_with_config(
+            commitment_schema(platform_value!({})),
+            &config,
+            13,
+            full_validation,
+        )
+        .expect_err("\"onlyWhenConsumed\" must be refused before protocol version 14");
+        if full_validation {
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("canBeDeleted"),
+                "the meta-schema must refuse canBeDeleted, got {message}"
+            );
+        }
+    }
 }

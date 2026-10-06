@@ -56,14 +56,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        // A document of a type whose owner can not delete it leaves state here only when a
-        // create consumes it (`canBeDeleted: "onlyWhenConsumed"`, protocol version 14): the
-        // owner's own delete of such a document is refused by the delete transition's
-        // validation before it reaches Drive. Every type parsed before protocol version 14
-        // answers `false` to the second flag, so the guard is unchanged for them
-        if !document_type.documents_can_be_deleted()
-            && !document_type.documents_deleted_only_when_consumed()
-        {
+        if !document_type.documents_can_be_deleted() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type is not mutable and can not be deleted",
             )));
