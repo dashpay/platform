@@ -176,11 +176,16 @@ impl SubscriptionService {
     }
 
     /// Start scanning from `from_block_height`, or after the current tip.
+    ///
+    /// `bound_at` is the height the data contracts `filters` are bound to were read at. A
+    /// stream starting after it scans from just after it without delivering anything before
+    /// its start, so that updates of those contracts committed in between are followed.
     pub async fn start(
         &self,
         admission: Admission,
         filters: ResolvedFilters,
         from_block_height: Option<u64>,
+        bound_at: Option<u64>,
     ) -> Result<SubscriptionStream, Status> {
         let tip = self.current_tip().await?;
         let start = match from_block_height {
@@ -202,6 +207,17 @@ impl SubscriptionService {
             }
         };
 
+        // Drive commits each block right after Tenderdash stores it, so the contracts were read
+        // at most a block or two before the tip; going back further than a page (which would
+        // count as catching up) is not worth delaying the start for.
+        let first_scanned = bound_at.map_or(start, |bound_at| {
+            start.min(
+                bound_at
+                    .saturating_add(1)
+                    .max(start.saturating_sub(META_PAGE)),
+            )
+        });
+
         let (sender, receiver) = mpsc::channel(STREAM_BUFFER);
         let scan = Scan {
             blocks: self.blocks.clone(),
@@ -209,7 +225,8 @@ impl SubscriptionService {
             replaying: self.replaying.clone(),
             filters,
             sender,
-            next_height: start,
+            next_height: first_scanned.max(1),
+            deliver_from: start,
         };
         tokio::spawn(scan.run(admission));
         Ok(ReceiverStream::new(receiver))
@@ -268,6 +285,8 @@ struct Scan {
     sender: mpsc::Sender<Result<SubscribeToStateTransitionsResponse, Status>>,
     /// The next height to scan; every height below it has been fully scanned.
     next_height: u64,
+    /// The stream's start: heights below it are scanned only to follow contract updates.
+    deliver_from: u64,
 }
 
 impl Scan {
@@ -345,7 +364,7 @@ impl Scan {
                         }
                         let block = self.read_block(height).await?;
                         let matches = self.match_block(&block)?;
-                        if !matches.is_empty() {
+                        if !matches.is_empty() && height >= self.deliver_from {
                             replay_permit.take();
                             // Keep only what the responses need, the serialized payloads shared
                             // with the block, and let go of the decoded block before waiting on
@@ -427,7 +446,7 @@ impl Scan {
         let response = SubscribeToStateTransitionsResponse {
             version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
                 responses: Some(Responses::Checkpoint(Checkpoint {
-                    block_height: self.next_height - 1,
+                    block_height: self.checkpoint_height(),
                 })),
             })),
         };
@@ -504,7 +523,13 @@ impl Scan {
 
     /// A checkpoint at the highest fully scanned height.
     async fn checkpoint(&mut self) -> Result<(), Stop> {
-        self.checkpoint_at(self.next_height - 1).await
+        self.checkpoint_at(self.checkpoint_height()).await
+    }
+
+    /// The highest fully scanned height, or just before the start while scanning before it:
+    /// the client resumes after a checkpoint, so none may point before where it asked to be.
+    fn checkpoint_height(&self) -> u64 {
+        self.next_height.max(self.deliver_from) - 1
     }
 
     async fn checkpoint_at(&mut self, height: u64) -> Result<(), Stop> {

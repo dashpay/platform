@@ -731,6 +731,18 @@ impl DriveDocumentQueryFilter<'_> {
                     }
                 }
                 if let Some(price) = price_clause {
+                    // IN candidates are bounded and distinct, like any IN clause's; checked here,
+                    // after normalization, so the same price in two encodings counts twice.
+                    if price.operator == WhereOperator::In {
+                        let candidates = WhereClause {
+                            field: "$price".to_string(),
+                            operator: WhereOperator::In,
+                            value: price.value.clone(),
+                        };
+                        if let Some(error) = candidates.in_values().errors.into_iter().next() {
+                            return QuerySyntaxSimpleValidationResult::new_with_error(error);
+                        }
+                    }
                     let ok = match price.operator {
                         WhereOperator::Equal
                         | WhereOperator::GreaterThan
@@ -2486,6 +2498,33 @@ mod tests {
             },
         };
         assert!(filter.validate().is_valid());
+    }
+
+    #[test]
+    fn validate_price_clause_in_refuses_duplicates_once_normalized() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let price_in = |values: Vec<Value>| DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(values),
+                }),
+            },
+        };
+        assert!(price_in(vec![Value::U64(1), Value::U64(1)])
+            .validate()
+            .is_err());
+        assert!(price_in(vec![Value::U64(1); 101]).validate().is_err());
+        // The same price in two encodings is a duplicate once normalized.
+        let mut mixed = price_in(vec![Value::I64(1), Value::U64(1)]);
+        mixed
+            .canonicalize_clause_values(LATEST_PLATFORM_VERSION)
+            .expect("both are prices");
+        assert!(mixed.validate().is_err());
     }
 
     #[test]

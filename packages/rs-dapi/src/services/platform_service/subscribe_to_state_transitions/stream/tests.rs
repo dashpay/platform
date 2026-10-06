@@ -29,6 +29,8 @@ struct FakeChain {
     reads_in_flight: AtomicUsize,
     max_reads_in_flight: AtomicUsize,
     counted_below: AtomicU64,
+    /// `block` calls made.
+    block_reads: AtomicUsize,
 }
 
 impl FakeChain {
@@ -51,6 +53,7 @@ impl TenderdashBlocks for FakeChain {
     }
 
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
+        self.block_reads.fetch_add(1, Ordering::SeqCst);
         if height < self.counted_below.load(Ordering::SeqCst) {
             let now = self.reads_in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.max_reads_in_flight.fetch_max(now, Ordering::SeqCst);
@@ -225,6 +228,7 @@ async fn should_replay_history_then_follow_new_blocks_without_gaps() {
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
             Some(2),
+            None,
         )
         .await
         .unwrap();
@@ -250,6 +254,7 @@ async fn should_start_after_the_tip_when_no_height_is_given() {
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -267,6 +272,7 @@ async fn should_send_checkpoints_while_nothing_matches() {
         .start(
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
+            None,
             None,
         )
         .await
@@ -293,6 +299,7 @@ async fn should_refuse_starts_too_far_behind_or_ahead_of_the_tip() {
                 harness.service.admit(None).unwrap(),
                 recipient_filter(7),
                 Some(from),
+                None,
             )
             .await
             .unwrap_err();
@@ -354,6 +361,7 @@ async fn should_end_the_stream_on_a_transaction_this_node_cannot_decode() {
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -374,6 +382,7 @@ async fn should_deliver_a_block_once_its_results_are_saved() {
         .start(
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
+            None,
             None,
         )
         .await
@@ -409,6 +418,7 @@ async fn should_not_let_a_client_that_stops_reading_hold_the_replay_capacity() {
             harness.service.admit(None).unwrap(),
             recipient_filter(9),
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -418,6 +428,7 @@ async fn should_not_let_a_client_that_stops_reading_hold_the_replay_capacity() {
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -445,6 +456,7 @@ async fn should_bound_concurrent_catch_up_reads_after_sending_matches() {
                 harness.service.admit(None).unwrap(),
                 recipient_filter(7),
                 Some(from),
+                None,
             )
             .await
             .unwrap();
@@ -479,6 +491,7 @@ async fn should_not_pin_decoded_blocks_while_waiting_on_a_stalled_reader() {
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -509,6 +522,7 @@ async fn should_keep_the_oldest_waiter_first_for_replay_capacity_across_heartbea
         filters: recipient_filter(7),
         sender,
         next_height: 1,
+        deliver_from: 1,
     };
     let (oldest_sender, mut oldest_receiver) = mpsc::channel(STREAM_BUFFER);
     let (newer_sender, mut newer_receiver) = mpsc::channel(STREAM_BUFFER);
@@ -567,6 +581,7 @@ async fn should_drop_a_client_that_stops_reading_while_waiting_for_replay_capaci
         filters: recipient_filter(7),
         sender,
         next_height: 1,
+        deliver_from: 1,
     };
     let mut last_checkpoint = Instant::now();
     let outcome = timeout(
@@ -598,6 +613,7 @@ async fn should_free_a_slow_clients_slot_once_its_deadline_passes() {
             harness.service.admit(None).unwrap(),
             recipient_filter(7),
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -612,4 +628,176 @@ async fn should_free_a_slow_clients_slot_once_its_deadline_passes() {
         harness.service.admit(None).is_ok(),
         "a slow client's slot is freed at its deadline"
     );
+}
+
+/// The `rating` contract with `stars` allowed up to `maximum`: a u8 field up to 255, a u16
+/// field once an update widens it.
+fn rating_contract(maximum: u64, version: u32) -> dpp::data_contract::DataContract {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::platform_value::platform_value;
+
+    let documents = platform_value!({
+        "rating": {
+            "type": "object",
+            "properties": {
+                "stars": { "type": "integer", "minimum": 0, "maximum": maximum, "position": 0 }
+            },
+            "additionalProperties": false
+        }
+    });
+    let mut contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .unwrap()
+        .create_with_value_config(Identifier::from([3u8; 32]), 1, documents, None, None)
+        .unwrap()
+        .data_contract_owned();
+    contract.set_version(version);
+    contract
+}
+
+#[tokio::test]
+async fn should_follow_a_contract_update_committed_while_a_live_stream_starts() {
+    use dash_platform_queries::subscriptions::{DocumentAction, DocumentActionMatch, DocumentFilter};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::platform_value::Value;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+    use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+    use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::version::TryFromPlatformVersioned;
+    use drive::query::{WhereClause, WhereOperator};
+
+    let harness = harness(SubscriptionLimits::default());
+    let narrow = Arc::new(rating_contract(255, 1));
+    let filters = ResolvedFilters::resolve(
+        vec![StateTransitionFilter::Documents(
+            DocumentFilter::new(narrow.id())
+                .with_document_type("rating")
+                .with_action(
+                    DocumentActionMatch::new(DocumentAction::Create).with_new_document_where(
+                        WhereClause {
+                            field: "stars".to_string(),
+                            operator: WhereOperator::GreaterThan,
+                            value: Value::U64(3),
+                        },
+                    ),
+                ),
+        )],
+        |_| Some(narrow.clone()),
+        PlatformVersion::latest(),
+    )
+    .unwrap();
+    // The contract is read at height 1; the update widening `stars` commits at 2, before the
+    // stream starts after the tip.
+    let read_at = harness.commit(vec![]);
+    let update = StateTransition::DataContractUpdate(
+        DataContractUpdateTransition::try_from_platform_versioned(
+            (rating_contract(1000, 2), 2),
+            PlatformVersion::latest(),
+        )
+        .unwrap(),
+    )
+    .serialize_to_bytes()
+    .unwrap();
+    harness.commit(vec![update]);
+    let mut stream = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            filters,
+            None,
+            Some(read_at),
+        )
+        .await
+        .unwrap();
+    // Nothing before the start is delivered...
+    expect_checkpoint(&mut stream, 2).await;
+
+    // ...but the update was followed: 300 stars is a rating only under the widened schema.
+    let rating = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+        owner_id: Identifier::from([4u8; 32]),
+        transitions: vec![BatchedTransition::Document(DocumentTransition::Create(
+            DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::from([5u8; 32]),
+                    identity_contract_nonce: 1,
+                    document_type_name: "rating".to_string(),
+                    data_contract_id: narrow.id(),
+                }),
+                entropy: [0; 32],
+                data: [("stars".to_string(), Value::U64(300))].into(),
+                prefunded_voting_balance: None,
+            }),
+        ))],
+        ..Default::default()
+    }))
+    .serialize_to_bytes()
+    .unwrap();
+    let height = harness.commit(vec![rating]);
+    expect_match(&mut stream, height, 0).await;
+}
+
+#[tokio::test]
+async fn should_not_checkpoint_before_the_start_while_scanning_before_it() {
+    let harness = harness(SubscriptionLimits::default());
+    let read_at = harness.commit(vec![]);
+    harness.commit(vec![credit_transfer(7)]);
+    harness.commit(vec![credit_transfer(7)]);
+    let mut stream = harness
+        .service
+        .start(
+            harness.service.admit(None).unwrap(),
+            recipient_filter(7),
+            None,
+            Some(read_at),
+        )
+        .await
+        .unwrap();
+    // Matches at 2 and 3 are before the start (4): scanned, not delivered.
+    expect_checkpoint(&mut stream, 3).await;
+    let height = harness.commit(vec![credit_transfer(7)]);
+    expect_match(&mut stream, height, 0).await;
+    expect_checkpoint(&mut stream, height).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn should_share_a_height_not_readable_yet_between_readers() {
+    let harness = harness(SubscriptionLimits::default());
+    let height = harness.commit(vec![credit_transfer(7)]);
+    *harness.chain.results_withheld.lock().unwrap() = Some(height);
+    let reads = || harness.chain.block_reads.load(Ordering::SeqCst);
+
+    // Subscriptions waiting on the height ask Tenderdash once between them.
+    let outcomes = futures::future::join_all((0..8).map(|_| harness.blocks.read(height))).await;
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, Ok(BlockRead::NotYet)))
+    );
+    assert_eq!(reads(), 1);
+    assert!(matches!(
+        harness.blocks.read(height).await,
+        Ok(BlockRead::NotYet)
+    ));
+    assert_eq!(reads(), 1, "the miss is remembered for a moment");
+
+    // After the retry delay the height is read again, and once its results are saved it is
+    // a block like any other.
+    sleep(NOT_YET_RETRY).await;
+    assert!(matches!(
+        harness.blocks.read(height).await,
+        Ok(BlockRead::NotYet)
+    ));
+    assert_eq!(reads(), 2);
+    *harness.chain.results_withheld.lock().unwrap() = None;
+    sleep(NOT_YET_RETRY).await;
+    assert!(matches!(
+        harness.blocks.read(height).await,
+        Ok(BlockRead::Block(_))
+    ));
+    assert_eq!(reads(), 3);
 }

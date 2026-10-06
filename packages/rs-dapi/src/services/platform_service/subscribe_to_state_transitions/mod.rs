@@ -79,9 +79,16 @@ impl PlatformServiceImpl {
         let admission = self.subscriptions.admit(client_ip)?;
 
         let mut contracts = BTreeMap::new();
+        // The lowest height the contracts were read at: their bindings cover every update up
+        // to it, and the scan follows those after it.
+        let mut bound_at: Option<u64> = None;
         for data_contract_id in ResolvedFilters::data_contract_ids(&filters) {
-            if let Some(contract) = self.fetch_data_contract(data_contract_id).await? {
+            let (contract, read_at) = self.fetch_data_contract(data_contract_id).await?;
+            if let Some(contract) = contract {
                 contracts.insert(data_contract_id, Arc::new(contract));
+            }
+            if let Some(read_at) = read_at {
+                bound_at = Some(bound_at.map_or(read_at, |bound_at| bound_at.min(read_at)));
             }
         }
         let filters = ResolvedFilters::resolve(
@@ -92,16 +99,17 @@ impl PlatformServiceImpl {
         .map_err(filter_error_status)?;
 
         self.subscriptions
-            .start(admission, filters, request.from_block_height)
+            .start(admission, filters, request.from_block_height, bound_at)
             .await
     }
 
-    /// The current version of a data contract, from Drive. Unproved: the client re-checks
-    /// every delivered transition against filters it resolves from proved contracts.
+    /// The current version of a data contract, from Drive, and the height Drive read it at.
+    /// Unproved: the client re-checks every delivered transition against filters it resolves
+    /// from proved contracts.
     async fn fetch_data_contract(
         &self,
         data_contract_id: Identifier,
-    ) -> Result<Option<DataContract>, Status> {
+    ) -> Result<(Option<DataContract>, Option<u64>), Status> {
         let request = GetDataContractRequest {
             version: Some(get_data_contract_request::Version::V0(
                 get_data_contract_request::GetDataContractRequestV0 {
@@ -121,6 +129,7 @@ impl PlatformServiceImpl {
                 "Drive returned an unversioned data contract",
             ));
         };
+        let read_at = response.metadata.as_ref().map(|metadata| metadata.height);
         let protocol_version = response
             .metadata
             .as_ref()
@@ -128,18 +137,18 @@ impl PlatformServiceImpl {
             .unwrap_or(PlatformVersion::latest().protocol_version);
         let platform_version = PlatformVersion::get(protocol_version)
             .map_err(|e| Status::failed_precondition(e.to_string()))?;
-        match response.result {
+        let contract = match response.result {
             Some(
                 get_data_contract_response::get_data_contract_response_v0::Result::DataContract(
                     bytes,
                 ),
-            ) if !bytes.is_empty() => {
+            ) if !bytes.is_empty() => Some(
                 DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
-                    .map(Some)
-                    .map_err(|e| Status::internal(format!("cannot decode data contract: {e}")))
-            }
-            _ => Ok(None),
-        }
+                    .map_err(|e| Status::internal(format!("cannot decode data contract: {e}")))?,
+            ),
+            _ => None,
+        };
+        Ok((contract, read_at))
     }
 }
 

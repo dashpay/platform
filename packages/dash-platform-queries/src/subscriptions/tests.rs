@@ -789,7 +789,9 @@ fn should_bound_price_in_candidates() {
     };
     let too_many = price_in((0..20_000u64).map(|n| Value::U64(n % 3)).collect());
     let duplicates = price_in(vec![Value::U64(1), Value::U64(1)]);
-    for filter in [too_many, duplicates] {
+    // The same price in two encodings: distinct values, but one price once normalized.
+    let mixed_duplicates = price_in(vec![Value::I64(1), Value::U64(1)]);
+    for filter in [too_many, duplicates, mixed_duplicates] {
         assert!(resolve(vec![filter.clone()], &contract).is_err());
         let wire = StateTransitionFilter::from_proto(0, filter.to_proto().unwrap()).unwrap();
         assert!(resolve(vec![wire], &contract).is_err());

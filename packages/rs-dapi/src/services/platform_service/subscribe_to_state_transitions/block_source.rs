@@ -27,8 +27,10 @@ use dpp::version::PlatformVersion;
 use quick_cache::Weighter;
 use quick_cache::sync::Cache;
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::time::Instant;
 use tracing::debug;
 
 /// Heights per `blockchain` page; Tenderdash's own cap.
@@ -148,6 +150,10 @@ pub struct BlockSource {
     /// Metas pages by their exact `(start, end)` range: committed metas never change, so a
     /// short page at the tip stays valid and is shared by every subscription reading it.
     meta_pages: Cache<(u64, u64), Arc<Vec<HeightMeta>>>,
+    /// Heights just found not readable yet, until when to keep answering so without asking
+    /// Tenderdash again: the cache shares only reads that found a block, so subscriptions
+    /// waiting on the same height would otherwise each repeat the read.
+    not_yet_until: Mutex<HashMap<u64, Instant>>,
 }
 
 impl BlockSource {
@@ -156,6 +162,7 @@ impl BlockSource {
             tenderdash,
             blocks: Cache::with_weighter(4096, BLOCK_CACHE_BYTES, BlockWeighter),
             meta_pages: Cache::new(META_PAGE_CACHE_PAGES),
+            not_yet_until: Mutex::new(HashMap::new()),
         }
     }
 
@@ -191,13 +198,40 @@ impl BlockSource {
     pub async fn read(&self, height: u64) -> DAPIResult<BlockRead> {
         match self
             .blocks
-            .get_or_insert_async(&height, self.fetch(height))
+            .get_or_insert_async(&height, self.fetch_unless_just_missed(height))
             .await
         {
             Ok(block) => Ok(BlockRead::Block(block)),
             Err(ReadMiss::NotYet) => Ok(BlockRead::NotYet),
             Err(ReadMiss::Failed(error)) => Err(error),
         }
+    }
+
+    async fn fetch_unless_just_missed(&self, height: u64) -> Result<Arc<CommittedBlock>, ReadMiss> {
+        let now = Instant::now();
+        if self.not_yet_at(height, now) {
+            return Err(ReadMiss::NotYet);
+        }
+        let outcome = self.fetch(height).await;
+        if matches!(outcome, Err(ReadMiss::NotYet)) {
+            let mut not_yet_until = self
+                .not_yet_until
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let now = Instant::now();
+            not_yet_until.retain(|_, until| *until > now);
+            not_yet_until.insert(height, now + NOT_YET_RETRY);
+        }
+        outcome
+    }
+
+    /// Whether `height` was found not readable yet within the last `NOT_YET_RETRY`.
+    fn not_yet_at(&self, height: u64, now: Instant) -> bool {
+        self.not_yet_until
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&height)
+            .is_some_and(|until| now < *until)
     }
 
     async fn fetch(&self, height: u64) -> Result<Arc<CommittedBlock>, ReadMiss> {

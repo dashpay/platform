@@ -110,6 +110,10 @@ pub struct StateTransitionSubscription {
     /// Bound data contracts a delivered update changed, with the version it changed each to;
     /// re-read with proofs before the next message is checked.
     contracts_to_refresh: BTreeMap<Identifier, u32>,
+    /// Proved reads of a refreshed contract that came back older than its update, in a row,
+    /// and the wait before the next; kept here so a caller cancelling `next()` restarts neither.
+    stale_reads: u32,
+    refresh_wait: Option<Timer>,
     /// Why the subscription ended, once it has: later calls fail rather than read on.
     terminated: Option<String>,
     /// Notices the current stream going silent.
@@ -164,6 +168,10 @@ impl Sdk {
     /// sides match against the same contract version; those updates are not reported unless
     /// `filters` asks for them. Following takes one of the request's filters, so with document
     /// filters at most `MAX_FILTERS - 1` filters may be given.
+    ///
+    /// Without a `from_block_height`, a subscription with document filters starts just after
+    /// the height its contracts were proved at, usually a block or two before the tip, so that
+    /// an update of one committed while subscribing is still followed.
     pub async fn subscribe_to_state_transitions(
         &self,
         mut filters: Vec<StateTransitionFilter>,
@@ -185,11 +193,19 @@ impl Sdk {
             )));
         }
         let mut contracts = BTreeMap::new();
+        // The lowest height the contracts were proved at: the bindings cover every update up
+        // to it, and the stream must carry those after it.
+        let mut bound_at: Option<u64> = None;
         for data_contract_id in &data_contract_ids {
-            if let Some(contract) = DataContract::fetch(self, *data_contract_id).await? {
+            let (contract, metadata) =
+                DataContract::fetch_with_metadata(self, *data_contract_id, None).await?;
+            if let Some(contract) = contract {
                 contracts.insert(*data_contract_id, Arc::new(contract));
             }
+            bound_at = Some(bound_at.map_or(metadata.height, |height| height.min(metadata.height)));
         }
+        let from_block_height =
+            from_block_height.or_else(|| bound_at.map(|height| height.saturating_add(1)));
         if !data_contract_ids.is_empty() {
             filters.push(StateTransitionFilter::DataContracts {
                 data_contract_ids: data_contract_ids.into_iter().collect(),
@@ -222,6 +238,8 @@ impl Sdk {
             consecutive_failures: 0,
             retry: None,
             contracts_to_refresh: BTreeMap::new(),
+            stale_reads: 0,
+            refresh_wait: None,
             terminated: None,
             idle: IdleWatch::default(),
         };
@@ -418,7 +436,6 @@ impl StateTransitionSubscription {
     /// stream; the read is retried, and fails (to be retried by the caller) if it stays behind.
     /// A contract that can no longer be read ends the subscription.
     async fn refresh_contracts(&mut self) -> Result<(), Error> {
-        let mut stale_reads = 0;
         // An id leaves the queue only once rebound, so a cancelled or failed refresh is retried.
         while let Some((&data_contract_id, &updated_version)) =
             self.contracts_to_refresh.first_key_value()
@@ -431,6 +448,10 @@ impl StateTransitionSubscription {
                 self.contracts_to_refresh.remove(&data_contract_id);
                 continue;
             }
+            if let Some(wait) = self.refresh_wait.as_mut() {
+                wait.await;
+                self.refresh_wait = None;
+            }
             let contract = DataContract::fetch(&self.sdk, data_contract_id)
                 .await?
                 .ok_or_else(|| {
@@ -442,8 +463,10 @@ impl StateTransitionSubscription {
             if contract.version() < updated_version {
                 // Never bind a version older than the update the stream has passed: matching
                 // under the old schema could drop events the node matched under the new one.
-                stale_reads += 1;
-                if stale_reads >= MAX_CONSECUTIVE_FAILURES {
+                self.stale_reads += 1;
+                self.refresh_wait = Some(Box::pin(sleep(FIRST_RETRY_DELAY)));
+                if self.stale_reads >= MAX_CONSECUTIVE_FAILURES {
+                    self.stale_reads = 0;
                     return Err(Error::Generic(format!(
                         "data contract {data_contract_id} read with a proof is still at version \
                          {}, before the update to version {updated_version} the stream passed; \
@@ -451,9 +474,9 @@ impl StateTransitionSubscription {
                         contract.version()
                     )));
                 }
-                sleep(FIRST_RETRY_DELAY).await;
                 continue;
             }
+            self.stale_reads = 0;
             self.resolved
                 .rebind_data_contract(Arc::new(contract), self.sdk.version());
             self.contracts_to_refresh.remove(&data_contract_id);
@@ -640,6 +663,8 @@ mod tests {
             consecutive_failures: 0,
             retry: None,
             contracts_to_refresh: BTreeMap::new(),
+            stale_reads: 0,
+            refresh_wait: None,
             terminated: None,
             idle: IdleWatch::default(),
         }
@@ -1019,6 +1044,36 @@ mod tests {
             ..subscription()
         };
         (subscription, [version(2), version(3)])
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_the_stale_refresh_pacing_and_budget_across_cancelled_calls() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        let (mut subscription, [lagging, _]) = subscription_on_contract();
+        let id = lagging.id();
+        subscription.contracts_to_refresh.insert(id, 3);
+        subscription
+            .sdk
+            .mock()
+            .expect_fetch(id, Some((*lagging).clone()))
+            .await
+            .expect("expectation");
+        // A caller cancelling every 400ms still waits a second between stale reads, and still
+        // gets the error after five of them.
+        let started = tokio::time::Instant::now();
+        let mut calls = 0;
+        let error = loop {
+            calls += 1;
+            assert!(calls <= 20, "the stale-read budget was never exhausted");
+            if let Ok(outcome) =
+                timeout(Duration::from_millis(400), subscription.refresh_contracts()).await
+            {
+                break outcome.expect_err("still stale");
+            }
+        };
+        assert!(error.to_string().contains("try again"), "{error}");
+        assert!(started.elapsed() >= FIRST_RETRY_DELAY * (MAX_CONSECUTIVE_FAILURES - 1));
+        assert_eq!(subscription.contracts_to_refresh.get(&id), Some(&3));
     }
 
     fn bound_version(subscription: &StateTransitionSubscription, id: Identifier) -> u32 {

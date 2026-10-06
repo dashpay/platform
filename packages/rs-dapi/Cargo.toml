@@ -104,6 +104,9 @@ test-case = "3.3.1"
 prost-types = "0.14"
 # Paused time in the subscription stream tests.
 tokio = { version = "1.47.0", features = ["full", "test-util"] }
+# Document filter clauses in the subscription stream tests; the same build of Drive that
+# dash-platform-queries already pulls in.
+drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 
 [package.metadata.cargo-machete]
 ignored = ["rs-dash-event-bus"]
