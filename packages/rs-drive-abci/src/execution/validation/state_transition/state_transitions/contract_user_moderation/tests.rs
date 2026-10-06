@@ -79,6 +79,7 @@ mod derived_index_properties;
 mod moderated_document_reference;
 mod moderator_fields;
 mod preallocated_through_moderated_reference;
+mod retraction;
 mod seated_team;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;

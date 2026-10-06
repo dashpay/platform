@@ -164,3 +164,258 @@ impl Drive {
         Ok((rewards, paid_through))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+
+    /// The epoch the distribution counts its cycles from.
+    const DISTRIBUTION_START: EpochIndex = 0;
+
+    /// Epochs in one cycle of the distribution claimed below. More than one, so that the cycle a
+    /// claim pays through is not simply the last epoch it read, and not a divisor of the read
+    /// limit, so that the limit falls inside a cycle rather than on its boundary.
+    const INTERVAL: EpochIndex = 3;
+
+    /// Blocks produced in each finalized epoch, and how many of them the claimant proposed. Its
+    /// share of a whole cycle is therefore nine blocks of twelve; the rest go to another evonode,
+    /// so a claim that counted every proposer's blocks as the claimant's would pay visibly more.
+    const BLOCKS_PER_EPOCH: u64 = 4;
+    const BLOCKS_PROPOSED_BY_CLAIMANT: u64 = 3;
+
+    /// The distribution emits this much in each cycle up to cycle 33, and this much from cycle
+    /// 34, so that the amount a claim pays says which cycles it paid and not merely how many.
+    const EMISSION_UP_TO_CYCLE_33: TokenAmount = 400;
+    const EMISSION_FROM_CYCLE_34: TokenAmount = 1_200;
+
+    /// What one cycle pays the claimant on either side of that boundary: the cycle's emission at
+    /// nine blocks of twelve, three quarters, which divides exactly for both emissions.
+    const PAID_PER_CYCLE_UP_TO_33: TokenAmount = 300;
+    const PAID_PER_CYCLE_FROM_34: TokenAmount = 900;
+
+    /// What the fifty cycles spanning epochs 1 to 150 pay the claimant in all: thirty-three
+    /// cycles at 300 and seventeen at 900. A single claim would pay this if it could read every
+    /// epoch at once, so a claim split in two must still add up to it.
+    const PAID_OVER_EPOCHS_1_TO_150: TokenAmount = 25_200;
+
+    fn claimant() -> Identifier {
+        Identifier::from([1; 32])
+    }
+
+    fn other_evonode() -> Identifier {
+        Identifier::from([2; 32])
+    }
+
+    fn distribution() -> RewardDistributionType {
+        RewardDistributionType::EpochBasedDistribution {
+            interval: INTERVAL,
+            function: DistributionFunction::Stepwise(BTreeMap::from([
+                (0, EMISSION_UP_TO_CYCLE_33),
+                (34, EMISSION_FROM_CYCLE_34),
+            ])),
+        }
+    }
+
+    /// Records `BLOCKS_PER_EPOCH` blocks in each of `epochs`, the claimant proposing
+    /// `BLOCKS_PROPOSED_BY_CLAIMANT` of them and another evonode the rest, as the fee
+    /// distribution of the first block of the following epoch does once an epoch is over.
+    fn seed_finalized_epochs(
+        drive: &Drive,
+        epochs: impl IntoIterator<Item = EpochIndex>,
+        platform_version: &PlatformVersion,
+    ) {
+        let transaction = drive.grove.start_transaction();
+        for epoch_index in epochs {
+            let finalized_epoch_info: FinalizedEpochInfo = FinalizedEpochInfoV0 {
+                first_block_time: u64::from(epoch_index) * 1_000,
+                first_block_height: u64::from(epoch_index) * BLOCKS_PER_EPOCH,
+                total_blocks_in_epoch: BLOCKS_PER_EPOCH,
+                first_core_block_height: 1,
+                next_epoch_start_core_block_height: 1,
+                total_processing_fees: 0,
+                total_distributed_storage_fees: 0,
+                total_created_storage_fees: 0,
+                core_block_rewards: 0,
+                block_proposers: BTreeMap::from([
+                    (claimant(), BLOCKS_PROPOSED_BY_CLAIMANT),
+                    (
+                        other_evonode(),
+                        BLOCKS_PER_EPOCH - BLOCKS_PROPOSED_BY_CLAIMANT,
+                    ),
+                ]),
+                fee_multiplier_permille: 1_000,
+                protocol_version: platform_version.protocol_version,
+            }
+            .into();
+            let operation = drive
+                .add_epoch_final_info_operation(
+                    &Epoch::new(epoch_index).expect("expected a valid epoch"),
+                    finalized_epoch_info,
+                    platform_version,
+                )
+                .expect("expected a finalized epoch info operation");
+            drive
+                .grove_apply_operation(
+                    operation,
+                    false,
+                    Some(&transaction),
+                    &platform_version.drive,
+                )
+                .expect("expected to store the finalized epoch info");
+        }
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the finalized epoch infos");
+    }
+
+    /// Claims through the dispatcher, so that the version tables choose the generation the same
+    /// way a block does, and panics if the claim fails rather than reporting what it paid.
+    fn claim(
+        drive: &Drive,
+        last_paid_epoch: EpochIndex,
+        max_cycle_epoch: EpochIndex,
+        platform_version: &PlatformVersion,
+    ) -> (TokenAmount, RewardDistributionMoment) {
+        // The claim runs while the cycle after the capped one is still going, as a real claim
+        // does: the cap is the last completed cycle moment.
+        let block_info = BlockInfo {
+            epoch: Epoch::new(max_cycle_epoch + INTERVAL).expect("expected a valid epoch"),
+            ..Default::default()
+        };
+        drive
+            .evonode_participation_rewards(
+                claimant(),
+                &distribution(),
+                RewardDistributionMoment::EpochBasedMoment(DISTRIBUTION_START),
+                last_paid_epoch,
+                RewardDistributionMoment::EpochBasedMoment(max_cycle_epoch),
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected the claim to compute its rewards")
+    }
+
+    /// The epochs seeded below and the cycles they fall in are laid out around the read limit, so
+    /// a change to the limit must be reflected here rather than quietly moving what is covered.
+    fn assert_scenario_matches_read_limit(platform_version: &PlatformVersion) {
+        assert_eq!(
+            platform_version
+                .system_limits
+                .max_evonode_reward_claim_epochs,
+            100,
+            "the seeded epochs and cycle boundaries are chosen around a read limit of 100"
+        );
+    }
+
+    /// A claim reaching further back than the read limit allows pays through the last whole cycle
+    /// inside the epochs it read, and reports that cycle as the moment it paid through. Reporting
+    /// the cap instead would drop the cycles the claim never weighed; reporting no advance at all
+    /// would leave the claim unrepeatable, which is how an evonode lost the token for good.
+    #[test]
+    fn should_pay_through_the_last_whole_cycle_read_when_a_claim_outruns_the_read_limit() {
+        let platform_version = PlatformVersion::latest();
+        assert_scenario_matches_read_limit(platform_version);
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        seed_finalized_epochs(&drive, 1..=150, platform_version);
+
+        let (rewards, paid_through) = claim(&drive, 0, 150, platform_version);
+
+        // The read stops at the hundredth epoch after the last paid one, epoch 100, which sits
+        // inside the cycle spanning epochs 100 to 102. The last cycle read whole is therefore
+        // cycle 33, ending at epoch 99, well short of the cap at epoch 150.
+        assert_eq!(
+            paid_through,
+            RewardDistributionMoment::EpochBasedMoment(99),
+            "a capped claim pays through the last whole cycle it read, not the cap it was given"
+        );
+        // Cycles 1 to 33, each paying the claimant three quarters of its 400 emission.
+        assert_eq!(rewards, 33 * PAID_PER_CYCLE_UP_TO_33);
+    }
+
+    /// The moment a capped claim reports is where the next claim starts, and the two together pay
+    /// exactly what one claim over the whole range would have: the seam neither pays a cycle
+    /// twice nor skips one, and a third claim finds the range exhausted.
+    #[test]
+    fn should_continue_a_capped_claim_from_the_moment_the_previous_one_paid_through() {
+        let platform_version = PlatformVersion::latest();
+        assert_scenario_matches_read_limit(platform_version);
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        seed_finalized_epochs(&drive, 1..=150, platform_version);
+
+        let (first_rewards, first_paid_through) = claim(&drive, 0, 150, platform_version);
+        assert_eq!(
+            first_paid_through,
+            RewardDistributionMoment::EpochBasedMoment(99)
+        );
+        assert_eq!(first_rewards, 33 * PAID_PER_CYCLE_UP_TO_33);
+
+        let RewardDistributionMoment::EpochBasedMoment(continue_from) = first_paid_through else {
+            panic!("an epoch based distribution pays through an epoch based moment");
+        };
+        let (second_rewards, second_paid_through) =
+            claim(&drive, continue_from, 150, platform_version);
+
+        // Continuing from epoch 99 the read covers epochs 100 to 150, whose last whole cycle ends
+        // at the cap: cycles 34 to 50, the seventeen the first claim left, each paying three
+        // quarters of the larger 1,200 emission.
+        assert_eq!(
+            second_paid_through,
+            RewardDistributionMoment::EpochBasedMoment(150)
+        );
+        assert_eq!(second_rewards, 17 * PAID_PER_CYCLE_FROM_34);
+
+        assert_eq!(
+            first_rewards + second_rewards,
+            PAID_OVER_EPOCHS_1_TO_150,
+            "two claims over a capped range must pay what one unbounded claim would have"
+        );
+
+        let (third_rewards, third_paid_through) = claim(&drive, 150, 150, platform_version);
+        assert_eq!(third_rewards, 0, "every cycle is paid once");
+        assert_eq!(
+            third_paid_through,
+            RewardDistributionMoment::EpochBasedMoment(150),
+            "a claim that earns nothing leaves the last paid moment where it was"
+        );
+    }
+
+    /// An epoch whose finalized info the fee distribution has not written yet ends the epochs a
+    /// claim can read. A cycle reaching into it is left whole for a later claim, rather than paid
+    /// early on the epochs of it that are finalized, or failing the claim.
+    #[test]
+    fn should_leave_a_cycle_reaching_an_epoch_not_finalized_yet_to_a_later_claim() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        // Epochs 1 to 8 are finalized and epoch 9 is not, so the cycle spanning epochs 7 to 9 is
+        // the first the claim cannot weigh, while the cap allows it.
+        seed_finalized_epochs(&drive, 1..=8, platform_version);
+
+        let (rewards, paid_through) = claim(&drive, 0, 9, platform_version);
+
+        // Cycles 1 and 2 span epochs 1 to 6, the epochs before the unfinished cycle.
+        assert_eq!(
+            paid_through,
+            RewardDistributionMoment::EpochBasedMoment(6),
+            "a cycle reaching an epoch without finalized info is not paid through"
+        );
+        assert_eq!(rewards, 2 * PAID_PER_CYCLE_UP_TO_33);
+
+        // Once that epoch is finalized the cycle is paid whole, from where the claim stopped.
+        seed_finalized_epochs(&drive, 9..=9, platform_version);
+        let (later_rewards, later_paid_through) = claim(&drive, 6, 9, platform_version);
+
+        assert_eq!(
+            later_paid_through,
+            RewardDistributionMoment::EpochBasedMoment(9)
+        );
+        assert_eq!(later_rewards, PAID_PER_CYCLE_UP_TO_33);
+    }
+}

@@ -2,11 +2,11 @@ use crate::version::system_limits::SystemLimits;
 
 /// System limits for protocol version 14 and above. Relative to the last
 /// released table (V3) this changes the withdrawal limit, adds the
-/// time-range overlap-factor cap, adds the time-range TTL pair, and raises
-/// the GroveDB proof envelope floor (the TTL and floor fields joined this
-/// table in place while protocol version 14 was unreleased, rather than
-/// spawning a new version). The table stays editable in place until 4.2
-/// (protocol version 14) is live on mainnet, and is frozen after:
+/// time-range overlap-factor cap and adds the time-range TTL pair (the TTL
+/// fields joined this table in place while protocol version 14 was
+/// unreleased, rather than spawning a new version). The table stays editable
+/// in place until 4.2 (protocol version 14) is live on mainnet, and is frozen
+/// after:
 ///
 /// * `max_time_range_ttl_seconds` is set to one week: the ceiling on the
 ///   `ttl` a `timeRange` index transform may declare. The cap is what makes
@@ -42,9 +42,6 @@ use crate::version::system_limits::SystemLimits;
 ///   duffs for P2PKH) is marked FAILED by `rebroadcast_expired_withdrawal_documents` v2
 ///   instead of being re-signed every 48 Core blocks forever. Withdrawals admitted before
 ///   v12's 1000-duff floor can carry such amounts on live networks.
-/// * `minimum_grovedb_proof_envelope_version` becomes 1: clients verifying with v14 reject
-///   the legacy GroveDB V0 proof envelope, whose item binding leaves returned item bytes
-///   unauthenticated. Every live network has emitted V1 envelopes since v13.
 /// * Core withdrawal fee rates are capped at 6,765 duffs per byte.
 /// * Contract groups (protocol version 14): a data contract create transition may declare at
 ///   most 16 contract group memberships, a contract group may name at most 16 admins besides
@@ -105,6 +102,10 @@ use crate::version::system_limits::SystemLimits;
 ///   ±2^27 (`max_contested_summed_value_magnitude`), so awarding a contest cannot take a sum
 ///   out of `i64`. It joined this table in place while protocol version 14 was unreleased.
 ///   `None` in the earlier tables, whose parsers never read it.
+/// * Token pool notes threshold (protocol version 14): a token configuration's
+///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
+///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
+///   configuration able to carry it.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -161,6 +162,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),
@@ -168,6 +170,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_ttl_seconds: Some(31_536_000), // document ttl (new in v14): one year of 365 days
     max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
-    minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
 };

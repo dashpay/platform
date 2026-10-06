@@ -142,6 +142,9 @@ pub struct DriveAbciBlockEndMethodVersions {
     /// Deletes documents whose type declares a `ttl` once it has passed, after the block's
     /// state transitions. `None` before protocol version 14, where the keyword does not parse.
     pub expire_documents: OptionalFeatureVersion,
+    /// Records the anchor of every token shielded pool a block touched and prunes that
+    /// pool's anchors older than the retention window. `None` before token pools exist.
+    pub record_token_shielded_pool_anchors: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -241,6 +241,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.entry_payload
     }
 
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        self.documents_deleted_only_when_consumed
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         self.documents_can_be_deleted_by_moderators
     }
@@ -275,6 +279,7 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn documents_can_disappear(&self) -> bool {
         self.documents_can_be_deleted
+            || self.documents_deleted_only_when_consumed
             || self.documents_can_be_deleted_by_moderators
             || self.documents_ttl_seconds.is_some()
     }
@@ -283,6 +288,7 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         if !self.documents_can_disappear() {
             DocumentReferenceKind::Permanent
         } else if !self.documents_can_be_deleted
+            && !self.documents_deleted_only_when_consumed
             && self.documents_ttl_seconds.is_none()
             && self.documents_can_be_deleted_by_moderators
             && self.moderator_deletions_keep_records
@@ -307,6 +313,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
         &self.immutable_field_conditions
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        self.retracted_when.as_ref()
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {

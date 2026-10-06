@@ -15,4 +15,16 @@ pub struct DPPMethodVersions {
     /// balance now and at the window start (`SystemLimits::core_credit_pool_unlock_limit_percent`
     /// and `core_credit_pool_unlock_limit_floor`). Exists from protocol version 14.
     pub core_credit_pool_unlock_limit: OptionalFeatureVersion,
+    /// The preimage the outputs-only bundles of the credit pool (`Shield`, `ShieldFromIdentity`,
+    /// `ShieldFromAssetLock`) bind into their Orchard sighash. `None` on versions that predate the
+    /// binding: they bind nothing, which is what every shipped verifier expects. `Some(0)`: they
+    /// bind `kind tag (1) || owner (32)`.
+    ///
+    /// The client builders and the consensus sites protocol version 14 selects read this one field
+    /// through the same helpers, so a client building for a protocol version produces the preimage
+    /// that version's verifier rebuilds. `validate_shielded_proof` v0 and the
+    /// `ShieldFromAssetLock` transform v0 rebuild an empty preimage without reading it;
+    /// `credit_pool_bundle_binding_should_agree_with_the_selected_shield_verifiers_at_every_protocol_version`
+    /// holds them and this field together.
+    pub credit_pool_bundle_binding: OptionalFeatureVersion,
 }

@@ -56,6 +56,10 @@ pub(crate) mod property_names {
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    /// The `canBeDeleted` value saying a document leaves state only when a
+    /// `refersTo` with `consume` deletes it, never by its owner's delete.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const CAN_BE_DELETED_ONLY_WHEN_CONSUMED: &str = "onlyWhenConsumed";
     pub const TRANSFERABLE: &str = "transferable";
     pub const TRADE_MODE: &str = "tradeMode";
 
@@ -79,6 +83,12 @@ pub(crate) mod property_names {
     /// v3+ (protocol version 14). See `apply_immutable_fields` in
     /// `try_from_schema::common` for the structural rules.
     pub const IMMUTABLE: &str = "immutable";
+    /// Doctype-level condition, in the grammar of an [`IMMUTABLE`] entry's
+    /// `when`, under which a replace writes a retracted document: the one
+    /// replace a banned or suspended owner may still make on a moderated
+    /// contract. Meta-schema v3+ (protocol version 14). See
+    /// `apply_retracted_when` in `try_from_schema::common`.
+    pub const RETRACTED_WHEN: &str = "retractedWhen";
     /// Doctype-level object declaring a fixed fee in credits for actions on documents of
     /// the type, split between the contract's owner pot and its moderators pot. Meta-schema
     /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
@@ -300,9 +310,11 @@ pub(crate) mod property_names {
         pub const DELETE_REFUNDS_OWNER: &str = "deleteRefundsOwner";
         /// Who must approve a moderator's deletion of a document once it is settled, past
         /// `deleteWithin`: an object with `leader` (whether the seated team's leader must be
-        /// among the approvals, default `false`) and `approvals` (how many members of the team
-        /// must approve, the leader counted, default 1). See [`delete_settled`] for the keys.
-        /// Needs `deleteWithin` and a contract whose moderators are an elected team.
+        /// among the approvals, default `false`), `approvals` (how many members of the team
+        /// must approve, the leader counted, default 1) and `approversPredateDocument` (whether
+        /// a member the leader added approves only when added before the document was created,
+        /// default `true` when more than one approval is needed). See [`delete_settled`] for
+        /// the keys. Needs `deleteWithin` and a contract whose moderators are an elected team.
         pub const DELETE_SETTLED: &str = "deleteSettled";
         /// The property paths whose values a moderator's removal record keeps, copied from
         /// the document as it was deleted: what of it stays public once it is gone (the
@@ -321,6 +333,11 @@ pub(crate) mod property_names {
             pub const LEADER: &str = "leader";
             /// How many members of the seated team must approve, the leader counted.
             pub const APPROVALS: &str = "approvals";
+            /// Whether a member the leader added approves only when its addition was made
+            /// before the document was created. Default `true` when `approvals` is above 1,
+            /// `false` otherwise; needs `$createdAt` in the type's `required` at registration
+            /// while on.
+            pub const APPROVERS_PREDATE_DOCUMENT: &str = "approversPredateDocument";
         }
     }
     /// Doctype-level time to live, in seconds: the platform deletes each document of the

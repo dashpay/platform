@@ -43,6 +43,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // contenders and again for every `contested_document_contenders_per_fund_doubling` (50) more
 // (DocumentContestNotPaidForError), and charges one stating more only that fund. Structure
 // validation 1 leaves the amount to it where 0 wanted exactly the contest's fund.
+// Shield and shield from asset lock transform_into_action 1 refuse an action
+// nullifier repeated inside the bundle or already recorded in state
+// (NullifierAlreadySpentError), the same check the spends run.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -243,6 +246,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
+                // Otherwise, a batch carrying shielded pool bundles has to hold the compute
+                // fee they will be charged on top of the flat per-sub-transition minimum,
+                // which is orders of magnitude smaller than one bundle verification.
                 identity_minimum_balance_pre_check: 1,
                 document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index, leaves its amount to state validation, and refuses a `distinctFrom` identifier property equal to the value it must differ from
                 // Reject deletes on legacy keep-history types as paid consensus errors.
@@ -253,7 +259,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_update_price_transition_structure_validation: 0,
-                document_base_transition_state_validation: 0,
+                document_base_transition_state_validation: 1, // changed: a document token cost may be paid from the token shielded pool
                 document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
@@ -287,6 +293,20 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_direct_purchase_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
+                token_shield_transition_structure_validation: 0,
+                token_shield_transition_state_validation: 0,
+                token_mint_to_pool_transition_structure_validation: 0,
+                token_mint_to_pool_transition_state_validation: 0,
+                token_burn_from_pool_transition_structure_validation: 0,
+                token_burn_from_pool_transition_state_validation: 0,
+                token_claim_to_pool_transition_structure_validation: 0,
+                token_claim_to_pool_transition_state_validation: 0,
+                token_direct_purchase_to_pool_transition_structure_validation: 0,
+                token_direct_purchase_to_pool_transition_state_validation: 0,
+                token_unshield_transition_structure_validation: 0,
+                token_unshield_transition_state_validation: 0,
+                token_shielded_transfer_transition_structure_validation: 0,
+                token_shielded_transfer_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
@@ -336,7 +356,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: nullifier checks
             },
             shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -360,7 +380,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from, and the nullifiers its actions reveal are checked against the bundle and the state and then recorded
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -388,6 +408,33 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             identity_top_up_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_shielded_transfer_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_unshield_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_purchase_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: None,
@@ -447,6 +494,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             // so the storage component alone pays for the database work and
             // the compute fees above stay reserved for compute.
             shielded_storage_bytes_per_action: 550,
+            // Fee admission estimates note/nullifier paths at depth 16 and identity
+            // writes at the maximum-element depth. These effective-byte allowances
+            // cover that estimate and its validation context, including a BLS signature;
+            // they do not change the metered charge or the pool-paid fee formula.
+            shielded_identity_action_write_storage_bytes: 400,
+            shielded_identity_balance_write_storage_bytes: 500,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
             // v13 revises the v8 set: adds 0.03 and 0.25 DASH, retires 0.3 DASH.

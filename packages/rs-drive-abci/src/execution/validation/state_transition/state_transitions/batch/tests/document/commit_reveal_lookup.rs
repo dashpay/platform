@@ -40,7 +40,9 @@ mod commit_reveal_lookup_tests {
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::prelude::{DataContract, IdentityNonce};
+    use dpp::tests::json_document::json_document_to_json_value;
     use dpp::state_transition::StateTransition;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::util::hash::hash_double;
@@ -94,6 +96,11 @@ mod commit_reveal_lookup_tests {
 
     impl CommitRevealFixture {
         fn new() -> Self {
+            Self::new_with(|_| {})
+        }
+
+        /// The fixture with `change` applied to the contract's JSON before it is parsed.
+        fn new_with(change: impl FnOnce(&mut serde_json::Value)) -> Self {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -115,7 +122,10 @@ mod commit_reveal_lookup_tests {
 
             // Parsed with full validation, so the contract-level lookup checks
             // run on the fixture too
-            let contract = json_document_to_contract(CONTRACT_PATH, true, platform_version)
+            let mut contract_json =
+                json_document_to_json_value(CONTRACT_PATH).expect("expected the contract json");
+            change(&mut contract_json);
+            let contract = DataContract::from_json(contract_json, true, platform_version)
                 .expect("expected to parse the contract");
             platform
                 .drive
@@ -311,6 +321,42 @@ mod commit_reveal_lookup_tests {
             self.process(&transition, height)
         }
 
+        /// Deletes `document`, a `type_name` document, as `who`, its owner, in block
+        /// `height`.
+        async fn delete(
+            &mut self,
+            who: Who,
+            type_name: &str,
+            document: &Document,
+            height: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let document_type = self
+                .contract
+                .document_type_for_name(type_name)
+                .expect("expected the document type");
+            let writer = match who {
+                Who::Alice => &mut self.alice,
+                Who::Mallory => &mut self.mallory,
+            };
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            let transition = BatchTransition::new_document_deletion_transition_from_document(
+                document.clone(),
+                document_type,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the delete transition");
+            self.process(&transition, height)
+        }
+
         /// Whether the `preorder` with `id` is in state.
         fn preorder_exists(&self, id: Identifier) -> bool {
             self.document_exists("preorder", id)
@@ -435,6 +481,106 @@ mod commit_reveal_lookup_tests {
             )
             .await;
         assert_no_commitment(result, revealed_key(salt, "al1ce", "dash"));
+    }
+
+    /// `canBeDeleted: "onlyWhenConsumed"` on the commitment: its owner can not take it back
+    /// with a delete, and the reveal still consumes it.
+    #[tokio::test]
+    async fn should_consume_a_commitment_its_owner_can_not_delete() {
+        let mut fixture = CommitRevealFixture::new_with(|contract| {
+            contract["documentSchemas"]["preorder"]["canBeDeleted"] =
+                serde_json::json!("onlyWhenConsumed");
+        });
+        let alice = fixture.id(Who::Alice);
+        let salt = [0x15; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+            .await;
+
+        let result = fixture
+            .delete(Who::Alice, "preorder", &preorder, COMMIT_HEIGHT)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTransitionActionError(_)
+                ),
+                ..
+            }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+
+        let result = fixture
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the reveal to be accepted, got {result:?}");
+        };
+        // Consumed as a delete by its owner would be: gone, its storage refunded to its owner
+        assert!(!fixture.preorder_exists(preorder.id()));
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .is_some_and(|refund| refund > 0),
+            "expected the consumed commitment's storage to be refunded to its owner"
+        );
+    }
+
+    /// The same through a contested create, whose consumed commitments are deleted beside
+    /// the contest's own trees rather than with a plain insert.
+    #[tokio::test]
+    async fn should_consume_a_commitment_its_owner_can_not_delete_through_a_contested_create() {
+        let mut fixture = CommitRevealFixture::new_with(|contract| {
+            contract["documentSchemas"]["preorder"]["canBeDeleted"] =
+                serde_json::json!("onlyWhenConsumed");
+            contract["documentSchemas"]["domain"]["indices"] = serde_json::json!([{
+                "name": "byNormalizedLabel",
+                "properties": [{ "normalizedLabel": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                    ],
+                    "resolution": 0
+                }
+            }]);
+        });
+        let alice = fixture.id(Who::Alice);
+        let salt = [0x16; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+            .await;
+
+        let (domain, result) = fixture
+            .create(
+                Who::Alice,
+                "domain",
+                &subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the contested reveal to be accepted, got {result:?}");
+        };
+        // The domain waits in its contest, not in the type's storage, and the commitment is
+        // consumed, its storage refunded to its owner
+        assert!(!fixture.document_exists("domain", domain.id()));
+        assert!(!fixture.preorder_exists(preorder.id()));
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .is_some_and(|refund| refund > 0),
+            "expected the consumed commitment's storage to be refunded to its owner"
+        );
     }
 
     #[tokio::test]
@@ -873,6 +1019,7 @@ mod commit_reveal_lookup_tests {
             document_type_name: "domain".to_string(),
             data_contract: contract_fetch_info.expect("the contract is in state"),
             token_cost: None,
+            shielded_token_payment: None,
             gas_fees_paid_by: GasFeesPaidBy::default(),
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             declared_action_fee: None,

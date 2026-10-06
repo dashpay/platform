@@ -57,7 +57,7 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_infos_for_identity_id(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             &token_ids,
             identity_id,
             false,
@@ -65,7 +65,7 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
     }
@@ -116,7 +116,7 @@ impl FromProof<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfos {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_token_infos_for_identity_ids(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             token_id,
             &identity_ids,
             false,
@@ -124,7 +124,7 @@ impl FromProof<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfos {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
     }
