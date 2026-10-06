@@ -934,10 +934,14 @@ fn should_rebind_packed_in_candidates_to_a_widened_field() {
 fn should_fail_to_rebind_to_a_newer_version_the_filter_does_not_apply_to() {
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     let contract = contract();
+    // A filter any version serves, ahead of one on a document type.
     let mut filters = resolve(
-        vec![StateTransitionFilter::Documents(
-            DocumentFilter::new(contract.id()).with_document_type("niceDocument"),
-        )],
+        vec![
+            StateTransitionFilter::Documents(DocumentFilter::new(contract.id())),
+            StateTransitionFilter::Documents(
+                DocumentFilter::new(contract.id()).with_document_type("niceDocument"),
+            ),
+        ],
         &contract,
     )
     .unwrap();
@@ -952,9 +956,14 @@ fn should_fail_to_rebind_to_a_newer_version_the_filter_does_not_apply_to() {
         filters.data_contract(contract.id()).unwrap().version(),
         contract.version()
     );
-    // ...but a newer one it should apply to is an error, not a silently stale binding.
+    // ...but a newer one it should apply to is an error, not a silently stale binding, and
+    // leaves every filter on the contract as it was: none moved to the new version alone.
     without_type.set_version(contract.version() + 1);
     assert!(filters
         .rebind_data_contract(Arc::new(without_type), PlatformVersion::latest())
         .is_err());
+    assert_eq!(
+        filters.data_contract(contract.id()).unwrap().version(),
+        contract.version()
+    );
 }

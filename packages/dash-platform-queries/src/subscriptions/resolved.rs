@@ -262,13 +262,15 @@ impl ResolvedFilters {
     /// data contract update the stream has just passed. A filter an older version cannot serve
     /// (one from before its document type or a clause's field existed, met replaying history)
     /// keeps its binding; one a newer version cannot serve is an error, since matching under
-    /// the outdated schema could drop what the node matches.
+    /// the outdated schema could drop what the node matches. Nothing is rebound unless every
+    /// filter that must be can be, so the filters on a contract never mix versions.
     pub fn rebind_data_contract(
         &mut self,
         data_contract: Arc<DataContract>,
         platform_version: &PlatformVersion,
     ) -> Result<(), String> {
-        for filter in &mut self.filters {
+        let mut rebound = Vec::new();
+        for (position, filter) in self.filters.iter().enumerate() {
             let ResolvedFilter::Documents(document_filter) = filter else {
                 continue;
             };
@@ -280,7 +282,7 @@ impl ResolvedFilters {
                 data_contract.clone(),
                 platform_version,
             ) {
-                Ok(rebound) => *document_filter = rebound,
+                Ok(filter) => rebound.push((position, filter)),
                 Err(_) if data_contract.version() <= document_filter.contract.version() => {}
                 Err(error) => {
                     return Err(format!(
@@ -290,6 +292,9 @@ impl ResolvedFilters {
                     ))
                 }
             }
+        }
+        for (position, filter) in rebound {
+            self.filters[position] = ResolvedFilter::Documents(filter);
         }
         Ok(())
     }

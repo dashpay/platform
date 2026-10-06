@@ -424,6 +424,15 @@ impl StateTransitionSubscription {
 
     /// Open a new stream after a break, once the wait after the last failure has passed.
     async fn reopen(&mut self) -> Result<Streaming<SubscribeToStateTransitionsResponse>, Error> {
+        // A live start that broke before its first checkpoint has no height to resume from: a
+        // new live start would begin after a later tip and skip the blocks in between.
+        if self.resume_from.is_none() {
+            return Err(Error::Generic(
+                "the stream broke before its first checkpoint, so it cannot resume without \
+                 missing transitions; subscribe again"
+                    .to_string(),
+            ));
+        }
         loop {
             if let Some(retry) = self.retry.as_mut() {
                 retry.await;
@@ -1264,6 +1273,81 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn should_not_resume_a_live_start_that_broke_before_its_first_checkpoint() {
+        // A live start whose stream broke with no checkpoint yet: no stream is opened (the
+        // mock SDK would refuse it with another error), and the subscription ends.
+        let mut subscription = subscription();
+        assert_eq!(subscription.resume_height(), None);
+        let error = subscription.next().await.expect_err("cannot resume");
+        assert!(
+            error.to_string().contains("before its first checkpoint"),
+            "{error}"
+        );
+        assert!(subscription.terminated.is_some());
+    }
+
+    #[tokio::test]
+    async fn should_keep_refreshing_a_contract_until_every_filter_on_it_rebinds() {
+        use dash_platform_queries::subscriptions::DocumentFilter;
+        use dpp::data_contract::accessors::v0::DataContractV0Setters;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+
+        let (subscription, [lagging, _]) = subscription_on_contract();
+        let id = lagging.id();
+        let bound = subscription
+            .resolved
+            .data_contract(id)
+            .cloned()
+            .expect("bound");
+        // Any version serves the first filter; the second needs `niceDocument`.
+        let filters = vec![
+            StateTransitionFilter::Documents(DocumentFilter::new(id)),
+            StateTransitionFilter::Documents(
+                DocumentFilter::new(id).with_document_type("niceDocument"),
+            ),
+        ];
+        let mut subscription = StateTransitionSubscription {
+            resolved: ResolvedFilters::resolve(
+                filters.clone(),
+                |_| Some(Arc::new(bound.clone())),
+                PlatformVersion::latest(),
+            )
+            .expect("filters resolve"),
+            filters,
+            ..subscription
+        };
+        // A proved version 2 without `niceDocument`.
+        let documents = platform_value!({
+            "other": {
+                "type": "object",
+                "properties": { "name": { "type": "string", "position": 0 } },
+                "additionalProperties": false
+            }
+        });
+        let mut without_type = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+            .expect("the contract parses")
+            .data_contract_owned();
+        without_type.set_id(id);
+        without_type.set_version(2);
+        subscription.contracts_to_refresh.insert(id, 2);
+        subscription
+            .sdk
+            .mock()
+            .expect_fetch(id, Some(without_type))
+            .await
+            .expect("expectation");
+        // Neither attempt takes a half-rebound contract for a completed refresh.
+        for _ in 0..2 {
+            assert!(subscription.refresh_contracts().await.is_err());
+            assert_eq!(bound_version(&subscription, id), 1);
+            assert_eq!(subscription.contracts_to_refresh.get(&id), Some(&2));
+        }
+    }
+
     fn bound_version(subscription: &StateTransitionSubscription, id: Identifier) -> u32 {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         subscription
@@ -1490,6 +1574,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn should_keep_the_reconnect_wait_across_cancelled_calls() {
         let mut subscription = subscription();
+        subscription.resume_from = Some(42);
         // A stream just failed: the next one opens after a second.
         subscription.consecutive_failures = 1;
         subscription.back_off();
