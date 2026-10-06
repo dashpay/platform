@@ -82,6 +82,9 @@ pub enum StateTransitionProofResult {
         Option<TokenPricingSchedule>,
     ),
     VerifiedMasternodeVote(Vote),
+    // Both variants carry a Vote. Keep the type conversion specific to a masternode vote;
+    // callers extracting a next distribution must match its variant explicitly.
+    #[try_into(ignore)]
     VerifiedNextDistribution(Vote),
     VerifiedAddressInfos(
         #[cfg_attr(
@@ -387,6 +390,28 @@ impl JsonConvertible for StateTransitionProofResult {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl ValueConvertible for StateTransitionProofResult {}
+
+#[cfg(test)]
+mod conversion_tests {
+    use super::{StateTransitionProofResult, Vote};
+
+    #[test]
+    fn should_refuse_a_next_distribution_result_as_a_masternode_vote() {
+        let vote = Vote::default();
+        let masternode_vote = StateTransitionProofResult::VerifiedMasternodeVote(vote.clone());
+        let converted: Vote = masternode_vote
+            .try_into()
+            .expect("masternode vote converts");
+        assert_eq!(converted, vote);
+
+        let distribution = StateTransitionProofResult::VerifiedNextDistribution(vote);
+        let converted: Result<Vote, _> = distribution.try_into();
+        assert!(
+            converted.is_err(),
+            "a distribution result must not pass for a masternode vote"
+        );
+    }
+}
 
 #[cfg(all(
     test,
