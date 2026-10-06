@@ -6,14 +6,17 @@
 //! Every test drives `sync_notes_from_source` with a hand-fed stream, so a
 //! pass can be held "mid-download" for as long as the test needs.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
+use dash_sdk::platform::shielded::notes_sync::types::{DecryptedNote, ShieldedChunkBatch};
 use drive_proof_verifier::types::ShieldedEncryptedNote;
 use futures::channel::mpsc;
 use futures::StreamExt;
-use grovedb_commitment_tree::ExtractedNoteCommitment;
+use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
@@ -22,7 +25,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::shielded::coordinator::ShieldedTreeProgressCallback;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::OrchardKeySet;
-use crate::wallet::shielded::store::{ShieldedStore, SubwalletId};
+use crate::wallet::shielded::store::{ShieldedNote, ShieldedStore, SubwalletId};
 
 /// How long the fake network withholds the next batch.
 const STREAM_STALL: Duration = Duration::from_millis(1500);
@@ -213,47 +216,75 @@ async fn should_bound_store_lock_hold_while_appending_a_large_batch() {
     let (store, epoch, _tree) = open_store("append_slices");
     let (tx, mut progress, pass) = start_pass(&store, &epoch);
 
-    let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // The prober queues for the store lock back to back from its own OS
+    // thread, so it is always holding the lock or waiting for it, whatever
+    // the async scheduler does. tokio's RwLock is fair: a prober waiting
+    // while the pass holds one slice's lock gets it before the pass's next
+    // slice, and records the partly appended tree it sees there.
+    let done = StopOnDrop(Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let prober = {
         let store = Arc::clone(&store);
-        let done = Arc::clone(&done);
-        tokio::spawn(async move {
-            let mut waits = Vec::new();
+        let done = Arc::clone(&done.0);
+        std::thread::spawn(move || {
+            let mut ready = Some(ready_tx);
+            let mut probes = Vec::new();
             while !done.load(std::sync::atomic::Ordering::Acquire) {
                 let started = Instant::now();
-                let guard = store.write().await;
-                waits.push(started.elapsed());
+                let guard = store.blocking_write();
+                probes.push((started.elapsed(), guard.tree_size().unwrap()));
                 drop(guard);
-                tokio::time::sleep(Duration::from_millis(1)).await;
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
             }
-            waits
+            probes
         })
     };
+    ready_rx.recv().unwrap();
 
     let batch_started = Instant::now();
     tx.unbounded_send(Ok(batch(0, 4 * 2048))).unwrap();
     assert_eq!(progress.next().await, Some(4 * 2048));
     let batch_elapsed = batch_started.elapsed();
-    done.store(true, std::sync::atomic::Ordering::Release);
+    drop(done);
     drop(tx);
     expect_completed(pass.await.unwrap().unwrap());
 
-    let waits = prober.await.unwrap();
-    let mut sorted = waits.clone();
-    sorted.sort();
-    let median = sorted.get(sorted.len() / 2).copied().unwrap_or_default();
-    let max_wait = sorted.last().copied().unwrap_or_default();
-    eprintln!(
-        "8192-leaf batch ingested in {batch_elapsed:?}; {} concurrent lock probes, \
-         median wait {median:?}, max wait {max_wait:?}",
-        sorted.len()
-    );
-    // The batch spans 32 append slices; a lock hold per batch (or per
-    // handful of slices) would show up as a wait near the whole batch.
+    let probes = prober.join().unwrap();
+    let mid_ingest: BTreeSet<u64> = probes
+        .iter()
+        .map(|(_, size)| *size)
+        .filter(|size| (1..4 * 2048).contains(size))
+        .collect();
+    // The batch spans 32 append slices. A hold per batch would leave the
+    // tree empty or full at every probe; a hold per handful of slices would
+    // show only a few distinct sizes.
     assert!(
-        max_wait < batch_elapsed / 3,
+        mid_ingest.len() >= 8,
+        "probes saw only {mid_ingest:?} mid-ingest: {probes:?}"
+    );
+    let max_wait = probes.iter().map(|(wait, _)| *wait).max().unwrap();
+    eprintln!(
+        "8192-leaf batch ingested in {batch_elapsed:?}; {} lock probes, {} distinct \
+         mid-ingest sizes, max wait {max_wait:?}",
+        probes.len(),
+        mid_ingest.len()
+    );
+    assert!(
+        max_wait < batch_elapsed / 2,
         "a probe waited {max_wait:?} of a {batch_elapsed:?} batch ingest"
     );
+}
+
+/// Stops the prober thread when dropped, so a failed assertion doesn't
+/// leave it contending for the store under later tests.
+struct StopOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
 }
 
 /// Appends a pass makes between lock holds are invisible to a send: the
@@ -489,5 +520,93 @@ async fn should_checkpoint_leaves_left_by_a_superseded_pass_on_retry() {
     assert!(
         guard.witness_at_depth(0, 1).unwrap().is_none(),
         "an unchanged tree must not gain a second checkpoint"
+    );
+}
+
+/// A real Orchard note to `keys`' default address, plus its nullifier.
+fn owned_note(keys: &OrchardKeySet, value: u64) -> (Note, [u8; 32]) {
+    let mut rng = OsRng;
+    let rho = loop {
+        let mut b = [0u8; 32];
+        rng.fill_bytes(&mut b);
+        if let Some(rho) = Rho::from_bytes(&b).into_option() {
+            break rho;
+        }
+    };
+    let rseed = loop {
+        let mut b = [0u8; 32];
+        rng.fill_bytes(&mut b);
+        if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+            break rseed;
+        }
+    };
+    let note = Note::from_parts(keys.address_at(0), NoteValue::from_raw(value), rho, rseed)
+        .into_option()
+        .expect("valid note parts");
+    let nullifier = note.nullifier(&keys.full_viewing_key).to_bytes();
+    (note, nullifier)
+}
+
+/// A send can confirm a note spent while a pass is downloading. When the
+/// pass re-scans that note (here: a restored notes-only snapshot left the
+/// watermark at 0) from scan data older than the spend, committing the
+/// receipt must keep it spent, not resurrect it as selectable balance.
+#[tokio::test]
+async fn should_keep_a_spend_confirmed_mid_download_when_rescanning_its_note() {
+    let (store, epoch, _tree) = open_store("rescan_spent");
+    let keys = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 0).unwrap();
+    let (note, nullifier) = owned_note(&keys, 1_000);
+    let position = 5;
+    let note_cmx = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
+    store
+        .write()
+        .await
+        .save_note(
+            subwallet(),
+            &ShieldedNote {
+                note_data: super::serialize_note(&note),
+                position,
+                cmx: note_cmx,
+                nullifier,
+                block_height: 7,
+                is_spent: false,
+                value: 1_000,
+            },
+        )
+        .unwrap();
+
+    let (tx, mut progress, pass) = start_pass(&store, &epoch);
+    let mut scanned = batch(0, 2048);
+    scanned.decrypted.push(DecryptedNote {
+        position,
+        note,
+        address: keys.address_at(0),
+        nullifier,
+        cmx: note_cmx,
+    });
+    tx.unbounded_send(Ok(scanned)).unwrap();
+    assert_eq!(progress.next().await, Some(2048));
+
+    {
+        // The send's reservation and its confirmation (`mark_notes_spent`).
+        let mut guard = store.write().await;
+        guard.mark_pending(subwallet(), &nullifier).unwrap();
+        assert!(guard.mark_spent(subwallet(), &nullifier).unwrap());
+    }
+    drop(tx);
+    let result = expect_completed(pass.await.unwrap().unwrap());
+
+    let guard = store.read().await;
+    let stored = guard.get_all_notes(subwallet()).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert!(stored[0].is_spent, "the confirmed spend was overwritten");
+    assert!(guard.get_unspent_notes(subwallet()).unwrap().is_empty());
+    assert_eq!(guard.spendable_balance(subwallet()).unwrap(), 0);
+    let emitted = &result.changeset.notes_saved[&subwallet()];
+    assert!(
+        emitted
+            .iter()
+            .all(|n| n.nullifier != nullifier || n.is_spent),
+        "the changeset must not persist an unspent replacement"
     );
 }
