@@ -359,6 +359,10 @@ impl Drive {
     /// key is the inserted document's `$id`, inserted once and never
     /// restored. An estimation call registers the counter's layer and prices
     /// the existence read either way, so it bounds every stateful write.
+    /// `pending_operations` are the operations the document's insert already
+    /// queued: two bindings of one index can resolve the same counter (their
+    /// `where` agreements meeting at one path), and a counter an earlier
+    /// binding queued is neither read nor queued again, estimated or not.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_summable_off_count_zero_counter_operations(
         &self,
@@ -367,6 +371,7 @@ impl Drive {
         counter_tree_type: TreeType,
         cannot_exist: bool,
         storage_flags: Option<&StorageFlags>,
+        pending_operations: &[LowLevelDriveOperation],
         estimated_key_size: impl FnOnce() -> Result<u16, Error>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -377,6 +382,20 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
         let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
+        let mut zero_counter = Vec::with_capacity(1);
+        self.batch_insert(
+            PathKeyElementInfo::from_path_info_and_key_element(
+                counter_path_info.clone(),
+                zero_counter_key_element(&counter_key, element_flags.clone()),
+            )?,
+            &mut zero_counter,
+            drive_version,
+        )?;
+        if pending_grove_operations(&zero_counter).any(|counter| {
+            pending_grove_operations(pending_operations).any(|queued| queued == counter)
+        }) {
+            return Ok(());
+        }
         let estimating = estimated_costs_only_with_layer_info.is_some();
         if let Some(layers) = estimated_costs_only_with_layer_info.as_mut() {
             insert_summable_off_count_counter_layer(

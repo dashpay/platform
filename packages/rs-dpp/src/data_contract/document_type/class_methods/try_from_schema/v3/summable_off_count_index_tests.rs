@@ -798,6 +798,75 @@ fn should_refuse_a_referenced_value_that_can_change() {
 }
 
 #[test]
+fn should_refuse_a_referenced_value_a_replace_can_clear() {
+    // An `immutable` `deletableDocument` reference may still be cleared by a replace once its
+    // target is deleted: likes before and after would land in two groups of one post
+    let post = platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": false,
+        "immutable": ["hashtag", "draftId"],
+        "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["hashtag", "draftId"] },
+        "properties": {
+            "hashtag": { "type": "string", "minLength": 1, "maxLength": 59, "position": 0 },
+            "text": { "type": "string", "maxLength": 280, "position": 1 },
+            "draftId": identifier(2, Some(platform_value!({
+                "type": "deletableDocument",
+                "documentType": "draft",
+            }))),
+        },
+        "required": ["$createdAt", "$updatedAt"],
+        "additionalProperties": false,
+    });
+    let draft = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "properties": {
+            "body": { "type": "string", "maxLength": 280, "position": 0 },
+        },
+        "additionalProperties": false,
+    });
+    let draft_post = platform_value!({
+        "name": "byDraftPost",
+        "properties": [{ "postDraft": "asc" }, { "postId": "asc" }],
+        "summableOffCountIndex": "byPost",
+        "rangeSummable": true,
+        "skipIfAbsent": true,
+    });
+    let like = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "properties": {
+            "postId": identifier(0, Some(platform_value!({
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "where": { "hashtag": "hashtag", "$ownerId": "postAuthor", "draftId": "postDraft" },
+            }))),
+            "hashtag": { "type": "string", "minLength": 1, "maxLength": 59, "position": 1 },
+            "postAuthor": identifier(2, None),
+            "postDraft": identifier(3, None),
+        },
+        "indices": [by_post(), author_post(), hashtag_post(), draft_post],
+        "required": ["postId", "postAuthor"],
+        "additionalProperties": false,
+    });
+    assert_refused(
+        parse_schemas(
+            BTreeMap::from([
+                ("post".to_string(), post),
+                ("draft".to_string(), draft),
+                ("like".to_string(), like),
+            ]),
+            true,
+        ),
+        "can change after a document is written",
+    );
+}
+
+#[test]
 fn should_refuse_an_owner_a_transfer_changes() {
     let mut post = post();
     post.set_value("transferable", Value::U8(1))

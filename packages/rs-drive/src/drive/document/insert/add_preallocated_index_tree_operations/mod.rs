@@ -405,6 +405,9 @@ impl Drive {
                     property_name_tree_type,
                     property_name_tree_created || binding.kind == DocumentReferenceKind::Permanent,
                     storage_flags,
+                    previous_batch_operations
+                        .as_ref()
+                        .map_or(&[][..], |pending| pending.as_slice()),
                     || {
                         document_info.get_estimated_size_for_document_type(
                             property_name,

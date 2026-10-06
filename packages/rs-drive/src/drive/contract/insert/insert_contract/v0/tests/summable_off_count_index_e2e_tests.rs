@@ -576,6 +576,70 @@ fn count_above(threshold: u64) -> Vec<HavingClause> {
     }]
 }
 
+/// A document count over a counter index reads its sums, which never exceed
+/// `i64::MAX`: a `HAVING count(*)` lower bound above that matches no group and
+/// is refused, while `>= i64::MAX` is still a bound the sums can meet. An
+/// ordinary Count axis (`byPost`, ranking posts by their entries) keeps the
+/// higher bound.
+#[test]
+fn should_refuse_a_count_bound_above_what_the_counters_sums_reach() {
+    let (_drive, contract) = setup(true);
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    let resolve = |group_by: &str, operator: HavingOperator| {
+        let group_by = vec![group_by.to_string()];
+        let having = vec![HavingClause {
+            aggregate: HavingAggregate {
+                function: HavingAggregateFunction::Count,
+                field: String::new(),
+            },
+            operator,
+            right: HavingRightOperand::Value(Value::U64(i64::MAX as u64)),
+        }];
+        let mode = detect_having_mode(
+            &SelectProjection::count_star(),
+            &group_by,
+            &having,
+            &[],
+            &[],
+            PAGE,
+            pv,
+        )
+        .expect("the bounded count is well formed");
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            "like".to_string(),
+            document_type.indexes(),
+            &mode,
+            &[],
+            pv,
+        )
+        .map(|query| query.index.name.clone())
+    };
+
+    let refused = resolve("postAuthor", HavingOperator::GreaterThan);
+    assert!(
+        matches!(
+            refused,
+            Err(Error::Query(QuerySyntaxError::InvalidParameter(_)))
+        ),
+        "got {refused:?}"
+    );
+    assert_eq!(
+        resolve("postAuthor", HavingOperator::GreaterThanOrEquals)
+            .expect("i64::MAX is a bound the sums can meet"),
+        "byAuthorPost"
+    );
+    assert_eq!(
+        resolve("postId", HavingOperator::GreaterThan)
+            .expect("an ordinary Count axis keeps the higher bound"),
+        "byPost"
+    );
+}
+
 /// The ranked tree of each author or hashtag with its axes: the levels rank
 /// by likes and likes per post, the counter levels by likes.
 #[test]
@@ -658,6 +722,86 @@ fn should_preallocate_a_value_tree_two_counter_indexes_share_once() {
             .expect("the post's counter");
         assert!(matches!(counter, Element::SumItem(0, _)), "got {counter:?}");
     }
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Two bindings of one counter index resolving the same counter: `postA` and
+/// `postB` each refer to a post whose `$id` the other holds, so a post binds
+/// the index `[postB, postA]` through either reference, at `[post, post]`. Its
+/// zero counter is queued once, so the post's batch passes grovedb's
+/// consistency check (on in these tests).
+#[test]
+fn should_preallocate_a_counter_two_bindings_of_one_index_resolve_once() {
+    let pv = platform_version();
+    let mut schema = json_document_to_json_value(FIXTURE).expect("read contract fixture");
+    let post_reference = |other: &str, position: u64| {
+        serde_json::json!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "position": position,
+            "refersTo": {
+                "type": "permanentDocument",
+                "documentType": "post",
+                "where": { "$id": other },
+            },
+        })
+    };
+    schema["documentSchemas"]["like"] = serde_json::json!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "properties": {
+            "postA": post_reference("postB", 0),
+            "postB": post_reference("postA", 1),
+        },
+        "indices": [
+            {
+                "name": "byPair",
+                "properties": [{ "postA": "asc" }, { "postB": "asc" }],
+                "terminal": "$ownerId",
+            },
+            {
+                "name": "byPairCounter",
+                "properties": [{ "postB": "asc" }, { "postA": "asc" }],
+                "summableOffCountIndex": "byPair",
+                "rangeSummable": true,
+                "preallocated": true,
+            },
+        ],
+        "required": ["postA", "postB"],
+        "additionalProperties": false,
+    });
+    let contract = DataContract::try_from_platform_versioned(
+        serde_json::from_value(schema).expect("contract serialization format"),
+        true,
+        &mut vec![],
+        pv,
+    )
+    .expect("parse the pair contract");
+    let drive = setup_drive_with_initial_state_structure(None);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply the contract");
+
+    let post = insert_post(&drive, &contract, AUTHOR_A, "dash", 1);
+    let counter = read_grove_element(
+        &drive,
+        &level(&contract, &[b"postB", post.as_slice(), b"postA"]),
+        &post,
+    )
+    .expect("the post's counter");
+    assert!(matches!(counter, Element::SumItem(0, _)), "got {counter:?}");
     assert_grovedb_is_consistent(&drive);
 }
 

@@ -1080,8 +1080,10 @@ pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
                 );
                 let reason = if !fixed {
                     "can change after a document is written (a mutable property, a moderator's \
-                     `changeFields`, or an `$ownerId` a transfer or purchase changes), so the \
-                     documents of one source group would spread over several groups"
+                     `changeFields`, an immutable `deletableDocument` reference a replace may \
+                     clear once its document is deleted, or an `$ownerId` a transfer or purchase \
+                     changes), so the documents of one source group would spread over several \
+                     groups"
                 } else if !kept {
                     "is not kept by a moderator's removal, which replaces the document with a \
                      record keeping its id, its owner and only the fields its type lists under \

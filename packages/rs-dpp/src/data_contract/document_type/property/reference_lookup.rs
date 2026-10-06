@@ -26,12 +26,16 @@ use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::lookup_preimage::LookupHashKey;
 use crate::data_contract::document_type::property::{
-    is_transient, top_level_property, DocumentPropertyType,
+    is_transient, top_level_property, DocumentPropertyReferenceTarget, DocumentPropertyType,
 };
 
 /// Why a key part moves when it is a field only the contract's moderators write
 /// (`moderatorAbilities.changeFields`): no replace is needed to change it.
 const MODERATORS_CHANGE: &str = "the contract's moderators change";
+
+/// Why a key part moves when it is an immutable `deletableDocument` reference
+/// by id: a replace may clear it once its document is deleted.
+const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -654,6 +658,8 @@ impl DocumentReferenceLookup {
             // A field only moderators write is never fixed, whatever the type says
             let hint = if why == MODERATORS_CHANGE {
                 "find it by a property only its owner writes"
+            } else if why == CLEARED_ONCE_DELETED {
+                "find it by a property that is no `deletableDocument` reference"
             } else {
                 "make the type immutable or list the property under `immutable`"
             };
@@ -744,7 +750,8 @@ pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
 /// `$creatorId` and the creation times never change; `$ownerId` and the
 /// transfer times change with a transfer or a purchase, the update times also
 /// with a replace; a schema property is fixed when
-/// [`schema_property_is_fixed_once_written`] says so, and its moderators'
+/// [`schema_property_is_fixed_once_written`] says so and a replace cannot
+/// clear it ([`clearable_once_its_document_is_deleted`]), and its moderators'
 /// fields are named as such. Shared by a lookup's key and the
 /// `summableOffCountIndex` lossless rule, so the two judge a value alike.
 pub(crate) fn why_value_can_change(
@@ -770,9 +777,11 @@ pub(crate) fn why_value_can_change(
                 .contains(top_level_property(property))
             {
                 Some(MODERATORS_CHANGE)
+            } else if !schema_property_is_fixed_once_written(referenced, property) {
+                Some("a replace can change")
             } else {
-                (!schema_property_is_fixed_once_written(referenced, property))
-                    .then_some("a replace can change")
+                clearable_once_its_document_is_deleted(referenced, property)
+                    .then_some(CLEARED_ONCE_DELETED)
             }
         }
     }
@@ -798,6 +807,26 @@ pub(crate) fn schema_property_is_fixed_once_written(
         && !document_type
             .moderator_changeable_fields()
             .contains(top_level)
+}
+
+/// Whether a replace may clear the top-level property of `path` of a document
+/// of `document_type` though `immutable` lists it: a `deletableDocument`
+/// reference by id, which document replace state validation 1 lets a replace
+/// clear once its document is deleted, so that the document can still be
+/// replaced. Clearing changes the value to absent, so a value that must stay
+/// as written (a lookup's key part, a value a `summableOffCountIndex` index's
+/// group is fixed by) may not be one.
+fn clearable_once_its_document_is_deleted(document_type: DocumentTypeRef, path: &str) -> bool {
+    document_type.documents_mutable()
+        && matches!(
+            document_type
+                .flattened_properties()
+                .get(top_level_property(path))
+                .map(|property| &property.property_type),
+            Some(DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::DeletableDocument { .. }
+            ))
+        )
 }
 
 /// The kind of value an index property of `document_type` holds: a system
