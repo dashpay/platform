@@ -26,7 +26,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
@@ -811,23 +811,6 @@ where
         // saves everything from its own start, which also keeps the
         // `per_subwallet_new_notes` count honest.
         let sub_watermark = watermarks.get(id).copied().unwrap_or(0);
-        // A re-scanned receipt can already be on file, and a send may have
-        // confirmed it spent (`mark_notes_spent`) while this pass was
-        // downloading without the lock. `save_note` replaces the stored
-        // note wholesale, so carry that spent flag over; scan data that
-        // predates the spend can't restore it.
-        let already_spent: BTreeSet<[u8; 32]> =
-            if discovered.iter().any(|d| d.position >= sub_watermark) {
-                store
-                    .get_all_notes(*id)
-                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-                    .into_iter()
-                    .filter(|n| n.is_spent)
-                    .map(|n| n.nullifier)
-                    .collect()
-            } else {
-                BTreeSet::new()
-            };
         for d in discovered {
             if d.position < sub_watermark {
                 continue;
@@ -842,6 +825,14 @@ where
                 "Note DECRYPTED"
             );
             let note_data = serialize_note(&d.note);
+            // A re-scanned receipt can already be on file, and a send may
+            // have confirmed it spent (`mark_notes_spent`) while this pass
+            // was downloading without the lock. `save_note` replaces the
+            // stored note wholesale, so carry that spent flag over; scan
+            // data that predates the spend can't restore it.
+            let is_spent = store
+                .is_note_spent(*id, &nullifier)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             // Stamp the note with ITS chunk's proven height — the same
             // per-batch height OVK-recovered outgoing notes get below —
             // never a pass-wide max. The activity deriver clusters
@@ -854,7 +845,7 @@ where
                 cmx: d.cmx,
                 nullifier,
                 block_height: d.block_height,
-                is_spent: already_spent.contains(&nullifier),
+                is_spent,
                 value,
             };
             store
