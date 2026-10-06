@@ -1130,6 +1130,98 @@ mod idempotent_load_tests {
         );
     }
 
+    #[tokio::test]
+    async fn should_keep_persisted_claim_through_manager_replay_and_unrelated_sweep() {
+        use crate::wallet::persisted_core::{restore_core_wallet, PersistedCoreState};
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, OutPoint, Txid};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        for claimant in [None, Some(Txid::from_byte_array([91; 32]))] {
+            let (ctx, funding) = TestWalletContext::new_random()
+                .with_mempool_funding(100_000)
+                .await;
+            let wallet_id = ctx.wallet.compute_wallet_id();
+            let guarded = OutPoint::new(funding.txid(), 0);
+            let other = OutPoint::new(Txid::from_byte_array([92; 32]), 0);
+            let mut pending = spend_to(guarded, 50_000);
+            pending.input.push(dashcore::TxIn {
+                previous_output: other,
+                ..Default::default()
+            });
+            pending.output[0].script_pubkey = funding.output[0].script_pubkey.clone();
+            let mut managed = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+            restore_core_wallet(
+                &mut managed,
+                PersistedCoreState {
+                    spent_claims: vec![(guarded, claimant)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let manager = make_pending_manager(PendingSendPersister {
+                wallet: ctx.wallet,
+                managed,
+                pending: vec![pending.clone()],
+            });
+            manager
+                .load_from_persistor()
+                .await
+                .expect("restore including pending replay");
+            let (mut wallet, mut info) = {
+                let guard = manager.wallet_manager.read().await;
+                (
+                    guard.get_wallet(&wallet_id).unwrap().clone(),
+                    guard
+                        .get_wallet_info(&wallet_id)
+                        .unwrap()
+                        .core_wallet
+                        .clone(),
+                )
+            };
+            assert!(
+                info.accounts
+                    .all_funding_accounts()
+                    .iter()
+                    .any(|account| account.transactions().contains_key(&pending.txid())),
+                "manager replay must run"
+            );
+            let winner = spend_to(other, 40_000);
+            let result = info
+                .check_core_transaction(
+                    &winner,
+                    TransactionContext::InBlock(BlockInfo::new(200, BlockHash::all_zeros(), 200)),
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await;
+            assert!(
+                result.swept_transactions.contains(&pending.txid()),
+                "unrelated input conflict must sweep the pending record"
+            );
+            info.apply_chain_lock(dashcore::ephemerealdata::chain_lock::ChainLock {
+                block_height: 300,
+                block_hash: BlockHash::all_zeros(),
+                signature: dashcore::bls_sig_utils::BLSSignature::from([0; 96]),
+            });
+            info.check_core_transaction(
+                &funding,
+                TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 100)),
+                &mut wallet,
+                true,
+                true,
+            )
+            .await;
+            assert!(info.accounts.all_funding_accounts().iter().all(|a| !a.utxos.contains_key(&guarded)),
+                "unrelated/unknown durable claimant must survive replay, sweep, finality and funding redelivery");
+        }
+    }
+
     fn make_pending_manager(
         persister: PendingSendPersister,
     ) -> Arc<PlatformWalletManager<PendingSendPersister>> {

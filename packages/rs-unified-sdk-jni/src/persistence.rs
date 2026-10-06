@@ -2599,6 +2599,8 @@ fn build_wallet_restore_entry(
         // inert here, exactly as it was before the field existed.
         unconfirmed_outgoing_tx_records: ptr::null(),
         unconfirmed_outgoing_tx_records_count: 0,
+        spent_claims: ptr::null(),
+        spent_claims_count: 0,
         core_address_pools: ptr::null(),
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),

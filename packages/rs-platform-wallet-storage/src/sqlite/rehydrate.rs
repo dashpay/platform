@@ -26,6 +26,7 @@ use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::wallet::persisted_core::{restore_core_wallet, PersistedCoreState};
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -297,21 +298,16 @@ pub fn apply_persisted_core_state(
     // pool-extension diagnostics without re-borrowing `wallet_info`.
     let wallet_id = wallet_info.wallet_id;
 
-    // Sync watermarks first so `update_balance`'s maturity check sees
-    // the restored tip.
-    if let Some(h) = core.last_processed_height {
-        wallet_info.metadata.last_processed_height =
-            wallet_info.metadata.last_processed_height.max(h);
-    }
-    if let Some(h) = core.synced_height {
-        wallet_info.metadata.synced_height = wallet_info.metadata.synced_height.max(h);
-    }
-
-    // Restore the highest applied chainlock when the persister carries it
-    // (FFI path) so the asset-lock proof CL-from-metadata fallback fires at launch.
-    if let Some(cl) = &core.last_applied_chain_lock {
-        wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
-    }
+    let mut restored = PersistedCoreState {
+        synced_height: core
+            .synced_height
+            .map(|h| wallet_info.metadata.synced_height.max(h)),
+        last_processed_height: core
+            .last_processed_height
+            .map(|h| wallet_info.metadata.last_processed_height.max(h)),
+        chain_lock: core.last_applied_chain_lock.clone(),
+        ..Default::default()
+    };
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
@@ -357,7 +353,10 @@ pub fn apply_persisted_core_state(
                 utxo_accounts.get(&utxo.outpoint),
                 &mut orphaned_owners,
             );
-            funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
+            restored.utxos.push((
+                funding[target].managed_account_type().to_account_type(),
+                (*utxo).clone(),
+            ));
             per_account_addrs[target].push(utxo.address.clone());
         }
 
@@ -411,6 +410,9 @@ pub fn apply_persisted_core_state(
             }
         }
     }
+
+    restore_core_wallet(wallet_info, restored)
+        .map_err(|_| WalletStorageError::MissingAccount { wallet_id })?;
 
     // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
     // UTXOs it finds, so running it earlier would record the txid and mark

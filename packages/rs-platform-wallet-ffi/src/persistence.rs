@@ -10,6 +10,7 @@
 //! same integers on a different callback family.
 
 use bincode::config;
+use dashcore::hashes::Hash;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
@@ -19,11 +20,11 @@ use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
 use key_wallet::managed_account::address_pool::{
     AddressPool, AddressPoolType, AddressState, PublicKeyType,
 };
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
 use parking_lot::Mutex;
+use platform_wallet::wallet::persisted_core::{restore_core_wallet, PersistedCoreState};
 use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
@@ -5365,15 +5366,13 @@ fn build_wallet_start_state(
     // "unknown" so we don't clobber the seeded default for fresh /
     // never-synced wallets.
     let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, entry.birth_height);
-    if entry.synced_height > 0 {
-        wallet_info.metadata.synced_height = entry.synced_height;
-    }
-    if entry.last_processed_height > 0 {
-        wallet_info.metadata.last_processed_height = entry.last_processed_height;
-    }
-    if entry.last_synced > 0 {
-        wallet_info.metadata.last_synced = Some(entry.last_synced);
-    }
+    let mut restored = PersistedCoreState {
+        synced_height: (entry.synced_height > 0).then_some(entry.synced_height),
+        last_processed_height: (entry.last_processed_height > 0)
+            .then_some(entry.last_processed_height),
+        last_synced: (entry.last_synced > 0).then_some(entry.last_synced),
+        ..Default::default()
+    };
 
     // Persisted `last_applied_chain_lock` — bincode-decoded from the
     // bytes Swift handed back. Restoring this before the wallet
@@ -5405,7 +5404,7 @@ fn build_wallet_start_state(
             dpp::bincode::config::standard(),
         ) {
             Ok((cl, _)) => {
-                wallet_info.metadata.last_applied_chain_lock = Some(cl);
+                restored.chain_lock = Some(cl);
             }
             Err(e) => {
                 tracing::warn!(
@@ -5587,8 +5586,8 @@ fn build_wallet_start_state(
             ),
             _ => None,
         };
-        if let Some(funds_account) = target_funds {
-            funds_account.utxos.insert(utxo.outpoint, utxo);
+        if target_funds.is_some() {
+            restored.utxos.push((account_type, utxo));
             routed += 1;
         } else {
             dropped_no_account += 1;
@@ -5616,24 +5615,31 @@ fn build_wallet_start_state(
         );
     }
 
-    // Recompute balances from the freshly-loaded UTXO set. Raw
-    // `account.utxos.insert` bypasses the normal `record_transaction`
-    // path that keeps the per-account `balance` field in sync, so
-    // the per-account confirmed/unconfirmed/immature/locked totals
-    // and the wallet-level rollup stay zero unless we tell the info
-    // to reread them. `update_balance` walks every funds account
-    // and recomputes from `utxos` against the wallet's
-    // `metadata.synced_height` (passed through to
-    // `ManagedCoreFundsAccount::update_balance` as the
-    // `last_processed_height` parameter — that's the maturity
-    // baseline upstream uses; the parameter naming is historical),
-    // then sums into `wallet_info.balance`. The lock-free
-    // `Arc<WalletBalance>` the UI reads is mirrored in
-    // `manager::load::load_from_persistor` (`WalletBalance::set` is
-    // `pub(crate)` to platform-wallet).
-    if routed > 0 {
-        wallet_info.update_balance();
+    if entry.spent_claims_count > 0 {
+        if entry.spent_claims.is_null() {
+            return Err(PersistenceError::backend(
+                "spent claims pointer is null with nonzero count",
+            ));
+        }
+        // SAFETY: the load callback owns this initialized array until the free callback.
+        restored.spent_claims =
+            unsafe { slice::from_raw_parts(entry.spent_claims, entry.spent_claims_count) }
+                .iter()
+                .map(|claim| {
+                    (
+                        dashcore::OutPoint::new(
+                            dashcore::Txid::from_byte_array(claim.txid),
+                            claim.vout,
+                        ),
+                        claim
+                            .has_claimant
+                            .then(|| dashcore::Txid::from_byte_array(claim.claimant)),
+                    )
+                })
+                .collect();
     }
+    restore_core_wallet(&mut wallet_info, restored)
+        .map_err(|e| PersistenceError::backend(e.to_string()))?;
 
     // Selectively repopulate the in-memory `transactions()` map with
     // the funding-tx records of any tracked asset locks still at
@@ -9821,6 +9827,98 @@ mod tests {
             Some(&wallet.wallet_id[..])
         );
         assert!(restored_eddsa.is_watch_only);
+    }
+
+    #[tokio::test]
+    async fn should_restore_recordless_spent_claims_and_reject_ambiguous_duplicates() {
+        use crate::wallet_restore_types::SpentClaimRestoreFFI;
+        use dashcore::{BlockHash, OutPoint, Transaction, TxIn, TxOut, Txid};
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        let wallet = Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let account_type = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let bytes = bincode::encode_to_vec(xpub, config::standard()).unwrap();
+        let specs = [build_account_spec_ffi(&account_type, &bytes)];
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let funding = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([61; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 100_000,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        for has_claimant in [false, true] {
+            let claim = SpentClaimRestoreFFI {
+                txid: funding.txid().to_byte_array(),
+                vout: 0,
+                has_claimant,
+                claimant: [62; 32],
+            };
+            // A materialized TXO and a tombstone can represent the same claim.
+            let mut claims = [claim, claim];
+            let entry = WalletRestoreEntryFFI {
+                wallet_id: wallet.wallet_id,
+                accounts: specs.as_ptr(),
+                accounts_count: specs.len(),
+                spent_claims: claims.as_ptr(),
+                spent_claims_count: claims.len(),
+                ..Default::default()
+            };
+            let (mut state, _) = build_wallet_start_state(&entry).unwrap();
+            state
+                .wallet_info
+                .check_core_transaction(
+                    &funding,
+                    TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 100)),
+                    &mut state.wallet,
+                    true,
+                    true,
+                )
+                .await;
+            assert!(state
+                .wallet_info
+                .accounts
+                .all_funding_accounts()
+                .iter()
+                .all(|a| !a.utxos.contains_key(&OutPoint::new(funding.txid(), 0))));
+            claims[1].has_claimant = !has_claimant;
+            let conflicting = WalletRestoreEntryFFI {
+                spent_claims: claims.as_ptr(),
+                ..entry
+            };
+            assert!(
+                build_wallet_start_state(&conflicting).is_err(),
+                "conflicting duplicates must not depend on row order"
+            );
+        }
+        let malformed = WalletRestoreEntryFFI {
+            spent_claims_count: 1,
+            ..Default::default()
+        };
+        assert!(build_wallet_start_state(&malformed).is_err());
     }
 
     /// The BLS xpub decoder is the only account-xpub graph with a
