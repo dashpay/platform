@@ -260,7 +260,9 @@ async fn should_bound_store_lock_hold_while_appending_a_large_batch() {
             probes
         })
     };
-    ready_rx.recv().unwrap();
+    ready_rx
+        .recv_timeout(MID_PASS_LOCK_BOUND)
+        .expect("lock prober could not acquire the store before the first batch");
 
     let batch_started = Instant::now();
     tx.unbounded_send(Ok(batch(0, 4 * 2048))).unwrap();
