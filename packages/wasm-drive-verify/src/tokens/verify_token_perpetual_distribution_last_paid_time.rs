@@ -56,7 +56,7 @@ pub fn verify_token_perpetual_distribution_last_paid_time(
 
     let (root_hash, last_paid_time_option) =
         Drive::verify_token_perpetual_distribution_last_paid_time(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             token_id_bytes,
             identity_id_bytes,
             &distribution_type,

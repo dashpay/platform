@@ -31,6 +31,9 @@ debuglogfile=/var/log/dash/debug.log
 # JSON RPC
 server=1
 rpcwallet=main
+# Core leaves a masternode's `service`, `platformP2PPort` and `platformHTTPPort`
+# out of RPC output unless they are requested here. Platform reads them.
+deprecatedrpc=service
 rpcworkqueue=64
 rpcthreads=16
 rpcwhitelistdefault=0

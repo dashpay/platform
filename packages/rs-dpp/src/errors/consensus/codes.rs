@@ -381,6 +381,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentTypeNotModeratedError(_) => 40143,
             Self::ReferencedDocumentTypeModeratedError(_) => 40144,
             Self::ReferencedDocumentRemovedError(_) => 40145,
+            Self::ReferencedDocumentTypeIndexOnlyError(_) => 40146,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -517,6 +518,7 @@ impl ErrorWithCode for StateError {
             Self::SettledDeletionNotRestorableError(_) => 41209,
             Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
             Self::ContractTeamActionDocumentChangedError(_) => 41211,
+            Self::ContractTeamMemberAddedAfterDocumentError(_) => 41212,
         }
     }
 }

@@ -58,6 +58,23 @@ final class DashModelMigrationTests: XCTestCase {
         return (directory, copy)
     }
 
+    /// `DashLegacyStoreSQLite.checkpoint`, retried while the store is still
+    /// locked. SwiftData closes a released container's SQLite connection
+    /// asynchronously, and `checkpoint` deliberately does not wait for locks,
+    /// so under load the first attempt can still meet that connection. Any
+    /// other failure, or a lock that outlasts ten seconds, is thrown.
+    private static func checkpointWhenUnlocked(_ url: URL) throws {
+        let deadline = Date().addingTimeInterval(10)
+        while true {
+            do {
+                return try DashLegacyStoreSQLite.checkpoint(url)
+            } catch DashLegacyStoreSQLite.Failure.database(let reason)
+                where reason == "database is locked" && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+    }
+
     @MainActor
     func testMigrationDiagnosticsReachExportFileWithoutVerboseLogging() throws {
         let fixture = try XCTUnwrap(Self.fixtures.first { $0.name == "historical-v2" })
@@ -703,7 +720,7 @@ final class DashModelMigrationTests: XCTestCase {
                 label: "fixture", addedAt: 1, snapshotJSON: "{}"))
             try context.save()
         }
-        try DashLegacyStoreSQLite.checkpoint(url)
+        try Self.checkpointWhenUnlocked(url)
         let metadata = try DashSchemaFixtureSupport.describeStore(at: url, version: Schema.Version(2, 0, 0))
         XCTAssertEqual(metadata.entity_hashes.count, 35)
         XCTAssertEqual(metadata.model_checksum, "RrRj/iNbS9izgLQvNb2APed4iwaR7pftEE2+4tea7K8=")
