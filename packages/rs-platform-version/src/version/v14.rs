@@ -77,17 +77,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
-///    withdrawal eventually fits and cannot block the pooling queue. The base is
-///    capped at `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity
-///    per day under V24 as written); the credit inflows of the active window —
-///    every credit mint, recorded per block by
-///    `record_credit_inflows_for_withdrawals` in the credit inflows sum tree —
-///    are added after the cap, so the limit counts net outflow and a matching
-///    deposit -> withdraw cycle does not consume the capped budget of other
-///    users (#4471). Outflow funded by same-window deposits may therefore
-///    exceed the cap; this mirrors the net credit-pool rule Core adopts for V24
-///    alongside this change (tracked in #4471), which must land before V24
-///    activates. Both the inflows and the pooled reservations count over the
+///    withdrawal eventually fits and cannot block the pooling queue. The base has
+///    no fixed cap: what Core will mine bounds pooling through the Core-anchored
+///    limit of note 74 instead. The credit inflows of the active window — every
+///    credit mint, recorded per block by `record_credit_inflows_for_withdrawals`
+///    in the credit inflows sum tree — are added to the base, so the limit
+///    counts net outflow and a matching deposit -> withdraw cycle does not
+///    consume the budget of other users (#4471), mirroring Core v24's net
+///    credit-pool rule. Both the inflows and the pooled reservations count over the
 ///    interval after the base snapshot only — an entry the snapshot already
 ///    reflects is neither added nor subtracted again. The base is
 ///    the total credits recorded at the latest block at least 24 hours before
@@ -105,9 +102,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    already pooled in the last 24 hours keep counting against the maximum
 ///    exactly as before. Pre-V24 Core caps unlocks at `LimitAmountV22` (2000
 ///    Dash) per *block*, with the amount checked only at block level, so any
-///    daily total is still minable across blocks; V24's 4000 Dash per 576-block
-///    window matches the capped base and is raised to the same net rule before
-///    activation (see above).
+///    daily total is still minable across blocks; V24 limits the net drop of
+///    its credit pool per 576-block window, which note 74 follows.
 /// 5. **Time-range indexes**: an index can declare a `timeRange` transform
 ///    that buckets a required system timestamp (`$createdAt` /
 ///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
@@ -1927,7 +1923,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the key of an index a delete clears that skips nothing, so no two
 ///     documents in state share one of its entries. Inert for every contract
 ///     without the keyword, which every earlier grammar refuses.
-///
 /// 70. **A contested type sums only small values**: parser generation 3, in
 ///     place, refuses under full validation a document type with a contested
 ///     index and a summed property (`summable`, `averageable`,
@@ -1938,7 +1933,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     into the type's sums with no transition to refuse, so the values must be
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
-///
 /// 71. **Documents deleted only when consumed (`canBeDeleted:
 ///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
 ///     and parser generation 3, in place
@@ -2034,6 +2028,34 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     version 0, which every earlier protocol version selects, refuses both
 ///     proofs, and the unproven total fails, as released; the prover is
 ///     unchanged.
+///
+/// 74. **Withdrawals also fit a Core-anchored limit**: pooling
+///     (`pool_withdrawals_into_transactions_queue` 2, which reuses version 1's
+///     pooling through a shared helper) admits withdrawals up to the smaller of
+///     the daily withdrawal limit (note 4) and
+///     `calculate_core_anchored_withdrawal_limit`, a stricter copy of Core v24's
+///     relative net unlock rule (dash#7712) read from Core's own credit pool
+///     balances at chain locked heights: the pool may drop by at most
+///     `core_credit_pool_unlock_limit_percent` (15; Core allows 20) of its
+///     highest balance at a window start Core may use for the unlock (Core's
+///     window, `core_credit_pool_window_blocks` 576 or
+///     `regtest_core_credit_pool_window_blocks` 100, back from the chain locked
+///     height, up to Core's asset unlock validity, `core_expiration_blocks` 48,
+///     later), at least
+///     `core_credit_pool_unlock_limit_floor` (1500 Dash; Core's floor is 2000),
+///     less what is queued or broadcast and not completed yet. The formula is
+///     `core_credit_pool_unlock_limit` 0 in `DPP_METHOD_VERSIONS_V3`. Before
+///     pooling, `scan_core_blocks_for_withdrawals` reads the Core blocks the
+///     chain locked height passed (at most `core_blocks_scanned_per_block_limit`,
+///     32, per block) and records each one's credit pool balance, read from the
+///     block's coinbase alone (`getspecialtxes`), under the withdrawals tree. The
+///     Platform-side accounting can grant more than Core will mine (an asset lock published to
+///     Platform after Core mined it, a whole epoch of Core rewards minted in one
+///     block); over Core's limit an unlock waits unmined and is re-signed, and
+///     while Core's mempool holds more than the limit Core InstantSend-locks no
+///     withdrawal at all. The balance tree is created at genesis and by
+///     `transition_to_version_14`, and `cleanup_expired_locks_of_withdrawal_amounts`
+///     1 prunes it by Core height.
 ///
 /// 75. **No reference by id to an indexOnly document type**: the contract
 ///     reference validation 0 (`validate_data_contract_references`), in place,
