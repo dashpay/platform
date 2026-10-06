@@ -1741,7 +1741,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// component's result. Every trio must land in a component, and
     /// every decoded item must be claimed by one — an entry the
     /// derivation never asked for means the responding node steered the
-    /// composition.
+    /// composition. `sum_bearing_items_are_documents` reads every item
+    /// variant as a document (the composite verifier from version 1), where
+    /// version 0 reads only a plain `Item` as one.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assemble_from_trios(
         &self,
         derived: &[DerivedValues],
@@ -1749,6 +1752,7 @@ impl<'a> DriveDocumentQuery<'a> {
         sub_path_queries: &[Option<PathQuery>],
         removal_path_queries: &[PathQuery],
         trios: Vec<ProvedTrio>,
+        sum_bearing_items_are_documents: bool,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
         // Group documents by base path. Counts instead route by their
@@ -1802,19 +1806,17 @@ impl<'a> DriveDocumentQuery<'a> {
                 entries.push((key, element));
                 continue;
             }
-            // A document is any item, the sum-bearing ones of a
-            // `documentsSummable` type or a `summable` indexOnly index
-            // included (the items `decode_document_trios` reads); a count is a
-            // tree or a counter. Edited in place for the composite verifier's
-            // shipped generation: such a document failed verification as a
-            // count before, and every other element is classified as before.
-            if !matches!(
-                element.underlying(),
-                Element::Item(..)
-                    | Element::ItemWithSumItem(..)
-                    | Element::ItemWithBackwardsReferences(..)
-                    | Element::ItemWithSumItemWithBackwardsReferences(..)
-            ) {
+            // A document is an item; a count is a tree or a counter. From the
+            // composite verifier's version 1 (`sum_bearing_items_are_documents`),
+            // the sum-bearing items of a `documentsSummable` type or a
+            // `summable` indexOnly index are documents too (the items
+            // `decode_document_trios` reads), which version 0 reads as counts.
+            let is_document = if sum_bearing_items_are_documents {
+                element.has_basic_item()
+            } else {
+                matches!(element, Element::Item(..))
+            };
+            if !is_document {
                 let position = (path, key);
                 let members = count_members_by_position.get(&position).ok_or_else(|| {
                     corrupted_proof(
@@ -2176,14 +2178,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     &platform_version.drive,
                 ) {
                     // No count tree yet under this index: every count is zero.
-                    Err(Error::GroveDB(e))
-                        if matches!(
-                            e.as_ref(),
-                            grovedb::Error::PathKeyNotFound(_)
-                                | grovedb::Error::PathNotFound(_)
-                                | grovedb::Error::PathParentLayerNotFound(_)
-                        ) =>
-                    {
+                    Err(error) if is_absent_path(&error) => {
                         return Ok(SubQueryResult::Counts(Vec::new()));
                     }
                     other => other?,
@@ -2216,6 +2211,22 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
+        // Documents are serialized whole, as a documents query's are: refused
+        // before any read when an indexOnly page or documents sub-query reads
+        // through an index lacking a property. A sub-query's index follows from
+        // its shape, so a representative value resolves it.
+        self.refuse_an_uncovered_index_only_projection(platform_version)?;
+        for sub_query in &self.sub_queries {
+            if sub_query.kind == SubQueryKind::Documents {
+                self.sub_query_document_query_with_direction(
+                    sub_query,
+                    &[Identifier::default()],
+                    direction,
+                    platform_version,
+                )?
+                .refuse_an_uncovered_index_only_projection(platform_version)?;
+            }
+        }
         let page_documents = Self::materialize_component(
             self,
             &page_path_query,

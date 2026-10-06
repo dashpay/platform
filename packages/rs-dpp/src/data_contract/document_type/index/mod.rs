@@ -859,7 +859,8 @@ pub struct Index {
     /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
     /// — the subtree count chain the prefix levels rank by cannot carry a
     /// sum axis — except on a `summableOffCountIndex` index, whose counters
-    /// carry counts and sums up every level. There a document count is its
+    /// carry sums up every ranked level (and counts too where an average
+    /// ranking lays a count-and-sum chain). There a document count is its
     /// sums, so the parser merges `rankedCountable` into the Sum ranking
     /// ([`Index::ranked_summable`] / [`Index::ranked_summable_at`]): on such
     /// an index this field and its boolean stay empty.
@@ -2754,11 +2755,13 @@ impl Index {
         // cannot express — the combination has no coherent layout. (The
         // terminal boolean form composes with the other axes as before.)
         //
-        // A `summableOffCountIndex` index is the exception: its chain is made
-        // of count-and-sum trees fed by the counters, which carry both
-        // aggregates to every level, so it takes the object form on all three
-        // axes and combines them freely. No other index carries a sum up a
-        // chain, so on any other index the Sum and Avg axes stay terminal.
+        // A `summableOffCountIndex` index is the exception: its chain is fed
+        // by the counters, which carry their sums to every ranked level (and
+        // counts too where an average ranking makes the chain count-and-sum;
+        // a Sum ranking alone lays sum trees), so it takes the object form on
+        // all three axes and combines them freely. No other index carries a
+        // sum up a chain, so on any other index the Sum and Avg axes stay
+        // terminal.
         if summable_off_count_index.is_none() {
             if ranked_summable_object_form || ranked_averageable_object_form {
                 return Err(DataContractError::InvalidContractStructure(

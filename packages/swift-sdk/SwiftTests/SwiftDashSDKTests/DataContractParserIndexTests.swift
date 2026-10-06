@@ -40,7 +40,6 @@ final class DataContractParserIndexTests: XCTestCase {
 
         let counter = try XCTUnwrap(indices["byAuthorPost"])
         XCTAssertEqual(counter.summableOffCountIndex, "byPost")
-        XCTAssertNil(counter.terminal)
         XCTAssertTrue(counter.rangeCountable)
         XCTAssertTrue(counter.rangeSummable)
         XCTAssertTrue(counter.preallocated)
@@ -54,10 +53,10 @@ final class DataContractParserIndexTests: XCTestCase {
         XCTAssertEqual(
             counter.authoredKeywords,
             AuthoredIndexKeywords(
-                summableOffCountIndex: counter.summableOffCountIndex,
-                rankedCountableAt: counter.rankedCountableAt,
-                rankedSummableAt: counter.rankedSummableAt,
-                rankedAverageableAt: counter.rankedAverageableAt
+                summableOffCountIndex: "byPost",
+                rankedCountableAt: [],
+                rankedSummableAt: ["postAuthor", "postId"],
+                rankedAverageableAt: ["postAuthor"]
             )
         )
 

@@ -1719,6 +1719,8 @@ mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]
 mod outlives_delete_tests;
 #[cfg(all(test, feature = "validation"))]
+mod refusal_test_support;
+#[cfg(all(test, feature = "validation"))]
 mod summable_off_count_index_tests;
 
 #[cfg(all(test, feature = "validation"))]

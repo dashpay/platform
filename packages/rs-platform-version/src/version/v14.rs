@@ -1980,7 +1980,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     more than one document (`refuse_repeated_counter_moves`). Needs
 ///     grovedb's `GROVE_V4`, which admits a bare `SumItem` under a
 ///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
-///     the keyword, which every earlier grammar refuses.
+///     the keyword, which every earlier grammar refuses. For any index, the
+///     range-total verifiers at version 1 (`DRIVE_VERIFY_METHOD_VERSIONS_V3`:
+///     `verify_aggregate_count_proof`, `verify_carrier_aggregate_count_proof`,
+///     `verify_aggregate_sum_proof`, `verify_carrier_aggregate_sum_proof`,
+///     `verify_aggregate_count_and_sum_proof` and
+///     `verify_carrier_aggregate_count_and_sum_proof`) verify a proof showing
+///     the range holds nothing (an equality value no document holds, or an
+///     empty tree of a kind the read does not aggregate), which grovedb's
+///     aggregate verifiers refuse, as a zero total or no carrier branch
+///     (`or_empty_range_total`), and the unproven range totals, keyed on the
+///     same verifier versions, read an absent value as zero
+///     (`aggregate_or_zero_when_absent`); and
+///     `verify_composite_documents_proof` 1 reads the sum-bearing items of a
+///     `documentsSummable` type as documents. Their
+///     version 0, which every earlier protocol version selects, refuses both
+///     proofs, and the unproven total fails, as released; the prover is
+///     unchanged.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

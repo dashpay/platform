@@ -179,6 +179,14 @@ impl DriveDocumentCountQuery<'_> {
         // classic request-amplification surface on a public DAPI
         // endpoint. The per-In fan-out closes that surface.
         if !options.distinct {
+            // An absent value reads zero as the proof of the same total
+            // verifies it (`aggregate_or_zero_when_absent`).
+            let range_total_verifier = platform_version
+                .drive
+                .methods
+                .verify
+                .document_count
+                .verify_aggregate_count_proof;
             if has_in_on_prefix {
                 let in_clause = self
                     .where_clauses
@@ -262,6 +270,7 @@ impl DriveDocumentCountQuery<'_> {
                         drive,
                         &path_query.path,
                         value,
+                        range_total_verifier,
                         transaction,
                         platform_version,
                     )?;
@@ -287,6 +296,7 @@ impl DriveDocumentCountQuery<'_> {
                 drive,
                 &path_query.path,
                 value,
+                range_total_verifier,
                 transaction,
                 platform_version,
             )?;

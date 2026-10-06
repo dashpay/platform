@@ -13,7 +13,9 @@
 //! the primary tree.
 
 use super::chained_query_e2e_tests::{removal_of, remove_post, with_moderated_posts};
+use super::index_only_e2e_tests::assert_live_root_hash;
 use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::moderated_join::removals_path_query;
 use crate::query::{
@@ -769,8 +771,9 @@ fn should_preserve_descending_documents_and_key_ordered_counts() {
 }
 
 /// Documents of a `documentsSummable` type are stored as items carrying a
-/// sum: the composite verifier reads them as documents, page and sub-query
-/// alike, not as counts no component selected.
+/// sum: the composite verifier from version 1 (protocol version 14) reads them
+/// as documents, page and sub-query alike, against the live root, where
+/// version 0 reads them as counts no component selected.
 #[test]
 fn should_verify_a_composition_over_documents_that_carry_a_sum() {
     let drive = setup_drive_with_initial_state_structure(None);
@@ -839,9 +842,10 @@ fn should_verify_a_composition_over_documents_that_carry_a_sum() {
     let (proof, _) = drive
         .query_composite_documents_with_proof(&query, pv)
         .expect("proves");
-    let (_, verified) = query
+    let (root_hash, verified) = query
         .verify_composite_documents_proof(&proof, pv)
         .expect("a composition over sum-carrying documents verifies");
+    assert_live_root_hash(&drive, root_hash);
     assert_eq!(verified.page_documents, materialized.page_documents);
     assert_eq!(verified.sub_results, materialized.sub_results);
 }
@@ -946,7 +950,10 @@ fn should_prove_the_viewers_marks_as_an_index_only_lookup() {
 }
 
 /// An empty page derives nothing: every sub-query is empty and the proof
-/// is the page's alone.
+/// is the page's alone. Without a proof the composition is refused before
+/// any read, empty page or not: the viewer's likes are read through
+/// `byLiker`, which lacks the like's required hashtag, as a documents query
+/// through that index is.
 #[test]
 fn should_prove_an_empty_page_alone() {
     let (drive, feed, dashpay) = setup();
@@ -956,15 +963,11 @@ fn should_prove_an_empty_page_alone() {
     let sub_queries = std::mem::take(&mut query.sub_queries);
     query = page_by_hashtag(&feed, "nothing", Some(10)).with_sub_queries(sub_queries);
 
-    let materialized = drive
-        .query_composite_documents(&query, None, None, pv)
-        .expect("executes")
-        .result;
-    assert!(materialized.page_documents.is_empty());
-    assert!(materialized
-        .sub_results
-        .iter()
-        .all(|result| result.documents().is_empty() && result.counts().is_empty()));
+    let refused = drive.query_composite_documents(&query, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+        "got {refused:?}"
+    );
 
     let (proof, page) = drive
         .query_composite_documents_with_proof(&query, pv)
@@ -1455,7 +1458,19 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
         viewer_likes,
         like_counts(),
     ]);
-    let result = round_trip(&feed_shape, "the descending feed shape");
+    // The viewer's likes are read through `byLiker`, which lacks the like's
+    // required hashtag: refused without a proof, so this shape is read proved.
+    assert!(matches!(
+        drive.query_composite_documents(&feed_shape, None, None, pv),
+        Err(Error::Query(QuerySyntaxError::Unsupported(_)))
+    ));
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&feed_shape, pv)
+        .expect("the descending feed shape proves");
+    let (_, result) = feed_shape
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the descending feed shape verifies");
+    assert_eq!(ids(&result.page_documents), vec![POST_C, POST_B, POST_A]);
     // The lookups inherited the page's direction: descending by their
     // bound field.
     assert_eq!(

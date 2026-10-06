@@ -353,7 +353,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
     /// Refuses an index whose path passes through a ranked level, which no
     /// range total can be read through (see
     /// [`refuse_a_range_total_through_a_ranked_index`]).
-    pub(crate) fn refuse_a_range_sum_total(&self) -> Result<(), Error> {
+    fn refuse_a_range_sum_total(&self) -> Result<(), Error> {
         refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
     }
 

@@ -620,6 +620,47 @@ fn should_preallocate_one_zero_counter_per_post() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// Two preallocated counter indexes sharing their first property reach one
+/// value tree from a post: it is queued once, so the post's batch passes
+/// grovedb's consistency check (on in these tests), and each index gets its
+/// zero counter.
+#[test]
+fn should_preallocate_a_value_tree_two_counter_indexes_share_once() {
+    let (drive, contract) = setup_with_indices(|indices| {
+        for index in indices.iter_mut() {
+            let index = index.as_object_mut().expect("an index");
+            index.remove("rankedSummable");
+            index.remove("rankedAverageable");
+        }
+        indices.push(serde_json::json!({
+            "name": "byAuthorHashtagPost",
+            "properties": [{ "postAuthor": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
+            "summableOffCountIndex": "byPost",
+            "rangeCountable": true,
+            "rangeSummable": true,
+            "skipIfAbsent": true,
+            "preallocated": true,
+        }));
+    });
+    let post = insert_post(&drive, &contract, AUTHOR_A, "dash", 1);
+
+    for segments in [
+        [b"postAuthor".as_slice(), AUTHOR_A.as_slice(), b"postId"].as_slice(),
+        &[
+            b"postAuthor",
+            AUTHOR_A.as_slice(),
+            b"hashtag",
+            b"dash",
+            b"postId",
+        ],
+    ] {
+        let counter = read_grove_element(&drive, &level(&contract, segments), &post)
+            .expect("the post's counter");
+        assert!(matches!(counter, Element::SumItem(0, _)), "got {counter:?}");
+    }
+    assert_grovedb_is_consistent(&drive);
+}
+
 /// Each like moves its post's counters by one, which the author and hashtag
 /// levels add up: author A has 2 posts and 4 likes, author B 1 post and 5.
 #[test]

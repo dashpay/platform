@@ -340,7 +340,7 @@ impl<C> Platform<C> {
                 Ok(documents) => documents,
                 Err(error) => {
                     return Ok(QueryValidationResult::new_with_error(
-                        document_serialization_failure(error)?,
+                        document_serialization_failure(error, composite.document_type)?,
                     ))
                 }
             };
@@ -358,7 +358,7 @@ impl<C> Platform<C> {
                             Ok(documents) => documents,
                             Err(error) => {
                                 return Ok(QueryValidationResult::new_with_error(
-                                    document_serialization_failure(error)?,
+                                    document_serialization_failure(error, sub.document_type)?,
                                 ))
                             }
                         };

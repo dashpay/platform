@@ -126,8 +126,8 @@ pub(super) fn validate_no_ranked_prefix_overlap(
         // parser guarantees each `at` name resolves to a non-terminal
         // property; stay defensive for `Index` values built outside it.
         // A `summableOffCountIndex` index's Sum and Avg rankings chain the
-        // same way (its counters carry counts and sums), so the shallowest
-        // level over all three axes keys the rules.
+        // same way (its counters carry their sums up the chain), so the
+        // shallowest level over all three axes keys the rules.
         let Some(at_position) = ranked.at_level_positions(ranked.ranked_at_levels()).min() else {
             continue;
         };

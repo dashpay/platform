@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::query::drive_document_count_query::counter_sum_as_document_count;
 use crate::query::DriveDocumentCountQuery;
-use crate::verify::{verify_absent_range_tree, RootHash};
+use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -34,19 +34,12 @@ impl DriveDocumentCountQuery<'_> {
             return Ok((root_hash, counter_sum_as_document_count(sum)));
         }
         let path_query = self.aggregate_count_path_query(platform_version)?;
-        // A range whose tree does not exist (an equality value no document
-        // holds) totals zero (`verify_absent_range_tree`). Edited in place in
-        // this shipped generation: the prover is unchanged, and such a proof
-        // failed to verify before.
-        match GroveDb::verify_aggregate_count_query(
+        let (root_hash, count) = GroveDb::verify_aggregate_count_query(
             proof,
             &path_query,
             &platform_version.drive.grove_version,
-        ) {
-            Ok(verified) => Ok(verified),
-            Err(error) => verify_absent_range_tree(proof, &path_query.path, platform_version)
-                .map(|root_hash| (root_hash, 0))
-                .ok_or_else(|| Error::GroveDB(Box::new(error))),
-        }
+        )
+        .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        Ok((root_hash, count))
     }
 }

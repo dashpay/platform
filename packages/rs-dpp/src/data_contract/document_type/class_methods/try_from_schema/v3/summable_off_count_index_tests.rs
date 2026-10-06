@@ -3,6 +3,7 @@
 //! count is lossless. Its count and sum read the source's entries, and its average divides them
 //! by the groups.
 
+use super::refusal_test_support::assert_refused;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -150,20 +151,6 @@ fn parse_schemas(
         &mut vec![],
         PlatformVersion::latest(),
     )
-}
-
-fn assert_refused(result: Result<BTreeMap<String, DocumentType>, ProtocolError>, fragment: &str) {
-    let error = result.expect_err("the contract should be refused");
-    assert!(
-        error.to_string().contains(fragment),
-        "expected {fragment:?} in: {error}"
-    );
-    // A paid refusal needs the consensus variant: a bare data contract error
-    // would surface as an internal error in a block
-    assert!(
-        matches!(error, ProtocolError::ConsensusError(_)),
-        "expected a consensus error, got {error:?}"
-    );
 }
 
 fn with(mut index: Value, key: &str, value: Value) -> Value {
@@ -776,20 +763,21 @@ fn should_refuse_a_property_the_source_does_not_fix() {
 
 #[test]
 fn should_refuse_an_index_continuing_below_the_counter() {
+    // An index otherwise admitted (its terminal outside its properties, its
+    // optional hashtag skipped), continuing below the counter's postId
     let continuing = platform_value!({
-        "name": "byAuthorPostLiker",
-        "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$ownerId": "asc" }],
+        "name": "byAuthorPostHashtag",
+        "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "hashtag": "asc" }],
         "terminal": "$ownerId",
+        "skipIfAbsent": true,
     });
-    // The terminal may not repeat a property; key the continuing index by its prefix only
-    let continuing = with(continuing, "terminal", Value::Text("postAuthor".into()));
     assert_refused(
         parse(
             post(),
             like(vec![by_post(), author_post(), continuing]),
             false,
         ),
-        "is continued by index \"byAuthorPostLiker\"",
+        "is continued by index \"byAuthorPostHashtag\"",
     );
 }
 

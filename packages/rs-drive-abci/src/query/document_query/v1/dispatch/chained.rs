@@ -232,7 +232,7 @@ impl<C> Platform<C> {
                     Ok(documents) => documents,
                     Err(error) => {
                         return Ok(QueryValidationResult::new_with_error(
-                            document_serialization_failure(error)?,
+                            document_serialization_failure(error, chained_query.document_type)?,
                         ))
                     }
                 };
@@ -240,7 +240,7 @@ impl<C> Platform<C> {
                 Ok(documents) => documents,
                 Err(error) => {
                     return Ok(QueryValidationResult::new_with_error(
-                        document_serialization_failure(error)?,
+                        document_serialization_failure(error, outer_type)?,
                     ))
                 }
             };
@@ -280,7 +280,7 @@ mod tests {
     use super::*;
     use crate::query::tests::{
         removal_of, remove_post_by_moderator, setup_platform, store_data_contract, store_document,
-        with_moderated_posts,
+        with_likes_read_whole_through_by_liker, with_moderated_posts,
     };
     use dapi_grpc::platform::v0::get_documents_request::document_field_value;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::select::Function as SelectFunction;
@@ -324,12 +324,16 @@ mod tests {
         dpp::prelude::DataContract,
     ) {
         setup_yappr_state_with(|version| {
-            json_document_to_contract(contract_path, false, version)
-                .expect("expected to parse the yappr-likes contract")
+            with_likes_read_whole_through_by_liker(
+                json_document_to_contract(contract_path, false, version)
+                    .expect("expected to parse the yappr-likes contract"),
+                version,
+            )
         })
     }
 
-    /// Posts A and B and a like of each by owner 1, in the contract `contract` builds
+    /// Posts A and B and a like of each by owner 1, without a hashtag, in the
+    /// contract `contract` builds
     fn setup_yappr_state_with(
         contract: impl FnOnce(&PlatformVersion) -> dpp::prelude::DataContract,
     ) -> (
@@ -365,10 +369,10 @@ mod tests {
             let mut like = like_type
                 .random_document(Some(seed), version)
                 .expect("like");
-            let mut props = std::collections::BTreeMap::new();
-            props.insert("hashtag".to_string(), Value::Text("dash".to_string()));
-            props.insert("postId".to_string(), Value::Identifier(post));
-            like.set_properties(props);
+            like.set_properties(std::collections::BTreeMap::from([(
+                "postId".to_string(),
+                Value::Identifier(post),
+            )]));
             like.set_owner_id(Identifier::from(OWNER_1));
             store_document(&platform.platform, &contract, like_type, &like, version);
         }
@@ -447,6 +451,34 @@ mod tests {
             posts.iter().map(|p| p.id().to_buffer()).collect::<Vec<_>>(),
             vec![POST_A, POST_B],
             "posts in inner (postId) order"
+        );
+    }
+
+    /// The fixture's like keeps an optional hashtag that `byLiker` does not
+    /// hold: without a proof the chained read is refused with a query error,
+    /// as a documents query through `byLiker` is.
+    #[test]
+    fn should_refuse_a_chained_read_without_a_proof_through_an_index_lacking_a_property() {
+        let (platform, state, version, contract) = setup_yappr_state_with(|version| {
+            json_document_to_contract(YAPPR_CONTRACT_PATH, false, version)
+                .expect("expected to parse the yappr-likes contract")
+        });
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                chained_request(false, contract.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::Query(QuerySyntaxError::Unsupported(_))]
+            ),
+            "errors: {:?}",
+            result.errors
         );
     }
 
@@ -619,8 +651,11 @@ mod tests {
     fn should_report_a_removed_post_of_a_moderated_document_join_with_its_record() {
         let (platform, state, version, contract) = setup_yappr_state_with(|version| {
             with_moderated_posts(
-                json_document_to_contract(YAPPR_DELETABLE_POSTS_CONTRACT_PATH, false, version)
-                    .expect("expected to parse the yappr-likes contract"),
+                with_likes_read_whole_through_by_liker(
+                    json_document_to_contract(YAPPR_DELETABLE_POSTS_CONTRACT_PATH, false, version)
+                        .expect("expected to parse the yappr-likes contract"),
+                    version,
+                ),
                 version,
             )
         });

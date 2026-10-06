@@ -38,6 +38,8 @@ use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+#[cfg(feature = "server")]
+use crate::query::is_absent_path;
 use crate::query::{
     document_index_admissible_for_query, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
     WhereClause, WhereOperator,
@@ -1061,14 +1063,7 @@ impl DriveDocumentQuery<'_> {
             &platform_version.drive,
         );
         let (elements, skipped) = match query_result {
-            Err(Error::GroveDB(grove_error))
-                if matches!(
-                    grove_error.as_ref(),
-                    grovedb::Error::PathKeyNotFound(_)
-                        | grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                ) =>
-            {
+            Err(error) if is_absent_path(&error) => {
                 return Ok((Vec::new(), 0));
             }
             other => other?,

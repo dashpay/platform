@@ -186,7 +186,7 @@ impl DriveDocumentCountQuery<'_> {
     /// `summableOffCountIndex` index ([`Self::refuse_a_counter_index`]) and
     /// one whose path passes through a ranked level (see
     /// [`refuse_a_range_total_through_a_ranked_index`]).
-    pub(crate) fn refuse_a_range_count_total(&self) -> Result<(), Error> {
+    fn refuse_a_range_count_total(&self) -> Result<(), Error> {
         self.refuse_a_counter_index()?;
         refuse_a_range_total_through_a_ranked_index(self.document_type, self.index)
     }

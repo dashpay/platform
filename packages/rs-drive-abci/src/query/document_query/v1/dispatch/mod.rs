@@ -19,9 +19,11 @@ use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     ranked_entry, RankedEntry,
 };
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
 use dpp::ProtocolError;
-use drive::error::query::QuerySyntaxError;
+use drive::query::uncovered_required_property_refusal;
 use drive::query::{RankedEntry as DriveRankedEntry, RankedEntryValue};
 
 /// Translate an rs-drive `RankedEntry` into the wire `RankedEntry`.
@@ -118,20 +120,22 @@ fn empty_ranking_proof_rejection(error: &drive::error::Error) -> Option<QueryErr
 }
 
 /// A failure serializing a document a non-proof chained or composite read
-/// returns. A document an indexOnly index synthesizes lacks every property no
-/// entry-keeping index holds (one a `summableOffCountIndex` index's source
-/// fixes), and a required one cannot be serialized: that is the query's
-/// doing, refused with a query error as a plain documents query through such
-/// an index is, not an internal one. Anything else stays an internal error.
-fn document_serialization_failure(error: ProtocolError) -> Result<QueryError, Error> {
+/// returns, of `document_type`. Drive refuses such a read before reading when
+/// an indexOnly index lacks a property (`refuse_an_uncovered_index_only_projection`),
+/// but a document an indexOnly index synthesizes can still lack a required
+/// system property the index does not hold (`$createdAt`, say), which cannot
+/// be serialized: that is the query's doing, refused with the query error a
+/// plain documents query through such an index returns. Anything else, a
+/// stored document of a regular type included, stays an internal error.
+fn document_serialization_failure(
+    error: ProtocolError,
+    document_type: DocumentTypeRef,
+) -> Result<QueryError, Error> {
     match error {
-        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_)) => {
-            Ok(QueryError::Query(QuerySyntaxError::Unsupported(
-                "this indexOnly query's index does not cover every required property, so the \
-                 documents it synthesizes cannot be serialized into a non-proof response; query \
-                 through an index covering all properties, or use a proved query"
-                    .to_string(),
-            )))
+        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(_))
+            if document_type.index_only() =>
+        {
+            Ok(QueryError::Query(uncovered_required_property_refusal()))
         }
         other => Err(Error::Protocol(other)),
     }
@@ -140,17 +144,38 @@ fn document_serialization_failure(error: ProtocolError) -> Result<QueryError, Er
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use drive::error::query::QuerySyntaxError;
 
     #[test]
-    fn should_answer_a_missing_required_property_with_a_query_error() {
-        let refused = document_serialization_failure(ProtocolError::DataContractError(
-            DataContractError::MissingRequiredKey("postAuthor".to_string()),
-        ));
+    fn should_answer_a_missing_required_property_with_a_query_error_on_index_only_types() {
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected to parse the yappr-likes contract");
+        let missing = || {
+            ProtocolError::DataContractError(DataContractError::MissingRequiredKey(
+                "postId".to_string(),
+            ))
+        };
+        let like = contract.document_type_for_name("like").expect("like");
         assert!(matches!(
-            refused,
+            document_serialization_failure(missing(), like),
             Ok(QueryError::Query(QuerySyntaxError::Unsupported(_)))
         ));
-        let internal = document_serialization_failure(ProtocolError::Generic("other".to_string()));
-        assert!(matches!(internal, Err(Error::Protocol(_))));
+        // A stored document lacking a required property is corrupt state.
+        let post = contract.document_type_for_name("post").expect("post");
+        assert!(matches!(
+            document_serialization_failure(missing(), post),
+            Err(Error::Protocol(_))
+        ));
+        assert!(matches!(
+            document_serialization_failure(ProtocolError::Generic("other".to_string()), like),
+            Err(Error::Protocol(_))
+        ));
     }
 }

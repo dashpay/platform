@@ -56,6 +56,14 @@ impl DriveDocumentSumQuery<'_> {
             .any(|wc| wc.operator == WhereOperator::In);
 
         if matches!(options.walk_mode, RangeSumWalkMode::Aggregate) {
+            // An absent value reads zero as the proof of the same total
+            // verifies it (`aggregate_or_zero_when_absent`).
+            let range_total_verifier = platform_version
+                .drive
+                .methods
+                .verify
+                .document_sum
+                .verify_aggregate_sum_proof;
             if has_in_on_prefix {
                 // Enforce exactly one `In` clause. Without this, a request
                 // with multiple In filters would silently use only the
@@ -118,6 +126,7 @@ impl DriveDocumentSumQuery<'_> {
                         drive,
                         &path_query.path,
                         value,
+                        range_total_verifier,
                         transaction,
                         platform_version,
                     )?;
@@ -155,6 +164,7 @@ impl DriveDocumentSumQuery<'_> {
                 drive,
                 &path_query.path,
                 value,
+                range_total_verifier,
                 transaction,
                 platform_version,
             )?;

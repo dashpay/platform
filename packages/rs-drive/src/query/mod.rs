@@ -163,6 +163,8 @@ use crate::config::DriveConfig;
 use crate::util::common::encode::encode_u64;
 #[cfg(feature = "server")]
 use crate::util::grove_operations::QueryType::StatefulQuery;
+#[cfg(feature = "server")]
+use dpp::version::FeatureVersion;
 
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1472,6 +1474,21 @@ pub(crate) fn is_absent_path(error: &Error) -> bool {
     )
 }
 
+/// The refusal of a non-proof read whose indexOnly documents lack a required
+/// property their index does not hold, so they cannot be serialized: the
+/// query's doing, refused with a query error (`Unsupported`), not an internal
+/// one. The documents query and drive-abci's chained and composite handlers
+/// share it.
+#[cfg(feature = "server")]
+pub fn uncovered_required_property_refusal() -> QuerySyntaxError {
+    QuerySyntaxError::Unsupported(
+        "this indexOnly query's index does not cover every required property, so the \
+         documents it synthesizes cannot be serialized into a non-proof response; query \
+         through an index covering all properties, or use a proved query"
+            .to_string(),
+    )
+}
+
 /// A range total's aggregate read without a proof (the tree at `path`), or
 /// zero when that tree does not exist. An equality or `IN` value on the prefix
 /// that no document holds has no subtree, and grovedb's
@@ -1480,24 +1497,33 @@ pub(crate) fn is_absent_path(error: &Error) -> bool {
 /// `InvalidParentLayerPath`. grovedb raises that for any failure reading a
 /// parent key, a corrupt or unreadable element included, so the zero is
 /// answered only once a plain read of the path, from its root down, finds a key
-/// missing; any other error stays an error. The proof agrees: its verifiers
-/// accept the prover's proof that the key is missing as a zero total
-/// ([`crate::verify::verify_absent_range_tree`]). Not where the missing key sits
-/// below an `IN` value of a carrier proof, between the `IN` and the range: the
-/// carrier verifier refuses that proof, though zero is the answer.
+/// missing; any other error stays an error. From protocol version 14 the
+/// proof agrees: the range-total verifiers at version 1 accept the prover's
+/// proof that the key is missing as a zero total
+/// ([`crate::verify::or_empty_range_total`]), where version 0 refuses it. Not
+/// where the missing key sits below an `IN` value of a carrier proof, between
+/// the `IN` and the range: the carrier verifier refuses that proof, though
+/// zero is the answer. Nor where the path passes through an empty provable
+/// tree of the read's own kind (a `rangeCountable` index's property tree
+/// before its first document, under a count): grovedb cannot prove that read.
 ///
-/// Unversioned, so every protocol version reaches it: before, such a read
-/// failed with an internal error at every protocol version with range counts.
+/// Keyed on `range_total_verifier`, the version of the verifier proving the
+/// same total, so the unproven answer moves with the proved one: from version
+/// 1, which only protocol version 14 selects, an absent value reads zero; at
+/// version 0 the read fails with grovedb's `InvalidParentLayerPath` error, as
+/// released.
 #[cfg(feature = "server")]
 pub(crate) fn aggregate_or_zero_when_absent<T: Default>(
     drive: &Drive,
     path: &[Vec<u8>],
     value: Result<T, grovedb::Error>,
+    range_total_verifier: FeatureVersion,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<T, Error> {
-    match value {
-        Err(error @ grovedb::Error::InvalidParentLayerPath(_)) => {
+    match (value, range_total_verifier) {
+        (value, 0) => value.map_err(|e| Error::GroveDB(Box::new(e))),
+        (Err(error @ grovedb::Error::InvalidParentLayerPath(_)), 1) => {
             for depth in 0..path.len() {
                 let found = drive
                     .grove
@@ -1515,7 +1541,12 @@ pub(crate) fn aggregate_or_zero_when_absent<T: Default>(
             }
             Err(Error::GroveDB(Box::new(error)))
         }
-        other => other.map_err(|e| Error::GroveDB(Box::new(e))),
+        (value, 1) => value.map_err(|e| Error::GroveDB(Box::new(e))),
+        (_, version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "aggregate_or_zero_when_absent".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        })),
     }
 }
 
@@ -3555,6 +3586,65 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(feature = "server")]
+    /// Refuses a read without a proof of an indexOnly type through an index
+    /// that does not cover EVERY property: such a read serializes the
+    /// documents it synthesizes, and a projection lacking a property cannot
+    /// produce a faithful one. Partial projections only travel the proved read
+    /// surface, where the client synthesizes them itself from the proof. The
+    /// check includes optional properties (skipIfAbsent skip properties): the
+    /// wire encodes absent-vs-present, and a projection that does not carry
+    /// an optional property cannot distinguish "absent on the row" from "not
+    /// in this index", so serializing it would assert an absence the index
+    /// cannot know (and a delete built from it would not match the row).
+    /// Checked from the schema before any read, by the documents query and by
+    /// the chained and composite reads of indexOnly documents. Does nothing on
+    /// any other type.
+    pub(crate) fn refuse_an_uncovered_index_only_projection(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if !self.document_type.index_only() {
+            return Ok(());
+        }
+        // By-id and cursor shapes carry dedicated guidance deeper in the route
+        // (no primary-key tree; keyset pagination) — let them reach it instead
+        // of preempting with the coverage refusal below, which would
+        // misdescribe the problem. A clause-free flat scan is classified as a
+        // primary-key query, but still synthesizes an index projection and
+        // must pass the same coverage check as a filtered query.
+        if (self.is_for_primary_key() && !self.index_only_flat_scan_applies())
+            || self.start_at.is_some()
+        {
+            return Ok(());
+        }
+        let index = self.index_only_query_index(platform_version)?;
+        let covers_every_property = self
+            .document_type
+            .flattened_properties()
+            .iter()
+            .filter(|(_, property)| {
+                !matches!(property.property_type, DocumentPropertyType::Object(_))
+            })
+            .all(|(name, _)| {
+                index.terminal_contains(name)
+                    || self.document_type.entry_payload().contains(name.as_str())
+                    || index
+                        .properties
+                        .iter()
+                        .any(|index_property| index_property.name == *name)
+            });
+        if covers_every_property {
+            return Ok(());
+        }
+        Err(Error::Query(QuerySyntaxError::Unsupported(
+            "this indexOnly query's index does not cover every property, so the documents it \
+             synthesizes cannot be serialized into a non-proof response; query through an \
+             index covering all properties, or use a proved query"
+                .to_string(),
+        )))
+    }
+
+    #[cfg(feature = "server")]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_raw_results_no_proof_internal(
         &self,
@@ -3566,54 +3656,13 @@ impl<'a> DriveDocumentQuery<'a> {
         // indexOnly documents have no stored bodies — the raw elements under
         // the entries are row commitments, not documents. Synthesize the
         // documents from their (path, key) positions and serialize them into
-        // the wire shape this path's callers return. An index that does not
-        // cover EVERY property cannot produce a faithful serialized
-        // document: partial projections only travel the proved read surface,
-        // where the client synthesizes them itself from the proof. The check
-        // includes optional properties (skipIfAbsent skip properties) — the wire
-        // encodes absent-vs-present, and a projection that does not carry an
-        // optional property cannot distinguish "absent on the row" from
-        // "not in this index", so serializing it would assert an absence the
-        // index cannot know.
+        // the wire shape this path's callers return, once the index is known
+        // to cover every property
+        // (`refuse_an_uncovered_index_only_projection`).
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
             if self.document_type.index_only() {
-                // By-id and cursor shapes carry dedicated guidance deeper in
-                // the route (no primary-key tree; keyset pagination) — let
-                // them reach it instead of preempting with the coverage
-                // refusal below, which would misdescribe the problem.
-                // A clause-free flat scan is classified as a primary-key
-                // query, but still synthesizes an index projection and must
-                // pass the same coverage check as a filtered query.
-                if (!self.is_for_primary_key() || self.index_only_flat_scan_applies())
-                    && self.start_at.is_none()
-                {
-                    let index = self.index_only_query_index(platform_version)?;
-                    let covers_every_property = self
-                        .document_type
-                        .flattened_properties()
-                        .iter()
-                        .filter(|(_, property)| {
-                            !matches!(property.property_type, DocumentPropertyType::Object(_))
-                        })
-                        .all(|(name, _)| {
-                            index.terminal_contains(name)
-                                || self.document_type.entry_payload().contains(name.as_str())
-                                || index
-                                    .properties
-                                    .iter()
-                                    .any(|index_property| index_property.name == *name)
-                        });
-                    if !covers_every_property {
-                        return Err(Error::Query(QuerySyntaxError::Unsupported(
-                            "this indexOnly query's index does not cover every property, so \
-                             the documents it synthesizes cannot be serialized into a \
-                             non-proof response; query through an index covering all \
-                             properties, or use a proved query"
-                                .to_string(),
-                        )));
-                    }
-                }
+                self.refuse_an_uncovered_index_only_projection(platform_version)?;
                 let (documents, skipped) = self.execute_index_only_documents_no_proof_internal(
                     drive,
                     transaction,
@@ -3628,13 +3677,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .map_err(|error| match error {
                                 ProtocolError::DataContractError(
                                     dpp::data_contract::errors::DataContractError::MissingRequiredKey(_),
-                                ) => Error::Query(QuerySyntaxError::Unsupported(
-                                    "this indexOnly query's index does not cover every required \
-                                     property, so the documents it synthesizes cannot be \
-                                     serialized into a non-proof response; query through an \
-                                     index covering all properties, or use a proved query"
-                                        .to_string(),
-                                )),
+                                ) => Error::Query(uncovered_required_property_refusal()),
                                 other => other.into(),
                             })
                     })

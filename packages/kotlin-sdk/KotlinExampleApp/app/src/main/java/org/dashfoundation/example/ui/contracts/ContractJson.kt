@@ -201,6 +201,9 @@ internal fun indexAxisDescriptors(index: JsonObject): List<String> {
 /**
  * [label] for a ranking keyword authored as `true`, or with the levels of
  * its `{ "at": <property or properties> }` form; `null` when absent.
+ *
+ * Ported from `AuthoredIndexKeywords.rankedAtLevels` in
+ * packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIndex.swift.
  */
 private fun rankingDescriptor(index: JsonObject, key: String, label: String): String? {
     if (index.boolField(key) == true) return label

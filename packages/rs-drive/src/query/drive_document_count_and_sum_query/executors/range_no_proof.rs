@@ -356,6 +356,19 @@ impl Drive {
             transaction,
             &drive_version.grove_version,
         );
-        aggregate_or_zero_when_absent(self, &path_query.path, value, transaction, platform_version)
+        // An absent value reads zero as the proof of the same total verifies it.
+        aggregate_or_zero_when_absent(
+            self,
+            &path_query.path,
+            value,
+            platform_version
+                .drive
+                .methods
+                .verify
+                .document_sum
+                .verify_aggregate_count_and_sum_proof,
+            transaction,
+            platform_version,
+        )
     }
 }

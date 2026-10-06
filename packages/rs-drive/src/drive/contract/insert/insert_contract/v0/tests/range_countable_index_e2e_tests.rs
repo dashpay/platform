@@ -17,7 +17,6 @@
 
 use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::query::drive_document_count_query::{
     CountMode, DocumentCountRequest, DocumentCountResponse,
 };
@@ -177,17 +176,35 @@ fn insert_brand_color_widgets(
     widgets: &[(&str, &str)],
     platform_version: &PlatformVersion,
 ) {
+    insert_widgets(
+        drive,
+        contract,
+        widgets.iter().map(|(brand, color)| {
+            BTreeMap::from([
+                ("brand".to_string(), Value::Text(brand.to_string())),
+                ("color".to_string(), Value::Text(color.to_string())),
+            ])
+        }),
+        platform_version,
+    );
+}
+
+/// Inserts one widget per property map: a random document carrying those
+/// properties.
+fn insert_widgets(
+    drive: &Drive,
+    contract: &DataContract,
+    widgets: impl IntoIterator<Item = BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) {
     let document_type = contract
         .document_type_for_name("widget")
         .expect("widget exists");
-    for (i, (brand, color)) in widgets.iter().enumerate() {
+    for (i, properties) in widgets.into_iter().enumerate() {
         let mut doc = document_type
             .random_document(Some((i + 1) as u64), platform_version)
             .expect("random document");
-        doc.set_properties(BTreeMap::from([
-            ("brand".to_string(), Value::Text(brand.to_string())),
-            ("color".to_string(), Value::Text(color.to_string())),
-        ]));
+        doc.set_properties(properties);
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
@@ -207,6 +224,16 @@ fn insert_brand_color_widgets(
             )
             .expect("expected to insert document");
     }
+}
+
+/// The live grovedb root hash at `platform_version`, which a proof must
+/// reconstruct.
+fn live_root_hash(drive: &Drive, platform_version: &PlatformVersion) -> [u8; 32] {
+    drive
+        .grove
+        .root_hash(None, &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("root hash must be readable")
 }
 
 /// The top-level property-name tree at `[contract_doc, doctype, "color"]`
@@ -1118,18 +1145,22 @@ fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
     assert_eq!(summed[0].count, Some(6));
 }
 
-/// A brand no widget carries has no subtree under the index, and a range
-/// total counts it as zero, without a proof and with one alike, at the last
-/// shipped protocol version and the latest: across an `IN` its branch adds
-/// nothing, and a range of that brand alone totals zero, its proof verifying
-/// the brand absent against the live root.
+/// A brand no widget carries has no subtree under the index. From protocol
+/// version 14 a range total counts it as zero: without a proof, across an `IN`
+/// its branch adds nothing and a range of that brand alone totals zero, and
+/// the proof of the brand alone verifies the brand absent, a zero total
+/// against the live root (the aggregate count verifier's version 1, on which
+/// the unproven read is keyed). At 13 both fail, as released.
 #[test]
 fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
     use crate::query::RangeCountOptions;
 
-    for pv in [
-        PlatformVersion::get(13).expect("protocol version 13 exists"),
-        PlatformVersion::latest(),
+    for (pv, reads_zero) in [
+        (
+            PlatformVersion::get(13).expect("protocol version 13 exists"),
+            false,
+        ),
+        (PlatformVersion::latest(), true),
     ] {
         let drive = setup_drive_with_initial_state_structure(Some(pv));
         let contract = build_brand_color_contract(PROTOCOL_VERSION_V12);
@@ -1152,11 +1183,7 @@ fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
             &[("acme", "red"), ("acme", "red"), ("acme", "blue")],
             pv,
         );
-        let live_root = drive
-            .grove
-            .root_hash(None, &pv.drive.grove_version)
-            .unwrap()
-            .expect("root hash must be readable");
+        let live_root = live_root_hash(&drive, pv);
 
         let brand = |operator: WhereOperator, value: Value| WhereClause {
             field: "brand".to_string(),
@@ -1210,8 +1237,16 @@ fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
                 },
                 None,
                 pv,
-            )
-            .expect("the range total executes");
+            );
+            if !reads_zero {
+                assert!(
+                    total.is_err(),
+                    "protocol version {} fails {where_clauses:?}",
+                    pv.protocol_version
+                );
+                continue;
+            }
+            let total = total.expect("the range total executes");
             assert_eq!(total.len(), 1, "{where_clauses:?}");
             assert_eq!(total[0].count, Some(expected), "{where_clauses:?}");
         }
@@ -1232,15 +1267,301 @@ fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
         let proof = query
             .execute_aggregate_count_with_proof(&drive, None, pv)
             .expect("the range total proves");
-        let (root_hash, count) = query
-            .verify_aggregate_count_proof(&proof, pv)
-            .expect("the proof of an absent brand verifies");
+        let verified = query.verify_aggregate_count_proof(&proof, pv);
+        if !reads_zero {
+            assert!(
+                verified.is_err(),
+                "protocol version {} refuses the proof of an absent brand",
+                pv.protocol_version
+            );
+            continue;
+        }
+        let (root_hash, count) = verified.expect("the proof of an absent brand verifies");
         assert_eq!(
             root_hash, live_root,
             "protocol version {}",
             pv.protocol_version
         );
         assert_eq!(count, 0, "protocol version {}", pv.protocol_version);
+    }
+}
+
+/// With no widget yet, `byBrand`'s `brand` tree is an empty provable count
+/// tree, which a count read through `byBrandColor` passes through. From
+/// protocol version 14 (grovedb's `GROVE_V4`) the prover proves that tree
+/// empty and descends no further, so a range total of a brand verifies as
+/// zero and a carrier over brands as no branch, against the live root, as the
+/// unproven total reads zero. At 13 the prover refuses, and the unproven
+/// total fails, as released.
+#[test]
+#[ignore = "needs the grovedb pin that carries dashpay/grovedb#1010 (GROVE_V4 proves a path through an empty provable tree)"]
+fn should_prove_a_range_total_through_an_empty_count_tree() {
+    use crate::query::RangeCountOptions;
+
+    for (pv, proves) in [
+        (
+            PlatformVersion::get(13).expect("protocol version 13 exists"),
+            false,
+        ),
+        (PlatformVersion::latest(), true),
+    ] {
+        let contract = DataContractFactory::new(pv.protocol_version)
+            .expect("expected to create factory")
+            .create_with_value_config(
+                Identifier::from([9; 32]),
+                0,
+                platform_value!({
+                    "widget": {
+                        "type": "object",
+                        "properties": {
+                            "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                            "color": { "type": "string", "position": 1, "maxLength": 32 },
+                        },
+                        "required": ["brand", "color"],
+                        "indices": [
+                            {
+                                "name": "byBrand",
+                                "properties": [{"brand": "asc"}],
+                                "countable": "countable",
+                                "rangeCountable": true,
+                            },
+                            {
+                                "name": "byBrandColor",
+                                "properties": [{"brand": "asc"}, {"color": "asc"}],
+                                "countable": "countable",
+                                "rangeCountable": true,
+                            },
+                        ],
+                        "additionalProperties": false,
+                    },
+                }),
+                None,
+                None,
+            )
+            .expect("create contract")
+            .data_contract_owned();
+        let drive = setup_drive_with_initial_state_structure(Some(pv));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        assert!(
+            matches!(
+                read_grove_element(
+                    &drive,
+                    &property_name_tree_path(&contract, "widget", "brand")[..4],
+                    b"brand",
+                ),
+                Some(Element::ProvableCountTree(None, 0, _))
+            ),
+            "byBrand's brand tree is an empty provable count tree"
+        );
+        let after_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+        let query_for = |brand: WhereClause| {
+            let where_clauses = vec![brand, after_blue.clone()];
+            let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                document_type.indexes(),
+                &where_clauses,
+                &[],
+            )
+            .expect("byBrandColor answers the range");
+            DriveDocumentCountQuery {
+                document_type,
+                contract_id: contract.id().to_buffer(),
+                document_type_name: "widget".to_string(),
+                index,
+                where_clauses,
+            }
+        };
+
+        let acme = query_for(WhereClause {
+            field: "brand".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("acme".to_string()),
+        });
+        let unproved = acme.execute_range_count_no_proof(
+            &drive,
+            &RangeCountOptions {
+                distinct: false,
+                limit: None,
+                order_by_ascending: true,
+            },
+            None,
+            pv,
+        );
+        let proof = acme.execute_aggregate_count_with_proof(&drive, None, pv);
+        let brands = query_for(WhereClause {
+            field: "brand".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("acme".to_string()),
+                Value::Text("zeta".to_string()),
+            ]),
+        });
+        let carrier_proof =
+            brands.execute_carrier_aggregate_count_with_proof(&drive, None, true, None, pv);
+        if !proves {
+            assert!(unproved.is_err(), "the unproven total fails at 13");
+            assert!(proof.is_err(), "the prover refuses at 13");
+            assert!(
+                carrier_proof.is_err(),
+                "the prover refuses the carrier at 13"
+            );
+            continue;
+        }
+        let unproved = unproved.expect("the unproven total executes");
+        assert_eq!(unproved.len(), 1);
+        assert_eq!(unproved[0].count, Some(0));
+        let (root_hash, count) = acme
+            .verify_aggregate_count_proof(&proof.expect("the range total proves"), pv)
+            .expect("the range total's proof verifies");
+        assert_eq!(root_hash, live_root_hash(&drive, pv));
+        assert_eq!(count, 0);
+        let (root_hash, branches) = brands
+            .verify_carrier_aggregate_count_proof(
+                &carrier_proof.expect("the carrier proves"),
+                None,
+                true,
+                pv,
+            )
+            .expect("the carrier's proof verifies");
+        assert_eq!(root_hash, live_root_hash(&drive, pv));
+        assert!(branches.is_empty(), "no brand has a branch: {branches:?}");
+    }
+}
+
+/// With no widget yet, `byBrand`'s `brand` tree is an empty provable sum tree,
+/// which a count read does not aggregate: grovedb proves it without a lower
+/// layer, and its per-key verifier refuses that as a missing layer. From
+/// protocol version 14 the carrier count verifier's version 1 reads the proof
+/// as no brand branch, against the live root, as the unproven total reads
+/// zero; at 13 version 0 refuses the proof, as released.
+#[test]
+fn should_verify_a_carrier_count_under_an_empty_sum_tree_as_no_branch() {
+    for (pv, proof_verifies) in [
+        (
+            PlatformVersion::get(13).expect("protocol version 13 exists"),
+            false,
+        ),
+        (PlatformVersion::latest(), true),
+    ] {
+        let contract = DataContractFactory::new(pv.protocol_version)
+            .expect("expected to create factory")
+            .create_with_value_config(
+                Identifier::from([9; 32]),
+                0,
+                platform_value!({
+                    "widget": {
+                        "type": "object",
+                        "properties": {
+                            "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                            "color": { "type": "string", "position": 1, "maxLength": 32 },
+                            "amount": { "type": "integer", "position": 2, "minimum": 0, "maximum": 1000 },
+                        },
+                        "required": ["brand", "color", "amount"],
+                        "indices": [
+                            {
+                                "name": "byBrand",
+                                "properties": [{"brand": "asc"}],
+                                "summable": "amount",
+                                "rangeSummable": true,
+                            },
+                            {
+                                "name": "byBrandColor",
+                                "properties": [{"brand": "asc"}, {"color": "asc"}],
+                                "countable": "countable",
+                                "rangeCountable": true,
+                            },
+                        ],
+                        "additionalProperties": false,
+                    },
+                }),
+                None,
+                None,
+            )
+            .expect("create contract")
+            .data_contract_owned();
+        let drive = setup_drive_with_initial_state_structure(Some(pv));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        assert!(
+            matches!(
+                read_grove_element(
+                    &drive,
+                    &property_name_tree_path(&contract, "widget", "brand")[..4],
+                    b"brand",
+                ),
+                Some(Element::ProvableSumTree(None, 0, _))
+            ),
+            "byBrand's brand tree is an empty provable sum tree"
+        );
+        let per_brand = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Text("acme".to_string()),
+                    Value::Text("zeta".to_string()),
+                ]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("blue".to_string()),
+            },
+        ];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &per_brand,
+            &[],
+        )
+        .expect("byBrandColor answers the range");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: per_brand,
+        };
+        let proof = query
+            .execute_carrier_aggregate_count_with_proof(&drive, None, true, None, pv)
+            .expect("the carrier proves");
+        let verified = query.verify_carrier_aggregate_count_proof(&proof, None, true, pv);
+        if !proof_verifies {
+            assert!(
+                verified.is_err(),
+                "protocol version {} refuses the proof",
+                pv.protocol_version
+            );
+            continue;
+        }
+        let (root_hash, branches) = verified.expect("the carrier proof verifies");
+        assert_eq!(root_hash, live_root_hash(&drive, pv), "the proof's root");
+        assert!(branches.is_empty(), "no brand has a branch: {branches:?}");
     }
 }
 
@@ -1301,52 +1622,28 @@ fn should_count_through_a_wrapped_tree_unchanged_at_protocol_version_13() {
             pv,
         )
         .expect("apply contract");
+    insert_widgets(
+        &drive,
+        &contract,
+        [
+            ("acme", "red", 5u64),
+            ("acme", "blue", 7),
+            ("contoso", "red", 1),
+        ]
+        .map(|(brand, color, amount)| {
+            BTreeMap::from([
+                ("brand".to_string(), Value::Text(brand.to_string())),
+                ("color".to_string(), Value::Text(color.to_string())),
+                ("amount".to_string(), Value::U64(amount)),
+            ])
+        }),
+        pv,
+    );
     let document_type = contract
         .document_type_for_name("widget")
         .expect("widget exists");
-    for (i, (brand, color, amount)) in [
-        ("acme", "red", 5u64),
-        ("acme", "blue", 7),
-        ("contoso", "red", 1),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let mut doc = document_type
-            .random_document(Some((i + 1) as u64), pv)
-            .expect("random document");
-        doc.set_properties(BTreeMap::from([
-            ("brand".to_string(), Value::Text(brand.to_string())),
-            ("color".to_string(), Value::Text(color.to_string())),
-            ("amount".to_string(), Value::U64(amount)),
-        ]));
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&doc, None)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                pv,
-                None,
-            )
-            .expect("expected to insert document");
-    }
-    let acme_path = vec![
-        vec![RootTree::DataContractDocuments as u8],
-        contract.id().to_buffer().to_vec(),
-        vec![1u8],
-        b"widget".to_vec(),
-        b"brand".to_vec(),
-        b"acme".to_vec(),
-    ];
+    let mut acme_path = property_name_tree_path(&contract, "widget", "brand");
+    acme_path.push(b"acme".to_vec());
     assert!(
         matches!(
             read_grove_element(&drive, &acme_path, b"color"),
@@ -1404,14 +1701,7 @@ fn should_count_through_a_wrapped_tree_unchanged_at_protocol_version_13() {
     }
     .verify_point_lookup_count_proof(&proof, pv)
     .expect("the count proof verifies at protocol version 13");
-    assert_eq!(
-        root_hash,
-        drive
-            .grove
-            .root_hash(None, &pv.drive.grove_version)
-            .unwrap()
-            .expect("root hash must be readable")
-    );
+    assert_eq!(root_hash, live_root_hash(&drive, pv));
     assert_eq!(
         entries.iter().filter_map(|entry| entry.count).sum::<u64>(),
         2,
@@ -3490,11 +3780,7 @@ fn should_answer_count_proofs_and_price_the_contract_unchanged_at_protocol_versi
         ],
         pv,
     );
-    let live_root = drive
-        .grove
-        .root_hash(None, &pv.drive.grove_version)
-        .unwrap()
-        .expect("root hash must be readable");
+    let live_root = live_root_hash(&drive, pv);
     let document_type = contract
         .document_type_for_name("widget")
         .expect("widget exists");

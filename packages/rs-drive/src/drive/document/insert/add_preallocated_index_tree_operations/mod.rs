@@ -114,22 +114,56 @@ impl Drive {
         } else {
             None
         };
+        // Each binding walks its own index, so two preallocated indexes sharing
+        // leading properties reach the same trees: each binding's inserts are
+        // checked against the operations the earlier ones queued (after the
+        // earlier documents' of the batch), so a tree is queued and its
+        // existence read once, as the entry walkers, walking the shared index
+        // levels once, do.
+        let mut queued = Vec::new();
         for (referring_type, index, binding) in
             preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
         {
-            self.add_preallocated_index_tree_operations_for_binding(
-                document_and_contract_info,
-                referring_type,
-                index,
-                &binding,
-                storage_flags,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+            let mut binding_operations = Vec::new();
+            let result = match previous_batch_operations {
+                Some(previous) => {
+                    // The earlier documents' operations and this document's,
+                    // checked as one queue; inserts never leave it, so ours
+                    // are its tail again afterwards.
+                    let ours = queued.len();
+                    previous.append(&mut queued);
+                    let result = self.add_preallocated_index_tree_operations_for_binding(
+                        document_and_contract_info,
+                        referring_type,
+                        index,
+                        &binding,
+                        storage_flags,
+                        &mut Some(&mut **previous),
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        &mut binding_operations,
+                        platform_version,
+                    );
+                    queued = previous.split_off(previous.len() - ours);
+                    result
+                }
+                None => self.add_preallocated_index_tree_operations_for_binding(
+                    document_and_contract_info,
+                    referring_type,
+                    index,
+                    &binding,
+                    storage_flags,
+                    &mut Some(&mut queued),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut binding_operations,
+                    platform_version,
+                ),
+            };
+            result?;
+            queued.append(&mut binding_operations);
         }
+        batch_operations.append(&mut queued);
         Ok(())
     }
 
