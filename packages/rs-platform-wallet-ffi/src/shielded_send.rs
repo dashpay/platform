@@ -3101,7 +3101,7 @@ mod tests {
     ) -> i32 {
         let phrase = TIP_TEST_MNEMONIC.as_bytes();
         assert!(cap >= phrase.len());
-        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out as *mut u8, phrase.len());
+        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out.cast::<u8>(), phrase.len());
         *out_len = phrase.len();
         rs_sdk_ffi::mnemonic_resolver_result::SUCCESS
     }
