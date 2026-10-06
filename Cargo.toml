@@ -56,15 +56,15 @@ members = [
 
 [workspace.dependencies]
 bincode = { package = "grovedb-bincode", version = "=2.1.0" }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b", default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
-grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b", default-features = false }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
-grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "d7e6f944e1e425b8ee137cbd4f5598ecf6e0ed9b" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac", default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
+grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac", default-features = false }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
+grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "c4362dc0f62050dc725e9b47c809e2947df49dac" }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
 dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e4208c90786a6854bd498315bcb571ef24182c15" }

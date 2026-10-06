@@ -1287,18 +1287,17 @@ fn should_count_a_brand_without_widgets_as_zero_in_a_range_total() {
 }
 
 /// With no widget yet, `byBrand`'s `brand` tree is an empty provable count
-/// tree, which a count read through `byBrandColor` passes through. From
-/// protocol version 14 (grovedb's `GROVE_V4`) the prover proves that tree
-/// empty and descends no further, so a range total of a brand verifies as
-/// zero and a carrier over brands as no branch, against the live root, as the
-/// unproven total reads zero. At 13 the prover refuses, and the unproven
-/// total fails, as released.
+/// tree, which a count read through `byBrandColor` passes through. The prover
+/// proves that tree empty and descends no further (grovedb #1010, #1011). From
+/// protocol version 14 a range total of a brand verifies as zero and a carrier
+/// over brands as no branch, against the live root, as the unproven total
+/// reads zero. At 13 the verifiers' version 0 refuses both proofs and the
+/// unproven total fails, as released.
 #[test]
-#[ignore = "needs the grovedb pin that carries dashpay/grovedb#1010 (GROVE_V4 proves a path through an empty provable tree)"]
 fn should_prove_a_range_total_through_an_empty_count_tree() {
     use crate::query::RangeCountOptions;
 
-    for (pv, proves) in [
+    for (pv, reads_zero) in [
         (
             PlatformVersion::get(13).expect("protocol version 13 exists"),
             false,
@@ -1413,12 +1412,23 @@ fn should_prove_a_range_total_through_an_empty_count_tree() {
         });
         let carrier_proof =
             brands.execute_carrier_aggregate_count_with_proof(&drive, None, true, None, pv);
-        if !proves {
+        if !reads_zero {
             assert!(unproved.is_err(), "the unproven total fails at 13");
-            assert!(proof.is_err(), "the prover refuses at 13");
             assert!(
-                carrier_proof.is_err(),
-                "the prover refuses the carrier at 13"
+                acme.verify_aggregate_count_proof(&proof.expect("the range total proves"), pv)
+                    .is_err(),
+                "the aggregate count verifier's version 0 refuses the proof at 13"
+            );
+            assert!(
+                brands
+                    .verify_carrier_aggregate_count_proof(
+                        &carrier_proof.expect("the carrier proves"),
+                        None,
+                        true,
+                        pv,
+                    )
+                    .is_err(),
+                "the carrier count verifier's version 0 refuses the proof at 13"
             );
             continue;
         }

@@ -1503,9 +1503,7 @@ pub fn uncovered_required_property_refusal() -> QuerySyntaxError {
 /// ([`crate::verify::or_empty_range_total`]), where version 0 refuses it. Not
 /// where the missing key sits below an `IN` value of a carrier proof, between
 /// the `IN` and the range: the carrier verifier refuses that proof, though
-/// zero is the answer. Nor where the path passes through an empty provable
-/// tree of the read's own kind (a `rangeCountable` index's property tree
-/// before its first document, under a count): grovedb cannot prove that read.
+/// zero is the answer.
 ///
 /// Keyed on `range_total_verifier`, the version of the verifier proving the
 /// same total, so the unproven answer moves with the proved one: from version
