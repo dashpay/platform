@@ -45,7 +45,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 0,
-        update_masternode_list: 0,
+        update_masternode_list: 1, // resolves nested platform ports before storing masternodes
         update_quorum_info: 0,
         masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
             get_voter_identity_key: 0,

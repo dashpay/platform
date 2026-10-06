@@ -286,7 +286,7 @@ mod tests {
         PlatformState,
         ProTxHash,
     ) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
 
         let pro_tx_hash = ProTxHash::from_byte_array([0x77u8; 32]);
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn should_only_upsert_changed_entries_in_a_mixed_masternode_diff() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let mut state = PlatformState::default_with_protocol_versions(
             platform_version.protocol_version,

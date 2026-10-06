@@ -98,12 +98,34 @@ final class SDKMethodTests: XCTestCase {
     }
   }
 
+  /// Fetches an identity through `identityGet` from rs-sdk's recorded
+  /// `test_identity_read_v1` vectors: the mock replays the recorded DAPI
+  /// response, the SDK verifies its proof against the recorded quorum key,
+  /// and the identity is decoded into the Swift result.
+  @MainActor
+  func testSimpleIdentityFetch() async throws {
+    let vectors = Self.rsSdkVectors("test_identity_read_v1")
+    guard FileManager.default.fileExists(atPath: vectors) else {
+      XCTFail("missing rs-sdk offline vectors at \(vectors)")
+      return
+    }
+
+    SDK.initialize()
+    let sdk = try SDK(mockVectorsDirectory: vectors)
+
+    // The vectors contain a testnet identity with a GroveDB V1 proof.
+    let identityId = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk"
+    let identity = try await sdk.identityGet(identityId: identityId)
+
+    XCTAssertEqual(identity["id"] as? String, identityId)
+    let publicKeys = try XCTUnwrap(identity["publicKeys"] as? [[String: Any]])
+    XCTAssertFalse(publicKeys.isEmpty, "the recorded identity has public keys")
+  }
+
   /// Fetches an identity's public keys through `identityGetKeys` from
   /// rs-sdk's recorded `test_identity_public_keys_all_read` vectors: the mock
   /// replays the recorded DAPI response, the SDK verifies its proof against
   /// the recorded quorum key, and the keys are decoded into the Swift result.
-  /// It does not read `test_identity_read`: those vectors carry GroveDB V0
-  /// proof envelopes, which every client refuses since dashpay/platform#5294.
   @MainActor
   func testIdentityKeysFetch() async throws {
     let vectors = Self.rsSdkVectors("test_identity_public_keys_all_read")

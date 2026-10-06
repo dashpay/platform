@@ -2008,6 +2008,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     version must be active on a network before its Dash Core activates V24,
 ///     since earlier versions keep failing on these masternodes.
 ///
+/// 78. **Versioned Core masternode address resolution**: `update_masternode_list` 1
+///     resolves nested platform addresses first, then falls back to legacy ports,
+///     before storing the masternode state. Earlier protocol versions keep their
+///     flat-field interpretation. The stored layout and validator construction
+///     remain unchanged: new validators read the resolved stored ports, and an
+///     existing validator is refreshed on a ban, service or P2P-port change.
+///     Each diff starts from the old persisted representation so transient address
+///     data retained before activation cannot make a running node disagree with
+///     a restarted one. Payout lists remain outside the persisted representation.
+///
 /// 80. **A BLS12_381 signature must verify**: `verify_identity_signed_signature`
 ///     1 (`STATE_TRANSITION_METHOD_VERSIONS_V2`), the signature check that
 ///     identity-signature validation runs for every identity-signed

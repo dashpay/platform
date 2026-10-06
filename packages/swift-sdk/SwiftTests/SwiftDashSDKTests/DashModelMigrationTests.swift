@@ -58,23 +58,6 @@ final class DashModelMigrationTests: XCTestCase {
         return (directory, copy)
     }
 
-    /// `DashLegacyStoreSQLite.checkpoint`, retried while the store is still
-    /// locked. SwiftData closes a released container's SQLite connection
-    /// asynchronously, and `checkpoint` deliberately does not wait for locks,
-    /// so under load the first attempt can still meet that connection. Any
-    /// other failure, or a lock that outlasts ten seconds, is thrown.
-    private static func checkpointWhenUnlocked(_ url: URL) throws {
-        let deadline = Date().addingTimeInterval(10)
-        while true {
-            do {
-                return try DashLegacyStoreSQLite.checkpoint(url)
-            } catch DashLegacyStoreSQLite.Failure.database(let reason)
-                where reason == "database is locked" && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.01)
-            }
-        }
-    }
-
     @MainActor
     func testMigrationDiagnosticsReachExportFileWithoutVerboseLogging() throws {
         let fixture = try XCTUnwrap(Self.fixtures.first { $0.name == "historical-v2" })
@@ -660,10 +643,11 @@ final class DashModelMigrationTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("historical-v2.store")
+        let workingURL = directory.appendingPathComponent("working.store")
         try autoreleasepool {
             let schema = Schema(versionedSchema: DashSchemaV2.self)
             let container = try ModelContainer(for: schema, configurations: [
-                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+                ModelConfiguration(schema: schema, url: workingURL, cloudKitDatabase: .none)
             ])
             let context = container.mainContext
             let wallet = DashSchemaV2.PersistentWallet(
@@ -719,8 +703,12 @@ final class DashModelMigrationTests: XCTestCase {
                 networkRaw: Network.testnet.rawValue, proTxHash: Data(repeating: 7, count: 32),
                 label: "fixture", addedAt: 1, snapshotJSON: "{}"))
             try context.save()
+            // Snapshot committed data while SwiftData still owns the WAL store.
+            try withExtendedLifetime(container) {
+                try DashLegacyStoreSQLite.copy(from: workingURL, to: url)
+                try DashLegacyStoreSQLite.validatePreservation(from: workingURL, to: url)
+            }
         }
-        try Self.checkpointWhenUnlocked(url)
         let metadata = try DashSchemaFixtureSupport.describeStore(at: url, version: Schema.Version(2, 0, 0))
         XCTAssertEqual(metadata.entity_hashes.count, 35)
         XCTAssertEqual(metadata.model_checksum, "RrRj/iNbS9izgLQvNb2APed4iwaR7pftEE2+4tea7K8=")
