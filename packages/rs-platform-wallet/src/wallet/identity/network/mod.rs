@@ -19,6 +19,18 @@
 //! broadcaster used by DashPay `send_payment`; it defaults to
 //! `SpvBroadcaster` so most call sites don't need to name it.
 
+use dash_sdk::drive::config::DEFAULT_MAX_QUERY_LIMIT;
+
+/// Page size for the per-identity DPNS username query: Platform's maximum
+/// query limit.
+pub(crate) const DPNS_USERNAMES_PAGE_LIMIT: u32 = DEFAULT_MAX_QUERY_LIMIT as u32;
+
+/// Pages read per identity before giving up on completeness. Paging ends as
+/// soon as a page comes back short (the complete owned set); reaching this
+/// bound means the result is only a lower bound and is merged, never used to
+/// drop names — see `ManagedIdentity::apply_fetched_dpns_names`.
+pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
+
 // Core handle + identity-lifecycle operations.
 mod balance;
 mod contract;

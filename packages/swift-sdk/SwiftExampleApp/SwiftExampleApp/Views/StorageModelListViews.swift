@@ -321,7 +321,7 @@ struct PublicKeyStorageListView: View {
     /// name, then alias, then a short identity id — avoids the
     /// generic "Identity" placeholder except for truly empty rows.
     private func identityDisplayName(_ identity: PersistentIdentity) -> String {
-        if let name = identity.mainDpnsName, !name.isEmpty {
+        if let name = identity.ownedMainDpnsName, !name.isEmpty {
             return name
         }
         if let name = identity.dpnsName, !name.isEmpty {

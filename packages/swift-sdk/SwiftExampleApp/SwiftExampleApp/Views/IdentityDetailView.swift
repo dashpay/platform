@@ -111,7 +111,7 @@ struct IdentityDetailView: View {
                         }
 
                     // Show the main name if selected, otherwise show first registered name
-                    if let mainName = identity.mainDpnsName {
+                    if let mainName = identity.ownedMainDpnsName {
                         HStack {
                             Label(mainName, systemImage: "star.fill")
                                 .font(.subheadline)
