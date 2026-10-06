@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -41,10 +42,16 @@ impl DriveDocumentSumQuery<'_> {
                 left_to_right,
                 platform_version,
             ),
+            1 => self.verify_carrier_aggregate_count_and_sum_proof_v1(
+                proof,
+                limit,
+                left_to_right,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentSumQuery::verify_carrier_aggregate_count_and_sum_proof"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

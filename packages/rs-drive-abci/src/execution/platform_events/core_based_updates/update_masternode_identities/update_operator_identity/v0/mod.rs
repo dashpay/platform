@@ -387,7 +387,6 @@ where
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -540,12 +539,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -619,12 +620,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -681,12 +684,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(new_operator_payout_address),
                 platform_node_id: Some(node_id),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -756,12 +761,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -835,12 +842,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(original_node_id),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -898,12 +907,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(new_platform_node_id),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -988,12 +999,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -1120,12 +1133,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -1223,12 +1238,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -1286,12 +1303,14 @@ mod tests {
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
                 payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: new_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };

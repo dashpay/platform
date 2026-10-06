@@ -15,7 +15,6 @@ pub(crate) trait NewValidatorIfMasternodeInState {
 
 impl NewValidatorIfMasternodeInState for ValidatorV0 {
     /// Makes a validator if the masternode is in the list and is valid
-    #[allow(deprecated)] // Preserve the shipped flat-port projection.
     fn new_validator_if_masternode_in_state(
         pro_tx_hash: ProTxHash,
         public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
@@ -23,6 +22,7 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
     ) -> Option<Self> {
         let MasternodeListItem { state, .. } = state.hpmn_masternode_list().get(&pro_tx_hash)?;
 
+        #[allow(deprecated)]
         let DMNState {
             service,
             platform_node_id,

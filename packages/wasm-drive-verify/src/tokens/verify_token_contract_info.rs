@@ -43,7 +43,7 @@ pub fn verify_token_contract_info(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, contract_info_option) = Drive::verify_token_contract_info(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         token_id_bytes,
         verify_subset_of_proof,
         platform_version,

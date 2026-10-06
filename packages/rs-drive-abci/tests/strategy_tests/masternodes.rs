@@ -1,5 +1,3 @@
-#![allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
-
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
 use dpp::dashcore::hashes::Hash;
@@ -258,12 +256,14 @@ pub fn generate_test_masternodes(
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
                 payout_address: Some(generate_payout_address(rng, add_payout_keys_to_signer)),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -397,12 +397,14 @@ pub fn generate_test_masternodes(
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
                 payout_address: Some(generate_payout_address(rng, add_payout_keys_to_signer)),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: Some(3010),
+                #[allow(deprecated)]
                 legacy_platform_http_port: Some(8080),
-                payouts: None,
                 addresses: None,
             },
         };
@@ -536,11 +538,13 @@ pub fn generate_test_masternodes(
                         SocketAddr::new(IpAddr::V4(random_ip), old_port);
                 }
                 if update.p2p_port {
+                    #[allow(deprecated)]
                     if let Some(port) = hpmn_list_item_b.state.legacy_platform_p2p_port.as_mut() {
                         *port += 1
                     }
                 }
                 if update.http_port {
+                    #[allow(deprecated)]
                     if let Some(port) = hpmn_list_item_b.state.legacy_platform_http_port.as_mut() {
                         *port += 1
                     }

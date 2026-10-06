@@ -172,7 +172,6 @@ impl<C> Platform<C> {
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::platform_types::platform::Platform;
@@ -243,12 +242,14 @@ mod tests {
                 owner_address: Some([byte; 20]),
                 voting_address: [0u8; 20],
                 payout_address: Some([0u8; 20]),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         }
@@ -435,12 +436,14 @@ mod tests {
                 owner_address: None,
                 voting_address: None,
                 payout_address: None,
+                payouts: None,
                 pub_key_operator: None,
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         ));

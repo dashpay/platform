@@ -1,8 +1,6 @@
 /// Accessors for Masternode
 pub mod accessors;
 
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dpp::dashcore_rpc::json::MasternodeListItem;
@@ -25,7 +23,8 @@ pub struct MasternodeV0 {
     pub collateral_hash: Txid,
     /// The index of the collateral transaction output.
     pub collateral_index: u32,
-    /// The address where the collateral is stored.
+    /// The address where the collateral is stored; zero bytes when it has none, as for a
+    /// shared masternode.
     pub collateral_address: [u8; 20],
     /// The amount of the operator's reward for running the masternode.
     pub operator_reward: f32,
@@ -47,10 +46,8 @@ impl Debug for MasternodeV0 {
     }
 }
 
-impl TryFrom<MasternodeListItem> for MasternodeV0 {
-    type Error = Error;
-
-    fn try_from(value: MasternodeListItem) -> Result<Self, Self::Error> {
+impl From<MasternodeListItem> for MasternodeV0 {
+    fn from(value: MasternodeListItem) -> Self {
         let MasternodeListItem {
             node_type,
             pro_tx_hash,
@@ -61,15 +58,15 @@ impl TryFrom<MasternodeListItem> for MasternodeV0 {
             state,
         } = value;
 
-        Ok(Self {
+        Self {
             node_type,
             pro_tx_hash,
             collateral_hash,
             collateral_index,
-            collateral_address: required_legacy_address(collateral_address, "collateralAddress")?,
+            collateral_address: stored_address(collateral_address),
             operator_reward,
-            state: state.try_into()?,
-        })
+            state: state.into(),
+        }
     }
 }
 
@@ -90,11 +87,25 @@ impl From<MasternodeV0> for MasternodeListItem {
             pro_tx_hash,
             collateral_hash,
             collateral_index,
-            collateral_address: Some(collateral_address),
+            collateral_address: loaded_address(collateral_address),
             operator_reward,
             state: state.into(),
         }
     }
+}
+
+/// The stored form of an address a masternode may not have. The stored format has no room for
+/// an absent address, so it is stored as zero bytes, and zero bytes read back as absent. That
+/// loses no owner address: Core refuses a null owner key for every masternode but a shared one,
+/// which has none. A payout or collateral address of zero bytes also reads back as absent;
+/// nothing reads those from the stored list.
+fn stored_address(address: Option<[u8; 20]>) -> [u8; 20] {
+    address.unwrap_or_default()
+}
+
+/// The address a [`stored_address`] holds.
+fn loaded_address(address: [u8; 20]) -> Option<[u8; 20]> {
+    (address != [0u8; 20]).then_some(address)
 }
 
 /// A `MasternodeState` contains information about a masternode's state.
@@ -116,13 +127,15 @@ pub struct MasternodeStateV0 {
     /// Reason for the masternode's revocation (encoded as an integer).
     pub revocation_reason: u32,
 
-    /// The masternode owner's public address.
+    /// The masternode owner's public address; zero bytes when it has none, as a shared
+    /// masternode.
     pub owner_address: [u8; 20],
 
     /// The masternode voting public address.
     pub voting_address: [u8; 20],
 
-    /// The masternode payout public address.
+    /// The masternode payout public address; zero bytes when it has none, as a shared
+    /// masternode or one with a payout list.
     pub payout_address: [u8; 20],
 
     /// The masternode operator's public key.
@@ -141,11 +154,10 @@ pub struct MasternodeStateV0 {
     pub platform_http_port: Option<u32>,
 }
 
-#[allow(deprecated)] // Persist the same flat ports as the shipped v0 format.
-impl TryFrom<DMNState> for MasternodeStateV0 {
-    type Error = Error;
-
-    fn try_from(value: DMNState) -> Result<Self, Self::Error> {
+impl From<DMNState> for MasternodeStateV0 {
+    fn from(value: DMNState) -> Self {
+        // The payout list and the nested addresses are not stored.
+        #[allow(deprecated)]
         let DMNState {
             service,
             registered_height,
@@ -155,33 +167,33 @@ impl TryFrom<DMNState> for MasternodeStateV0 {
             owner_address,
             voting_address,
             payout_address,
+            payouts: _,
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
             legacy_platform_p2p_port: platform_p2p_port,
             legacy_platform_http_port: platform_http_port,
-            ..
+            addresses: _,
         } = value;
 
-        Ok(Self {
+        Self {
             service,
             registered_height,
             pose_revived_height,
             pose_ban_height,
             revocation_reason,
-            owner_address: required_legacy_address(owner_address, "ownerAddress")?,
+            owner_address: stored_address(owner_address),
             voting_address,
-            payout_address: required_legacy_address(payout_address, "payoutAddress")?,
+            payout_address: stored_address(payout_address),
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
             platform_p2p_port,
             platform_http_port,
-        })
+        }
     }
 }
 
-#[allow(deprecated)] // Restore the shipped flat-port representation.
 impl From<MasternodeStateV0> for DMNState {
     fn from(value: MasternodeStateV0) -> Self {
         let MasternodeStateV0 {
@@ -200,44 +212,150 @@ impl From<MasternodeStateV0> for DMNState {
             platform_http_port,
         } = value;
 
+        #[allow(deprecated)]
         Self {
             service,
             registered_height,
             pose_revived_height,
             pose_ban_height,
             revocation_reason,
-            owner_address: Some(owner_address),
+            owner_address: loaded_address(owner_address),
             voting_address,
-            payout_address: Some(payout_address),
+            payout_address: loaded_address(payout_address),
+            payouts: None,
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
             legacy_platform_p2p_port: platform_p2p_port,
             legacy_platform_http_port: platform_http_port,
-            payouts: None,
             addresses: None,
         }
     }
 }
 
-/// Require the addresses that the pre-upgrade RPC parser required. This keeps
-/// shipped identity and storage behavior unchanged for all legacy records.
-pub(crate) fn required_legacy_address(
-    address: Option<[u8; 20]>,
-    field: &str,
-) -> Result<[u8; 20], Error> {
-    address.ok_or_else(|| {
-        ExecutionError::DashCoreBadResponseError(format!(
-            "masternode is missing required legacy {field}"
-        ))
-        .into()
-    })
-}
+#[cfg(test)]
+mod tests {
+    use crate::platform_types::platform_state::platform_state_for_saving::v2::{
+        deserialize_masternode_entry, serialize_masternode_entry,
+    };
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, PubkeyHash, ScriptBuf, Txid};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{
+        DMNPayout, DMNState, MasternodeAddresses, MasternodeListItem, MasternodeType,
+    };
+    use dpp::version::PlatformVersion;
 
-/// Validate before inserting a newly parsed Core record into Platform state.
-pub(crate) fn validate_legacy_masternode(item: &MasternodeListItem) -> Result<(), Error> {
-    required_legacy_address(item.collateral_address, "collateralAddress")?;
-    required_legacy_address(item.state.owner_address, "ownerAddress")?;
-    required_legacy_address(item.state.payout_address, "payoutAddress")?;
-    Ok(())
+    fn masternode(
+        node_type: MasternodeType,
+        collateral_address: Option<[u8; 20]>,
+        owner_address: Option<[u8; 20]>,
+        payout_address: Option<[u8; 20]>,
+        payouts: Option<Vec<DMNPayout>>,
+    ) -> MasternodeListItem {
+        let is_evo = node_type == MasternodeType::Evo;
+        MasternodeListItem {
+            node_type,
+            pro_tx_hash: ProTxHash::from_byte_array([0x31; 32]),
+            collateral_hash: Txid::from_byte_array([0x32; 32]),
+            collateral_index: 1,
+            collateral_address,
+            operator_reward: 0.0,
+            state: DMNState {
+                service: "1.2.3.4:9999".parse().expect("socket address"),
+                registered_height: 10,
+                pose_revived_height: None,
+                pose_ban_height: Some(20),
+                revocation_reason: 0,
+                owner_address,
+                voting_address: [0x33; 20],
+                payout_address,
+                payouts,
+                pub_key_operator: vec![0x34; 48],
+                operator_payout_address: Some([0x35; 20]),
+                platform_node_id: is_evo.then_some([0x36; 20]),
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: is_evo.then_some(26656),
+                #[allow(deprecated)]
+                legacy_platform_http_port: is_evo.then_some(443),
+                addresses: None,
+            },
+        }
+    }
+
+    fn p2pkh_payout(key_hash: [u8; 20], reward: u16) -> DMNPayout {
+        DMNPayout {
+            address: key_hash,
+            script: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(key_hash)),
+            reward,
+        }
+    }
+
+    fn stored_and_loaded(masternode: &MasternodeListItem) -> MasternodeListItem {
+        let bytes = serialize_masternode_entry(masternode, PlatformVersion::latest())
+            .expect("expected to serialize the masternode entry");
+        deserialize_masternode_entry(&bytes).expect("expected to deserialize the masternode entry")
+    }
+
+    /// A masternode from a list Core printed before v24 has every address, and reloads as
+    /// it was stored.
+    #[test]
+    fn should_reload_a_masternode_with_every_address_unchanged() {
+        let masternode = masternode(
+            MasternodeType::Evo,
+            Some([0x37; 20]),
+            Some([0x38; 20]),
+            Some([0x39; 20]),
+            None,
+        );
+
+        assert_eq!(stored_and_loaded(&masternode), masternode);
+    }
+
+    /// The stored format has no room for an absent address: a shared masternode's owner,
+    /// payout and collateral addresses are stored as zero bytes and must reload as absent,
+    /// not as an address of zeros. The payout list and nested addresses are not stored.
+    #[test]
+    fn should_reload_absent_addresses_as_absent() {
+        let mut shared = masternode(MasternodeType::Regular, None, None, None, None);
+        shared.state.addresses = Some(MasternodeAddresses {
+            core_p2p: vec!["1.2.3.4:9999".to_string()],
+            platform_p2p: vec![],
+            platform_https: vec![],
+        });
+        let mut expected = shared.clone();
+        expected.state.addresses = None;
+        assert_eq!(stored_and_loaded(&shared), expected);
+
+        let multi_payout = masternode(
+            MasternodeType::Evo,
+            Some([0x37; 20]),
+            Some([0x38; 20]),
+            None,
+            Some(vec![
+                p2pkh_payout([0x3a; 20], 5000),
+                p2pkh_payout([0x3b; 20], 5000),
+            ]),
+        );
+        let mut expected = multi_payout.clone();
+        expected.state.payouts = None;
+        assert_eq!(stored_and_loaded(&multi_payout), expected);
+    }
+
+    /// Zero bytes stand for an absent address in the stored list, so an address of zero bytes
+    /// reads back as absent. Core never prints one: it refuses a null owner key for every
+    /// masternode but a shared one, and nothing reads a stored payout or collateral address.
+    #[test]
+    fn should_reload_an_address_of_zero_bytes_as_absent() {
+        let zero = masternode(
+            MasternodeType::Regular,
+            Some([0u8; 20]),
+            Some([0u8; 20]),
+            Some([0u8; 20]),
+            None,
+        );
+        let reloaded = stored_and_loaded(&zero);
+        assert_eq!(reloaded.collateral_address, None);
+        assert_eq!(reloaded.state.owner_address, None);
+        assert_eq!(reloaded.state.payout_address, None);
+    }
 }

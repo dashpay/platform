@@ -4,5 +4,6 @@ pub const DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1: DriveAbciWithdrawalConstants =
     DriveAbciWithdrawalConstants {
         core_expiration_blocks: 48,
         total_credits_history_prune_limit: 0,
+        core_blocks_scanned_per_block_limit: 0,
         cleanup_expired_locks_of_withdrawal_amounts_limit: 0,
     };

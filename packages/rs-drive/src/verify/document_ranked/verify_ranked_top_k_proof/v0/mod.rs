@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
     axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
+use crate::query::drive_document_ranked_query::present_entries_on_axis;
 use crate::query::{DriveDocumentRankedQuery, RankedPage};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -74,12 +75,16 @@ impl DriveDocumentRankedQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            // Edited in place in this shipped generation: `self.read_axis()` differs from
+            // `self.axis` only on a `summableOffCountIndex` index, which only
+            // meta-schema v3 (protocol version 14) admits, so every earlier
+            // version reads and presents exactly as before.
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys.clone(),
                 suffix,
                 AxisQuery::top_k(
-                    self.axis.into(),
+                    self.read_axis().into(),
                     self.k,
                     self.offset as u64,
                     self.descending,
@@ -116,7 +121,7 @@ impl DriveDocumentRankedQuery<'_> {
                     // element.
                     let entries = match entries {
                         None => Vec::new(),
-                        Some(entries) => axis_entries_to_ranked(self.axis, entries)?,
+                        Some(entries) => axis_entries_to_ranked(self.read_axis(), entries)?,
                     };
                     if entries.len() > self.k as usize {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
@@ -129,12 +134,18 @@ impl DriveDocumentRankedQuery<'_> {
                     Ok(entries)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
-            let entries = merge_branch_pages(
-                per_branch,
-                &self.prefix_branches,
-                self.descending,
-                self.k as usize,
-            )?;
+            // Merged on the axis read, then presented on the requested one,
+            // as the unproved read does (`present_entries_on_axis` differs
+            // from the identity only on a `summableOffCountIndex` index).
+            let entries = present_entries_on_axis(
+                self.axis,
+                merge_branch_pages(
+                    per_branch,
+                    &self.prefix_branches,
+                    self.descending,
+                    self.k as usize,
+                )?,
+            );
             return Ok((
                 root_hash,
                 RankedPage {
@@ -155,9 +166,13 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
+        // Edited in place in this shipped generation: `self.read_axis()` differs from
+        // `self.axis` only on a `summableOffCountIndex` index, which only
+        // meta-schema v3 (protocol version 14) admits, so every earlier
+        // version reads and presents exactly as before.
         let path_query = PathQuery::new_axis_top_k(
             path,
-            self.axis.into(),
+            self.read_axis().into(),
             self.k,
             self.offset as u64,
             self.descending,
@@ -175,7 +190,10 @@ impl DriveDocumentRankedQuery<'_> {
                 "a ranked top-k proof verified to a different shape".to_string(),
             )));
         };
-        let entries = axis_entries_to_ranked(self.axis, entries)?;
+        let entries = present_entries_on_axis(
+            self.axis,
+            axis_entries_to_ranked(self.read_axis(), entries)?,
+        );
         if entries.len() > self.k as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                 "ranked top-k proof verified to {} entries for k = {}",

@@ -124,7 +124,6 @@ impl ValidationMode {
 pub(crate) mod test_helpers;
 
 #[cfg(test)]
-#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -771,12 +770,14 @@ pub(in crate::execution) mod tests {
                     owner_address: Some(owner_address),
                     voting_address: rng.gen(),
                     payout_address: Some(payout_address),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
+                    #[allow(deprecated)]
                     legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
                     legacy_platform_http_port: None,
-                    payouts: None,
                     addresses: None,
                 },
             },
@@ -862,12 +863,14 @@ pub(in crate::execution) mod tests {
                     owner_address: Some(rng.gen()),
                     voting_address,
                     payout_address: Some(rng.gen()),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
+                    #[allow(deprecated)]
                     legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
                     legacy_platform_http_port: None,
-                    payouts: None,
                     addresses: None,
                 },
             },
