@@ -828,7 +828,10 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:22-alpine${ALPINE_VERSION} AS dashmate-helper
+# Node 24 is the newest usable LTS line: on Node 26 `cbor` (through
+# nofilter 3.1.0) fails every decode with "Insufficient data", which breaks
+# js-dapi-client, and the image ships neither Yarn nor Corepack.
+FROM node:24-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 

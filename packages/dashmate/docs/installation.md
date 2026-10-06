@@ -47,7 +47,7 @@ To install the NPM package, it is necessary to install Node.JS first. We recomme
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
 source ~/.bashrc
-nvm install 20
+nvm install 24
 ```
 
 Once Node.JS has been installed, use NPM to install dashmate:
