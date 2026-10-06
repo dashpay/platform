@@ -1,7 +1,7 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use tokio::sync::RwLock;
@@ -168,13 +168,19 @@ impl SpvRuntime {
                 "SPV teardown is incomplete; stop SPV again before starting it".to_string(),
             ));
         }
-        let task = self.task.lock().expect("spv task mutex poisoned");
+        let task = self.task_slot();
         if task.is_some() {
             return Err(PlatformWalletError::SpvError(
                 "SPV startup has not been joined; stop SPV before restarting it".to_string(),
             ));
         }
         Ok(())
+    }
+
+    /// Lock the startup-task slot, recovering from poisoning: the slot is only
+    /// read, taken or replaced whole, so a panicking holder cannot tear it.
+    fn task_slot(&self) -> MutexGuard<'_, Option<JoinHandle<()>>> {
+        self.task.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Check whether the SPV client has been started.
@@ -330,7 +336,7 @@ impl SpvRuntime {
         let mut shutdown = self.shutdown.lock().await;
         if matches!(*shutdown, Shutdown::Idle) {
             let client = self.client.write().await.take();
-            let startup = self.task.lock().expect("spv task mutex poisoned").take();
+            let startup = self.task_slot().take();
             let peers = Arc::clone(&self.peer_tracker);
             // Never cancel upstream run/stop: each can own callback-capable tasks
             // that cancellation would detach before their handles are restored.
@@ -377,7 +383,7 @@ impl SpvRuntime {
             return;
         }
         let this = Arc::clone(self);
-        let mut task = self.task.lock().expect("spv task mutex poisoned");
+        let mut task = self.task_slot();
         *task = Some(tokio::spawn(async move {
             if let Err(e) = this.run().await {
                 tracing::warn!("SpvRuntime background startup failed: {}", e);
@@ -1193,6 +1199,24 @@ mod tests {
             .is_err());
         assert!(runtime.stop().await.is_err());
         assert!(runtime.start(ClientConfig::default()).await.is_err());
+    }
+
+    /// A panic under the `task` mutex must not make every later lifecycle
+    /// call panic too: teardown has to stay reachable.
+    #[tokio::test]
+    async fn should_keep_lifecycle_usable_after_the_task_mutex_is_poisoned() {
+        let runtime = Arc::new(unstarted_runtime());
+        let poisoner = Arc::clone(&runtime);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.task.lock().unwrap();
+            panic!("mock panic while holding the task mutex");
+        })
+        .join();
+        assert!(runtime.task.is_poisoned());
+
+        runtime.spawn_run_loop();
+        runtime.stop().await.unwrap();
+        assert!(runtime.ensure_no_live_run_loop().is_ok());
     }
 
     /// A minimal valid transaction — the unstarted-client arm never
