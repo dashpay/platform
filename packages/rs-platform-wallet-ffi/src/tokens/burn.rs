@@ -16,8 +16,8 @@ use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
-/// Burn `amount` of token at `token_position` on `token_contract_id`,
-/// debiting the caller's balance.
+/// Burn `amount` of token at `token_position` on `token_contract_id`.
+/// A group co-signer authorizes the proposal without debiting its own balance.
 ///
 /// On success, `out_balances_json` is written with a heap-allocated C
 /// string holding a JSON object mapping the burning identity's base58
