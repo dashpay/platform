@@ -434,9 +434,11 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("Core fixture public key must decode as a Platform BLS key");
+        .expect("Core fixture secret key must decode");
         let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let operator_key: IdentityPublicKey = IdentityPublicKeyV0 {
@@ -977,9 +979,11 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("Core fixture public key must decode as a Platform BLS key");
+        .expect("Core fixture secret key must decode");
         let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state
@@ -1077,9 +1081,7 @@ mod tests {
                 .try_into()
                 .expect("expected the secret key to be 32 bytes"),
         )
-        .expect(
-            "Core fixture public key must decode as a Platform BLS key",
-        );
+        .expect("Core fixture secret key must decode");
         let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let new_operator_identifier = Identifier::create_operator_identifier(
@@ -1216,9 +1218,11 @@ mod tests {
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("Core fixture public key must decode as a Platform BLS key");
+        .expect("Core fixture secret key must decode");
         let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state with original public key operator

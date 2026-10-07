@@ -234,9 +234,11 @@ pub fn generate_test_masternodes(
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("Core fixture public key must decode as a Platform BLS key");
+        .expect("Core fixture secret key must decode");
         let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
@@ -376,9 +378,11 @@ pub fn generate_test_masternodes(
             .to_bytes()
             .to_vec();
         let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("Core fixture public key must decode as a Platform BLS key");
+        .expect("Core fixture secret key must decode");
         let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Evo,
