@@ -3,6 +3,8 @@ mod v0;
 use crate::config::QuorumLikeConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0::SignatureVerificationQuorumSetForSavingV0;
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v1::SignatureVerificationQuorumSetForSavingV1;
 use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v2::SignatureVerificationQuorumSetForSavingV2;
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
     QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator, SignatureVerificationQuorumSetV0,
@@ -11,7 +13,6 @@ pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorums::{
     Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,
 };
-use crate::platform_types::unsupported_legacy_bls_storage::UnsupportedLegacyBlsStorage;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use dpp::version::PlatformVersion;
@@ -117,10 +118,10 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSet 
 /// Core Quorum Set structure for saving to the database
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum SignatureVerificationQuorumSetForSaving {
-    /// Unsupported legacy format; its tag remains reserved.
-    V0(UnsupportedLegacyBlsStorage),
-    /// Unsupported legacy format; its tag remains reserved.
-    V1(UnsupportedLegacyBlsStorage),
+    /// Version 0 of the signature verification quorums
+    V0(SignatureVerificationQuorumSetForSavingV0),
+    /// Version 1 of the signature verification quorums
+    V1(SignatureVerificationQuorumSetForSavingV1),
     /// Version 2 of the signature verification quorums
     V2(SignatureVerificationQuorumSetForSavingV2),
 }
@@ -138,39 +139,15 @@ impl From<SignatureVerificationQuorumSet> for SignatureVerificationQuorumSetForS
 impl From<SignatureVerificationQuorumSetForSaving> for SignatureVerificationQuorumSet {
     fn from(value: SignatureVerificationQuorumSetForSaving) -> Self {
         match value {
-            SignatureVerificationQuorumSetForSaving::V0(unsupported)
-            | SignatureVerificationQuorumSetForSaving::V1(unsupported) => match unsupported {},
+            SignatureVerificationQuorumSetForSaving::V0(v0) => {
+                SignatureVerificationQuorumSet::V0(v0.into())
+            }
+            SignatureVerificationQuorumSetForSaving::V1(v1) => {
+                SignatureVerificationQuorumSet::V0(v1.into())
+            }
             SignatureVerificationQuorumSetForSaving::V2(v2) => {
                 SignatureVerificationQuorumSet::V0(v2.into())
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod legacy_storage_tests {
-    use super::SignatureVerificationQuorumSetForSaving;
-    use bincode::{config, error::DecodeError};
-
-    #[test]
-    fn should_reject_legacy_bls_quorum_formats_before_reading_their_payload() {
-        for version in [0u32, 1] {
-            let bytes = bincode::encode_to_vec(version, config::standard().with_big_endian())
-                .expect("encode format tag");
-            let error = bincode::decode_from_slice::<SignatureVerificationQuorumSetForSaving, _>(
-                &bytes,
-                config::standard().with_big_endian(),
-            )
-            .expect_err("legacy quorum format must be rejected");
-            let borrowed_error = bincode::borrow_decode_from_slice::<
-                SignatureVerificationQuorumSetForSaving,
-                _,
-            >(&bytes, config::standard().with_big_endian())
-            .expect_err("borrowed decoding must reject legacy quorums too");
-            assert_eq!(error.to_string(), borrowed_error.to_string());
-            assert!(matches!(error, DecodeError::Other(_)));
-            assert!(error.to_string().contains("v4.0.0"));
-            assert!(error.to_string().contains("commit at least one block"));
         }
     }
 }

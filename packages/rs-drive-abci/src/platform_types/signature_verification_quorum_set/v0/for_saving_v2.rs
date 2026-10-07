@@ -7,6 +7,10 @@ use crate::platform_types::signature_verification_quorum_set::{
 };
 use bincode::{Decode, Encode};
 
+// We needed to introduce this V2 because the PreviousPastQuorumsForSavingV1 were using a QuorumForSavingV0
+// This was an oversight in SignatureVerificationQuorumSetForSavingV1.
+// This would cause the previous quorums to still use the old BLS sigs library for serialization/deserialization.
+
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct SignatureVerificationQuorumSetForSavingV2 {
     config: QuorumConfigForSavingV0,

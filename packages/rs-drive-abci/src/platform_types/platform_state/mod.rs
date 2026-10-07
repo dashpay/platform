@@ -323,7 +323,18 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         match value {
-            PlatformStateForSaving::V0(unsupported) => match unsupported {},
+            PlatformStateForSaving::V0(v0) => {
+                match platform_version.drive_abci.structs.platform_state_structure {
+                    0 => Ok(PlatformState::from(v0)),
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method:
+                            "PlatformState::try_from_platform_versioned(PlatformStateForSavingV0)"
+                                .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                }
+            }
             PlatformStateForSaving::V1(v1) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
                     0 => Ok(PlatformState::from(v1)),
@@ -364,32 +375,19 @@ mod tests {
         use std::ops::Deref;
 
         #[test]
-        fn should_reject_legacy_bls_state_from_testnet_with_upgrade_instructions() {
+        fn should_deserialize_state_stored_in_version_0_from_testnet() {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
 
-            let error =
-                match PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V3)
-                {
-                    Ok(_) => panic!("legacy state must require an intermediate upgrade"),
-                    Err(error) => error,
-                };
-            assert!(matches!(
-                error,
-                ProtocolError::PlatformDeserializationError(_)
-            ));
-            assert!(error.to_string().contains("v4.0.0"));
-            assert!(error.to_string().contains("commit at least one block"));
+            PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V3)
+                .expect("failed to deserialize state");
         }
 
         /// Serializing through the borrowed conversion must preserve the saved format.
         #[test]
         fn should_preserve_pre_change_serialization_hash() {
-            // Re-serialized from PLATFORM_STATE_V8_DEVNET with commit 734bd4eea7,
-            // before removal of the legacy readers. Platform state V1, quorum V2.
             let serialized_state =
-                hex::decode(include_str!("../../test/fixture/platform_state_supported.hex").trim())
-                    .expect("failed to decode hex");
+                hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
 
             let state =
                 PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
@@ -406,50 +404,12 @@ mod tests {
         }
 
         #[test]
-        fn should_preserve_supported_storage_tags_and_bytes() {
-            let bytes =
-                hex::decode(include_str!("../../test/fixture/platform_state_supported.hex").trim())
-                    .unwrap();
-            let state = PlatformState::versioned_deserialize_trusted(&bytes, &PLATFORM_V9).unwrap();
-            let config = config::standard().with_big_endian();
-            let v1 = PlatformStateForSavingV1::try_from(&state).unwrap();
-            for quorums in [
-                &v1.chain_lock_validating_quorums,
-                &v1.instant_lock_validating_quorums,
-            ] {
-                let encoded = bincode::encode_to_vec(quorums, config).unwrap();
-                assert_eq!(encoded[0], 2, "quorum storage tag must remain V2");
-            }
-            let v2 = PlatformStateForSavingV2::from(&state);
-            for (tag, record) in [
-                (1, PlatformStateForSaving::V1(v1)),
-                (2, PlatformStateForSaving::V2(v2)),
-            ] {
-                let encoded = bincode::encode_to_vec(record, config).unwrap();
-                assert_eq!(encoded[0], tag, "platform storage tag must not change");
-                let (decoded, consumed): (PlatformStateForSaving, _) =
-                    bincode::borrow_decode_from_slice(&encoded, config).unwrap();
-                assert_eq!(consumed, encoded.len());
-                assert_eq!(bincode::encode_to_vec(decoded, config).unwrap(), encoded);
-            }
-        }
-
-        #[test]
-        fn should_reject_devnet_state_containing_legacy_quorums() {
+        fn should_deserialize_state_stored_in_version_8_from_devnet() {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
 
-            let error =
-                match PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
-                {
-                    Ok(_) => panic!("legacy quorums must require an intermediate upgrade"),
-                    Err(error) => error,
-                };
-            assert!(matches!(
-                error,
-                ProtocolError::PlatformDeserializationError(_)
-            ));
-            assert!(error.to_string().contains("v4.0.0"));
+            PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
+                .expect("failed to deserialize state");
         }
     }
 }
