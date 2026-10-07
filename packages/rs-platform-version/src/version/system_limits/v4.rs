@@ -102,6 +102,11 @@ use crate::version::system_limits::SystemLimits;
 ///   ±2^27 (`max_contested_summed_value_magnitude`), so awarding a contest cannot take a sum
 ///   out of `i64`. It joined this table in place while protocol version 14 was unreleased.
 ///   `None` in the earlier tables, whose parsers never read it.
+/// * Expiring summed types (protocol version 14): a document type with a `ttl` and a summed
+///   property whose values may be negative may only be registered when they lie within
+///   ±2^27 (`max_expiring_signed_summed_value_magnitude`), so deleting expired documents
+///   cannot take a sum out of `i64`. It joined this table in place while protocol version
+///   14 was unreleased. `None` in the earlier tables, whose parsers never read it.
 /// * Token pool notes threshold (protocol version 14): a token configuration's
 ///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
 ///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
@@ -171,4 +176,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
+    max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
 };
