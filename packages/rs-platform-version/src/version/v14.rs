@@ -2133,6 +2133,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the six shielded queries accept an optional `token_id` to target a token
 ///     pool.
 ///
+/// 82. **An expiring type sums only values that keep its sums in range**:
+///     parser generation 3, in place, refuses under full validation a document
+///     type with a `ttl` and a summed property (`summable`, `averageable`,
+///     `documentsSummable` or `documentsAverageable`) unless the property's
+///     schema declares a `minimum` of at least 0, or a `minimum` of at least
+///     -2^27 and a `maximum` of at most 2^27
+///     (`SYSTEM_LIMITS_V4.max_expiring_signed_summed_value_magnitude`, `None` in
+///     the earlier tables). The cleanup deletes expired documents at the end of
+///     a block with no transition to refuse, and removing a negative value
+///     raises the sums it was in; removing values that are never negative only
+///     lowers them, and values within ±2^27 keep them in `i64` short of 2^36
+///     documents. A stored contract still parses. No earlier version parses
+///     `ttl`.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

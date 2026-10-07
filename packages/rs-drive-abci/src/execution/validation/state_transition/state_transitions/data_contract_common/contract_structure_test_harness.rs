@@ -87,6 +87,31 @@ pub(in crate::execution) fn contested_unbounded_sum_schema() -> Value {
     })
 }
 
+/// The fragment of the parser's message for a type with a `ttl` summing a property whose values
+/// may be negative and are not bounded within ±2^27.
+pub(in crate::execution) const EXPIRING_UNBOUNDED_SUM_MESSAGE: &str =
+    "deleting an expired document takes its value out of the type's sums";
+
+/// A document type with a `ttl` that sums `amount`, an integer with no bounds. Protocol version
+/// 14 refuses it at registration: deleting an expired document takes its value out of the type's
+/// sum with no transition to refuse, and the sum a negative value leaves behind may not fit an
+/// `i64`.
+pub(in crate::execution) fn expiring_unbounded_sum_schema() -> Value {
+    expiring_summed_schema(platform_value!({ "type": "integer", "position": 0 }))
+}
+
+/// A document type with a `ttl` of a day that sums `amount`, whose schema is `amount`.
+pub(in crate::execution) fn expiring_summed_schema(amount: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "ttl": 86400,
+        "documentsSummable": "amount",
+        "properties": { "amount": amount },
+        "required": ["$createdAt", "amount"],
+        "additionalProperties": false,
+    })
+}
+
 /// The fragment of the parser's message for a `terminal` outside an indexOnly type.
 pub(in crate::execution) const TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE: &str =
     "which is only allowed on indexOnly document types";
@@ -239,6 +264,45 @@ pub(in crate::execution) fn assert_paid_contract_structure_error(
         Ok([ConsensusError::BasicError(BasicError::ContractError(
             DataContractError::InvalidContractStructure(message)
         ))]) if message.contains(needle),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError { error: ConsensusError::BasicError(
+            BasicError::ContractError(DataContractError::InvalidContractStructure(message))
+        ), .. } if message.contains(needle),
+        "block: {:?}",
+        outcome.block
+    );
+    // The stored nonce keeps the nonces skipped below it in its high bits.
+    assert_eq!(
+        outcome
+            .nonce_after
+            .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+        Some(bumped_nonce),
+        "the rejection bumps the nonce"
+    );
+    assert!(
+        outcome.balance_after < outcome.balance_before,
+        "the rejection is charged: {:?} -> {:?}",
+        outcome.balance_before,
+        outcome.balance_after
+    );
+}
+
+/// A paid rejection of a rule checked under full validation only: `check_tx`, which parses
+/// the contract without it, admits the transition, and the block refuses it with the
+/// parser's `InvalidContractStructure`, charging the owner and bumping the nonce to
+/// `bumped_nonce`.
+pub(in crate::execution) fn assert_paid_contract_structure_error_in_block(
+    outcome: &Outcome,
+    needle: &str,
+    bumped_nonce: u64,
+) {
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
         "check_tx: {:?}",
         outcome.check_tx
     );

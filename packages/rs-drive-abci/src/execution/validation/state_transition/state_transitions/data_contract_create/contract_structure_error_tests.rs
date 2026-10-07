@@ -2,10 +2,12 @@
 //! document meta-schema, through `check_tx` and block processing.
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
-    assert_paid_contract_structure_error, assert_unpaid_internal_error, check_and_process,
-    contested_unbounded_sum_schema, resign_with_schemas, summed_u64_schema,
-    terminal_without_index_only_schema, Outcome, CONTESTED_UNBOUNDED_SUM_MESSAGE,
-    SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
+    assert_paid_contract_structure_error, assert_paid_contract_structure_error_in_block,
+    assert_unpaid_internal_error, check_and_process,
+    contested_unbounded_sum_schema, expiring_unbounded_sum_schema, resign_with_schemas,
+    summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, SUMMED_U64_MESSAGE,
+    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -222,6 +224,23 @@ async fn should_keep_registering_a_contested_type_summing_an_unbounded_property_
         "block: {:?}",
         outcome.block
     );
+}
+
+/// Like the contested bound, a registration rule: `check_tx` admits the transition, and the
+/// block refuses it, charging the owner and bumping its nonce. `ttl` arrives with the protocol
+/// version that brings the rule, so no earlier version registers the type.
+#[tokio::test]
+async fn should_refuse_an_expiring_type_summing_an_unbounded_property_with_a_paid_consensus_error()
+{
+    let outcome = register_contract_with_schema(
+        expiring_unbounded_sum_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_eq!(outcome.nonce_before, Some(0));
+    assert_paid_contract_structure_error_in_block(&outcome, EXPIRING_UNBOUNDED_SUM_MESSAGE, 1);
 }
 
 /// A document type summing `payment.amount` in an index: the dotted path of `amount`, an integer

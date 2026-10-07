@@ -155,7 +155,9 @@ A range total costs more on each write than a per-value total, since every node 
 
 - A summed property exists on the type, is an integer that fits a signed 64-bit sum (not an unsigned 64-bit integer), and is listed in `required`.
 - All summed properties of a type are the same property.
-- From protocol version 14, on a type with a [contested index](contested.md), the summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27). Each value still only has to fit a signed 64-bit integer on other types.
+- From protocol version 14, on a type with a [contested index](contested.md), the summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
+- From protocol version 14, on a type with a [`ttl`](ttl.md), the summed property declares a `minimum` of at least 0, or a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
+- On other types, each value only has to fit a signed 64-bit integer.
 - The shorthands agree with their longhand where both are written, and no explicit `false` or `"notCountable"` contradicts them.
 - Each `range*` flag has its prerequisite, as listed above.
 - The meta-schema refuses a malformed value (`JsonSchemaError`, 10101).
