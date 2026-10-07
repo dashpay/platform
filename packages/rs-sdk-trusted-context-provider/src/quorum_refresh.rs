@@ -7,12 +7,17 @@
 //! name a quorum that does not exist in every response it sends, so misses
 //! share refreshes: a miss joins a refresh that is still running, and the
 //! starts of two refreshes are at least [`MIN_GAP`] apart.
+//!
+//! Every refresh gets the next generation number. A miss notes the latest
+//! generation when the SDK asks, which is after the response naming the
+//! quorum arrived, so a refresh with a higher generation started after that
+//! response. Only such a refresh may show that the quorum is absent.
 
 use crate::types::QuorumData;
 use futures::future::{BoxFuture, FutureExt, Shared};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use web_time::Instant;
 
@@ -20,16 +25,17 @@ use web_time::Instant;
 /// requests when it meets a quorum newer than the caches.
 pub(crate) const QUORUM_LIST_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How long a miss may join a refresh that has not finished. A refresh's
-/// requests time out by then. A shared future only runs while it is polled,
-/// so an unfinished refresh that old was abandoned by every waiter, and
-/// resuming it would only report a timeout.
-pub(crate) const JOIN_WINDOW: Duration = QUORUM_LIST_REQUEST_TIMEOUT;
+/// How long a miss may join a refresh that has not finished. Past the
+/// requests' timeout, with a margin, an unfinished refresh has been abandoned
+/// by every waiter: a shared future only runs while it is polled, and resuming
+/// it would only report a timeout.
+const JOIN_WINDOW: Duration = Duration::from_secs(QUORUM_LIST_REQUEST_TIMEOUT.as_secs() + 1);
 
 /// Minimum time between the starts of two refreshes that misses ask for.
 /// This bounds the load quorum hashes that do not exist can put on the quorum
 /// service, whether or not the SDK bans the nodes that send them, and spaces
-/// out attempts while the service fails.
+/// out attempts while the service fails. A finished refresh, failed or not, is
+/// reused for this long.
 pub(crate) const MIN_GAP: Duration = Duration::from_secs(1);
 
 /// Both quorum lists, as one refresh fetched them.
@@ -74,12 +80,20 @@ impl FetchedQuorums {
     }
 }
 
-pub(crate) type SharedRefresh = Shared<BoxFuture<'static, Arc<FetchedQuorums>>>;
+type SharedRefresh = Shared<BoxFuture<'static, Arc<FetchedQuorums>>>;
 
 struct LatestRefresh {
     refresh: SharedRefresh,
+    generation: u64,
     started: Instant,
     finished: Arc<AtomicBool>,
+}
+
+/// The latest refresh and the number of refreshes started so far.
+#[derive(Default)]
+struct State {
+    latest: Option<LatestRefresh>,
+    generations: u64,
 }
 
 /// What a miss does about the latest refresh.
@@ -87,23 +101,32 @@ struct LatestRefresh {
 enum Choice {
     Join,
     Start,
-    RateLimited,
+    /// Wait this long, then decide again.
+    Wait(Duration),
 }
 
-/// Decide what a miss does, given when the latest refresh started and whether
-/// it has finished. With `started_after`, only a refresh that started at or
-/// after that instant will do.
-fn choose(latest: Option<(Instant, bool)>, now: Instant, started_after: Option<Instant>) -> Choice {
-    let Some((started, finished)) = latest else {
+/// The latest refresh, as a miss deciding what to do sees it.
+#[derive(Clone, Copy)]
+struct Seen {
+    generation: u64,
+    started: Instant,
+    finished: bool,
+}
+
+/// Decide what a miss does about the latest refresh. With `newer_than`, only a
+/// refresh of a higher generation will do.
+fn choose(latest: Option<Seen>, now: Instant, newer_than: Option<u64>) -> Choice {
+    let Some(latest) = latest else {
         return Choice::Start;
     };
-    let age = now.saturating_duration_since(started);
-    let running = !finished && age < JOIN_WINDOW;
-    match started_after {
-        None if running || age < MIN_GAP => Choice::Join,
+    let age = now.saturating_duration_since(latest.started);
+    let running = !latest.finished && age < JOIN_WINDOW;
+    let recent = age < MIN_GAP;
+    match newer_than {
+        None if running || recent => Choice::Join,
         None => Choice::Start,
-        Some(after) if started >= after && (finished || running) => Choice::Join,
-        Some(_) if age < MIN_GAP => Choice::RateLimited,
+        Some(seen) if latest.generation > seen && (running || recent) => Choice::Join,
+        Some(_) if recent => Choice::Wait(MIN_GAP - age),
         Some(_) => Choice::Start,
     }
 }
@@ -111,49 +134,83 @@ fn choose(latest: Option<(Instant, bool)>, now: Instant, started_after: Option<I
 /// The latest refresh of a provider and its clones.
 #[derive(Default)]
 pub(crate) struct QuorumRefreshes {
-    latest: Mutex<Option<LatestRefresh>>,
+    state: Mutex<State>,
 }
 
 impl QuorumRefreshes {
-    /// The refresh a miss waits on, and when it started, or `None` when a new
-    /// refresh would start less than [`MIN_GAP`] after the latest one. With
-    /// `started_after`, only a refresh that started at or after that instant
-    /// is returned. `fetch` builds the refresh when one has to start; it must
-    /// do no work until it is first polled, because it is built under the lock.
-    pub(crate) fn refresh_for(
+    /// The generation of the latest refresh, or 0 if none has started.
+    pub(crate) fn generation(&self) -> u64 {
+        self.lock().generations
+    }
+
+    /// The refresh a miss waits on, and its generation: the latest one if it
+    /// is running or started less than [`MIN_GAP`] ago, otherwise a new one.
+    /// `fetch` builds the refresh when one has to start; it must do no work
+    /// until it is first polled, because it is built under the lock.
+    pub(crate) fn latest_or_start(
         &self,
-        started_after: Option<Instant>,
         fetch: impl FnOnce() -> BoxFuture<'static, FetchedQuorums>,
-    ) -> Option<(SharedRefresh, Instant)> {
-        let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+    ) -> (SharedRefresh, u64) {
+        let mut state = self.lock();
         let now = Instant::now();
-        let state = latest
-            .as_ref()
-            .map(|latest| (latest.started, latest.finished.load(Ordering::Acquire)));
-        match choose(state, now, started_after) {
-            Choice::RateLimited => return None,
-            Choice::Join => {
-                if let Some(latest) = latest.as_ref() {
-                    return Some((latest.refresh.clone(), latest.started));
-                }
-            }
-            Choice::Start => {}
+        match (choose(state.seen(), now, None), state.latest.as_ref()) {
+            (Choice::Join, Some(latest)) => (latest.refresh.clone(), latest.generation),
+            _ => state.publish(now, fetch()),
         }
-        Some(Self::publish(&mut latest, now, fetch()))
+    }
+
+    /// A refresh of a generation above `seen`: the latest one if it is, or a
+    /// new one. Starting one before [`MIN_GAP`] has passed since the latest
+    /// started is refused with how long to wait.
+    pub(crate) fn newer_than(
+        &self,
+        seen: u64,
+        fetch: impl FnOnce() -> BoxFuture<'static, FetchedQuorums>,
+    ) -> Result<SharedRefresh, Duration> {
+        let mut state = self.lock();
+        let now = Instant::now();
+        match (choose(state.seen(), now, Some(seen)), state.latest.as_ref()) {
+            (Choice::Join, Some(latest)) => Ok(latest.refresh.clone()),
+            (Choice::Wait(wait), _) => Err(wait),
+            _ => Ok(state.publish(now, fetch()).0),
+        }
     }
 
     /// Start a refresh regardless of the latest one, and publish it so misses
     /// that come in while it runs join it.
     pub(crate) fn start(&self, fetch: BoxFuture<'static, FetchedQuorums>) -> SharedRefresh {
-        let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
-        Self::publish(&mut latest, Instant::now(), fetch).0
+        self.lock().publish(Instant::now(), fetch).0
+    }
+
+    fn lock(&self) -> MutexGuard<'_, State> {
+        // Nothing done under the lock can leave the state half-updated.
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Make the latest refresh look `by` older, as if that much time had passed.
+    #[cfg(test)]
+    pub(crate) fn age_latest(&self, by: Duration) {
+        if let Some(latest) = self.lock().latest.as_mut() {
+            latest.started -= by;
+        }
+    }
+}
+
+impl State {
+    fn seen(&self) -> Option<Seen> {
+        self.latest.as_ref().map(|latest| Seen {
+            generation: latest.generation,
+            started: latest.started,
+            finished: latest.finished.load(Ordering::Acquire),
+        })
     }
 
     fn publish(
-        latest: &mut Option<LatestRefresh>,
+        &mut self,
         now: Instant,
         fetch: BoxFuture<'static, FetchedQuorums>,
-    ) -> (SharedRefresh, Instant) {
+    ) -> (SharedRefresh, u64) {
+        self.generations += 1;
         let finished = Arc::new(AtomicBool::new(false));
         let done = Arc::clone(&finished);
         let refresh = async move {
@@ -163,20 +220,13 @@ impl QuorumRefreshes {
         }
         .boxed()
         .shared();
-        *latest = Some(LatestRefresh {
+        self.latest = Some(LatestRefresh {
             refresh: refresh.clone(),
+            generation: self.generations,
             started: now,
             finished,
         });
-        (refresh, now)
-    }
-
-    /// Make the latest refresh look `by` older, as if that much time had passed.
-    #[cfg(test)]
-    pub(crate) fn age_latest(&self, by: Duration) {
-        if let Some(latest) = self.latest.lock().unwrap().as_mut() {
-            latest.started -= by;
-        }
+        (refresh, self.generations)
     }
 }
 
@@ -190,39 +240,85 @@ where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = FetchedQuorums> + Send + 'static,
 {
-    std::panic::AssertUnwindSafe(async move { fetch().await })
+    match std::panic::AssertUnwindSafe(async move { fetch().await })
         .catch_unwind()
         .await
-        .unwrap_or_else(|_| FetchedQuorums::failed("quorum refresh panicked"))
+    {
+        Ok(fetched) => fetched,
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|message| message.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_default();
+            tracing::error!(%message, "quorum list refresh panicked");
+            FetchedQuorums::failed(&format!("quorum refresh panicked: {message}"))
+        }
+    }
 }
 
 /// Run a refresh as a `Send` future.
 ///
 /// Browser fetches are not `Send`, so the refresh is built and run on the
-/// local executor and only its result crosses back, as `rs-dapi-client` does
-/// for its wasm transport. A panic aborts on wasm32, so the dropped sender is
-/// what a failed task leaves behind.
+/// local executor and only its result crosses back. A panic traps on wasm32
+/// rather than unwinding.
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn contained<F, Fut>(fetch: F) -> FetchedQuorums
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = FetchedQuorums> + 'static,
 {
+    on_local_executor(fetch).await.unwrap_or_else(|| {
+        tracing::warn!("quorum list refresh task was dropped");
+        FetchedQuorums::failed("quorum refresh task was dropped")
+    })
+}
+
+/// Wait for `duration`.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn sleep(duration: Duration) {
+    tokio::time::sleep(duration).await;
+}
+
+/// Wait for `duration`. Browser timers are not `Send`, so the timer runs on
+/// the local executor.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn sleep(duration: Duration) {
+    on_local_executor(move || gloo_timers::future::sleep(duration)).await;
+}
+
+/// Run a future that is not `Send` on the local executor and return its
+/// output through a `Send` future, as `rs-dapi-client` does for its wasm
+/// transport. `None` if the task is dropped before it finishes, which happens
+/// only when the executor goes away.
+#[cfg(target_arch = "wasm32")]
+async fn on_local_executor<F, Fut>(make: F) -> Option<Fut::Output>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future + 'static,
+    Fut::Output: Send + 'static,
+{
     let (sender, receiver) = futures::channel::oneshot::channel();
     wasm_bindgen_futures::spawn_local(async move {
-        let _ = sender.send(fetch().await);
+        let _ = sender.send(make().await);
     });
-    receiver
-        .await
-        .unwrap_or_else(|_| FetchedQuorums::failed("quorum refresh task was dropped"))
+    receiver.await.ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn at(base: Instant, secs: f64) -> Instant {
-        base + Duration::from_secs_f64(secs)
+    fn seen(generation: u64, started: Instant, finished: bool) -> Option<Seen> {
+        Some(Seen {
+            generation,
+            started,
+            finished,
+        })
+    }
+
+    fn after(base: Instant, millis: u64) -> Instant {
+        base + Duration::from_millis(millis)
     }
 
     /// The rules that keep misses from refreshing more often than the quorum
@@ -231,87 +327,103 @@ mod tests {
     #[test]
     fn should_choose_which_refresh_a_miss_waits_on() {
         let t0 = Instant::now();
+        let wait = |millis| Choice::Wait(Duration::from_millis(millis));
         let cases = [
-            // (latest (started, finished), now, started_after, expected, why)
-            (None, at(t0, 0.0), None, Choice::Start, "nothing to join"),
+            // (latest, now, newer_than, expected, why)
+            (None, t0, None, Choice::Start, "nothing to join"),
             (
-                Some((t0, false)),
-                at(t0, 0.5),
+                seen(1, t0, false),
+                after(t0, 500),
                 None,
                 Choice::Join,
                 "running refresh",
             ),
             (
-                Some((t0, false)),
-                at(t0, 4.9),
+                seen(1, t0, false),
+                after(t0, 5_900),
                 None,
                 Choice::Join,
                 "running within the join window",
             ),
             (
-                Some((t0, false)),
-                at(t0, 5.0),
+                seen(1, t0, false),
+                after(t0, 6_000),
                 None,
                 Choice::Start,
                 "abandoned refresh is not resumed",
             ),
             (
-                Some((t0, true)),
-                at(t0, 0.9),
+                seen(1, t0, true),
+                after(t0, 900),
                 None,
                 Choice::Join,
                 "finished within the minimum gap",
             ),
             (
-                Some((t0, true)),
-                at(t0, 1.0),
+                seen(1, t0, true),
+                after(t0, 1_000),
                 None,
                 Choice::Start,
                 "finished refresh is not reused past the gap",
             ),
             (
-                Some((t0, true)),
-                at(t0, 0.5),
-                Some(t0 - Duration::from_millis(100)),
+                seen(2, t0, true),
+                after(t0, 500),
+                Some(1),
                 Choice::Join,
-                "started after the miss",
+                "newer refresh, finished within the gap",
             ),
             (
-                Some((t0, false)),
-                at(t0, 0.5),
-                Some(t0),
+                seen(2, t0, false),
+                after(t0, 3_000),
+                Some(1),
                 Choice::Join,
-                "running, started at the miss",
+                "newer refresh, still running",
             ),
             (
-                Some((t0, true)),
-                at(t0, 0.5),
-                Some(at(t0, 0.1)),
-                Choice::RateLimited,
-                "older than the miss, within the gap",
-            ),
-            (
-                Some((t0, true)),
-                at(t0, 1.5),
-                Some(at(t0, 0.1)),
+                seen(2, t0, true),
+                after(t0, 3_000),
+                Some(1),
                 Choice::Start,
-                "older than the miss, past the gap",
+                "newer refresh, failed or not, is not reused past the gap",
             ),
             (
-                Some((t0, false)),
-                at(t0, 6.0),
-                Some(t0),
+                seen(1, t0, true),
+                after(t0, 400),
+                Some(1),
+                wait(600),
+                "the miss saw this refresh: wait out the gap",
+            ),
+            (
+                seen(1, t0, false),
+                after(t0, 400),
+                Some(1),
+                wait(600),
+                "the miss saw this running refresh: wait out the gap",
+            ),
+            (
+                seen(1, t0, true),
+                after(t0, 1_500),
+                Some(1),
                 Choice::Start,
-                "started after the miss but abandoned",
+                "the miss saw this refresh, the gap has passed",
+            ),
+            (
+                seen(2, t0, false),
+                after(t0, 6_000),
+                Some(1),
+                Choice::Start,
+                "newer refresh, abandoned",
             ),
         ];
-        for (latest, now, started_after, expected, why) in cases {
-            assert_eq!(choose(latest, now, started_after), expected, "{why}");
+        for (latest, now, newer_than, expected, why) in cases {
+            assert_eq!(choose(latest, now, newer_than), expected, "{why}");
         }
     }
 
-    /// Clones of a provider share their refreshes, and an unfinished one is
-    /// joined instead of started again.
+    /// Clones of a provider share their refreshes: a running one is joined
+    /// instead of started again, and a miss that saw a refresh is only served
+    /// by a newer one.
     #[tokio::test]
     async fn should_publish_a_refresh_for_later_misses_to_join() {
         let refreshes = QuorumRefreshes::default();
@@ -321,26 +433,67 @@ mod tests {
             async { FetchedQuorums::failed("unused") }.boxed()
         };
 
-        let (first, first_started) = refreshes.refresh_for(None, fetch).expect("first refresh");
-        let (second, second_started) = refreshes.refresh_for(None, fetch).expect("joined refresh");
+        assert_eq!(refreshes.generation(), 0);
+        let (first, first_generation) = refreshes.latest_or_start(fetch);
+        let (second, second_generation) = refreshes.latest_or_start(fetch);
         assert_eq!(built.load(Ordering::SeqCst), 1);
-        assert_eq!(first_started, second_started);
+        assert_eq!((first_generation, second_generation), (1, 1));
         assert!(Arc::ptr_eq(&first.await, &second.await));
 
-        // The finished refresh predates a miss made now; within the gap the
-        // miss is rate-limited, past it a new refresh starts.
-        let called = Instant::now();
-        assert!(refreshes.refresh_for(Some(called), fetch).is_none());
+        // A miss that saw generation 1 must wait out the gap, then gets a new
+        // refresh.
+        let seen = refreshes.generation();
+        assert!(matches!(refreshes.newer_than(seen, fetch), Err(wait) if wait <= MIN_GAP));
         refreshes.age_latest(MIN_GAP);
-        let (_, started) = refreshes
-            .refresh_for(Some(called), fetch)
+        let _newer = refreshes
+            .newer_than(seen, fetch)
             .expect("a new refresh past the gap");
-        assert!(started >= called);
+        assert_eq!(refreshes.generation(), 2);
         assert_eq!(built.load(Ordering::SeqCst), 2);
     }
 
+    /// A refresh that is still running past the gap is joined, not doubled;
+    /// once it has finished, the gap applies.
+    #[tokio::test]
+    async fn should_join_a_running_refresh_past_the_gap_but_not_a_finished_one() {
+        let refreshes = QuorumRefreshes::default();
+        let built = std::sync::atomic::AtomicUsize::new(0);
+        let (release, gate) = futures::channel::oneshot::channel::<()>();
+        let mut gate = Some(gate);
+        let mut fetch = || {
+            built.fetch_add(1, Ordering::SeqCst);
+            let gate = gate.take();
+            async move {
+                if let Some(gate) = gate {
+                    let _ = gate.await;
+                }
+                FetchedQuorums::failed("unused")
+            }
+            .boxed()
+        };
+
+        let (running, _) = refreshes.latest_or_start(&mut fetch);
+        let mut running = Box::pin(running);
+        assert!(futures::poll!(&mut running).is_pending());
+        refreshes.age_latest(2 * MIN_GAP);
+        let _ = refreshes.latest_or_start(&mut fetch);
+        assert_eq!(
+            built.load(Ordering::SeqCst),
+            1,
+            "a running refresh is joined"
+        );
+
+        release.send(()).expect("release the refresh");
+        running.await;
+        let _ = refreshes.latest_or_start(&mut fetch);
+        assert_eq!(
+            built.load(Ordering::SeqCst),
+            2,
+            "a finished refresh is not reused past the gap"
+        );
+    }
+
     /// A panicking refresh must not take down every request waiting on it.
-    #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test]
     async fn should_turn_a_panicking_refresh_into_failed_lists() {
         let fetched = contained(|| {
@@ -350,6 +503,6 @@ mod tests {
         assert!(fetched.current.is_err() && fetched.previous.is_err());
         assert!(fetched
             .incomplete()
-            .is_some_and(|reason| reason.contains("panicked")));
+            .is_some_and(|reason| reason.contains("panicked: refresh bug")));
     }
 }

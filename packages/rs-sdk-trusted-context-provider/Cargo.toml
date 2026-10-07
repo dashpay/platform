@@ -60,8 +60,13 @@ app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# Runs the browser's non-`Send` quorum fetches on the local executor.
+# Runs the browser's non-`Send` quorum fetches and timers on the local executor.
 wasm-bindgen-futures = { version = "0.4.58" }
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Waits out the gap between two refreshes of the quorum lists.
+tokio = { version = "1.40", features = ["time"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.12", features = ["json"] }

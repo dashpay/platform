@@ -6511,6 +6511,7 @@ dependencies = [
  "dash-context-provider",
  "dpp",
  "futures",
+ "gloo-timers",
  "hex",
  "lru",
  "reqwest 0.12.28",
