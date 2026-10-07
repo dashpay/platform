@@ -1,5 +1,4 @@
 import waitForDKGWindowPass from '../../../../src/core/quorum/waitForDKGWindowPass.js';
-import { SAFE_STOP_CONFIRMATION_DELAY_MS } from '../../../../src/core/quorum/checkMasternodeSafeToStop.js';
 
 const CHECK_INTERVAL_MS = 10000;
 
@@ -22,23 +21,24 @@ describe('waitForDKGWindowPass', () => {
     expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
-  it('should resolve after confirmation when an imminent DKG does not include this node', async function it() {
+  it('should resolve immediately when current and imminent DKGs do not include this node', async function it() {
     const clock = this.sinon.useFakeTimers();
 
     rpcClient.quorum.withArgs('dkginfo').resolves({
       result: {
         active_dkgs: 0,
         next_dkg: 1,
+        current_dkgs: [],
         upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
       },
     });
 
     const promise = waitForDKGWindowPass(rpcClient);
 
-    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+    await clock.tickAsync(0);
     await promise;
 
-    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
     expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
@@ -51,11 +51,12 @@ describe('waitForDKGWindowPass', () => {
         result: {
           active_dkgs: 0,
           next_dkg: 1,
+          current_dkgs: [],
           upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: true }],
         },
       })
       .onSecondCall()
-      .resolves({ result: { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] } });
+      .resolves({ result: { active_dkgs: 0, next_dkg: 24, current_dkgs: [], upcoming_dkgs: [] } });
 
     const promise = waitForDKGWindowPass(rpcClient);
 
@@ -66,6 +67,31 @@ describe('waitForDKGWindowPass', () => {
     await promise;
 
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+  });
+
+  it('should wait for an uninitialized current member session to leave its window', async function it() {
+    const clock = this.sinon.useFakeTimers();
+    rpcClient.quorum.withArgs('dkginfo')
+      .onFirstCall()
+      .resolves({
+        result: {
+          active_dkgs: 0,
+          next_dkg: 1,
+          current_dkgs: [{ blocksSinceStart: 0, known: true, isMember: true }],
+          upcoming_dkgs: [],
+        },
+      })
+      .onSecondCall()
+      .resolves({ result: { active_dkgs: 0, next_dkg: 1, current_dkgs: [], upcoming_dkgs: [] } });
+
+    const promise = waitForDKGWindowPass(rpcClient);
+    await clock.tickAsync(0);
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    await promise;
+
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+    expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
   it('waits through an active platform session and resolves once the window has passed', async function it() {

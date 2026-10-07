@@ -39,67 +39,41 @@ function hasValidDkgInfoShape(dkgInfo) {
 }
 
 /**
- * An upcoming DKG blocks the stop when it starts within
- * `MIN_BLOCKS_BEFORE_DKG` blocks and the node is selected for it, or
- * Core could not determine membership. Malformed entries fail safe.
- *
- * @param {*} upcomingDkg
- * @return {boolean}
+ * Unknown membership and malformed entries block the stop. Upcoming
+ * sessions only matter within the restart margin; current_dkgs already
+ * contains only sessions inside their active window.
  */
-function isUpcomingDkgBlockingStop(upcomingDkg) {
-  if (!upcomingDkg
-    || typeof upcomingDkg !== 'object'
-    || !isValidDkgCounter(upcomingDkg.blocksUntilStart)
-    || typeof upcomingDkg.known !== 'boolean'
-    || (upcomingDkg.known && typeof upcomingDkg.isMember !== 'boolean')) {
+function isDkgBlockingStop(dkg, blocksField, maxBlocks = Infinity) {
+  if (!dkg
+    || typeof dkg !== 'object'
+    || !isValidDkgCounter(dkg[blocksField])
+    || typeof dkg.known !== 'boolean'
+    || (dkg.known && typeof dkg.isMember !== 'boolean')) {
     return true;
   }
 
-  if (upcomingDkg.blocksUntilStart > MIN_BLOCKS_BEFORE_DKG) {
-    return false;
-  }
-
-  return !upcomingDkg.known || upcomingDkg.isMember;
+  return dkg[blocksField] <= maxBlocks && (!dkg.known || dkg.isMember);
 }
 
-/**
- * @param {{ next_dkg: number, upcoming_dkgs?: Array<Object> }} dkgInfo
- * @return {boolean}
- */
-function isImminentDkgBlockingStop(dkgInfo) {
-  const { upcoming_dkgs: upcomingDkgs } = dkgInfo;
+function isDkgMembershipBlockingStop(dkgInfo) {
+  const { current_dkgs: currentDkgs, upcoming_dkgs: upcomingDkgs } = dkgInfo;
 
-  // Dash Core < v24 does not report membership, so any imminent DKG blocks.
-  if (upcomingDkgs === undefined) {
+  // Earlier Core versions omit current-tip membership while their DKG
+  // worker initializes. Keep the legacy guard until both lists are available.
+  if (currentDkgs === undefined) {
     return dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG;
   }
 
-  if (!Array.isArray(upcomingDkgs)) {
+  if (!Array.isArray(currentDkgs) || !Array.isArray(upcomingDkgs)) {
     return true;
   }
 
-  return upcomingDkgs.some(isUpcomingDkgBlockingStop);
+  return currentDkgs.some((dkg) => isDkgBlockingStop(dkg, 'blocksSinceStart'))
+    || upcomingDkgs.some((dkg) => isDkgBlockingStop(dkg, 'blocksUntilStart', MIN_BLOCKS_BEFORE_DKG));
 }
 
 /**
- * Core lists upcoming DKGs strictly above the chain tip, so a rotated
- * session that starts at the tip block has no `upcoming_dkgs` entry. It
- * only becomes visible through `active_dkgs`, which Core updates shortly
- * after the block is connected. When membership data is what cleared an
- * otherwise imminent DKG (`next_dkg` stays 1 across the rotation window),
- * a safe verdict has to be confirmed once that lag has passed.
- *
- * @param {{ next_dkg: number, upcoming_dkgs?: Array<Object> }} dkgInfo
- * @return {boolean}
- */
-export function needsSafeStopConfirmation(dkgInfo) {
-  return hasValidDkgInfoShape(dkgInfo)
-    && Array.isArray(dkgInfo.upcoming_dkgs)
-    && dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG;
-}
-
-/**
- * @param {{ active_dkgs: number, next_dkg: number, upcoming_dkgs?: Array<Object> }} dkgInfo
+ * @param {Object} dkgInfo
  * @return {boolean}
  */
 export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
@@ -107,60 +81,24 @@ export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
     return false;
   }
 
-  return dkgInfo.active_dkgs > 0 && !isImminentDkgBlockingStop(dkgInfo);
+  return dkgInfo.current_dkgs === undefined
+    && dkgInfo.active_dkgs > 0
+    && dkgInfo.next_dkg > MIN_BLOCKS_BEFORE_DKG;
 }
 
 /**
- * Determine whether a masternode can be safely stopped without
- * risking a PoSe penalty from disrupting an in-progress or imminent
- * DKG session.
+ * Core's current_dkgs and upcoming_dkgs report membership independently
+ * of asynchronous local session tracking. Any current member or unknown
+ * session blocks stopping, as does an upcoming one within the restart margin.
  *
- * Inputs come from three Core RPCs:
- *   - `quorum dkginfo`   → `{ active_dkgs, next_dkg, upcoming_dkgs? }`
- *   - `quorum dkgstatus` → `{ session: [{ llmqType, status: { quorumHeight } }, ...] }`
- *   - `getblockcount`    → integer chain tip height
+ * Without current_dkgs, use the legacy next_dkg guard and resolve tracked
+ * sessions against dkgstatus and getblockcount. Unknown quorum types or
+ * malformed status fail safe; sessions past dkgMiningWindowStart are ignored.
  *
- * Decision rules:
- *   1. Imminent DKG — a new session could begin before the restart
- *      completes. Unsafe regardless of active sessions when:
- *        - Dash Core v24+ (`upcoming_dkgs` present): any upcoming DKG
- *          with `blocksUntilStart <= MIN_BLOCKS_BEFORE_DKG` that the
- *          node is a member of (`isMember`), or whose membership is
- *          not `known`. Core lists a DKG once its work block is mined,
- *          at least 8 blocks before it starts, so every DKG inside this
- *          window is listed. DKGs the node is not selected for are
- *          ignored: missing them carries no PoSe penalty. See
- *          {@link needsSafeStopConfirmation} for sessions starting at
- *          the tip.
- *        - Older Dash Core (no `upcoming_dkgs`):
- *          `next_dkg <= MIN_BLOCKS_BEFORE_DKG`, for any LLMQ type.
- *   2. `active_dkgs === 0` — no sessions tracked locally. Safe.
- *   3. `active_dkgs > 0` — `active_dkgs` in Core is
- *      `dkgdbgman.GetSessionCount()`, an aggregate counter spanning
- *      all LLMQs the node knows about and can linger past a session's
- *      true active window. Resolve the ambiguity per-session against
- *      `quorum dkgstatus` + the chain tip:
- *        - For each session, look up its llmqType's
- *          `dkgMiningWindowStart`. If the llmqType is unknown or
- *          `quorumHeight` is missing/malformed, fail safe (unsafe) —
- *          we cannot reason about a session we cannot identify.
- *        - A session is still active when
- *          `0 <= currentHeight - quorumHeight < dkgMiningWindowStart`.
- *          Any such session blocks the stop.
- *        - A negative offset is inconsistent with Core's tracked
- *          sessions and fails safe. Sessions whose offset is past the
- *          window are treated as stale and ignored.
- *      If every session is past its window, the stop is safe.
- *
- * @param {{ active_dkgs: number, next_dkg: number, upcoming_dkgs?: Array<Object> }} dkgInfo
- *   Result of `quorum dkginfo`.
- * @param {{ session?: Array<{ llmqType?: string, status?: { quorumHeight?: number } }> }} [dkgStatus]
- *   Result of `quorum dkgstatus`. Only consulted when
- *   `dkgInfo.active_dkgs > 0`.
- * @param {number} [currentHeight]
- *   Current block height from `getblockcount`. Only consulted when
- *   `dkgInfo.active_dkgs > 0`.
- * @return {boolean} `true` when the node can be safely stopped.
+ * @param {Object} dkgInfo Result of quorum dkginfo.
+ * @param {Object} [dkgStatus] Result of quorum dkgstatus for older Core.
+ * @param {number} [currentHeight] Chain tip height for older Core.
+ * @return {boolean}
  */
 export default function isMasternodeSafeToStopDuringDkg(
   dkgInfo,
@@ -171,11 +109,11 @@ export default function isMasternodeSafeToStopDuringDkg(
     return false;
   }
 
-  if (isImminentDkgBlockingStop(dkgInfo)) {
+  if (isDkgMembershipBlockingStop(dkgInfo)) {
     return false;
   }
 
-  if (dkgInfo.active_dkgs === 0) {
+  if (dkgInfo.current_dkgs !== undefined || dkgInfo.active_dkgs === 0) {
     return true;
   }
 

@@ -1,18 +1,15 @@
-import wait from '../../util/wait.js';
 import isMasternodeSafeToStopDuringDkg, {
-  needsSafeStopConfirmation,
   shouldInspectDkgStatusForSafeStop,
 } from './isMasternodeSafeToStopDuringDkg.js';
 
-// Comfortably longer than Core's delay between connecting a block and
-// tracking a DKG session that starts at it.
-export const SAFE_STOP_CONFIRMATION_DELAY_MS = 5000;
-
 /**
+ * Query Core and decide whether stopping would disrupt a DKG session.
+ * Older Core responses require the existing per-session status checks.
+ *
  * @param {RpcClient} rpcClient
- * @return {Promise<{ isSafe: boolean, dkgInfo: Object }>}
+ * @return {Promise<boolean>}
  */
-async function evaluateSafeToStop(rpcClient) {
+export default async function checkMasternodeSafeToStop(rpcClient) {
   const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
 
   let dkgStatus;
@@ -27,29 +24,5 @@ async function evaluateSafeToStop(rpcClient) {
     ]);
   }
 
-  return {
-    isSafe: isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, currentHeight),
-    dkgInfo,
-  };
-}
-
-/**
- * Query Core and decide whether the masternode can be stopped without
- * disrupting a DKG session. See {@link isMasternodeSafeToStopDuringDkg}
- * for the rule and {@link needsSafeStopConfirmation} for why a safe
- * verdict is sometimes re-checked.
- *
- * @param {RpcClient} rpcClient
- * @return {Promise<boolean>}
- */
-export default async function checkMasternodeSafeToStop(rpcClient) {
-  const { isSafe, dkgInfo } = await evaluateSafeToStop(rpcClient);
-
-  if (!isSafe || !needsSafeStopConfirmation(dkgInfo)) {
-    return isSafe;
-  }
-
-  await wait(SAFE_STOP_CONFIRMATION_DELAY_MS);
-
-  return (await evaluateSafeToStop(rpcClient)).isSafe;
+  return isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, currentHeight);
 }
