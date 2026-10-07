@@ -2,9 +2,10 @@
 //! document meta-schema, through `check_tx` and block processing.
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
-    assert_paid_contract_structure_error, assert_paid_contract_structure_error_in_block,
+    add_ref_dag_document_type, assert_paid_contract_structure_error,
+    assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
     assert_unpaid_internal_error, check_and_process,
-    contested_unbounded_sum_schema, expiring_unbounded_sum_schema, resign_with_contract, resign_with_schemas,
+    contested_unbounded_sum_schema, expiring_unbounded_sum_schema, resign_with_contract,
     summed_u64_schema, terminal_without_index_only_schema, Outcome,
     CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, SUMMED_U64_MESSAGE,
     TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
@@ -35,8 +36,6 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::tests::fixtures::get_data_contract_fixture;
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use simple_signer::signer::SimpleSigner;
-use std::collections::BTreeMap;
-use std::time::Duration;
 
 /// A registration through `check_tx` and one block, with the platform it ran on and the owner of
 /// the contract, so a test can go on to use the contract.
@@ -130,88 +129,23 @@ async fn register_contract_with(
     }
 }
 
-/// A document type whose property `p` is a `$ref` to `d0`, where each `d<i>` below `levels` is an
-/// object with two members that both `$ref` `d<i+1>`: an acyclic `$defs` graph the non-validating
-/// parse would expand into 2^`levels` properties.
-fn ref_dag_contract(levels: usize) -> impl FnOnce(&mut DataContractInSerializationFormat) {
-    move |contract| {
-        let mut defs = BTreeMap::new();
-        for i in 0..levels {
-            let next = format!("#/$defs/d{}", i + 1);
-            defs.insert(
-                format!("d{i}"),
-                platform_value!({
-                    "type": "object",
-                    "properties": {
-                        "b": { "$ref": next.clone(), "position": 0 },
-                        "c": { "$ref": next, "position": 1 },
-                    },
-                    "additionalProperties": false,
-                }),
-            );
-        }
-        // A leaf that parses, so the non-validating parse would not stop at the first one.
-        defs.insert(format!("d{levels}"), platform_value!({ "type": "integer" }));
-        match contract {
-            DataContractInSerializationFormat::V0(v0) => v0.schema_defs = Some(defs),
-            DataContractInSerializationFormat::V1(v1) => v1.schema_defs = Some(defs),
-        }
-        let schemas = contract.document_schemas_mut();
-        schemas.clear();
-        schemas.insert(
-            "item".to_string(),
-            platform_value!({
-                "type": "object",
-                "properties": { "p": { "$ref": "#/$defs/d0", "position": 0 } },
-                "additionalProperties": false,
-            }),
-        );
-    }
-}
-
 /// `check_tx` runs the schema depth check before its non-validating parse, so it refuses an
-/// acyclic `$defs` graph that parse would expand exponentially, quickly and with the error the
-/// block charges for.
+/// acyclic `$defs` graph that parse would expand exponentially with the error the block charges
+/// for. The graph is kept small so that a missing check fails the test instead of hanging it.
 #[tokio::test]
 async fn should_refuse_an_exponential_ref_dag_in_check_tx_as_the_block_does() {
     let outcome = register_contract_with(
-        ref_dag_contract(40),
+        |contract| {
+            contract.document_schemas_mut().clear();
+            add_ref_dag_document_type(contract, 12);
+        },
         PlatformVersion::latest().protocol_version,
         dash_to_credits!(1.0),
     )
     .await
     .outcome;
 
-    assert!(
-        outcome.check_tx_elapsed < Duration::from_secs(1),
-        "check_tx took {:?}",
-        outcome.check_tx_elapsed
-    );
-    let is_cycle_error = |error: &ConsensusError| {
-        matches!(
-            error,
-            ConsensusError::BasicError(BasicError::InvalidJsonSchemaRefError(e))
-                if e.to_string().contains("contains cycles")
-        )
-    };
-    assert_matches!(
-        outcome.check_tx.as_deref(),
-        Ok([error]) if is_cycle_error(error),
-        "check_tx: {:?}",
-        outcome.check_tx
-    );
-    assert_matches!(
-        &outcome.block,
-        StateTransitionExecutionResult::PaidConsensusError { error, .. } if is_cycle_error(error),
-        "block: {:?}",
-        outcome.block
-    );
-    assert_eq!(
-        outcome
-            .nonce_after
-            .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
-        Some(1)
-    );
+    assert_paid_ref_cycle_error(&outcome, 1);
 }
 
 /// The depth check `check_tx` runs first lets an ordinary contract through.
