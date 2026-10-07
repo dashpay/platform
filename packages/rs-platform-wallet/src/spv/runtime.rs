@@ -237,8 +237,9 @@ impl SpvRuntime {
             .poll(&mut Context::from_waker(Waker::noop()))
         {
             Poll::Ready(running) => running,
-            // Upstream holds this lock only while a live client changes state.
-            Poll::Pending => true,
+            // Upstream holds this lock while it cleans up after a failed sync
+            // and, briefly, while it recovers from a fork.
+            Poll::Pending => false,
         }
     }
 
@@ -1270,14 +1271,14 @@ mod tests {
         );
 
         assert!(runtime.is_started(), "the client stays owned until stop");
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while runtime.is_running() {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("failed upstream sync must stop reporting running");
-        assert!(!runtime.is_running());
+        // Upstream cleans up after the failure in a task of its own.
+        for _ in 0..1000 {
+            assert!(
+                !runtime.is_running(),
+                "a failed sync must not report running while upstream cleans up"
+            );
+            tokio::task::yield_now().await;
+        }
         runtime.stop().await.unwrap();
         assert!(!runtime.is_started());
         assert!(!runtime.is_running());
