@@ -500,6 +500,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // record is stored BEFORE the wallet is published to the scanner.
         // Those accounts re-arm when they are registered, at the cost of one
         // more backfill.
+        //
+        // Whether the snapshot held anything to prune is not the whole test,
+        // because the snapshot is older than the lock: a same-id registration
+        // can have been published after it, established a receival account,
+        // stored that account's coverage and been removed again, all before
+        // this one publishes. Nothing in this snapshot shows that coverage.
+        // An entry in `DurableCursors` is what tells: every publication leaves
+        // one and removal keeps it. So with an entry present the host's
+        // record is replaced with the one this wallet carries, whatever the
+        // snapshot showed. The duplicate check runs first, so a wallet still
+        // registered under this id never has its record overwritten; every
+        // publisher holds the cursor lock, so none can appear between that
+        // check and the insert.
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let (snapshot_cursor, mut host_backfill) =
             match host_wallets.remove(&registration_wallet_id) {
@@ -526,12 +539,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
         let wallet_id = {
             let mut durable_cursors = self.durable_cursors.lock().await;
-            if dropped {
+            if self
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&registration_wallet_id)
+                .is_some()
+            {
+                return Err(already_registered(registration_wallet_id));
+            }
+            let predecessor = durable_cursors.contains_key(&registration_wallet_id);
+            if dropped || predecessor {
                 tracing::info!(
                     wallet_id = %hex::encode(registration_wallet_id),
                     kept = host_backfill.covered.len(),
-                    "wallet recreated: DashPay backfill coverage for receival accounts it \
-                     does not hold is re-armed on the host before the wallet is published"
+                    predecessor,
+                    "wallet recreated: the host's DashPay backfill record is replaced with \
+                     the one this wallet carries before the wallet is published"
                 );
                 self.persister
                     .store(

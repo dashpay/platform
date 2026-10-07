@@ -4444,8 +4444,6 @@ mod tests {
     /// host's record said it was covered (dashpay/platform#4302 review).
     #[tokio::test]
     async fn a_recreated_wallet_rearms_coverage_for_receival_accounts_it_does_not_hold() {
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
         let mut host_record = crate::changeset::DashPayBackfillRecord::default();
@@ -4468,35 +4466,11 @@ mod tests {
         // registration did: the host would otherwise restore the old
         // coverage (and A's account rows) beside this wallet's advanced
         // cursor after a crash.
-        let invalidated = {
-            let stores = host.stores.lock().unwrap();
-            let (_, first) = stores.first().expect("the registration stored something");
-            assert!(first.core.is_none(), "a record-only round");
-            let record = first
-                .dashpay_backfill
-                .clone()
-                .expect("the first store of the registration is the re-armed record");
-            assert!(record.is_empty());
-            record
-        };
+        let invalidated = first_store_is_an_empty_record(&host.stores.lock().unwrap());
 
         // The successor scans 101..1500 before the account exists, and the
         // host accepts that advance (which also pays the owed 100).
-        {
-            let mut durable = manager.durable_cursors.lock().await;
-            let mut wm = manager.wallet_manager.write().await;
-            wm.get_wallet_info_mut(&wallet_id)
-                .expect("info")
-                .core_wallet
-                .update_synced_height(1_500);
-            durable.insert(
-                wallet_id,
-                crate::changeset::DurableCursor {
-                    height: 1_500,
-                    advance_epoch: Some(0),
-                },
-            );
-        }
+        accept_successor_advance(&manager, wallet_id, 1_500).await;
         host.stores.lock().unwrap().clear();
         establish_on_recreated(&manager, &host, &recreated, owner, contact, 200).await;
         assert_eq!(
@@ -4522,11 +4496,36 @@ mod tests {
         // the invalidated record the reload rewinds for A; with the old
         // record it would have trusted coverage over a range scanned without
         // A — which is what storing the invalidation first prevents.
+        assert_only_the_replaced_record_rearms_after_a_crash(
+            &manager,
+            wallet_id,
+            owner,
+            1_500,
+            invalidated,
+            host_record,
+        )
+        .await;
+    }
+
+    /// Restore `wallet_id` the way a crash would — its accounts, `owner`'s
+    /// established contact and the cursor at `persisted_cursor` — once with
+    /// the record the publication stored over the host's (`replaced`) and
+    /// once with the coverage it replaced (`stale`). Only the stored record
+    /// may rewind for the contact; the stale one would have skipped the
+    /// range scanned without its account.
+    async fn assert_only_the_replaced_record_rearms_after_a_crash(
+        manager: &Arc<PlatformWalletManager<ReloadPersister>>,
+        wallet_id: WalletId,
+        owner: Identifier,
+        persisted_cursor: u32,
+        replaced: crate::changeset::DashPayBackfillRecord,
+        stale: crate::changeset::DashPayBackfillRecord,
+    ) {
         let (wallet, managed, identity) = {
             let wm = manager.wallet_manager.read().await;
             let info = wm.get_wallet_info(&wallet_id).expect("info");
             let mut managed = info.core_wallet.clone();
-            managed.metadata.synced_height = 1_500;
+            managed.metadata.synced_height = persisted_cursor;
             let mut identity = info
                 .identity_manager
                 .managed_identity(&owner)
@@ -4540,11 +4539,11 @@ mod tests {
             )
         };
         for (record, expected, why) in [
-            (invalidated, Some(200), "the invalidated record re-arms A"),
+            (replaced, Some(200), "the stored record re-arms the account"),
             (
-                host_record,
+                stale,
                 None,
-                "the old record would have skipped 1001..1500",
+                "the replaced coverage would have skipped the unwatched range",
             ),
         ] {
             let mut identities = std::collections::BTreeMap::new();
@@ -4571,6 +4570,160 @@ mod tests {
                 "{why}"
             );
         }
+    }
+
+    /// The successor scans to `height` and the host accepts that advance in
+    /// the successor's own epoch, which also pays any cursor it owed.
+    async fn accept_successor_advance(
+        manager: &Arc<PlatformWalletManager<ReloadPersister>>,
+        wallet_id: WalletId,
+        height: u32,
+    ) {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut durable = manager.durable_cursors.lock().await;
+        let mut wm = manager.wallet_manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .update_synced_height(height);
+        durable.insert(
+            wallet_id,
+            crate::changeset::DurableCursor {
+                height,
+                advance_epoch: Some(0),
+            },
+        );
+    }
+
+    /// The first thing `stores` received, which must be a record-only round
+    /// replacing the host's backfill record with an empty one.
+    fn first_store_is_an_empty_record(
+        stores: &[(WalletId, PlatformWalletChangeSet)],
+    ) -> crate::changeset::DashPayBackfillRecord {
+        let (_, first) = stores.first().expect("the publication stored something");
+        assert!(first.core.is_none(), "a record-only round");
+        let record = first
+            .dashpay_backfill
+            .clone()
+            .expect("the host's record is replaced before the wallet is published");
+        assert!(record.is_empty());
+        assert!(!record.has_extent());
+        record
+    }
+
+    /// The snapshot a registration reads is older than its lock. A same-id
+    /// registration can be published after it, establish a receival account,
+    /// store that account's coverage, advance and be removed, all before this
+    /// one publishes — so a snapshot with nothing to prune is no proof the
+    /// host holds nothing to re-arm. The entry that predecessor left makes
+    /// the publication replace the host's record anyway; otherwise this
+    /// wallet scans past the account unwatched and a crash restores the
+    /// account beside coverage that claims the range was watched
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_recreated_wallet_replaces_coverage_a_predecessor_stored_after_the_snapshot() {
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        // What the predecessor stored after this registration's snapshot.
+        let mut predecessor_record = crate::changeset::DashPayBackfillRecord::default();
+        predecessor_record.record_pass(900, Some(200), [(owner, contact, 0, 200)]);
+
+        let (manager, host, recreated, wallet_id) = recreate_on_host_at(
+            Default::default(),
+            1_000,
+            Some(crate::changeset::DurableCursor {
+                height: 1_000,
+                advance_epoch: Some(2),
+            }),
+        )
+        .await;
+        let replaced = first_store_is_an_empty_record(&host.stores.lock().unwrap());
+
+        accept_successor_advance(&manager, wallet_id, 1_500).await;
+        establish_on_recreated(&manager, &host, &recreated, owner, contact, 200).await;
+        assert_only_the_replaced_record_rearms_after_a_crash(
+            &manager,
+            wallet_id,
+            owner,
+            1_500,
+            replaced,
+            predecessor_record,
+        )
+        .await;
+    }
+
+    /// The load path's start state is just as old. A predecessor can register
+    /// a receival account the snapshot does not hold, store its coverage
+    /// beside a rewind to 100 and be removed before the load publishes. The
+    /// loaded cursor (1000) is then above the host's, so no reset is owed,
+    /// and the snapshot holds no coverage to prune. The entry the predecessor
+    /// left makes the load replace the host's record with the one it loaded
+    /// before the wallet is published (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn loading_a_wallet_replaces_coverage_a_predecessor_stored_after_the_snapshot() {
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let mut predecessor_record = crate::changeset::DashPayBackfillRecord::default();
+        predecessor_record.record_pass(900, Some(200), [(owner, contact, 0, 200)]);
+
+        let (donor, _, wallet_id) = make_wallet().await;
+        let (wallet, mut managed) = {
+            let wm = donor.wallet_manager.read().await;
+            (
+                wm.get_wallet(&wallet_id).expect("wallet").clone(),
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .core_wallet
+                    .clone(),
+            )
+        };
+        drop(donor);
+        managed.metadata.synced_height = 1_000;
+        let host = Arc::new(ReloadPersister {
+            wallet,
+            managed,
+            identities: std::collections::BTreeMap::new(),
+            backfill: Default::default(),
+            stores: Mutex::default(),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
+        manager.durable_cursors.lock().await.insert(
+            wallet_id,
+            crate::changeset::DurableCursor {
+                height: 100,
+                advance_epoch: Some(2),
+            },
+        );
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the snapshot must load");
+        let replaced = first_store_is_an_empty_record(&host.stores.lock().unwrap());
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert_eq!(info.core_wallet.metadata.synced_height, 1_000);
+            assert_eq!(
+                info.dashpay_backfill.unpersisted_cursor, None,
+                "the loaded cursor is above the host's, so no reset is owed"
+            );
+        }
+
+        accept_successor_advance(&manager, wallet_id, 1_500).await;
+        let loaded = manager.get_wallet(&wallet_id).await.expect("wallet");
+        establish_on_recreated(&manager, &host, &loaded, owner, contact, 200).await;
+        assert_only_the_replaced_record_rearms_after_a_crash(
+            &manager,
+            wallet_id,
+            owner,
+            1_500,
+            replaced,
+            predecessor_record,
+        )
+        .await;
     }
 
     /// The host snapshot a registration reads comes before it takes the

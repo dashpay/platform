@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, ClientWalletStartState, PlatformWalletChangeSet, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -286,12 +288,58 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // reset, in this wallet's inherited epoch, so no coverage is
             // recorded beside the host's higher cursor without a reset
             // (dashpay/platform#4302 review).
+            //
+            // The same predecessor can also have changed the host's DashPay
+            // backfill record after the start state was read: registered a
+            // receival account this snapshot does not hold, stored coverage
+            // for it, and been removed. Published without that account, this
+            // wallet would scan past ranges the coverage claims were watched
+            // for it, and a crash would restore both. So when an entry shows
+            // a same-id wallet was published in this process, the record this
+            // wallet carries replaces the host's before the wallet is
+            // published; a contact that loses coverage that way is rewound
+            // for again, once. The existence check comes first, so a wallet
+            // still registered under this id is never overwritten, and every
+            // publisher holds the cursor lock, so none appears before the
+            // insert.
             {
                 let mut durable_cursors = self.durable_cursors.lock().await;
-                let mut wm = self.wallet_manager.write().await;
-                if wm.get_wallet(&wallet_id).is_some() {
+                if self
+                    .wallet_manager
+                    .read()
+                    .await
+                    .get_wallet(&wallet_id)
+                    .is_some()
+                {
                     continue 'load;
                 }
+                if durable_cursors.contains_key(&wallet_id) {
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        covered = platform_info.dashpay_backfill.covered.len(),
+                        "wallet reloaded under an id published earlier in this process: \
+                         the host's DashPay backfill record is replaced with the loaded one \
+                         before the wallet is published"
+                    );
+                    if let Err(e) = self.persister.store(
+                        wallet_id,
+                        PlatformWalletChangeSet {
+                            dashpay_backfill: Some(platform_info.dashpay_backfill.clone()),
+                            ..Default::default()
+                        },
+                    ) {
+                        tracing::error!(
+                            wallet_id = %hex::encode(wallet_id),
+                            error = %e,
+                            "failed to replace the host's DashPay backfill record; \
+                             load aborted before the wallet was registered"
+                        );
+                        load_error =
+                            Some(PlatformWalletError::from_store_failure(&*self.persister, e));
+                        break 'load;
+                    }
+                }
+                let mut wm = self.wallet_manager.write().await;
                 if let Err(e) = wm.insert_wallet(wallet, platform_info) {
                     load_error = Some(PlatformWalletError::WalletCreation(format!(
                         "Failed to register persisted wallet in WalletManager: {}",
