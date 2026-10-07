@@ -10,9 +10,10 @@ use crate::drive::document::expiration::paths::encode_expiration_time;
 use crate::drive::document::expiration::pricing::document_expires_at;
 use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::index_level_tree_types::{
-    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_reaches_entry_by, takes_part_in_index_by,
-    terminal_member_tree_type, zero_contribution_wrapper,
+    continuation_contributes_zero, document_carries,
+    index_level_tree_types_with_continuation_demotion, index_only_level_skips_when_absent,
+    level_reaches_entry_by, takes_part_in_index_by, terminal_member_tree_type,
+    zero_contribution_wrapper,
 };
 use crate::drive::document::layout::{index_ending_at, index_paths, indexes_through, LayoutRole};
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
@@ -192,6 +193,20 @@ fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) 
     }
 }
 
+/// Whether `document` carries `property`, a skip property (the walkers'
+/// `document_carries`). A derived index property's value is read from the
+/// document a reference points at, which the caller may not have put in: it is
+/// then carried while the reference is, its key priced at the field's typical
+/// size ([`Context::raw`]), and absent with the reference.
+fn carries(document_type: DocumentTypeRef, document: &Document, property: &str) -> bool {
+    match document_type.derived_index_properties().get(property) {
+        Some(derived) if !document.properties().contains_key(property) => {
+            document_carries(document, &derived.reference_property)
+        }
+        _ => document_carries(document, property),
+    }
+}
+
 /// Every element inserting `document`, serialized as `serialized`, writes,
 /// owned by its owner in one epoch, as a document create stores it.
 pub(crate) fn document_writes(
@@ -217,7 +232,7 @@ pub(crate) fn document_writes(
             !index
                 .skip_if_absent_properties
                 .iter()
-                .all(|property| document.properties().contains_key(property))
+                .all(|property| carries(document_type, document, property))
         })
         .map(|index| index.name.clone())
         .collect();
@@ -351,7 +366,7 @@ impl Context<'_> {
     /// `skip_set` (the walkers' `document_takes_part_in_index`).
     fn takes_part(&self, skip_set: &[String]) -> Result<bool, Error> {
         takes_part_in_index_by(skip_set, &mut |property| {
-            Ok(self.document.properties().contains_key(property))
+            Ok(carries(self.document_type, self.document, property))
         })
     }
 
@@ -368,7 +383,7 @@ impl Context<'_> {
     /// `level_reaches_entry`): only then do they build the level.
     fn reaches_entry(&self, level: &IndexLevel) -> Result<bool, Error> {
         level_reaches_entry_by(level, &mut |property| {
-            Ok(self.document.properties().contains_key(property))
+            Ok(carries(self.document_type, self.document, property))
         })
     }
 

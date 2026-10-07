@@ -31,8 +31,6 @@ use crate::data_contract::document_type::index::{
     DerivedIndexProperty, DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
     PreallocationBinding,
 };
-#[cfg(feature = "validation")]
-#[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 #[cfg(feature = "validation")]
@@ -681,8 +679,15 @@ fn parse_generation_3(
 ///   whose delete carries them;
 /// * a unique or contested index, whose check reads the values a create
 ///   carries, which a derived value is not among;
-/// * a derived property bucketed by `timeRange` or `integerRange`, or skipped
-///   by `skipIfAbsent`, whose rules read the value off the document itself.
+/// * a derived property bucketed by `timeRange` or `integerRange`, whose
+///   rules read the value off the document itself.
+///
+/// A derived property may be a skip property of `skipIfAbsent`: Drive puts
+/// its value into the document before keying it, null where the reference or
+/// the referenced field is absent, and an index skips a document holding null
+/// for a skip property as it skips one missing it. Whether the value can be
+/// absent at all is judged on the referenced side
+/// ([`resolve_derived_index_properties`]).
 fn apply_derived_index_properties(
     document_type: &mut DocumentTypeV2,
     data_contract_id: Identifier,
@@ -779,17 +784,6 @@ fn derived_index_property_referring_side_error(
             "a derived value can not be bucketed by timeRange or integerRange".to_string(),
         );
     }
-    if index
-        .skip_if_absent_properties
-        .iter()
-        .any(|skipped| skipped == index_property_name)
-    {
-        return Some(
-            "skipIfAbsent reads whether the document holds a value, and a derived value is \
-             read from the referenced document instead"
-                .to_string(),
-        );
-    }
     None
 }
 
@@ -816,8 +810,17 @@ fn derived_index_property_referring_side_error(
 ///   `moderatorAbilities.deleteKeepsFields`, or one inside an object listed
 ///   there, is read from the record once the document is removed.
 ///
+/// And, for a derived property an index skips on (`skipIfAbsent`), what a
+/// stored type's skip property may not be:
+///
+/// * one that is never absent: the reference property is required, and the
+///   field always holds a value (`$ownerId`, `$creatorId`, or a schema
+///   property required together with every object around it), so the index
+///   could never skip on it;
+/// * a byte array that may be empty, which is keyed like a missing value.
+///
 /// The transient, fixed and key checks of a schema property need the
-/// `validation` feature; the owner, creator and kept checks run in every
+/// `validation` feature; the owner, creator, kept and skip checks run in every
 /// build.
 pub(in crate::data_contract) fn resolve_derived_index_properties(
     document_types: &mut BTreeMap<String, DocumentType>,
@@ -854,6 +857,22 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                     )
                 };
                 let referenced_name = derived.referenced_document_type_name.as_str();
+                let reference_property = derived.reference_property.as_str();
+                // A skip property must be able to be absent: here, only when its reference is
+                // optional or the field it reads can be missing on the referenced document
+                let never_absent = |field_always_held: String| {
+                    refusal(format!(
+                        "skipIfAbsent skips on it, but it is never absent: \
+                         \"{reference_property}\" is required and {field_always_held}, so the \
+                         index could never skip on it; remove it from skipIfAbsent, or make \
+                         \"{reference_property}\" optional"
+                    ))
+                };
+                let skipped = full_validation
+                    && index
+                        .skip_if_absent_properties
+                        .contains(&index_property.name);
+                let reference_required = declaring.required_fields.contains(reference_property);
                 match &derived.field {
                     DerivedIndexField::OwnerId => {
                         if full_validation && owner_can_change(referenced) {
@@ -861,6 +880,11 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                                 "documents of \"{referenced_name}\" can be transferred or \
                                  traded, so the owner an entry was written under could change; \
                                  $creatorId never does"
+                            )));
+                        }
+                        if skipped && reference_required {
+                            return Err(never_absent(format!(
+                                "every document of \"{referenced_name}\" has an owner"
                             )));
                         }
                     }
@@ -875,6 +899,11 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             return Err(refusal(format!(
                                 "\"{referenced_name}\" records no creator: its documents never \
                                  change hands, so their creator is their owner, $ownerId"
+                            )));
+                        }
+                        if skipped && reference_required {
+                            return Err(never_absent(format!(
+                                "every document of \"{referenced_name}\" records its creator"
                             )));
                         }
                     }
@@ -923,6 +952,34 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                                  `moderatorAbilities.deleteKeepsFields` (a list fixed when the \
                                  type is registered, which no update changes)"
                             )));
+                        }
+                        if skipped {
+                            // A required leaf inside an optional object is only present when
+                            // the object is, so every object around it must be required too
+                            let mut prefix = String::new();
+                            let always_held = path.split('.').all(|segment| {
+                                if !prefix.is_empty() {
+                                    prefix.push('.');
+                                }
+                                prefix.push_str(segment);
+                                referenced.required_fields().contains(&prefix)
+                            });
+                            if reference_required && always_held {
+                                return Err(never_absent(format!(
+                                    "\"{referenced_name}\" requires \"{path}\""
+                                )));
+                            }
+                            if let DocumentPropertyType::ByteArray(sizes) = &property.property_type
+                            {
+                                if sizes.min_size.unwrap_or_default() == 0 {
+                                    return Err(refusal(format!(
+                                        "skipIfAbsent skips on it, but \"{path}\" of \
+                                         \"{referenced_name}\" is a byte array that may be \
+                                         empty, which is indexed under the same key as a \
+                                         missing value: set its `minItems` to at least 1"
+                                    )));
+                                }
+                            }
                         }
                         resolved.push((
                             name.clone(),

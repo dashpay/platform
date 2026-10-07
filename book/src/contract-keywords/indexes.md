@@ -139,7 +139,7 @@ DPNS sets `"nullSearchable": false` on its `records.identity` index, so domains 
 | **Since** | protocol version 14 |
 | **On update** | Fixed (10217) |
 
-A document that leaves out a property of the index's **skip set** writes nothing into this index, and its delete looks for nothing there. `true` makes the skip set every optional property of the index; an array names it. The skip property can sit anywhere in the index, under a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window too. The index then holds only the documents carrying every skip property, and its counts and rankings are "among the documents that have them". A present but empty value is not absent and is indexed.
+A document that leaves out a property of the index's **skip set** writes nothing into this index, and its delete looks for nothing there. `true` makes the skip set every optional property of the index; an array names it. A [value of a referenced document](derived-index-properties.md#skipping-a-document-without-the-value) is never in the `true` set, since whether it can be absent depends on the referenced type; the array may name one. The skip property can sit anywhere in the index, under a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window too. The index then holds only the documents carrying every skip property, and its counts and rankings are "among the documents that have them". A present but empty value is not absent and is indexed.
 
 ```json
 "post": {
@@ -177,10 +177,10 @@ A query only uses a skip index when it constrains every skip property, so it can
 Rules at registration:
 
 - The skip set is not empty: an index whose properties are all required could never skip.
-- Each skip property is a top-level property of the type, not a system property, and not listed in `required`.
+- Each skip property is a top-level property of the type, not a system property, and not listed in `required`, or a [value of a referenced document](derived-index-properties.md#skipping-a-document-without-the-value) that can be absent.
 - No `rankedCountable` `at` level sits above the index's deepest skip property: it would count only documents carrying that property, and no query could read it without binding the property.
 - The index is not contested, and does not also set `nullSearchable: false` (the skip already leaves out a document with every indexed value missing).
-- On a stored type, a skip property that is a byte array sets `minItems` to at least 1: an empty byte array is keyed like a missing value.
+- On a stored type, a skip property that is a byte array sets `minItems` to at least 1 (on the referenced type, for a value read from a referenced document): an empty byte array is keyed like a missing value.
 - On a stored type, a ranking at a skip property's level does not share that level with an index that keeps null for the property: that index would create the null value, and the ranking would show it as a group with no documents.
 - On an [index-only type](index-only.md#skipifabsent) the skip set holds every optional property of the index, and each optional property needs a skip index of its own, without a `timeRange` (a window keeps the value only until the window drains).
 

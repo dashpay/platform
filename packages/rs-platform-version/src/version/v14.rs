@@ -1741,11 +1741,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through `moderatedDocument`, `$ownerId` or a schema property the referenced type keeps
 ///     under `moderatorAbilities.deleteKeepsFields` (a kept path or one inside a kept object,
 ///     `is_path_listed`, checked in every build); not `$id`; not in a unique or contested
-///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
-///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
-///     document stores, is refused on an index whose derived properties the query does not fix
-///     with `==`. Every step is inert without a derived index property, which only generation 3
-///     declares.
+///     index, or as a `timeRange` or `integerRange` source; not on an indexOnly type. A
+///     `skipIfAbsent` array may name one (`reads_through_reference`), which `skipIfAbsent:
+///     true` leaves out; `resolve_derived_index_properties` refuses one that is never absent
+///     (a required reference reading `$ownerId`, `$creatorId`, or a field required with every
+///     object around it) or a byte array that may be empty. The v2 walkers, update 1 and the
+///     SDK cost walker count a null skip value as absent (`document_carries`), as a derived
+///     value is when its reference or field is. A `startAt` or `startAfter` cursor, placed by
+///     what the named document stores, is refused on an index whose derived properties the
+///     query does not fix with `==`. Every step is inert without a derived index property,
+///     which only generation 3 declares.
 ///
 /// 66. **Properties frozen under a condition**: an `immutable` entry of
 ///     meta-schema v3 and parser generation 3, in place, may be
