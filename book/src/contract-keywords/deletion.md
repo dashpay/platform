@@ -1,6 +1,6 @@
 # Deletion
 
-A document can leave the state three ways: its owner deletes it, the contract's moderators delete it, or the platform deletes it when its time to live runs out. `canBeDeleted` rules the first, `moderatorAbilities.delete`, `moderatorAbilities.deleteWithin` and `moderatorAbilities.deleteSettled` the second, and `ttl` the third (see [Time To Live](ttl.md)). Each is independent of the others: a type may let moderators remove what its authors cannot retract, or expire documents that nobody may delete by hand.
+A document can leave the state three ways: its owner deletes it, the contract's moderators delete it, or the platform deletes it when its time to live runs out. `canBeDeleted` rules the first, and `deleteConstraints` can narrow it to the documents that meet its rules; `moderatorAbilities.delete`, `moderatorAbilities.deleteWithin` and `moderatorAbilities.deleteSettled` the second, and `ttl` the third (see [Time To Live](ttl.md)). Each is independent of the others: a type may let moderators remove what its authors cannot retract, or expire documents that nobody may delete by hand.
 
 ## `canBeDeleted`
 
@@ -136,6 +136,77 @@ All refusals below are `InvalidContractStructure` (10231), checked on every pars
 - Only on a type whose documents are mutable: without a replace there is nothing to retract with.
 - Only on a contract that keeps a banlist or a suspension list: otherwise no owner is ever barred.
 - The condition reads what an `immutable` entry's `when` may read: declared properties of the right kind, neither transient nor inside a transient object, the system times and heights the type lists in `required`, and the stored document through `$old.`. It reads no `countOf` or `sumOf`. When a contract is registered or updated, it also stays within the node limit of a rule and lists no condition twice.
+
+## `deleteConstraints`
+
+Rules the stored document must meet for its owner to delete it. `canBeDeleted: true` lets an owner delete any of its documents at any time; `deleteConstraints` holds the delete to conditions, written in the grammar of [`propertyConstraints`](property-constraints.md): a poll may be deleted only before its first vote, an order only while it is still open, an address only when its owner keeps another.
+
+| | |
+|---|---|
+| **Where** | document type |
+| **Value** | An object of rules, at least one. Each key is the rule's name (1 to 64 letters, digits or underscores); each value is a condition in the grammar of a [`propertyConstraints`](property-constraints.md#conditions) rule |
+| **Default** | Absent: the owner deletes whenever `canBeDeleted` allows |
+| **Since** | protocol version 14 |
+| **On update** | Fixed: adding, removing or changing a rule is refused (`IncompatibleDocumentTypeSchemaError`, 10246) |
+| **Errors** | `DocumentDeleteConstraintViolatedError` (40147) on a delete; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231) |
+
+### Example
+
+```json
+"poll": {
+  "type": "object",
+  "canBeDeleted": true,
+  "properties": {
+    "question": { "type": "string", "maxLength": 280, "position": 0 },
+    "status": { "type": "string", "enum": ["open", "locked"], "maxLength": 10, "position": 1 }
+  },
+  "required": ["$createdAt", "question"],
+  "deleteConstraints": {
+    "noVotes": { "equal": [{ "countOf": ["vote", { "pollId": "$id" }] }, 0] },
+    "notLocked": { "notEqual": ["status", { "const": "locked" }] }
+  },
+  "additionalProperties": false
+},
+"vote": {
+  "type": "object",
+  "properties": {
+    "pollId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "refersTo": { "type": "deletableDocument", "documentType": "poll" },
+      "position": 0
+    },
+    "choice": { "type": "integer", "minimum": 0, "maximum": 9, "position": 1 }
+  },
+  "required": ["pollId", "choice"],
+  "indices": [
+    { "name": "byPoll", "properties": [{ "pollId": "asc" }], "countable": "countable" }
+  ],
+  "additionalProperties": false
+}
+```
+
+`noVotes` counts the votes whose `pollId` is the poll's own id (`$id`), from the count the `byPoll` index keeps, and lets the poll go only while there are none. `notLocked` reads the stored poll: a locked one stays. Once a vote is cast, its author can no longer pull the poll out from under it; once every vote is gone, the poll can be deleted again.
+
+Without the keyword, the poll had to be undeletable for its votes to be sure it stays. A `propertyConstraints` rule of the same shape on the poll, `{ "equal": [{ "countOf": ["vote", { "pollId": "$id" }] }, 0] }`, refuses an edit after the first vote in the same way.
+
+### How it works
+
+- **The owner's delete.** When the owner deletes a document, consensus fetches it, checks the owner, then checks every rule in name order against the stored document, and refuses the delete at the first rule it breaks with `DocumentDeleteConstraintViolatedError` (40147). The error names the document, the rule, and why it failed, with the reasons of [`propertyConstraints`](property-constraints.md#how-it-works). It is a state error, so the delete is paid for and the nonce is spent, and the document stays.
+- **What a rule reads.** The stored document's properties, its `$ownerId` (the owner deleting it), and the times and heights the type lists in `required`, as stored. A `countOf` or `sumOf` reads a total from state as it will be once the document is gone: a total over the type's own documents no longer counts it, so `{ "greaterThanOrEqual": [{ "countOf": ["address", { "$ownerId": "$ownerId" }] }, 1] }` keeps the last address of each owner. Each total is a billed read.
+- **`$id` in a filter.** A filter may match a key by the document's own id, `"$id"`, which is what makes "while no vote points at it" a rule. The key must be an identifier property of the counted type. `$id` is a filter value in `propertyConstraints` too, as the example shows; it is not an operand anywhere else.
+- **Only the owner's delete.** The contract's moderators delete as their abilities allow, and a `ttl` expires documents on time, whatever the rules say. A `refersTo` with `consume` may not target the type, since a consume deletes without a delete transition to judge. A banned or suspended owner, who may still delete its documents, is held to the rules like any other.
+- **The totals are those of the block.** Each state transition of a block is applied before the next is validated, so a vote earlier in the block counts, and a vote later in the block finds the poll gone (`ReferencedEntityNotFoundError`, 40120).
+- A total of another type is judged at the delete alone. The rules do not stop the counted documents from changing later, which is what the example wants: deleting the last vote frees the poll.
+
+### Rules at registration
+
+All refusals below are `InvalidContractStructure` (10231) unless noted.
+
+- Only on a type whose owner deletes its stored documents: not `canBeDeleted: false` or `"onlyWhenConsumed"`, where there is no delete to gate, and not `indexOnly`, whose delete carries the row's values and is judged by its `propertyConstraints`. Checked on every parse.
+- The grammar, the shape and the reads are those of a `propertyConstraints` rule (see [Rules at registration](property-constraints.md#rules-at-registration)): every path names a stored property of the kind it is read as, a time or height the type lists in `required`, no `$old.` path. Every `countOf` and `sumOf` counts a type of the contract with a tree that keeps the total. Unlike a `propertyConstraints` rule, a delete rule may total its own type when that type has a contested index: the total it reads at the delete is the stored one, which an awarded document is in like any other.
+- The same limits, counted apart from `propertyConstraints`: at most 16 rules, each of at most 32 nodes, reading at most 4 distinct totals.
+- A `refersTo` with `consume` may not target a type that declares the keyword.
 
 ## `moderatorAbilities.delete`
 
@@ -393,7 +464,7 @@ Whether the owner of a document a moderator deletes is refunded its storage. By 
 
 | Who deletes | Allowed by | Refund to the owner |
 |---|---|---|
-| The document's owner | `canBeDeleted: true`, on a type that does not keep history | Yes, except on a type with a `ttl` |
+| The document's owner | `canBeDeleted: true`, on a type that does not keep history, when the stored document meets every `deleteConstraints` rule | Yes, except on a type with a `ttl` |
 | The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | Only with `moderatorAbilities.deleteRefundsOwner: true`, except on a type with a `ttl` |
 | The seated moderation team, together | `moderatorAbilities.deleteSettled`, once `moderatorAbilities.deleteWithin` has passed | As for the moderators |
 | The platform | `ttl`, once it has passed | No |
@@ -407,5 +478,6 @@ Which reference may point at a type follows from which of the three it allows. A
 - [Time To Live](ttl.md), the third way a document leaves the state
 - [History](history.md), for why a type that keeps history can never delete
 - [Mutability](mutability.md), for `immutable` and the conditions `retractedWhen` shares with it, and [Creation, Transfers and Trading](ownership-and-trading.md)
+- [propertyConstraints](property-constraints.md), for the grammar of `deleteConstraints` and the totals its rules read
 - [References](refers-to.md), for `permanentDocument`, `moderatedDocument` and `deletableDocument`
 - [Contract-Level Keys and config](contract-config.md), for `documentsCanBeDeletedContractDefault` and `moderation`

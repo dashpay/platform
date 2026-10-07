@@ -5,8 +5,9 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraints, AffixPosition, AggregateBinding, AggregateKind, ElementKind,
-    EqualityKind, PropertyConstraint, PropertyRead, STORED_DOCUMENT_PREFIX,
+    parse_delete_constraints, parse_property_constraints, AffixPosition, AggregateBinding,
+    AggregateKind, ElementKind, EqualityKind, PropertyConstraint, PropertyRead,
+    STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, schema_property_is_fixed_once_written,
@@ -2675,43 +2676,164 @@ fn apply_property_constraints_v0(
     }
 
     if full_validation {
-        let limits = &platform_version.system_limits;
-        let max_constraints = limits.max_property_constraints;
-        if constraints.len() > usize::from(max_constraints) {
-            return Err(structure_error(format!(
-                "declares {} rules, above the maximum of {max_constraints}",
-                constraints.len()
-            )));
-        }
-        let max_aggregates = limits.max_property_constraint_aggregates;
-        let aggregates = constraints
-            .values()
-            .flat_map(PropertyConstraint::aggregate_reads)
-            .collect::<BTreeSet<_>>()
-            .len();
-        if aggregates > usize::from(max_aggregates) {
-            return Err(structure_error(format!(
-                "reads {aggregates} distinct countOf and sumOf totals, above the maximum of \
-                 {max_aggregates}"
-            )));
-        }
-        let max_nodes = limits.max_property_constraint_nodes;
-        for (name, constraint) in &constraints {
-            let nodes = constraint.node_count();
-            if nodes > usize::from(max_nodes) {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" has {nodes} nodes, above the maximum of {max_nodes}"
-                )));
-            }
-            if let Some((repeat, earlier)) = constraint.repeated_condition() {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" at {repeat} repeats the condition at {earlier}"
-                )));
-            }
-        }
+        validate_rule_limits(&constraints, &structure_error, platform_version)?;
     }
 
     document_type.property_constraints = constraints;
+    Ok(())
+}
+
+/// Checks one keyword's rules against the limits of `SystemLimits`: at most
+/// `max_property_constraints` rules, reading at most
+/// `max_property_constraint_aggregates` distinct `countOf` and `sumOf` totals,
+/// each rule of at most `max_property_constraint_nodes` nodes, and no `anyOf`
+/// or `allOf` listing the same condition twice. `propertyConstraints` and
+/// `deleteConstraints` are each held to them on their own.
+fn validate_rule_limits(
+    constraints: &BTreeMap<String, PropertyConstraint>,
+    structure_error: &dyn Fn(String) -> DataContractError,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    let limits = &platform_version.system_limits;
+    let max_constraints = limits.max_property_constraints;
+    if constraints.len() > usize::from(max_constraints) {
+        return Err(structure_error(format!(
+            "declares {} rules, above the maximum of {max_constraints}",
+            constraints.len()
+        )));
+    }
+    let max_aggregates = limits.max_property_constraint_aggregates;
+    let aggregates = constraints
+        .values()
+        .flat_map(PropertyConstraint::aggregate_reads)
+        .collect::<BTreeSet<_>>()
+        .len();
+    if aggregates > usize::from(max_aggregates) {
+        return Err(structure_error(format!(
+            "reads {aggregates} distinct countOf and sumOf totals, above the maximum of \
+             {max_aggregates}"
+        )));
+    }
+    let max_nodes = limits.max_property_constraint_nodes;
+    for (name, constraint) in constraints {
+        let nodes = constraint.node_count();
+        if nodes > usize::from(max_nodes) {
+            return Err(structure_error(format!(
+                "rule \"{name}\" has {nodes} nodes, above the maximum of {max_nodes}"
+            )));
+        }
+        if let Some((repeat, earlier)) = constraint.repeated_condition() {
+            return Err(structure_error(format!(
+                "rule \"{name}\" at {repeat} repeats the condition at {earlier}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Reads the `deleteConstraints` keyword onto the document type: the rules the
+/// stored document must meet for its owner to delete it
+/// ([`parse_delete_constraints`]). A rule reads what a `propertyConstraints`
+/// rule may read, checked the same way ([`validate_property_constraint_reads`]),
+/// and under full validation the keyword is held to the same limits, counted
+/// apart from `propertyConstraints`. Which type a `countOf` or `sumOf` totals,
+/// and by which keys, is checked with the contract's other types
+/// ([`validate_property_constraint_aggregates`]).
+///
+/// On every parse the type must be one whose owner deletes its documents: not
+/// `canBeDeleted: false` or `"onlyWhenConsumed"`, where there is no delete to
+/// gate, and not indexOnly, whose delete carries the row's values instead of
+/// naming a stored document. The keyword arrives with meta-schema v3 and
+/// protocol version 14, so no stored contract breaks either rule. Versioned
+/// with [`apply_property_constraints`], on `parse_property_constraints`:
+/// `None` ignores the keyword, which no earlier meta-schema admits.
+pub(super) fn apply_delete_constraints(
+    document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    document_type_name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None => Ok(()),
+        Some(0) => apply_delete_constraints_v0(
+            document_type,
+            schema_defs,
+            document_type_name,
+            full_validation,
+            platform_version,
+        ),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "parse_property_constraints version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_delete_constraints_v0(
+    document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    document_type_name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    let property_kind =
+        |path: &str| property_equality_kind(&document_type.flattened_properties, path);
+    let constraints =
+        parse_delete_constraints(&document_type.schema, document_type_name, &property_kind)?;
+    if constraints.is_empty() {
+        return Ok(());
+    }
+    let keyword = property_names::DELETE_CONSTRAINTS;
+    let structure_error = |message: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{document_type_name}\" {keyword} {message}"
+        ))
+    };
+    if document_type.documents_deleted_only_when_consumed {
+        return Err(structure_error(
+            "gate the delete of a document by its owner, but the type sets `canBeDeleted: \
+             \"onlyWhenConsumed\"`: its owner never deletes one, and a consume deletes it \
+             without the rules"
+                .to_string(),
+        ));
+    }
+    if !document_type.documents_can_be_deleted {
+        return Err(structure_error(
+            "gate the delete of a document by its owner, but the type sets `canBeDeleted: \
+             false`, so there is no delete to gate"
+                .to_string(),
+        ));
+    }
+    if document_type.index_only {
+        return Err(structure_error(
+            "gate the delete of a stored document, but the type is indexOnly: its delete \
+             carries the row's values, judged by the type's propertyConstraints as a create's"
+                .to_string(),
+        ));
+    }
+
+    for (name, constraint) in &constraints {
+        validate_property_constraint_reads(
+            document_type,
+            schema_defs,
+            &format!("rule \"{name}\""),
+            constraint,
+            false,
+            &structure_error,
+        )?;
+    }
+
+    if full_validation {
+        validate_rule_limits(&constraints, &structure_error, platform_version)?;
+    }
+
+    document_type.delete_constraints = constraints;
     Ok(())
 }
 
@@ -3132,29 +3254,42 @@ impl AggregateKeyKind {
     }
 }
 
-/// Checks every `countOf` and `sumOf` the `propertyConstraints` rules of
-/// `document_types`, one contract's, read, once all of them are parsed: the
-/// type it totals is one of them, and not an indexOnly one, nor the declaring
-/// type itself when it has a contested index; a key of its filter
-/// is `$ownerId` or an integer, string or identifier property of that type,
-/// and the value matched against it is of the same kind: a property of the
-/// declaring type, `$ownerId`, an integer, a string the key's `enum` lists, or
-/// a base58 identifier; and a tree of that type keeps the total
-/// ([`AggregateRead::whole_type_kept`], [`AggregateRead::answering_index`]),
-/// so that a rule never reads a total a count or sum tree does not keep.
-/// Registration only: the index and property settings it relies on do not
-/// change on a contract update. `schema_defs`, the contract's `$defs`, resolves
-/// a filter key declared through a `$ref`.
+/// Checks every `countOf` and `sumOf` the `propertyConstraints` and
+/// `deleteConstraints` rules of `document_types`, one contract's, read, once all
+/// of them are parsed: the type it totals is one of them, and not an indexOnly
+/// one, nor, for a rule judging writes, the declaring type itself when it has
+/// a contested index; a key of its filter is `$ownerId` or an integer, string
+/// or identifier property of that type, and the value matched against it is
+/// of the same kind: a property of the declaring type, `$ownerId` or `$id`, an
+/// integer, a string the key's `enum` lists, or a base58 identifier; and a tree
+/// of that type keeps the total ([`AggregateRead::whole_type_kept`],
+/// [`AggregateRead::answering_index`]), so that a rule never reads a total a
+/// count or sum tree does not keep. Registration only: the index and property
+/// settings it relies on do not change on a contract update. `schema_defs`,
+/// the contract's `$defs`, resolves a filter key declared through a `$ref`.
 pub(in crate::data_contract::document_type::class_methods) fn validate_property_constraint_aggregates(
     document_types: &BTreeMap<String, DocumentType>,
     schema_defs: Option<&BTreeMap<String, Value>>,
 ) -> Result<(), DataContractError> {
     for (type_name, document_type) in document_types {
         let declaring = document_type.as_ref();
-        for (rule, constraint) in declaring.property_constraints() {
+        // A delete rule judges a total as it stands at the delete, which a document
+        // a contest awarded is in like any other, so it may total a contested type's
+        // own documents
+        let rules = declaring
+            .property_constraints()
+            .iter()
+            .map(|rule| (property_names::PROPERTY_CONSTRAINTS, true, rule))
+            .chain(
+                declaring
+                    .delete_constraints()
+                    .iter()
+                    .map(|rule| (property_names::DELETE_CONSTRAINTS, false, rule)),
+            );
+        for (keyword, judges_writes, (rule, constraint)) in rules {
             let error = |message: String| {
                 DataContractError::InvalidContractStructure(format!(
-                    "document type \"{type_name}\" propertyConstraints rule \"{rule}\" {message}"
+                    "document type \"{type_name}\" {keyword} rule \"{rule}\" {message}"
                 ))
             };
             for read in constraint.aggregate_reads() {
@@ -3181,7 +3316,8 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                 // storage, outside the count and sum trees, and the one a contest awards
                 // is stored without any rule judged, so a total of the type's own
                 // documents could pass the rule
-                if read.of_own_type
+                if judges_writes
+                    && read.of_own_type
                     && counted
                         .indexes()
                         .values()
@@ -3232,6 +3368,7 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                         AggregateBinding::Owner => {
                             (OWNER_ID.to_string(), AggregateKeyKind::Identifier)
                         }
+                        AggregateBinding::Id => (ID.to_string(), AggregateKeyKind::Identifier),
                         AggregateBinding::Integer(integer) => {
                             (integer.to_string(), AggregateKeyKind::Integer)
                         }
@@ -3277,7 +3414,8 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                 return Err(error(format!(
                                     "{totals} with \"{key}\" at \"{path}\", which has type {}: \
                                      a value matched is an integer, string or identifier \
-                                     property, $ownerId, an integer or a {{ \"const\": ... }}",
+                                     property, $ownerId, $id, an integer or a \
+                                     {{ \"const\": ... }}",
                                     property_type.map_or("none".to_string(), |property_type| {
                                         property_type.name()
                                     })

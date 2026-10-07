@@ -261,7 +261,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_update_price_transition_structure_validation: 0,
                 document_base_transition_state_validation: 1, // changed: a document token cost may be paid from the token shielded pool
                 document_create_transition_state_validation: 2,
-                document_delete_transition_state_validation: 0,
+                document_delete_transition_state_validation: 1, // changed: v1 judges the document type's `deleteConstraints` on the stored document
                 document_index_only_delete_transition_state_validation: 0,
                 document_replace_transition_state_validation: 1,
                 document_transfer_transition_state_validation: 0,

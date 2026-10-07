@@ -1090,6 +1090,44 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         }
     }
 
+    /// Judges the owner's delete of a stored document, with id `document_id` and properties
+    /// `data`, against every rule of the document type's `deleteConstraints`, in name order:
+    /// the first rule the stored document breaks fails with
+    /// `DocumentDeleteConstraintViolatedError` (40147), naming the document, the rule and
+    /// why, as `propertyConstraints` would. `system` holds the stored document's owner and
+    /// its times and heights, and the `countOf` and `sumOf` totals consensus read as they
+    /// will be once the document is gone. A type with no rule costs nothing, and its data
+    /// is not copied.
+    ///
+    /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
+    /// version 14, where no parsed document type carries a rule.
+    fn validate_delete_constraints(
+        &self,
+        document_id: Identifier,
+        data: &BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => self.validate_delete_constraints_v0(document_id, data, system),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_delete_constraints".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     fn sanitize_document_properties(&self, properties: &mut BTreeMap<String, Value>) {
         // Iterate through each property in the document
         for (field_name, field_value) in properties.iter_mut() {

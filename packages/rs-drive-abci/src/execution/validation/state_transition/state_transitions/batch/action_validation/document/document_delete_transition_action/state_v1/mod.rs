@@ -2,10 +2,12 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
-use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -17,11 +19,13 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v0::check_ownership;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
+use crate::execution::validation::state_transition::batch::transformer::v0::property_constraint_aggregates::read_delete_constraint_aggregates;
 use crate::platform_types::platform::PlatformStateRef;
 
-pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentDeleteTransitionActionStateValidationV0 {
-    fn validate_state_v0(
+pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentDeleteTransitionActionStateValidationV1 {
+    fn validate_state_v1(
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
@@ -31,8 +35,15 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
-impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitionAction {
-    fn validate_state_v0(
+
+impl DocumentDeleteTransitionActionStateValidationV1 for DocumentDeleteTransitionAction {
+    /// Protocol version 14: the checks of version 0 (the base transition, the stored
+    /// document, its owner), then the document type's `deleteConstraints`, judged on the
+    /// stored document with the `countOf` and `sumOf` totals they read as they will be once
+    /// it is gone. The first rule the document breaks refuses the delete with
+    /// `DocumentDeleteConstraintViolatedError` (40147), a state error, so the delete is paid
+    /// and the nonce bumped. A type without delete rules reads nothing more than version 0.
+    fn validate_state_v1(
         &self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
@@ -67,10 +78,6 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
             ));
         };
 
-        // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
-        // `fetch_document_with_id` bills internally on transform_into_action: 1+.
-        // PV11 byte-safe: v0 forces epoch=None inside, no add_operation,
-        // same net effect as pre-PR's explicit zero-fee add_operation call.
         let original_document = fetch_document_with_id(
             platform.drive,
             contract,
@@ -90,26 +97,34 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
             ));
         };
 
-        Ok(check_ownership(self, &document, &owner_id))
-    }
-}
+        let ownership_result = check_ownership(self, &document, &owner_id);
+        if !ownership_result.is_valid() || document_type.delete_constraints().is_empty() {
+            return Ok(ownership_result);
+        }
 
-/// A [`DocumentOwnerIdMismatchError`] unless `owner_id` owns `fetched_document`. Shared
-/// with state validation 1, which runs the same checks before the type's delete rules.
-pub(super) fn check_ownership(
-    document_transition: &DocumentDeleteTransitionAction,
-    fetched_document: &Document,
-    owner_id: &Identifier,
-) -> SimpleConsensusValidationResult {
-    let mut result = SimpleConsensusValidationResult::default();
-    if fetched_document.owner_id() != owner_id {
-        result.add_error(ConsensusError::StateError(
-            StateError::DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError::new(
-                document_transition.base().id(),
-                owner_id.to_owned(),
-                fetched_document.owner_id(),
-            )),
-        ));
+        // -->> Introduced in V1 <<--
+        // The rules read the stored document, its owner and its times and heights, and the
+        // totals read here, each billed, as they will be once the document is gone
+        let aggregates = read_delete_constraint_aggregates(
+            platform.drive,
+            contract,
+            document_type_name,
+            &document,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        document_type
+            .validate_delete_constraints(
+                document.id(),
+                document.properties(),
+                &DocumentSystemValues {
+                    aggregates: Some(aggregates),
+                    ..DocumentSystemValues::of_document(&document)
+                },
+                platform_version,
+            )
+            .map_err(Error::Protocol)
     }
-    result
 }

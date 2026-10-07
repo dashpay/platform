@@ -2133,6 +2133,32 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the six shielded queries accept an optional `token_id` to target a token
 ///     pool.
 ///
+/// 84. **Rules that gate the owner's delete (`deleteConstraints`), and `$id`
+///     in a total's filter**: a document type of meta-schema v3 and parser
+///     generation 3, in place, may declare `deleteConstraints`, named rules in
+///     the `propertyConstraints` grammar (`parse_delete_constraints`,
+///     `apply_delete_constraints`, versioned with `apply_property_constraints`
+///     on `parse_property_constraints`; `DocumentTypeV2Getters::delete_constraints`).
+///     Document delete state validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     runs the checks of version 0, then reads the totals the rules read
+///     (`read_delete_constraint_aggregates`, billed, each as it will be once
+///     the document is gone) and judges every rule on the stored document
+///     (`validate_delete_constraints`, versioned with
+///     `validate_property_constraints`), refusing the first one broken with
+///     `DocumentDeleteConstraintViolatedError` (state code 40147, discriminant
+///     172), paid. A `countOf` or `sumOf` filter may match by `"$id"`, the
+///     document's own id (`AggregateBinding::Id`, an identifier key, in
+///     `propertyConstraints` too: the shared batch transformer's aggregate read,
+///     in place, passes the document's id), so a poll is deleted only while no
+///     vote names it. Refused on a type with `canBeDeleted: false`,
+///     `"onlyWhenConsumed"` or `indexOnly` (10231, every parse), held to the rule
+///     limits apart from `propertyConstraints`, frozen on update (10246), and a
+///     `refersTo` with `consume` may not target such a type
+///     (`DocumentReferenceLookup::referenced_side_error`). Moderator deletes and
+///     `ttl` expiries are not judged. Inert before this version: the earlier
+///     meta-schemas refuse the keyword and the `$id` filter value, and their
+///     tables select delete state validation 0.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

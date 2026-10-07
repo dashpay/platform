@@ -240,6 +240,16 @@ pub struct DocumentTypeV2 {
     /// height a rule reads to be one the type records, and every property a
     /// rule reads to be neither transient nor inside a transient object.
     pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
+    /// The rules the stored document must meet for its owner to delete it, by
+    /// name, in the order they are checked (`deleteConstraints` keyword,
+    /// protocol version 14), in the grammar of `property_constraints`: a rule
+    /// reads the stored document, and a `countOf` or `sumOf` total as it will
+    /// be once the document is gone. Empty on document types that declare
+    /// none. The parser (`apply_delete_constraints`) admits them only on a type
+    /// whose owner may delete its documents, holds what they read to what a
+    /// `propertyConstraints` rule may read, and refuses a `refersTo` with
+    /// `consume` at such a type, since a consume would delete without them.
+    pub(in crate::data_contract) delete_constraints: BTreeMap<String, PropertyConstraint>,
     /// How many seconds after its creation (`$createdAt`) the platform deletes each
     /// document of the type (`ttl` keyword, protocol version 14), `None` when the
     /// documents live until someone deletes them. The parser (`apply_documents_ttl`)
@@ -375,6 +385,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
         }
@@ -437,6 +448,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
         }

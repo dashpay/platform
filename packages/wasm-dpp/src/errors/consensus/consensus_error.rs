@@ -83,6 +83,7 @@ use dpp::consensus::state::document::referenced_document_requirement_not_met_err
 use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use dpp::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
@@ -792,6 +793,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentTypeIndexOnlyError(e) => {
             generic_consensus_error!(ReferencedDocumentTypeIndexOnlyError, e).into()
+        }
+        StateError::DocumentDeleteConstraintViolatedError(e) => {
+            generic_consensus_error!(DocumentDeleteConstraintViolatedError, e).into()
         }
     }
 }

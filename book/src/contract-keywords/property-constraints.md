@@ -52,7 +52,7 @@
 - **Transfer and purchase.** These change only the owner and the transfer's time and heights. Rules that read `$ownerId`, `$transferredAt…` or a total that depends on the owner are judged again, against the stored document with its new owner and transfer values; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
 - **Price updates** change only the update's time and heights, so the rules that read `$updatedAt…` are judged again the same way; other rules are not.
 - **Immutable properties.** The same grammar is the condition of an [`immutable`](mutability.md#immutable) entry, which freezes a property while it holds. Only such a condition may read the stored document, through `$old.<path>`; a rule judges creates too, which have none.
-- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height.
+- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height. What may be deleted is the job of [`deleteConstraints`](deletion.md#deleteconstraints), rules in this grammar the stored document must meet for its owner to delete it.
 - **State and fees.** A rule reads the document, its owner and its times and heights, and a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total, which they cannot read.
 
 Why a rule fails, as the error reports it:
@@ -129,7 +129,7 @@ Two more forms appear only in string and identifier comparisons, never inside ar
 | `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier |
 | `{ "ifAbsent": ["status", "open"] }` | A string property, read as the given string when the document leaves it out |
 
-A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId` and the times and heights below.
+A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`.
 
 A `number` property (a float) cannot be read by a rule, which keeps every result exact.
 
@@ -185,7 +185,7 @@ SDK pre-checks run before the block exists: they use the device clock for the ti
 | `{ "sumOf": ["pledge", "amount"] }` | The total `amount` over every `pledge` | `documentsSummable: "amount"` |
 | `{ "sumOf": ["pledge", "amount", { "campaignId": "campaignRef" }] }` | The total over those matching the filter | An index with `summable: "amount"` whose properties are exactly the filter's keys |
 
-A filter maps each key, a property of the counted type or `$ownerId`, to the value it must take, read from the document being written: one of its properties (`"campaignRef"`), `$ownerId`, an integer, or a `{ "const": ... }` string or base58 identifier. The counted type may be the rule's own.
+A filter maps each key, a property of the counted type or `$ownerId`, to the value it must take, read from the document being written: one of its properties (`"campaignRef"`), `$ownerId`, `$id` (its own id, for an identifier key), an integer, or a `{ "const": ... }` string or base58 identifier. The counted type may be the rule's own. `$id` counts the documents pointing at this one: `{ "countOf": ["vote", { "pollId": "$id" }] }` is how many votes name the poll being written.
 
 ```json
 "propertyConstraints": {
@@ -199,7 +199,7 @@ A filter maps each key, a property of the counted type or `$ownerId`, to the val
 ```
 
 - **As it will be after the write.** The total is the stored one with the write applied. When the counted type is the rule's own, a create adds the document, a replace swaps its stored version for the new one, and a transfer or purchase moves it to its new owner. So `atMostTenListings`, declared on `listing`, keeps every owner at ten or fewer, and a replace of one of ten is allowed.
-- **Judged when the rule's own type is written.** A rule is never judged on writes of the type it counts. On its own type it holds for good, since every write that could raise the total is judged; a type with a contested index cannot total its own documents, since a document a contest awards is stored without any rule judged. On another type it is only checked when its own type is written, and can go stale later: deleting a `profile` does not undo a `post` that needed one. Deletes are not judged, so a lower bound can be broken by deleting documents.
+- **Judged when the rule's own type is written.** A rule is never judged on writes of the type it counts. On its own type it holds for good, since every write that could raise the total is judged; a type with a contested index cannot total its own documents, since a document a contest awards is stored without any rule judged. On another type it is only checked when its own type is written, and can go stale later: deleting a `profile` does not undo a `post` that needed one. Deletes are not judged, so a lower bound can be broken by deleting documents, unless the counted type's [`deleteConstraints`](deletion.md#deleteconstraints) hold it.
 - **Transfers, purchases and price updates.** A total that depends on the owner (a filter value of `$ownerId`, or a `$ownerId` key on the rule's own type) is read again for a transfer or purchase, the document counted toward its new owner. A rule a price update judges, one reading `$updatedAt…`, reads its totals too.
 - **Billed.** Each total is a state read billed with the write. A total two rules read alike is read once.
 - **Every earlier write counts.** A document batch carries one transition, and each state transition of a block is applied before the next is validated, so a total includes every write before it.
@@ -233,7 +233,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused;
-- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, an integer or a `{ "const": ... }` string.
+- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer or a `{ "const": ... }` string.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
@@ -248,7 +248,7 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
 - no condition or operand nests more than 64 levels deep;
 - once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, and not its own type when that has a contested index, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range, integer-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;
-- every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, and its value is of the same kind; a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
+- every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, and its value is of the same kind (`$ownerId` and `$id` are identifiers); a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
 - every property a filter value reads is listed in `required`, with every object around it, so a write always has the value; an index-only type has no rule reading a total.
 
 Three limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
@@ -378,6 +378,7 @@ The `equal` comes first, so an empty batch never reaches the division. Written t
 ## See also
 
 - [Property Constraints](../data-model/documents.md#property-constraints-propertyconstraints), the deep dive
+- [deleteConstraints](deletion.md#deleteconstraints), rules in this grammar judged on the owner's delete
 - [distinctFrom](distinct-from.md), a single-keyword way to keep two identifiers apart
 - [Property Schemas](property-schemas.md), for the one-property bounds JSON Schema gives
 - [transient](transient.md), [Index-Only Types](index-only.md)

@@ -605,6 +605,35 @@ fn should_refuse_consuming_a_commitment_its_owner_may_not_delete() {
 }
 
 #[test]
+fn should_refuse_consuming_a_commitment_whose_delete_rules_it_would_skip() {
+    // A consume deletes without a delete transition, so the rules gating its owner's
+    // delete would never be judged on it
+    let preorder_rules = json!({
+        "deleteConstraints": {
+            "afterGenesis": { "greaterThan": ["$createdAtBlockHeight", 0] }
+        }
+    });
+    assert_refused(
+        contract(dpns_contract_with(
+            dpns_salt_reveal(),
+            json!({}),
+            preorder_rules.clone(),
+        )),
+        "\"preorder\" may declare no deleteConstraints: they would not be judged",
+    );
+    // Without the consume, the reveal leaves the preorder to its owner's delete
+    contract(dpns_contract_with(
+        salt_reveal(
+            json!({ "minimumAgeBlocks": 1 }),
+            json!({ "$ownerId": "$ownerId" }),
+        ),
+        json!({}),
+        preorder_rules,
+    ))
+    .expect("a reveal that consumes nothing may find a commitment with delete rules");
+}
+
+#[test]
 fn should_consume_a_commitment_only_a_consume_deletes() {
     // `canBeDeleted: "onlyWhenConsumed"`: its owner can not withdraw the preorder with a
     // delete, and the reveal consumes it
