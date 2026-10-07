@@ -80,6 +80,8 @@ pub const fn min_protocol_version(network: Network) -> u32 {
 /// upward. See [`SdkBuilder::with_protocol_version_observer`].
 pub type ProtocolVersionObserver = Arc<dyn Fn(u32) + Send + Sync>;
 
+mod quorum_key;
+
 /// Default signed-metadata freshness window for network SDKs.
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
@@ -514,26 +516,24 @@ impl Sdk {
         method_name: &'static str,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
-        O::Request: Mockable,
+        O::Request: Mockable + Clone,
+        O::Response: Clone,
     {
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         let (object, metadata, proof) = match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
-                request,
-                response,
-                self.network,
-                self.version(),
-                &provider,
-            ),
+            SdkInstance::Dapi { .. } => {
+                self.verify_fetching_quorum_key::<R, O>(request, response, &provider)
+                    .await?
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
-                guard.parse_proof_with_metadata(request, response)
+                guard.parse_proof_with_metadata(request, response)?
             }
-        }?;
+        };
 
         // Security invariant: proof+signature verification above (the `?`) must
         // precede this call, which ratchets the protocol version from the now-trusted

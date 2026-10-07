@@ -36,9 +36,9 @@ pub mod trunk_branch_sync;
 pub mod types;
 
 pub use dapi_grpc::platform::v0 as proto;
-pub use dash_context_provider::{ContextProvider, QuorumKeyFuture};
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use dash_context_provider::{ContextProvider, QuorumKeyFuture};
 pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::composite_document_query::{
     CompositeBinding, CompositeBindingSource, CompositeSubQuery, CompositeSubQueryKind,
