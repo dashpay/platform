@@ -517,6 +517,7 @@ impl WaitForOutcome for StateTransition {
                     request,
                     grpc_response.clone(),
                     &context_provider,
+                    "wait_for_state_transition_result",
                 )
                 .await
                 .wrap_to_execution_result(&response)?
@@ -530,14 +531,6 @@ impl WaitForOutcome for StateTransition {
                         "state transition result missing from verified proof".to_string(),
                     )
                 })
-                .wrap_to_execution_result(&response)?
-                .inner;
-
-            // `metadata` is quorum-authenticated only after the verification above, so the
-            // protocol-version ratchet must run here, never before. A `StaleNode` error is
-            // retryable and prompts another server.
-            let _: () = sdk
-                .verify_response_metadata("wait_for_state_transition_result", &metadata)
                 .wrap_to_execution_result(&response)?
                 .inner;
 

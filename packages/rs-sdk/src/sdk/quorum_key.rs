@@ -5,6 +5,7 @@ use crate::Error;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use drive_proof_verifier::FromProof;
+use std::sync::atomic::Ordering;
 
 impl Sdk {
     /// Verify `response` against `provider`, fetching the key of a quorum the
@@ -25,11 +26,17 @@ impl Sdk {
     ///   not retryable, so the node is not banned for the source's failure;
     ///   [`crate::sync::retry`] only steps over it briefly to ask another one;
     /// * nothing, because the provider cannot fetch: the original error.
+    ///
+    /// A verified response's metadata is then accepted
+    /// ([`Sdk::accept_verified_metadata`]). One that waited for a fetch is
+    /// judged as fresh as it was when it arrived: responses other requests
+    /// accepted while it waited do not make it stale.
     pub(crate) async fn verify_fetching_quorum_key<R, O: FromProof<R>>(
         &self,
         request: O::Request,
         response: O::Response,
         provider: &dyn ContextProvider,
+        method_name: &'static str,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
         O::Request: Clone,
@@ -39,6 +46,7 @@ impl Sdk {
         // response are copied on every call so a second verification can
         // follow a fetch; the copy is small next to proof verification itself.
         let version = self.version();
+        let seen_height = self.metadata_last_seen_height.load(Ordering::Acquire);
         let missing = match O::maybe_from_proof_with_metadata(
             request.clone(),
             response.clone(),
@@ -46,7 +54,10 @@ impl Sdk {
             version,
             provider,
         ) {
-            Ok(verified) => return Ok(verified),
+            Ok(verified) => {
+                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                return Ok(verified);
+            }
             Err(error) => error,
         };
         let drive_proof_verifier::Error::QuorumKeyUnavailable {
@@ -89,7 +100,11 @@ impl Sdk {
                         "the provider fetched the key but its lookup still misses it: {error}"
                     ))
                 }
-                verified => verified.map_err(Error::from),
+                Ok(verified) => {
+                    self.accept_verified_metadata(method_name, &verified.1, Some(seen_height))?;
+                    Ok(verified)
+                }
+                Err(error) => Err(error.into()),
             },
             Ok(None) => {
                 tracing::warn!(
@@ -252,6 +267,9 @@ mod tests {
         lookups: AtomicUsize,
         fetches: AtomicUsize,
         fetched: std::sync::Mutex<Option<(u32, [u8; 32], u32)>>,
+        /// A height mark to raise when the SDK asks for a fetch, as other
+        /// requests that complete during the fetch would.
+        raise_on_fetch: std::sync::Mutex<Option<(Arc<std::sync::atomic::AtomicU64>, u64)>>,
     }
 
     impl Counting {
@@ -261,6 +279,7 @@ mod tests {
                 lookups: AtomicUsize::new(0),
                 fetches: AtomicUsize::new(0),
                 fetched: std::sync::Mutex::new(None),
+                raise_on_fetch: std::sync::Mutex::new(None),
             })
         }
     }
@@ -301,6 +320,9 @@ mod tests {
             self.fetches.fetch_add(1, Ordering::SeqCst);
             *self.fetched.lock().expect("fetched lock") =
                 Some((quorum_type, quorum_hash, core_chain_locked_height));
+            if let Some((mark, height)) = self.raise_on_fetch.lock().expect("raise lock").as_ref() {
+                mark.fetch_max(*height, Ordering::SeqCst);
+            }
             self.inner
                 .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
         }
@@ -684,5 +706,69 @@ mod tests {
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
         }
+    }
+
+    fn recorded_height(response: &GetEpochsInfoResponse) -> u64 {
+        match response.version.as_ref() {
+            Some(EpochsVersion::V0(v0)) => v0.metadata.as_ref().expect("recorded metadata").height,
+            None => panic!("recorded response is v0"),
+        }
+    }
+
+    /// Other requests keep raising the SDK's height mark while one waits for
+    /// a quorum key. The response that waited was fresh when it arrived, so it
+    /// must be judged as of then; otherwise an honest node is banned for the
+    /// client's own wait.
+    #[tokio::test]
+    async fn should_judge_a_response_that_waited_for_a_key_as_fresh_as_when_it_arrived() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+        let height = recorded_height(&response);
+        *provider.raise_on_fetch.lock().expect("raise lock") =
+            Some((Arc::clone(&sdk.metadata_last_seen_height), height + 10));
+
+        let epoch = verify(&sdk, request, response)
+            .await
+            .expect("the response was fresh when it arrived");
+
+        assert!(epoch.is_some());
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        service.join().expect("quorum service");
+    }
+
+    /// Waiting for a key never makes a response that was already stale when
+    /// it arrived acceptable.
+    #[tokio::test]
+    async fn should_still_reject_a_response_that_was_stale_when_it_arrived() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+        sdk.metadata_last_seen_height
+            .fetch_max(recorded_height(&response) + 10, Ordering::SeqCst);
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("the response was stale when it arrived");
+
+        assert!(matches!(error, Error::StaleNode(_)), "got {error:?}");
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        service.join().expect("quorum service");
     }
 }
