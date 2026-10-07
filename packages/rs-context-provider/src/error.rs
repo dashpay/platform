@@ -21,6 +21,12 @@ pub enum ContextProviderError {
     #[error("invalid quorum: {0}")]
     InvalidQuorum(String),
 
+    /// The provider's trusted quorum source gave no answer about a quorum: it
+    /// was unreachable, answered only in part, or was asked too recently to be
+    /// asked again. Says nothing about whether the quorum exists.
+    #[error("quorum source unavailable: {0}")]
+    QuorumSourceUnavailable(String),
+
     /// Core Fork Error
     #[error("activation fork error: {0}")]
     ActivationForkError(String),
