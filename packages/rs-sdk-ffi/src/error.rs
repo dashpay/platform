@@ -249,6 +249,16 @@ impl From<FFIError> for DashSDKError {
                     // InternalError and surface in the UI as a misleading
                     // "Internal Error" for what is really a network problem.
                     (DashSDKErrorCode::NetworkError, error_str)
+                } else if matches!(
+                    sdk_err,
+                    dash_sdk::Error::ContextProviderError(
+                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_)
+                    )
+                ) {
+                    // The quorum service that vouches for quorum keys gave no
+                    // answer, so a proof could not be checked: transient and
+                    // network-side, whatever words its message happens to hold.
+                    (DashSDKErrorCode::NetworkError, error_str)
                 } else if matches!(sdk_err, dash_sdk::Error::TimeoutReached(_, _))
                     || error_str.contains("timeout")
                     || error_str.contains("Timeout")
@@ -360,6 +370,18 @@ mod tests {
             }
         }
         code
+    }
+
+    /// The quorum service that vouches for quorum keys gave no answer: a
+    /// network problem the app can retry, not an internal error.
+    #[test]
+    fn quorum_source_unavailable_maps_to_network_error() {
+        let err = dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                "current quorums: HTTP 500 from https://quorums.example/quorums".to_string(),
+            ),
+        );
+        assert_eq!(classify(err), DashSDKErrorCode::NetworkError);
     }
 
     #[test]
