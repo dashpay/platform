@@ -2334,6 +2334,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "ciborium",
+ "dash-pkc",
  "dash-spv",
  "dashcore",
  "dashcore-rpc",

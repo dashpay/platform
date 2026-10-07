@@ -81,6 +81,8 @@ tracing = { version = "0.1.41" }
 grovedb-commitment-tree = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Compare BLS behavior with the exact backend used by the pinned rust-dashcore.
+dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "e6402ced257c370a586ade9840ebbf545a4b7926", default-features = false, features = ["bls"] }
 tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = [
