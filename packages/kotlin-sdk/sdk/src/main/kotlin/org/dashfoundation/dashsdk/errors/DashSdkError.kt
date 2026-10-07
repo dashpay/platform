@@ -14,8 +14,7 @@ private const val PERSISTER_UNREADABLE_USER_MESSAGE =
 private const val PERSISTER_UNSAVED_USER_MESSAGE =
     "The wallet data could not be saved and may need to be restored."
 
-// Display text for a failed SPV teardown, whose native message carries the
-// panic text of the task that failed.
+// Display text for a panicked SPV teardown; the native message is the panic text.
 private const val SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE =
     "Sync could not be stopped cleanly. Restart the app to use it again."
 
@@ -621,15 +620,9 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorShutdownIncomplete` (native code 27). A drain barrier did
-         * not complete within its wait: a sync pass was still running when
-         * a clear, reset or sync stop needed it drained, or SPV teardown
-         * outlived an SPV stop. The operation failed closed — nothing was
-         * wiped — and the work is still tracked, so repeating the stop or
-         * clear can complete it; bound the retries, since a teardown that
-         * never finishes keeps returning it. An SPV start refused with this
-         * needs an SPV stop first; repeating the start alone never clears it.
-         * Mirrors Swift's `PlatformWalletError.shutdownIncomplete`.
+         * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
+         * teardown was still running; nothing was wiped. Retry the stop or
+         * clear. An SPV start refused with this needs an SPV stop first.
          */
         class ShutdownIncomplete(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
@@ -638,14 +631,8 @@ sealed class DashSdkError(
 
         /**
          * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
-         * teardown panicked and may have left background work running that
-         * nothing can stop. Do NOT retry: SPV start, stop and storage clear
-         * on this manager keep failing with it, as does an SPV start on the
-         * same data directory from any manager. Recover by restarting the
-         * app process. Contrast [ShutdownIncomplete], where a repeated stop
-         * can complete the teardown. [message] carries the panic detail and is
-         * diagnostic — display [userMessage]. Mirrors Swift's
-         * `PlatformWalletError.spvProcessRestartRequired`.
+         * teardown panicked. Not retryable: restart the app process.
+         * [message] is the panic detail; display [userMessage].
          */
         class SpvProcessRestartRequired(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {

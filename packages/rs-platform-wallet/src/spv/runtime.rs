@@ -1,15 +1,13 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle};
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
@@ -38,76 +36,11 @@ const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 /// How often readiness is rechecked for a client with connected peers.
 const SPV_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-/// Storage directories whose SPV startup or teardown panicked in this
-/// process, with the failure detail. Upstream sync work orphaned by the panic
-/// may still hold that storage, so no runtime reopens one before the process
-/// restarts.
-static ORPHANED_STORAGE: Mutex<BTreeMap<PathBuf, String>> = Mutex::new(BTreeMap::new());
-
-fn orphaned_storage() -> MutexGuard<'static, BTreeMap<PathBuf, String>> {
-    ORPHANED_STORAGE
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-}
-
-/// Key of a storage directory in [`ORPHANED_STORAGE`]: its longest existing
-/// ancestor with symlinks resolved, then the missing remainder. Every
-/// spelling of one directory shares a key, whether or not it still exists.
-fn storage_key(path: &Path) -> PathBuf {
-    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    let mut existing = absolute.clone();
-    let mut missing = Vec::new();
-    let mut key = loop {
-        if let Ok(resolved) = std::fs::canonicalize(&existing) {
-            break resolved;
-        }
-        let last = existing.components().next_back();
-        let Some(name) = last.map(|name| name.as_os_str().to_owned()) else {
-            return absolute;
-        };
-        if !existing.pop() {
-            return absolute;
-        }
-        missing.push(name);
-    };
-    for name in missing.into_iter().rev() {
-        if name == ".." {
-            key.pop();
-        } else {
-            key.push(name);
-        }
-    }
-    key
-}
-
-/// Refuse a storage directory quarantined in [`ORPHANED_STORAGE`].
-fn ensure_storage_usable(path: &Path) -> Result<(), PlatformWalletError> {
-    // Resolved before locking: the registry must not wait on the filesystem.
-    let key = storage_key(path);
-    match orphaned_storage().get(&key) {
-        Some(detail) => Err(PlatformWalletError::SpvProcessRestartRequired(
-            detail.clone(),
-        )),
-        None => Ok(()),
-    }
-}
-
-/// Record a panicked startup or teardown against its storage directory,
-/// which every runtime in the process then refuses.
-fn quarantine(storage: Option<PathBuf>, detail: &str) {
-    tracing::error!(%detail, "SPV startup or teardown panicked; a process restart is required");
-    if let Some(key) = storage {
-        orphaned_storage()
-            .entry(key)
-            .or_insert_with(|| detail.to_owned());
-    }
-}
-
 #[derive(Default)]
 enum Shutdown {
     #[default]
     Idle,
-    Running(JoinHandle<Result<(), String>>),
+    Running(JoinHandle<Result<(), JoinError>>),
     Failed(String),
 }
 
@@ -115,6 +48,19 @@ enum Shutdown {
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
 /// handlers by reference (no cloning).
+///
+/// # Lifecycle
+///
+/// [`start`](Self::start) works only on a stopped runtime. [`stop`](Self::stop)
+/// is idempotent; once it returns `Ok`, no SPV task runs and the storage
+/// directory is released. A stop that does not complete says which way:
+/// - [`ShutdownIncomplete`](PlatformWalletError::ShutdownIncomplete): teardown
+///   outlived the wait and continues. Stop again; start and storage clear
+///   return the same error until a stop completes.
+/// - [`SpvProcessRestartRequired`](PlatformWalletError::SpvProcessRestartRequired):
+///   startup or teardown panicked. This runtime refuses every later start,
+///   stop and storage clear, and nothing is promised about SPV in this
+///   process until it restarts.
 pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -169,13 +115,6 @@ impl SpvRuntime {
     }
 
     /// Start SPV sync.
-    ///
-    /// # Errors
-    ///
-    /// [`PlatformWalletError::ShutdownIncomplete`] while earlier startup or
-    /// teardown is unjoined: stop first.
-    /// [`PlatformWalletError::SpvProcessRestartRequired`] after either
-    /// panicked on this runtime or on `config`'s storage directory.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
@@ -190,7 +129,6 @@ impl SpvRuntime {
             }
         }
         self.ensure_joined(&shutdown)?;
-        ensure_storage_usable(&config.storage_path)?;
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
@@ -198,9 +136,8 @@ impl SpvRuntime {
         let mut storage_manager = DiskStorageManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        // Upstream starts the storage writer here, but stops it only for a
-        // client whose sync loop ran. Stopped until upstream `run` starts it
-        // again, a client that fails to build or never runs leaves none behind.
+        // Upstream starts the storage writer here and again in `run`, but
+        // stops it only for a client that ran.
         StorageManager::stop(&mut storage_manager).await;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
@@ -223,19 +160,15 @@ impl SpvRuntime {
         .await
         .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        // Config first: a client must never be retained without its storage
-        // location, which teardown and storage clearing act on.
+        let mut client = self.client.write().await;
+        *client = Some(spv_client);
         *self.last_config.write().await = Some(retained_config);
-        *self.client.write().await = Some(spv_client);
 
         Ok(())
     }
 
     /// Refuse restart until all previous startup and shutdown work is joined.
     fn ensure_no_live_run_loop(&self) -> Result<(), PlatformWalletError> {
-        // Untyped on purpose: contention cannot tell a start still building
-        // its client from a stop still joining, and the two call for
-        // different host actions.
         let shutdown = self.shutdown.try_lock().map_err(|_| {
             PlatformWalletError::SpvError(
                 "an SPV start or stop is still in progress; wait for it before starting SPV"
@@ -276,19 +209,15 @@ impl SpvRuntime {
         self.task.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Check whether an SPV client is retained: started and not yet stopped.
-    /// Whether its sync is running is [`Self::is_running`].
+    /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
-    /// Whether SPV sync is running or still starting.
-    ///
-    /// A client whose background sync stopped after a failure stays retained
-    /// but reports `false` here; [`Self::stop`] releases it. Never waits, so
-    /// an event handler may call it from inside its callback.
+    /// Whether SPV sync is running or starting. `false` once background sync
+    /// has failed, although the client stays started until [`Self::stop`].
+    /// Never waits, so an event handler may call it.
     pub fn is_running(&self) -> bool {
-        // Held for writing only while a start installs or a stop takes the client.
         let Ok(client) = self.client.try_read() else {
             return false;
         };
@@ -308,8 +237,7 @@ impl SpvRuntime {
             .poll(&mut Context::from_waker(Waker::noop()))
         {
             Poll::Ready(running) => running,
-            // Upstream holds its sync-loop lock throughout a failure teardown
-            // or a fork recovery: mid-transition on a live client.
+            // Upstream holds this lock only while a live client changes state.
             Poll::Pending => true,
         }
     }
@@ -438,7 +366,6 @@ impl SpvRuntime {
             let client = self.client.write().await.take();
             if let Some(client) = client {
                 client.stop().await;
-                client.storage().lock().await.stop().await;
             }
             self.peer_tracker.clear();
         }
@@ -453,12 +380,7 @@ impl SpvRuntime {
     ///
     /// # Errors
     ///
-    /// [`PlatformWalletError::ShutdownIncomplete`] when teardown outlives the
-    /// wait: stop again, a bounded number of times, since a teardown that
-    /// never finishes keeps returning it.
-    /// [`PlatformWalletError::SpvProcessRestartRequired`] when startup or
-    /// teardown panicked: every later stop, start and storage clear returns
-    /// it too, until the process restarts.
+    /// See the lifecycle on [`SpvRuntime`].
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         self.stop_with(|client| async move { client.stop().await })
             .await
@@ -483,71 +405,30 @@ impl SpvRuntime {
         F: FnOnce(SpvClient) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        // Read up front: nothing may await between joining the teardown task
-        // and recording its outcome, or a cancelled caller would lose it.
-        let storage_key = self
-            .last_config
-            .read()
-            .await
-            .as_ref()
-            .map(|config| storage_key(&config.storage_path));
-
         if matches!(*shutdown, Shutdown::Idle) {
             let client = self.client.write().await.take();
             let startup = self.task_slot().take();
-            let storage = client.as_ref().map(SpvClient::storage);
             let peers = Arc::clone(&self.peer_tracker);
             // Never cancel upstream run/stop: each can own callback-capable tasks
             // that cancellation would detach before their handles are restored.
-            // A panic is recorded by the task that observes it, as soon as it
-            // does: the cleanup after it can stay pending, and a caller that
-            // timed out, was cancelled or dropped this runtime never joins.
-            let observed = storage_key.clone();
-            let teardown = tokio::spawn(async move {
-                let startup = match startup {
+            *shutdown = Shutdown::Running(tokio::spawn(async move {
+                let result = match startup {
                     Some(task) => task.await,
                     None => Ok(()),
-                }
-                .map_err(|error| format!("startup {error}"));
-                if let Err(detail) = &startup {
-                    quarantine(observed.clone(), detail);
-                }
-                // In a task of its own, so a panicking upstream stop cannot
-                // skip the storage stop below.
-                let stopped = match client {
-                    Some(client) => tokio::spawn(async move { stop_client(client).await }).await,
-                    None => Ok(()),
-                }
-                .map_err(|error| format!("teardown {error}"));
-                if let Err(detail) = &stopped {
-                    quarantine(observed, detail);
-                }
-                // Upstream stops storage only for a running sync loop, and not
-                // at all once its stop has panicked.
-                if let Some(storage) = storage {
-                    storage.lock().await.stop().await;
+                };
+                if let Some(client) = client {
+                    stop_client(client).await;
                 }
                 peers.clear();
-                startup.and(stopped)
-            });
-            let observed = storage_key.clone();
-            *shutdown = Shutdown::Running(tokio::spawn(async move {
-                teardown.await.unwrap_or_else(|error| {
-                    let detail = format!("teardown {error}");
-                    quarantine(observed, &detail);
-                    Err(detail)
-                })
+                result
             }));
         }
 
         if let Shutdown::Running(task) = shutdown {
             match tokio::time::timeout(SPV_STOP_TIMEOUT, task).await {
                 Ok(Ok(Ok(()))) => *shutdown = Shutdown::Idle,
-                Ok(Ok(Err(detail))) => *shutdown = Shutdown::Failed(detail),
-                Ok(Err(error)) => {
-                    let detail = format!("teardown {error}");
-                    quarantine(storage_key, &detail);
-                    *shutdown = Shutdown::Failed(detail);
+                Ok(result) => {
+                    *shutdown = Shutdown::Failed(format!("SPV teardown task failed: {result:?}"))
                 }
                 Err(_) => {
                     return Err(PlatformWalletError::ShutdownIncomplete(
@@ -816,7 +697,6 @@ impl SpvRuntime {
                     .to_string(),
             )
         })?;
-        ensure_storage_usable(&config.storage_path)?;
 
         let mut storage = DiskStorageManager::new(&config)
             .await
@@ -983,7 +863,6 @@ impl std::fmt::Debug for SpvRuntime {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -992,7 +871,7 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_send_error, orphaned_storage, storage_key, SpvRuntime};
+    use super::{classify_spv_send_error, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
@@ -1247,14 +1126,6 @@ mod tests {
         )
     }
 
-    /// The detail of a restart-required error, naming the task that panicked.
-    fn restart_detail(result: &Result<(), PlatformWalletError>) -> &str {
-        match result {
-            Err(PlatformWalletError::SpvProcessRestartRequired(detail)) => detail,
-            other => panic!("expected a restart-required error, got {other:?}"),
-        }
-    }
-
     async fn offline_runtime() -> (Arc<SpvRuntime>, tempfile::TempDir) {
         let storage = tempfile::tempdir().unwrap();
         let runtime = Arc::new(unstarted_runtime());
@@ -1287,14 +1158,6 @@ mod tests {
     async fn should_leave_no_storage_writer_after_clearing_a_client_that_never_ran() {
         let (runtime, storage) = offline_runtime().await;
         runtime.clear_storage().await.unwrap();
-        assert_no_storage_writer_survives(&storage).await;
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn should_leave_no_storage_writer_after_a_failed_startup() {
-        let (runtime, storage) = offline_runtime().await;
-        let failure = PlatformWalletError::SpvError("mock startup failure".into());
-        assert!(runtime.finish_startup(Err(failure)).await.is_err());
         assert_no_storage_writer_survives(&storage).await;
     }
 
@@ -1425,20 +1288,6 @@ mod tests {
         run_offline(&runtime).await;
         assert!(runtime.is_running());
         runtime.stop().await.unwrap();
-    }
-
-    /// Upstream stops storage as the last step of its stop, so a stop that
-    /// panics earlier would leave the writer of a running client behind.
-    #[tokio::test(start_paused = true)]
-    async fn should_stop_the_storage_writer_when_upstream_stop_panics() {
-        let (runtime, storage) = offline_runtime().await;
-        run_offline(&runtime).await;
-        assert!(needs_restart(
-            &runtime
-                .stop_with(|_client| async { panic!("mock teardown panic") })
-                .await
-        ));
-        assert_no_storage_writer_survives(&storage).await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -1663,7 +1512,7 @@ mod tests {
     async fn should_never_report_clean_after_a_startup_task_panics() {
         let runtime = Arc::new(unstarted_runtime());
         *runtime.task.lock().unwrap() = Some(tokio::spawn(async { panic!("mock startup panic") }));
-        assert!(restart_detail(&runtime.stop().await).contains("startup task"));
+        assert!(needs_restart(&runtime.stop().await));
         assert!(
             needs_restart(&runtime.stop().await),
             "a join failure cannot be forgotten by a retry"
@@ -1707,189 +1556,10 @@ mod tests {
         let failed = runtime
             .stop_with(|_client| async { panic!("mock teardown panic") })
             .await;
-        assert!(restart_detail(&failed).contains("teardown task"));
+        assert!(needs_restart(&failed));
         assert!(needs_restart(&runtime.stop().await));
         assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
         assert!(needs_restart(&runtime.clear_storage().await));
-    }
-
-    /// Upstream work orphaned by the panic outlives the runtime, so a fresh
-    /// one (a recreated manager) must not reopen the same storage directory.
-    #[tokio::test]
-    async fn should_refuse_the_storage_of_a_panicked_teardown_from_a_new_runtime() {
-        let (runtime, storage) = offline_runtime().await;
-        let config = |path: &std::path::Path| {
-            ClientConfig::testnet()
-                .with_storage_path(path)
-                .with_restrict_to_configured_peers(true)
-        };
-        assert!(needs_restart(
-            &runtime
-                .stop_with(|_client| async { panic!("mock teardown panic") })
-                .await
-        ));
-
-        let replacement = unstarted_runtime();
-        assert!(
-            restart_detail(&replacement.start(config(storage.path())).await)
-                .contains("teardown task"),
-            "the refusal must name the original failure"
-        );
-        assert!(!replacement.is_started());
-
-        let unrelated = tempfile::tempdir().unwrap();
-        replacement
-            .start(config(unrelated.path()))
-            .await
-            .expect("an unrelated storage directory stays usable");
-        replacement.stop().await.unwrap();
-    }
-
-    /// A caller that timed out never joins teardown, and destroying its
-    /// manager drops the only handle to it. A panic after that must still
-    /// reach the registry.
-    #[tokio::test(start_paused = true)]
-    async fn should_refuse_storage_when_teardown_panics_after_its_runtime_is_gone() {
-        let (runtime, storage) = offline_runtime().await;
-        let (release, pending) = tokio::sync::oneshot::channel::<()>();
-        assert!(is_retryable(
-            &runtime
-                .stop_with(move |_client| async move {
-                    let _ = pending.await;
-                    panic!("mock teardown panic");
-                })
-                .await
-        ));
-        drop(runtime);
-        release.send(()).expect("teardown must outlive its runtime");
-
-        let key = storage_key(storage.path());
-        // Sleeps rather than yields: a paused clock advances only when idle.
-        tokio::time::timeout(Duration::from_secs(5), async {
-            while !orphaned_storage().contains_key(&key) {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("the abandoned teardown's panic must be recorded");
-        assert!(
-            restart_detail(&unstarted_runtime().start(offline_config(&storage)).await)
-                .contains("teardown task")
-        );
-    }
-
-    /// The registry must recognise a quarantined directory under every path
-    /// that reaches it; upstream's lock file does not, for a symlink.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn should_refuse_quarantined_storage_under_any_spelling_of_its_path() {
-        let (runtime, storage) = offline_runtime().await;
-        assert!(needs_restart(
-            &runtime
-                .stop_with(|_client| async { panic!("mock teardown panic") })
-                .await
-        ));
-
-        let resolved = storage.path().canonicalize().unwrap();
-        let dotted = resolved.join("..").join(resolved.file_name().unwrap());
-        let links = tempfile::tempdir().unwrap();
-        let symlink = links.path().join("alias");
-        std::os::unix::fs::symlink(&resolved, &symlink).unwrap();
-        let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
-        let relative = cwd
-            .components()
-            .skip(1)
-            .map(|_| "..")
-            .collect::<PathBuf>()
-            .join(resolved.strip_prefix("/").unwrap());
-
-        for path in [dotted, symlink, relative] {
-            let config = ClientConfig::testnet()
-                .with_storage_path(&path)
-                .with_restrict_to_configured_peers(true);
-            assert!(
-                needs_restart(&unstarted_runtime().start(config).await),
-                "{path:?} reaches the quarantined directory"
-            );
-        }
-    }
-
-    /// Cleanup after a panic can stay pending, so the panic must be on record
-    /// before it: a symlink to the directory gets past upstream's lock file.
-    #[cfg(unix)]
-    #[tokio::test(start_paused = true)]
-    async fn should_refuse_storage_as_soon_as_a_stop_panic_is_observed() {
-        let (runtime, storage) = offline_runtime().await;
-        let client_storage = runtime.client.read().await.as_ref().unwrap().storage();
-        let cleanup_blocked = client_storage.lock().await;
-        assert!(
-            is_retryable(
-                &runtime
-                    .stop_with(|_client| async { panic!("mock teardown panic") })
-                    .await
-            ),
-            "teardown must still be cleaning up"
-        );
-
-        let links = tempfile::tempdir().unwrap();
-        let symlink = links.path().join("alias");
-        std::os::unix::fs::symlink(storage.path(), &symlink).unwrap();
-        let config = ClientConfig::testnet()
-            .with_storage_path(&symlink)
-            .with_restrict_to_configured_peers(true);
-        assert!(needs_restart(&unstarted_runtime().start(config).await));
-
-        drop(cleanup_blocked);
-        assert!(needs_restart(&runtime.stop().await));
-    }
-
-    /// A quarantined directory that was removed must still be recognised
-    /// through a symlinked parent, or starting there would recreate it.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn should_refuse_a_removed_quarantined_directory_through_an_aliased_parent() {
-        let root = tempfile::tempdir().unwrap();
-        let config = |path: &std::path::Path| {
-            ClientConfig::testnet()
-                .with_storage_path(path)
-                .with_restrict_to_configured_peers(true)
-        };
-        let wallet = root.path().join("wallet");
-        let runtime = unstarted_runtime();
-        runtime.start(config(&wallet)).await.unwrap();
-        assert!(needs_restart(
-            &runtime
-                .stop_with(|_client| async { panic!("mock teardown panic") })
-                .await
-        ));
-        std::fs::remove_dir_all(&wallet).unwrap();
-
-        let links = tempfile::tempdir().unwrap();
-        let aliased_root = links.path().join("alias");
-        std::os::unix::fs::symlink(root.path(), &aliased_root).unwrap();
-        assert!(needs_restart(
-            &unstarted_runtime()
-                .start(config(&aliased_root.join("wallet")))
-                .await
-        ));
-    }
-
-    /// A runtime that stopped cleanly still knows the directory, and must not
-    /// clear it once another runtime's panic has quarantined it.
-    #[tokio::test]
-    async fn should_refuse_to_clear_storage_quarantined_by_another_runtime() {
-        let (first, storage) = offline_runtime().await;
-        first.stop().await.unwrap();
-
-        let second = unstarted_runtime();
-        second.start(offline_config(&storage)).await.unwrap();
-        assert!(needs_restart(
-            &second
-                .stop_with(|_client| async { panic!("mock teardown panic") })
-                .await
-        ));
-
-        assert!(needs_restart(&first.clear_storage().await));
     }
 
     /// A panic under the `task` mutex must not make every later lifecycle

@@ -812,10 +812,8 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
-    /// SPV startup or teardown panicked, so upstream background work (network
-    /// and sync tasks) may still be running with nothing left to stop it. No retry helps: this runtime refuses SPV stop, start and
-    /// storage clear, and every runtime in the process refuses to start SPV
-    /// on the same storage directory, until the process restarts.
+    /// SPV startup or teardown panicked and may have left background work
+    /// running. Not retryable: restart the process.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
     #[error(
         "SPV startup or teardown panicked and may have left background work \
@@ -963,9 +961,8 @@ pub enum PlatformWalletError {
     /// fail-closed. The wedged pass may still fire persistence / event
     /// callbacks; the host must keep its callback context alive and must
     /// not commit any wipe it was about to pair with this call.
-    /// Also returned by SPV stop, start and storage clear while an earlier SPV
-    /// startup or teardown is still unjoined: stop SPV again (repeating a
-    /// refused start alone never clears it), a bounded number of times.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: stop SPV again.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),

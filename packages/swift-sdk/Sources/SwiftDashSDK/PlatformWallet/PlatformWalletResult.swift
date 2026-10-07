@@ -88,9 +88,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// no state was wiped — and the caller should retry once sync is idle.
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
-    /// Also returned by SPV start, stop and storage clear while an earlier
-    /// SPV startup or teardown is still unjoined: stop SPV again, a bounded
-    /// number of times — repeating a refused start alone never clears it.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: stop SPV again.
     case errorShutdownIncomplete = 27
     /// Asset-lock coin selection came up short over the *permitted* funding
     /// set (dashpay/platform#4073). Nothing was built or broadcast and no
@@ -261,10 +260,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedRecoveryKeysRequired = 57
     /// Platform returned no balance. Retrying the read is safe; ownership is unchanged.
     case errorIdentityBalanceUnavailable = 58
-    /// SPV startup or teardown panicked and may have left background work
-    /// running that nothing can stop. Not retryable: this manager's SPV stop,
-    /// start and storage clear keep returning it, as does an SPV start on the
-    /// same data directory from any manager, until the app process restarts.
+    /// SPV startup or teardown panicked. Not retryable: restart the app.
     case errorSpvProcessRestartRequired = 59
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -636,14 +632,12 @@ public enum PlatformWalletError: LocalizedError {
     case addressNonceMismatch(String)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once
-    /// sync is idle. The SPV start, stop and storage-clear calls also throw
-    /// it while an earlier SPV startup or teardown is still unjoined: call
-    /// `stopSpv()` again, a bounded number of times.
+    /// sync is idle. SPV start, stop and storage clear also throw it while an
+    /// SPV teardown is still running: call `stopSpv()` again.
     case shutdownIncomplete(String)
-    /// SPV startup or teardown panicked and may have left background work
-    /// running. No retry helps: SPV stays refused until the app process
-    /// restarts. `errorDescription` is fixed user text; the panic detail is
-    /// on `failureReason`.
+    /// SPV startup or teardown panicked. Not retryable: restart the app.
+    /// `errorDescription` is fixed user text; the panic detail is on
+    /// `failureReason`.
     case spvProcessRestartRequired(String)
     /// The signer has no usable private key for the requested public key
     /// (missing / stranded scalar) — the operation itself did not fail.
@@ -794,8 +788,7 @@ public enum PlatformWalletError: LocalizedError {
     /// error inline); the persister cases and the value-carrying marketplace
     /// rejections compose their own text instead, because theirs is an error
     /// chain or a JSON payload that reads as gibberish in an alert. The
-    /// persister chain stays available on `failureReason`, as does the panic
-    /// detail of `spvProcessRestartRequired`, whose text is fixed too.
+    /// persister chain stays available on `failureReason`.
     public var errorDescription: String? {
         switch self {
         case .nullPointer(let m), .invalidHandle(let m), .invalidParameter(let m),
@@ -840,8 +833,6 @@ public enum PlatformWalletError: LocalizedError {
             return "The wallet data could not be read and may need to be restored."
         case .persisterStoreFatal, .persisterStoreConstraint:
             return "The wallet data could not be saved and may need to be restored."
-        // The message carries the panic text of the task that failed; it
-        // stays on `failureReason`.
         case .spvProcessRestartRequired:
             return "Sync could not be stopped cleanly. Restart the app to use it again."
         // The three value-carrying marketplace rejections compose their

@@ -229,9 +229,6 @@ class DashSdkErrorTest {
 
     @Test
     fun spvTeardownCodes27And59MapTypedWithOppositeRetryability() {
-        // A host must tell "stop again" from "restart the app" without
-        // parsing the message, and the retry flag must not say the same
-        // thing for both.
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
 
         val incomplete =

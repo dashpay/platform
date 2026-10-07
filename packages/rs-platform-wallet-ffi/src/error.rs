@@ -214,10 +214,8 @@ pub enum PlatformWalletFFIResultCode {
     /// in-flight sync pass was still running when a Clear / reset /
     /// sync-stop needed it provably drained. The operation failed closed
     /// (no state was wiped) and the host should retry once sync is idle.
-    /// Also returned by SPV start, stop and storage clear while an earlier
-    /// SPV startup or teardown is still unjoined: call SPV stop again, a
-    /// bounded number of times (a teardown that never finishes keeps
-    /// returning it) — repeating a refused start alone never clears it.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: call SPV stop again.
     /// NOT returned by `platform_wallet_manager_destroy` — with owned
     /// callback contexts (`release_fn`) a straggling worker keeps its
     /// context alive and releases it on exit, so destroy logs a non-clean
@@ -607,12 +605,8 @@ pub enum PlatformWalletFFIResultCode {
     ErrorIdentityBalanceUnavailable = 58,
 
     /// Maps `PlatformWalletError::SpvProcessRestartRequired`: SPV startup or
-    /// teardown panicked and may have left background work running that
-    /// nothing can stop. Not retryable: this manager's SPV stop, start and
-    /// storage clear keep returning it, as does an SPV start on the same
-    /// data directory from any manager, until the host process restarts.
-    /// Contrast [`Self::ErrorShutdownIncomplete`] (27), where the work is
-    /// still tracked and a repeated stop can complete it.
+    /// teardown panicked. Not retryable, unlike
+    /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
     ErrorSpvProcessRestartRequired = 59,
 
     /// The named thing does not exist.
