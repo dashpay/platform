@@ -129,8 +129,8 @@ grovedb-path = { workspace = true }
 grovedb-storage = { workspace = true }
 
 [features]
-default = ["bls-signatures"]
-mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
+default = []
+mocks = ["mockall", "drive/fixtures-and-mocks", "dep:bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 # Compiles in the shielded-pool seeder, the `snapshot-bake` subcommand, and
