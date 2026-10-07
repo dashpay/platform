@@ -5612,6 +5612,7 @@ dependencies = [
  "sha2 0.10.9",
  "simple-signer",
  "static_assertions",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",

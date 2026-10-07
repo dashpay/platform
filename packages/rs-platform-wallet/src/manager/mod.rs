@@ -61,7 +61,7 @@ pub enum WalletWorker {
     ShieldedSync,
     /// SPV runtime — the network event source feeding every persister-
     /// visible wallet event. Not a registry worker: `SpvRuntime::stop`
-    /// owns its (bounded, abort-escalating) join, and
+    /// owns its teardown task and bounds only the wait for it, and
     /// [`shutdown`](PlatformWalletManager::shutdown) folds the stop
     /// outcome into the report so a failed SPV stop can never hide
     /// behind a clean coordinator join.
@@ -908,14 +908,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// 4. The event adapter — the sink those stores feed into — drains
     ///    LAST.
     ///
-    /// **Every phase is bounded.** SPV stop owns its own abort-escalating
-    /// join; the payment-hook drain is bounded by `PAYMENT_DRAIN_BUDGET`;
-    /// the coordinator drains run concurrently under
-    /// `COORDINATOR_DRAIN_BUDGET`; the registry join uses each worker's
-    /// join budget; the adapter join is bounded too (its live handle is
-    /// re-parked on timeout so a retry re-joins it). A wedged await
-    /// therefore surfaces as a non-clean report instead of hanging the
-    /// FFI's `destroy` forever.
+    /// **Every phase but SPV stop's lock waits is bounded.** SPV stop
+    /// bounds its wait for the teardown task, which it never aborts: a
+    /// teardown still running at the deadline is reported non-clean and
+    /// stays owned for a later stop to join. Before that deadline starts,
+    /// SPV stop waits without bound for a concurrent start or stop and
+    /// for client queries already in flight. The payment-hook drain is
+    /// bounded by `PAYMENT_DRAIN_BUDGET`; the coordinator drains run
+    /// concurrently under `COORDINATOR_DRAIN_BUDGET`; the registry join
+    /// uses each worker's join budget; the adapter join is bounded too
+    /// (its live handle is re-parked on timeout so a retry re-joins it).
+    /// Past those SPV lock waits, a wedged await therefore surfaces as a
+    /// non-clean report instead of hanging the FFI's `destroy` forever.
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
@@ -927,10 +931,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        // SPV first: it is the event source feeding everything below, and
-        // its `stop` owns a bounded, abort-escalating join of the run-loop
-        // task. Its outcome lands in the report — a failed stop must not
-        // hide behind a clean coordinator join.
+        // SPV first: it is the event source feeding everything below. Its
+        // `stop` bounds the wait for teardown but never aborts it, so a
+        // timeout means SPV work is still live. Its outcome lands in the
+        // report — a failed stop must not hide behind a clean coordinator join.
         let spv_status = match self.spv_manager.stop().await {
             Ok(()) => WorkerStatus::Ok,
             Err(error) => {
