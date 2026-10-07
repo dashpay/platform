@@ -10,9 +10,9 @@ describe('checkMasternodeSafeToStop', () => {
   it('should allow a non-member immediately using one complete membership response', async () => {
     rpcClient.quorum.withArgs('dkginfo').resolves({
       result: {
-        active_dkgs: 1,
+        active_dkgs: 0,
         next_dkg: 1,
-        current_dkgs: [{ blocksSinceStart: 0, known: true, isMember: false }],
+        active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: false }],
         upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
       },
     });
@@ -24,9 +24,9 @@ describe('checkMasternodeSafeToStop', () => {
   it('should block a member before Core publishes a local session', async () => {
     rpcClient.quorum.withArgs('dkginfo').resolves({
       result: {
-        active_dkgs: 0,
+        active_dkgs: 1,
         next_dkg: 1,
-        current_dkgs: [{ blocksSinceStart: 0, known: true, isMember: true }],
+        active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: true }],
         upcoming_dkgs: [],
       },
     });

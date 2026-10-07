@@ -40,7 +40,7 @@ function hasValidDkgInfoShape(dkgInfo) {
 
 /**
  * Unknown membership and malformed entries block the stop. Upcoming
- * sessions only matter within the restart margin; current_dkgs already
+ * sessions only matter within the restart margin; active_dkg_sessions already
  * contains only sessions inside their active window.
  */
 function isDkgBlockingStop(dkg, blocksField, maxBlocks = Infinity) {
@@ -56,19 +56,20 @@ function isDkgBlockingStop(dkg, blocksField, maxBlocks = Infinity) {
 }
 
 function isDkgMembershipBlockingStop(dkgInfo) {
-  const { current_dkgs: currentDkgs, upcoming_dkgs: upcomingDkgs } = dkgInfo;
+  const { active_dkg_sessions: activeDkgSessions, upcoming_dkgs: upcomingDkgs } = dkgInfo;
 
   // Earlier Core versions omit current-tip membership while their DKG
   // worker initializes. Keep the legacy guard until both lists are available.
-  if (currentDkgs === undefined) {
+  if (activeDkgSessions === undefined) {
     return dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG;
   }
 
-  if (!Array.isArray(currentDkgs) || !Array.isArray(upcomingDkgs)) {
+  if (!Array.isArray(activeDkgSessions) || !Array.isArray(upcomingDkgs)) {
     return true;
   }
 
-  return currentDkgs.some((dkg) => isDkgBlockingStop(dkg, 'blocksSinceStart'))
+  return dkgInfo.active_dkgs > 0
+    || activeDkgSessions.some((dkg) => isDkgBlockingStop(dkg, 'blocksSinceStart'))
     || upcomingDkgs.some((dkg) => isDkgBlockingStop(dkg, 'blocksUntilStart', MIN_BLOCKS_BEFORE_DKG));
 }
 
@@ -81,17 +82,17 @@ export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
     return false;
   }
 
-  return dkgInfo.current_dkgs === undefined
+  return dkgInfo.active_dkg_sessions === undefined
     && dkgInfo.active_dkgs > 0
     && dkgInfo.next_dkg > MIN_BLOCKS_BEFORE_DKG;
 }
 
 /**
- * Core's current_dkgs and upcoming_dkgs report membership independently
+ * Core's active_dkg_sessions and upcoming_dkgs report membership independently
  * of asynchronous local session tracking. Any current member or unknown
  * session blocks stopping, as does an upcoming one within the restart margin.
  *
- * Without current_dkgs, use the legacy next_dkg guard and resolve tracked
+ * Without active_dkg_sessions, use the legacy next_dkg guard and resolve tracked
  * sessions against dkgstatus and getblockcount. Unknown quorum types or
  * malformed status fail safe; sessions past dkgMiningWindowStart are ignored.
  *
@@ -113,7 +114,7 @@ export default function isMasternodeSafeToStopDuringDkg(
     return false;
   }
 
-  if (dkgInfo.current_dkgs !== undefined || dkgInfo.active_dkgs === 0) {
+  if (dkgInfo.active_dkg_sessions !== undefined || dkgInfo.active_dkgs === 0) {
     return true;
   }
 

@@ -28,7 +28,7 @@ describe('waitForDKGWindowPass', () => {
       result: {
         active_dkgs: 0,
         next_dkg: 1,
-        current_dkgs: [],
+        active_dkg_sessions: [],
         upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
       },
     });
@@ -51,12 +51,12 @@ describe('waitForDKGWindowPass', () => {
         result: {
           active_dkgs: 0,
           next_dkg: 1,
-          current_dkgs: [],
+          active_dkg_sessions: [],
           upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: true }],
         },
       })
       .onSecondCall()
-      .resolves({ result: { active_dkgs: 0, next_dkg: 24, current_dkgs: [], upcoming_dkgs: [] } });
+      .resolves({ result: { active_dkgs: 0, next_dkg: 24, active_dkg_sessions: [], upcoming_dkgs: [] } });
 
     const promise = waitForDKGWindowPass(rpcClient);
 
@@ -75,14 +75,14 @@ describe('waitForDKGWindowPass', () => {
       .onFirstCall()
       .resolves({
         result: {
-          active_dkgs: 0,
+          active_dkgs: 1,
           next_dkg: 1,
-          current_dkgs: [{ blocksSinceStart: 0, known: true, isMember: true }],
+          active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: true }],
           upcoming_dkgs: [],
         },
       })
       .onSecondCall()
-      .resolves({ result: { active_dkgs: 0, next_dkg: 1, current_dkgs: [], upcoming_dkgs: [] } });
+      .resolves({ result: { active_dkgs: 0, next_dkg: 1, active_dkg_sessions: [], upcoming_dkgs: [] } });
 
     const promise = waitForDKGWindowPass(rpcClient);
     await clock.tickAsync(0);
