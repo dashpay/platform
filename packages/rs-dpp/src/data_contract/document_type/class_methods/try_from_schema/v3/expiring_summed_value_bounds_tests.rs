@@ -4,6 +4,7 @@
 //! expired document takes its value out of the type's sums. A registration rule: a stored
 //! contract still parses.
 use super::*;
+use crate::data_contract::config::v1::DataContractConfigSettersV1;
 use platform_value::platform_value;
 
 const LIMIT: i64 = 1 << 27;
@@ -13,9 +14,17 @@ fn parse_at(
     schema_defs: Option<&BTreeMap<String, Value>>,
     full_validation: bool,
 ) -> Result<DocumentType, ProtocolError> {
-    let platform_version = PlatformVersion::latest();
-    let config = DataContractConfig::default_for_version(platform_version)
+    let config = DataContractConfig::default_for_version(PlatformVersion::latest())
         .expect("default config available");
+    parse_with_config(schema, schema_defs, &config, full_validation)
+}
+
+fn parse_with_config(
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    config: &DataContractConfig,
+    full_validation: bool,
+) -> Result<DocumentType, ProtocolError> {
     DocumentType::try_from_schema(
         Identifier::new([1; 32]),
         1,
@@ -24,15 +33,34 @@ fn parse_at(
         schema,
         schema_defs,
         &BTreeMap::new(),
-        &config,
+        config,
         full_validation,
         &mut vec![],
-        platform_version,
+        PlatformVersion::latest(),
     )
 }
 
 fn parse(schema: Value) -> Result<DocumentType, ProtocolError> {
     parse_at(schema, None, true)
+}
+
+/// Parsed in a contract that does not size its integers, where `amount` is an `i64` whatever
+/// its bounds are.
+fn parse_unsized(schema: Value) -> Result<DocumentType, ProtocolError> {
+    let mut config = DataContractConfig::default_for_version(PlatformVersion::latest())
+        .expect("default config available");
+    config.set_sized_integer_types_enabled(false);
+    parse_with_config(schema, None, &config, true)
+}
+
+/// An integer `amount` with the schema bounds `minimum` and `maximum`, as written
+fn amount_bounded_by(minimum: Value, maximum: Value) -> Value {
+    platform_value!({
+        "type": "integer",
+        "position": 1,
+        "minimum": minimum,
+        "maximum": maximum,
+    })
 }
 
 /// A `story` type of `label` and `amount`, indexed `byLabel`, with a `ttl` when `expiring`,
@@ -270,4 +298,39 @@ fn should_read_back_a_stored_expiring_type_summing_a_property_without_bounds() {
         false,
     )
     .expect("a stored contract parses");
+}
+
+/// The meta-schema admits any number as a bound. A `minimum` of at least 0 settles the rule
+/// however the `maximum` is written: a float, or an integer past `i64::MAX`.
+#[test]
+fn should_register_a_never_negative_property_whatever_number_bounds_it_above() {
+    for maximum in [Value::Float(1.5), Value::U64(u64::MAX)] {
+        parse_unsized(story_schema(
+            amount_bounded_by(Value::U64(0), maximum.clone()),
+            true,
+            documents_summable(),
+            platform_value!({}),
+        ))
+        .unwrap_or_else(|error| panic!("a maximum of {maximum:?} registers: {error:?}"));
+    }
+}
+
+/// Bounds written as floats are compared as numbers, on both sides of the limit.
+#[test]
+fn should_compare_float_bounds_of_a_signed_property_with_the_limit() {
+    parse_unsized(story_schema(
+        amount_bounded_by(Value::Float(-1.5), Value::Float(1.5)),
+        true,
+        documents_summable(),
+        platform_value!({}),
+    ))
+    .expect("float bounds within the limit register");
+
+    let past_the_limit = -(LIMIT as f64) - 0.5;
+    assert_refused(parse_unsized(story_schema(
+        amount_bounded_by(Value::Float(past_the_limit), Value::Float(1.5)),
+        true,
+        documents_summable(),
+        platform_value!({}),
+    )));
 }

@@ -1287,18 +1287,24 @@ fn validate_contested_summed_value_bounds(
     else {
         return Ok(());
     };
-    let Some(SummedPropertyBounds {
-        property: summed_property,
-        minimum,
-        maximum,
-    }) = summed_property_bounds(document_type, schema_defs)?
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
     else {
         return Ok(());
     };
+    let bounds = property_schema
+        .map(|property_schema| {
+            Ok::<_, DataContractError>((
+                property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
+                property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
+            ))
+        })
+        .transpose()
+        .map_err(consensus_or_protocol_data_contract_error)?;
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let within_limit = matches!(
-        (minimum, maximum),
-        (Some(minimum), Some(maximum)) if minimum >= -limit && maximum <= limit
+        bounds,
+        Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
     );
     if !within_limit {
         return Err(consensus_or_protocol_data_contract_error(
@@ -1322,6 +1328,12 @@ fn validate_contested_summed_value_bounds(
 /// could leave it once it is gone. Removing values that are never negative only lowers sums;
 /// values this small keep them in `i64` short of 2^36 documents.
 ///
+/// The bounds are compared as numbers, in whatever form the schema writes them (an integer of
+/// any width, or a float: the meta-schema admits any number, and without `sizedIntegerTypes`
+/// the property is an `i64` whatever they are), so a `maximum` beside a `minimum` of at least 0
+/// is never read. Converting to `f64` keeps every comparison exact: 0 and the limit are exactly
+/// representable, and the conversion preserves order.
+///
 /// Full validation only, like the contested bounds: a contract stored before the rule was
 /// checked when it was registered, and must stay readable.
 #[cfg(feature = "validation")]
@@ -1340,18 +1352,24 @@ fn validate_expiring_summed_value_bounds(
     if document_type.documents_ttl_seconds.is_none() {
         return Ok(());
     }
-    let Some(SummedPropertyBounds {
-        property: summed_property,
-        minimum,
-        maximum,
-    }) = summed_property_bounds(document_type, schema_defs)?
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
     else {
         return Ok(());
     };
-    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-    let admitted = match (minimum, maximum) {
-        (Some(minimum), _) if minimum >= 0 => true,
-        (Some(minimum), Some(maximum)) => minimum >= -limit && maximum <= limit,
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let admitted = match (
+        bound(property_names::MINIMUM),
+        bound(property_names::MAXIMUM),
+    ) {
+        (Some(minimum), _) if minimum >= 0.0 => true,
+        (Some(minimum), Some(maximum)) => minimum >= -limit_value && maximum <= limit_value,
         _ => false,
     };
     if !admitted {
@@ -1368,27 +1386,18 @@ fn validate_expiring_summed_value_bounds(
     Ok(())
 }
 
-/// The property a document type sums and the bounds its schema declares.
+/// The property a document type sums and its schema, `None` when the type sums nothing. The
+/// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
+/// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
+/// (`apply_doctype_aggregates`). The schema is followed through `$ref`s into `schema_defs`, so
+/// the bounds are read from it rather than from the inferred type, which is `i64` whatever they
+/// are without `sizedIntegerTypes`.
 #[cfg(feature = "validation")]
-struct SummedPropertyBounds<'a> {
-    property: &'a str,
-    /// The schema's `minimum`, `None` when it declares none or the schema is not found
-    minimum: Option<i64>,
-    /// The schema's `maximum`, `None` when it declares none or the schema is not found
-    maximum: Option<i64>,
-}
-
-/// The property a document type sums with the bounds its schema declares, `None` when the
-/// type sums nothing. Every summed declaration of a type (`summable`, `averageable`,
-/// `documentsSummable`, `documentsAverageable`) names the same property
-/// (`apply_doctype_aggregates`). The bounds are read from the schema, following `$ref`s into
-/// `schema_defs`, rather than from the inferred type, which is `i64` whatever they are
-/// without `sizedIntegerTypes`.
-#[cfg(feature = "validation")]
-fn summed_property_bounds<'a>(
+#[allow(clippy::type_complexity)]
+fn summed_property_schema<'a>(
     document_type: &'a DocumentTypeV2,
-    schema_defs: Option<&BTreeMap<String, Value>>,
-) -> Result<Option<SummedPropertyBounds<'a>>, ProtocolError> {
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+) -> Result<Option<(&'a str, Option<BTreeMap<String, &'a Value>>)>, ProtocolError> {
     let Some(property) = document_type.documents_summable.as_ref().or_else(|| {
         document_type
             .indices
@@ -1397,22 +1406,9 @@ fn summed_property_bounds<'a>(
     }) else {
         return Ok(None);
     };
-    let (minimum, maximum) = schema_at_path(&document_type.schema, schema_defs, property)
-        .and_then(|property_schema| {
-            let Some(property_schema) = property_schema else {
-                return Ok((None, None));
-            };
-            Ok((
-                property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
-                property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
-            ))
-        })
+    let property_schema = schema_at_path(&document_type.schema, schema_defs, property)
         .map_err(consensus_or_protocol_data_contract_error)?;
-    Ok(Some(SummedPropertyBounds {
-        property,
-        minimum,
-        maximum,
-    }))
+    Ok(Some((property, property_schema)))
 }
 
 /// Every reference expression (`anyOf` / `allOf`), on an identifier property,
