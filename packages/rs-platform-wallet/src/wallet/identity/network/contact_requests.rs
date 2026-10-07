@@ -1336,6 +1336,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///    restore-from-seed and best-effort-accept gaps), rebuilds both
     ///    the `DashpayReceivingFunds` and `DashpayExternalAccount`
     ///    accounts, with the transient/permanent failure policy.
+    /// 5. For every contact holding a request **we** sent, reciprocated or
+    ///    not, that has no `DashpayReceivingFunds` account, enqueues that
+    ///    account's build alone for the signer-backed drain. Our receiving
+    ///    xpub travels in the request we send, so the contact can pay us
+    ///    before replying; this step is gated on our side only and ignores
+    ///    the external-account gate and the broken-channel flag (see
+    ///    `collect_receiving_account_candidates`).
     ///
     /// **Lock ordering (critical).** The account-building registrations
     /// (`register_contact_account`, `register_external_contact_account`)
