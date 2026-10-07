@@ -12,11 +12,18 @@ use std::slice;
 
 use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::KeyID;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::prelude::Identifier;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+};
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::{StateTransition, StateTransitionType};
+use platform_wallet::wallet::identity::network::decode_state_transition;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -28,9 +35,6 @@ use crate::identity_registration_with_signer::{
 use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
-
-/// Positional bincode variant tag of `StateTransition::IdentityUpdate`.
-pub(crate) const IDENTITY_UPDATE_VARIANT_TAG: u8 = 6;
 
 /// Owned C representation of one public key carried by a parsed
 /// `IdentityUpdateTransition`.
@@ -52,6 +56,17 @@ pub struct ParsedIdentityUpdatePublicKeyFFI {
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *mut c_char,
+    /// Whether the key is registered with a `total_budget` (protocol
+    /// version 14, `IdentityPublicKeyInCreation::V1`).
+    pub has_total_budget: bool,
+    /// Credits the key may take from the identity over its lifetime, when
+    /// `has_total_budget`.
+    pub total_budget: u64,
+    /// Whether the key is registered with an `expires_at`.
+    pub has_expires_at: bool,
+    /// Block time in milliseconds from which the key can no longer sign,
+    /// when `has_expires_at`.
+    pub expires_at: u64,
 }
 
 /// Owned C representation of the inspectable parts of a parsed
@@ -79,23 +94,17 @@ impl Default for ParsedIdentityUpdateFFI {
 
 fn parse_identity_update_transition_bytes(
     bytes: &[u8],
-) -> Result<
-    dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
-    PlatformWalletFFIResult,
-> {
-    // Tolerates Yappr's tagless framing next to standard tagged bytes — see
-    // the shared helper for the ordering heuristic.
-    let state_transition =
-        crate::parse_state_transition::deserialize_transition_with_flexible_framing(
-            bytes,
-            &[(IDENTITY_UPDATE_VARIANT_TAG, "IdentityUpdate")],
-        )?;
+) -> Result<IdentityUpdateTransition, PlatformWalletFFIResult> {
+    // Tolerates Yappr's untagged identity updates next to standard tagged bytes.
+    let (state_transition, _tagged_bytes) =
+        decode_state_transition(bytes, &[StateTransitionType::IdentityUpdate])
+            .map_err(crate::parse_state_transition::deserialization_error)?;
 
     match state_transition {
         StateTransition::IdentityUpdate(identity_update) => Ok(identity_update),
         other => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("Expected IdentityUpdateTransition, got {other:?}"),
+            format!("Expected IdentityUpdateTransition, got {}", other.name()),
         )),
     }
 }
@@ -151,11 +160,12 @@ unsafe fn free_parsed_public_keys(keys: &mut [ParsedIdentityUpdatePublicKeyFFI])
 }
 
 pub(crate) fn project_parsed_identity_update(
-    transition: &dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
+    identity_id: &Identifier,
+    public_keys_to_add: &[IdentityPublicKeyInCreation],
+    public_key_ids_to_disable: &[KeyID],
 ) -> Result<ParsedIdentityUpdateFFI, PlatformWalletFFIResult> {
-    let identity_id = transition.identity_id().to_buffer();
+    let identity_id = identity_id.to_buffer();
 
-    let public_keys_to_add = transition.public_keys_to_add();
     let mut add_public_keys_vec: Vec<ParsedIdentityUpdatePublicKeyFFI> =
         Vec::with_capacity(public_keys_to_add.len());
 
@@ -188,6 +198,10 @@ pub(crate) fn project_parsed_identity_update(
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
+            has_total_budget: public_key.total_budget().is_some(),
+            total_budget: public_key.total_budget().unwrap_or_default(),
+            has_expires_at: public_key.expires_at().is_some(),
+            expires_at: public_key.expires_at().unwrap_or_default(),
         });
     }
 
@@ -199,7 +213,7 @@ pub(crate) fn project_parsed_identity_update(
             as *mut ParsedIdentityUpdatePublicKeyFFI
     };
 
-    let disable_public_key_ids_vec = transition.public_key_ids_to_disable().to_vec();
+    let disable_public_key_ids_vec = public_key_ids_to_disable.to_vec();
     let disable_public_key_ids_count = disable_public_key_ids_vec.len();
     let disable_public_key_ids = if disable_public_key_ids_count == 0 {
         ptr::null_mut()
@@ -219,9 +233,9 @@ pub(crate) fn project_parsed_identity_update(
 /// Deserializes a raw `IdentityUpdateTransition` (as carried by a DashConnect
 /// `dash-st:` QR) into its inspectable parts.
 ///
-/// Accepts both normal tagged DPP state-transition bytes and Yappr's tagless
-/// framing, where the positional bincode enum variant tag `6` has to be
-/// prepended before deserialization.
+/// Accepts both normal tagged DPP state-transition bytes and an identity update
+/// serialized without the `StateTransition` variant tag (Yappr's framing);
+/// trailing bytes are refused.
 ///
 /// Does NOT sign and does NOT broadcast — the caller validates the result and
 /// rebuilds the transition through the normal signing path.
@@ -238,7 +252,11 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition(
 
     let bytes = slice::from_raw_parts(transition_bytes, transition_len);
     let transition = unwrap_result_or_return!(parse_identity_update_transition_bytes(bytes));
-    *out = unwrap_result_or_return!(project_parsed_identity_update(&transition));
+    *out = unwrap_result_or_return!(project_parsed_identity_update(
+        &transition.identity_id(),
+        transition.public_keys_to_add(),
+        transition.public_key_ids_to_disable(),
+    ));
     PlatformWalletFFIResult::ok()
 }
 
@@ -539,27 +557,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_tagless_framing_by_prepending_the_variant_tag() {
-        let tagged = fixture_transition_bytes();
-        let tagless = tagged[1..].to_vec();
-        let mut out = ParsedIdentityUpdateFFI::default();
-
-        let result = unsafe {
-            platform_wallet_parse_identity_update_transition(
-                tagless.as_ptr(),
-                tagless.len(),
-                &mut out,
-            )
-        };
-
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(out.identity_id, [0x11; 32]);
-        assert_eq!(out.add_public_keys_count, 2);
-
-        unsafe { platform_wallet_parse_identity_update_transition_free(&mut out) };
-    }
-
-    #[test]
     fn rejects_malformed_identity_update_transition_bytes() {
         let bytes = [0xde, 0xad, 0xbe, 0xef];
         let mut out = ParsedIdentityUpdateFFI::default();
@@ -635,7 +632,11 @@ mod tests {
 
         // `ParsedIdentityUpdateFFI` is a raw-pointer C struct with no `Debug`,
         // so the success case is rejected by hand rather than with `expect_err`.
-        let error = match project_parsed_identity_update(&transition) {
+        let error = match project_parsed_identity_update(
+            &transition.identity_id(),
+            transition.public_keys_to_add(),
+            transition.public_key_ids_to_disable(),
+        ) {
             Ok(_) => panic!("a document type with an interior NUL must not be narrowed"),
             Err(error) => error,
         };
