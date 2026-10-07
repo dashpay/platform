@@ -178,7 +178,7 @@ impl DocumentFactoryWASM {
                                 .document_type_for_name(extended_document.document_type_name())
                                 .expect("should be able to get document type"),
                             extended_document.entropy().to_owned(),
-                            extended_document.token_payment_info(),
+                            extended_document.token_payment_info_ref().clone(),
                         )
                     })
                     .collect();

@@ -250,7 +250,7 @@ fn query<'a>(
 }
 
 /// An equality clause on `field`.
-fn equal(field: &str, value: Value) -> WhereClause {
+pub(super) fn equal(field: &str, value: Value) -> WhereClause {
     WhereClause {
         field: field.to_string(),
         operator: WhereOperator::Equal,

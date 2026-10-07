@@ -2,7 +2,7 @@ use crate::drive::document::derived_index_values::set_derived_index_values;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::util::batch::DriveOperation::{
-    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation, TokenOperation,
+    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation,
 };
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -13,12 +13,10 @@ use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
-use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationType, TokenOperationType};
+use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationType};
 use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 use crate::error::drive::DriveError;
 
@@ -49,7 +47,8 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
 
                 let also_insert_vote_poll_stored_info = self.take_should_store_contest_info();
 
-                let document_creation_token_cost = self.base().token_cost();
+                let document_creation_token_cost_operations =
+                    self.base().token_cost_operations(owner_id);
 
                 // In place in generation 0, which every table selects: only the protocol
                 // version 14 batch state validation sets consumed documents, and only for a
@@ -84,28 +83,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                     },
                 )];
 
-                if let Some((token_id, effect, cost)) = document_creation_token_cost {
-                    match effect {
-                        DocumentActionTokenEffect::TransferTokenToContractOwner => {
-                            // If we are the owner, no need to send anything
-                            if owner_id != contract_fetch_info.contract.owner_id() {
-                                ops.push(TokenOperation(TokenOperationType::TokenTransfer {
-                                    token_id,
-                                    sender_id: owner_id,
-                                    recipient_id: contract_fetch_info.contract.owner_id(),
-                                    amount: cost,
-                                }));
-                            }
-                        }
-                        DocumentActionTokenEffect::BurnToken => {
-                            ops.push(TokenOperation(TokenOperationType::TokenBurn {
-                                token_id,
-                                identity_balance_holder_id: owner_id,
-                                burn_amount: cost,
-                            }));
-                        }
-                    }
-                }
+                ops.extend(document_creation_token_cost_operations);
 
                 if let Some((contested_document_resource_vote_poll, credits)) =
                     maybe_prefunded_voting_balance
@@ -152,15 +130,20 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                     ));
                     // The commitments the create revealed and consumes, each in the create's
                     // own contract. A contested document sits in its contest's own trees, so
-                    // no tree its insert writes into is shared with these deletes
+                    // no tree its insert writes into is shared with these deletes. They are
+                    // deleted without their owner's `canBeDeleted` guard: the consume rules
+                    // admitted them, and a type whose documents only a consume deletes
+                    // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
                     for consumed in consumed_documents {
-                        ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
-                            document_id: consumed.document_id,
-                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
-                            document_type_info: DocumentTypeInfo::DocumentTypeName(
-                                consumed.document_type_name,
-                            ),
-                        }));
+                        ops.push(DocumentOperation(
+                            DocumentOperationType::ForceDeleteDocument {
+                                document_id: consumed.document_id,
+                                contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                                document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                    consumed.document_type_name,
+                                ),
+                            },
+                        ));
                     }
                 } else if consumed_documents.is_empty() {
                     // Just add the document

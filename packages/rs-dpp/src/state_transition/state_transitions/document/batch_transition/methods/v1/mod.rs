@@ -14,6 +14,8 @@ use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
+#[cfg(feature = "state-transition-signing")]
+use crate::shielded::OrchardBundleParams;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -138,6 +140,173 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
         public_note: Option<String>,
         shared_encrypted_note: Option<SharedEncryptedNote>,
         private_encrypted_note: Option<PrivateEncryptedNote>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` moving `amount` of a token from `owner_id`'s identity token
+    /// balance into the token's shielded pool.
+    ///
+    /// `bundle` is the outputs-only Orchard bundle (value balance `-amount`) the client proved
+    /// for the token pool. Having no spends it carries no anchor, so its sighash must bind the
+    /// shield tag, the token id and `owner_id` — see `token_pool_output_only_extra_sighash_data`;
+    /// a bundle proved without them is rejected.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_shield_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` minting `amount` of a token straight into the token's shielded
+    /// pool as the notes in `bundle`. `owner_id` must be authorized to mint; it signs and pays the
+    /// credits fee. A group action is set up exactly like a transparent mint.
+    ///
+    /// The bundle's sighash must bind the mint tag, the token id and the minter — see
+    /// `token_pool_output_only_extra_sighash_data`. The minter is `owner_id` for a direct mint
+    /// and the proposer for a group action, so every other signer passes the proposer's bundle
+    /// unchanged.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` destroying `amount` of a token held in the token's shielded
+    /// pool by spending the notes in `bundle`. `owner_id` must be authorized to burn; it signs
+    /// and pays the credits fee.
+    ///
+    /// A group action is set up exactly like a transparent burn, with one difference: `bundle`
+    /// is always the proposer's. Its spend authorization is signed over
+    /// `token_burn_from_pool_extra_sighash_data(token_id, proposer_id, amount)` and the group
+    /// action pins the digest of its actions, so every other signer passes the proposer's
+    /// `bundle` unchanged.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_burn_from_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` claiming a distribution straight into the token's shielded
+    /// pool as the notes in `bundle`. `claim_up_to` names the cycle-aligned moment a perpetual
+    /// claim pays out to, so the bundle's value can be predicted; `owner_id` signs and pays the
+    /// credits fee.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_claim_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        distribution_type: TokenDistributionType,
+        claim_up_to: Option<u64>,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` buying `token_count` tokens for at most `total_agreed_price`
+    /// credits and receiving them shielded as the notes in `bundle`. `owner_id` pays the price
+    /// and the credits fee.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_direct_purchase_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        token_count: TokenAmount,
+        total_agreed_price: Credits,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` moving `amount` of a token out of the token's shielded pool
+    /// into `recipient_id`'s identity token balance. `owner_id` signs and pays the credits fee.
+    ///
+    /// `bundle` is the Orchard spend bundle (value balance `+amount`) whose spend authorization
+    /// was signed over `token_unshield_extra_sighash_data(token_id, owner_id, recipient_id, amount)`.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_unshield_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        recipient_id: Identifier,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Creates a `StateTransition` transferring a token inside its shielded pool. `owner_id`
+    /// signs and pays the credits fee.
+    ///
+    /// `bundle` is the Orchard spend bundle (value balance `0`) whose spend authorization was
+    /// signed over `token_shielded_transfer_extra_sighash_data(token_id, owner_id)`.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_token_shielded_transfer_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        bundle: OrchardBundleParams,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,

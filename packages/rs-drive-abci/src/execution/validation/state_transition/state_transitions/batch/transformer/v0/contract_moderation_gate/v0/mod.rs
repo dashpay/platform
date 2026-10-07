@@ -15,6 +15,7 @@ use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::prelude::ConsensusValidationResult;
@@ -57,10 +58,13 @@ pub(super) trait BatchTransitionContractModerationGateV0 {
 impl BatchTransitionContractModerationGateV0 for BatchTransition {
     /// A moderated contract refuses the document transitions of an identity on its banlist or
     /// under a live suspension, except its deletions (`Delete` and `IndexOnlyDelete`): a barred
-    /// identity can write nothing new, but may still take down what it wrote. The first
-    /// document transition after a suspension lapsed sweeps the stale entry. The gate runs in the transformer, so the mempool refuses a
-    /// barred identity as a block does. A contract that declares no moderation costs nothing:
-    /// no read is made for it.
+    /// identity can write nothing new, but may still take down what it wrote. On a document
+    /// type declaring `retractedWhen` its replaces pass too, with the bar: the transformer
+    /// judges each on the document it writes, once the stored one is fetched, and refuses with
+    /// the bar each that writes no retracted document. The first document transition after a
+    /// suspension lapsed sweeps the stale entry. The gate runs in the transformer, so the mempool
+    /// refuses a barred identity as a block does. A contract that declares no moderation costs
+    /// nothing: no read is made for it.
     ///
     /// An elected contract whose declaration names no interim moderators refuses, first,
     /// every transition of a document type it moderates until a team is seated
@@ -137,8 +141,11 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
         if unblocked.is_empty() {
             // Everything was blocked (the batch is never empty), so nothing needs the lists.
             return Ok(Some(ContractModerationRefusal {
-                refused: ConsensusValidationResult::new_with_data_and_errors(actions, errors),
+                refused: Some(ConsensusValidationResult::new_with_data_and_errors(
+                    actions, errors,
+                )),
                 passed: BTreeMap::new(),
+                retraction_bar: None,
             }));
         }
 
@@ -172,19 +179,33 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
                 return Ok(None);
             }
             return Ok(Some(ContractModerationRefusal {
-                refused: ConsensusValidationResult::new_with_data_and_errors(actions, errors),
+                refused: Some(ConsensusValidationResult::new_with_data_and_errors(
+                    actions, errors,
+                )),
                 passed: unblocked,
+                retraction_bar: None,
             }));
         };
 
         // Paid: the signer is authenticated and the read happened.
         let mut passed: BTreeMap<&'a String, Vec<&'a DocumentTransition>> = BTreeMap::new();
+        let mut passed_retractions = false;
         for (document_type_name, transitions) in unblocked {
+            // Read from the contract, which the transformer reads the type from too: an
+            // unknown type declares nothing, and its replaces are refused here
+            let retracts = contract
+                .document_type_optional_for_name(document_type_name)
+                .is_some_and(|document_type| document_type.retracted_when().is_some());
             for transition in transitions {
-                if matches!(
-                    transition,
-                    DocumentTransition::Delete(_) | DocumentTransition::IndexOnlyDelete(_)
-                ) {
+                let passes = match transition {
+                    DocumentTransition::Delete(_) | DocumentTransition::IndexOnlyDelete(_) => true,
+                    DocumentTransition::Replace(_) if retracts => {
+                        passed_retractions = true;
+                        true
+                    }
+                    _ => false,
+                };
+                if passes {
                     passed
                         .entry(document_type_name)
                         .or_default()
@@ -197,18 +218,32 @@ impl BatchTransitionContractModerationGateV0 for BatchTransition {
             }
         }
 
+        let refused_any = !(actions.is_empty() && errors.is_empty());
         // Nothing but deletions and nothing blocked: the bar does not apply, the batch carries
         // on whole.
-        if actions.is_empty() && errors.is_empty() {
+        if !refused_any && !passed_retractions {
             return Ok(None);
         }
 
-        let refused = if actions.is_empty() {
-            ConsensusValidationResult::new_with_errors(errors)
-        } else {
-            ConsensusValidationResult::new_with_data_and_errors(actions, errors)
-        };
-        Ok(Some(ContractModerationRefusal { refused, passed }))
+        // A refusal and a passed transition share one transformer result only in a batch of
+        // several transitions, which basic structure refuses while
+        // `max_transitions_in_documents_batch` is 1, as it is at every protocol version. Such a
+        // result would be executed as it stands, without the state validation of what passed
+        // (the cap's note in `SYSTEM_LIMITS_V1` names the batch that is not atomic), so raising
+        // the cap must first turn a transition passed next to a refusal into a nonce bump, or
+        // validate it: a deletion, a retraction and what the interim block passes alike.
+        let refused = refused_any.then(|| {
+            if actions.is_empty() {
+                ConsensusValidationResult::new_with_errors(errors)
+            } else {
+                ConsensusValidationResult::new_with_data_and_errors(actions, errors)
+            }
+        });
+        Ok(Some(ContractModerationRefusal {
+            refused,
+            passed,
+            retraction_bar: passed_retractions.then_some(error),
+        }))
     }
 
     /// A barred identity is kept out of the contract's documents as a counterparty too: it can

@@ -9,8 +9,8 @@ use crate::data_contract::document_type::property_constraints::{
     EqualityKind, PropertyConstraint, PropertyRead, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::reference_lookup::{
-    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS,
-    MAX_LOOKUP_PATH_LENGTH,
+    clearable_once_its_document_is_deleted, schema_property_is_fixed_once_written,
+    LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -47,6 +47,7 @@ mod v3;
 
 pub(in crate::data_contract) use v3::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_summable_off_count_indexes_lossless,
 };
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -2078,14 +2079,16 @@ fn create_only_leaf_error(
         .filter(|referring| referring.as_str() != OWNER_ID)
         .find(|referring| {
             !is_transient(document_type, referring)
-                && !schema_property_is_fixed_once_written(document_type, referring)
+                && (!schema_property_is_fixed_once_written(document_type, referring)
+                    || clearable_once_its_document_is_deleted(document_type, referring))
         })
         .map(|referring| {
             format!(
                 "where reads \"{referring}\" beside a findBy function, so it is judged when the \
                  document is created only: \"{referring}\" must be fixed once written (make the \
-                 type immutable or list the property under `immutable` without a condition) or \
-                 transient"
+                 type immutable or list the property under `immutable` without a condition, and \
+                 make a `deletableDocument` reference required, since a replace can clear an \
+                 optional one once its document is deleted) or transient"
             )
         })
 }
@@ -2737,10 +2740,11 @@ pub(super) fn property_equality_kind(
 }
 
 /// A path a condition reads, as the document type names it: `path` itself,
-/// or, with `allow_stored_reads`, what follows the `$old.` a condition of an
-/// `immutable` entry reads the stored document through
-/// ([`STORED_DOCUMENT_PREFIX`]). A rule of `propertyConstraints` judges the
-/// document written, so there is no stored document for it to read.
+/// or, with `allow_stored_reads`, what follows the `$old.` a condition judging
+/// a replace (an `immutable` entry's, or `retractedWhen`) reads the stored
+/// document through ([`STORED_DOCUMENT_PREFIX`]). A rule of
+/// `propertyConstraints` judges the document written, so there is no stored
+/// document for it to read.
 fn stored_path<'a>(
     path: &'a str,
     subject: &str,
@@ -2749,8 +2753,9 @@ fn stored_path<'a>(
     match path.strip_prefix(STORED_DOCUMENT_PREFIX) {
         Some(stored) if allow_stored_reads => Ok(stored),
         Some(_) => Err(format!(
-            "{subject} reads \"{path}\", but only a condition of an `immutable` entry reads \
-             the stored document through `{STORED_DOCUMENT_PREFIX}`"
+            "{subject} reads \"{path}\", but only a condition judging a replace (an \
+             `immutable` entry's, or `retractedWhen`) reads the stored document through \
+             `{STORED_DOCUMENT_PREFIX}`"
         )),
         None => Ok(path),
     }

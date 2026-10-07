@@ -87,7 +87,9 @@ mod tests {
         use crate::data_contract::associated_token::token_configuration::accessors::v0::{
             TokenConfigurationV0Getters, TokenConfigurationV0Setters,
         };
+        use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
         use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use crate::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
         use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
         use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
         use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
@@ -95,6 +97,7 @@ mod tests {
         use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
         use crate::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
         use crate::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+        use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use crate::data_contract::document_type::DocumentTypeMutRef;
         use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
         use crate::data_contract::group::v0::GroupV0;
@@ -550,6 +553,68 @@ mod tests {
                     StateError::DataContractUpdateActionNotAllowedError(e)
                 )] if e.action() == format!("update token at position {}", first_token_pos)
             );
+        }
+
+        /// An existing token is immutable through a contract update because its whole
+        /// configuration is compared, so every field `TokenConfigurationV1` carries is immutable
+        /// with no code of its own. The destructuring names each field without `..`, so a field
+        /// appended later stops this test compiling until the pattern names it too; that is the
+        /// moment to add a case changing it to the list below.
+        #[test]
+        fn should_return_invalid_result_when_any_token_configuration_v1_field_is_updated() {
+            let platform_version = PlatformVersion::latest();
+            let mut pooled =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            pooled.set_has_shielded_pool(true);
+            let TokenConfiguration::V1(original) = &pooled else {
+                panic!("a pooled configuration is V1");
+            };
+            let TokenConfigurationV1 {
+                base: _,
+                has_shielded_pool: _,
+                minimum_pool_notes_for_outgoing: _,
+                minimum_pool_notes_for_outgoing_change_rules: _,
+            } = original;
+
+            type Change = fn(&mut TokenConfigurationV1);
+            let changes: [(&str, Change); 3] = [
+                ("has_shielded_pool", |v1| v1.has_shielded_pool = false),
+                ("minimum_pool_notes_for_outgoing", |v1| {
+                    v1.minimum_pool_notes_for_outgoing = Some(1)
+                }),
+                ("minimum_pool_notes_for_outgoing_change_rules", |v1| {
+                    v1.minimum_pool_notes_for_outgoing_change_rules
+                        .set_authorized_to_make_change_action_takers(
+                            AuthorizedActionTakers::ContractOwner,
+                        )
+                }),
+            ];
+            for (field, change) in changes {
+                let mut old_data_contract =
+                    get_data_contract_fixture(None, IdentityNonce::default(), 9)
+                        .data_contract_owned();
+                old_data_contract.set_tokens(BTreeMap::from([(0, pooled.clone())]));
+
+                let mut changed = original.clone();
+                change(&mut changed);
+                assert_ne!(&changed, original, "{field} must actually change");
+                let mut new_data_contract = old_data_contract.clone();
+                new_data_contract.set_version(old_data_contract.version() + 1);
+                new_data_contract
+                    .set_tokens(BTreeMap::from([(0, TokenConfiguration::V1(changed))]));
+
+                let result = old_data_contract
+                    .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
+                    .expect("failed validate update");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::DataContractUpdateActionNotAllowedError(e)
+                    )] if e.action() == "update token at position 0",
+                    "a contract update changing {field} must be refused"
+                );
+            }
         }
 
         #[test]

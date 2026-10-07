@@ -51,7 +51,7 @@ mod tests {
             pro_tx_hash: ProTxHash::from_byte_array(pro_tx),
             collateral_hash: Txid::from_byte_array([0u8; 32]),
             collateral_index: 0,
-            collateral_address: [0u8; 20],
+            collateral_address: Some([0u8; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
@@ -59,14 +59,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: [0u8; 20],
+                owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
-                payout_address: [0u8; 20],
+                payout_address: Some([0u8; 20]),
+                payouts: None,
                 pub_key_operator: vec![1u8; 48],
                 operator_payout_address,
                 platform_node_id,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         }
     }

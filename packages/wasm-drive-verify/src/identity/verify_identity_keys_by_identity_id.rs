@@ -156,7 +156,7 @@ pub fn verify_identity_keys_by_identity_id(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_option) = Drive::verify_identity_keys_by_identity_id(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         key_request,
         with_revision,
         with_balance,
