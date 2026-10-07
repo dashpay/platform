@@ -25,35 +25,41 @@ pub enum BlsError {
     DeserializationError(String),
 }
 
-/// A compressed G1 key, including the identity permitted by historical Platform parsing.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct PublicKey([u8; 48]);
+/// A validated G1 key, including the identity permitted by historical Platform parsing.
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct PublicKey(PublicKeyPoint);
+
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum PublicKeyPoint {
+    #[default]
+    Infinity,
+    Validated(BlsPublicKey<BlsScIetf>),
+}
 
 impl PublicKey {
     /// Return the canonical compressed IETF encoding.
     pub fn to_bytes(&self) -> [u8; 48] {
-        self.0
+        match &self.0 {
+            PublicKeyPoint::Infinity => infinity(),
+            PublicKeyPoint::Validated(key) => key.to_bytes(),
+        }
     }
 
     /// Re-encode a public key for Core's legacy wire format.
     pub fn to_legacy_bytes(&self) -> Result<[u8; 48], BlsError> {
-        if self.0 == infinity() {
+        let PublicKeyPoint::Validated(key) = &self.0 else {
             return Ok(infinity());
-        }
-        self.validated()?
-            .to_scheme::<BlsScChia>()
+        };
+        key.to_scheme::<BlsScChia>()
             .map(|key| key.to_bytes())
             .map_err(|_| BlsError::InvalidInputs("Invalid byte sequence".into()))
     }
 
-    fn validated(&self) -> Result<BlsPublicKey<BlsScIetf>, BlsError> {
-        BlsPublicKey::from_bytes(&self.0).map_err(|_| BlsError::InvalidSignature)
-    }
-}
-
-impl Default for PublicKey {
-    fn default() -> Self {
-        Self(infinity())
+    fn validated(&self) -> Result<&BlsPublicKey<BlsScIetf>, BlsError> {
+        match &self.0 {
+            PublicKeyPoint::Infinity => Err(BlsError::InvalidSignature),
+            PublicKeyPoint::Validated(key) => Ok(key),
+        }
     }
 }
 
@@ -71,17 +77,18 @@ impl TryFrom<&[u8]> for PublicKey {
             BlsError::InvalidInputs(format!("Invalid length, expected 48, got {}", value.len()))
         })?;
         // Persisted state and shipped validation accept canonical infinity, but verification rejects it.
-        if bytes != infinity() {
-            BlsPublicKey::<BlsScIetf>::from_bytes(&bytes)
-                .map_err(|_| BlsError::InvalidInputs("Invalid byte sequence".into()))?;
+        if bytes == infinity() {
+            return Ok(Self(PublicKeyPoint::Infinity));
         }
-        Ok(Self(bytes))
+        BlsPublicKey::from_bytes(&bytes)
+            .map(|key| Self(PublicKeyPoint::Validated(key)))
+            .map_err(|_| BlsError::InvalidInputs("Invalid byte sequence".into()))
     }
 }
 
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(self.0))
+        f.write_str(&hex::encode(self.to_bytes()))
     }
 }
 
@@ -126,37 +133,52 @@ impl SecretKey {
 
     /// Derive the corresponding public key.
     pub fn public_key(&self) -> PublicKey {
-        PublicKey(self.0.public_key().to_bytes())
+        PublicKey(PublicKeyPoint::Validated(self.0.public_key()))
     }
 
     /// Sign arbitrary message bytes with the Basic IETF domain separation tag.
     pub fn sign(&self, message: &[u8]) -> Result<Signature, BlsError> {
-        Ok(Signature(self.0.sign(message).to_bytes()))
+        Ok(Signature::from_validated(self.0.sign(message)))
     }
 }
 
-/// A compressed G2 Basic signature.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Signature([u8; 96]);
+/// A validated G2 Basic signature, with canonical infinity represented separately.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct Signature(Option<BlsSignature<BlsScIetf>>);
+
+impl fmt::Debug for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Signature").field(&self.to_bytes()).finish()
+    }
+}
 
 impl fmt::Display for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(self.0))
+        f.write_str(&hex::encode(self.to_bytes()))
     }
 }
 
 impl Signature {
     /// Decode a subgroup point, including the identity rejected during verification.
     pub fn from_compressed(bytes: &[u8; 96]) -> Option<Self> {
-        if *bytes != infinity() {
-            BlsSignature::<BlsScIetf>::from_bytes(bytes).ok()?;
+        if *bytes == infinity() {
+            return Some(Self(None));
         }
-        Some(Self(*bytes))
+        BlsSignature::from_bytes(bytes)
+            .ok()
+            .map(|signature| Self(Some(signature)))
+    }
+
+    fn from_validated(signature: BlsSignature<BlsScIetf>) -> Self {
+        // Aggregation can produce infinity; keep its historical parsing and verification policy.
+        Self((signature.to_bytes() != infinity()).then_some(signature))
     }
 
     /// Return the compressed IETF encoding without a scheme tag.
     pub fn to_bytes(&self) -> [u8; 96] {
         self.0
+            .as_ref()
+            .map_or_else(infinity, BlsSignature::to_bytes)
     }
 
     /// Verify a Basic signature over arbitrary message bytes.
@@ -165,20 +187,16 @@ impl Signature {
         public_key: &PublicKey,
         message: impl AsRef<[u8]>,
     ) -> Result<(), BlsError> {
-        if self.0 == infinity() {
-            return Err(BlsError::InvalidInputs(
-                "signature is the identity point".into(),
-            ));
-        }
-        if public_key.0 == infinity() {
+        let signature = self
+            .0
+            .as_ref()
+            .ok_or_else(|| BlsError::InvalidInputs("signature is the identity point".into()))?;
+        let PublicKeyPoint::Validated(key) = &public_key.0 else {
             return Err(BlsError::InvalidInputs(
                 "public key is the identity point".into(),
             ));
-        }
-        let key = public_key.validated()?;
-        let signature =
-            BlsSignature::from_bytes(&self.0).map_err(|_| BlsError::InvalidSignature)?;
-        key.verify(message.as_ref(), &signature)
+        };
+        key.verify(message.as_ref(), signature)
             .map_err(|_| BlsError::InvalidSignature)
     }
 
@@ -187,21 +205,17 @@ impl Signature {
         signatures: &[Self],
         public_keys: &[PublicKey],
     ) -> Result<Self, BlsError> {
-        let signatures: Result<Vec<_>, _> = signatures
+        let signatures: Vec<_> = signatures
             .iter()
-            .map(|sig| BlsSignature::<BlsScIetf>::from_bytes(&sig.0))
-            .collect();
-        let signatures = signatures.map_err(|_| BlsError::InvalidSignature)?;
+            .map(|sig| sig.0.as_ref().ok_or(BlsError::InvalidSignature))
+            .collect::<Result<_, _>>()?;
         let keys: Vec<_> = public_keys
             .iter()
             .map(PublicKey::validated)
             .collect::<Result<_, _>>()?;
-        BlsSignature::secure_aggregate(
-            &signatures.iter().collect::<Vec<_>>(),
-            &keys.iter().collect::<Vec<_>>(),
-        )
-        .map(|signature| Self(signature.to_bytes()))
-        .map_err(|_| BlsError::InvalidSignature)
+        BlsSignature::secure_aggregate(&signatures, &keys)
+            .map(Self::from_validated)
+            .map_err(|_| BlsError::InvalidSignature)
     }
 
     /// Verify a secure aggregate over a common message.
@@ -214,10 +228,9 @@ impl Signature {
             .iter()
             .map(PublicKey::validated)
             .collect::<Result<_, _>>()?;
-        let signature =
-            BlsSignature::from_bytes(&self.0).map_err(|_| BlsError::InvalidSignature)?;
+        let signature = self.0.as_ref().ok_or(BlsError::InvalidSignature)?;
         signature
-            .secure_verify_aggregates(message.as_ref(), &keys.iter().collect::<Vec<_>>())
+            .secure_verify_aggregates(message.as_ref(), &keys)
             .map_err(|_| BlsError::InvalidSignature)
     }
 }
