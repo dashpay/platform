@@ -45,11 +45,12 @@ use drive::drive::votes::paths::{
 };
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::query::VotePollsByEndDateDriveQuery;
-use drive::util::test_helpers::setup_contract;
+use drive::util::test_helpers::{setup_contract, vote_poll_end_dates};
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// The DPNS-shaped fixture whose `parentNameAndLabel` index is resolved without locking.
@@ -629,6 +630,19 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         vec![(start + poll_duration, vote_poll(&contract))],
         "the second contender moves the end to the full poll duration"
     );
+    // Read raw, as the end dates above cannot show a time with no entry: the join window's end
+    // date goes with its only entry, since an empty one would take a slot of the per-block read
+    // of ended vote polls
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(
+            start + poll_duration,
+            BTreeSet::from([vote_poll(&contract)
+                .unique_id()
+                .expect("expected a vote poll id")]),
+        )]),
+        "no end date is left at the end of the join window"
+    );
 
     // A third contender finds the end date there already
     join(
@@ -674,7 +688,7 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         Some(bob.0.id()),
         "plurality"
     );
-    assert!(end_dates(&platform, platform_version).is_empty());
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
 }
 
 #[tokio::test]

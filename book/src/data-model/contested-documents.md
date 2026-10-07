@@ -74,7 +74,8 @@ choices are a contender or abstain. A Lock vote is refused with `VoteChoiceNotAl
 A contest without locking ends when its join window closes while it still has a single contender,
 so that contender is awarded the value without a vote window. Its end-date entry is written at the
 end of the join window when the contest opens; the first additional contender moves it to the full
-poll duration, which opens the vote window. `getVotePollsByEndDate` shows whichever end applies.
+poll duration, which opens the vote window, and removes the join window's end date when no other
+contest ends then. `getVotePollsByEndDate` shows whichever end applies.
 
 The moderation charters contract uses this resolution to elect moderation teams.
 
