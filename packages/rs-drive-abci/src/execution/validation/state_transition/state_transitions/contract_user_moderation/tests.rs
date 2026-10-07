@@ -76,6 +76,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod deletion_options;
 mod derived_index_properties;
+mod duplicate_keys;
 mod moderated_document_reference;
 mod moderator_fields;
 mod preallocated_through_moderated_reference;

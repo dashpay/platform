@@ -2152,6 +2152,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     documents. A stored contract still parses. No earlier version parses
 ///     `ttl`.
 ///
+/// 83. **Unambiguous document properties**: `validate_document` generation 1 rejects
+///     repeated text keys in nested maps, including maps inside arrays, before property
+///     size, path and schema validation. Create, replace, indexOnly delete and moderator
+///     field changes use the same check. Rejection uses ValueError (10103) through the
+///     existing paid-invalid flow; generation 0 remains selected before this version.
+///
 /// 84. **Document token payments obey the issuer's movement policy**:
 ///     document-base state validation 2 supersedes 1
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`). A transparent transfer or burn
@@ -2263,7 +2269,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
