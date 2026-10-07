@@ -575,7 +575,7 @@ fn should_refuse_a_reference_a_replace_could_repoint() {
 }
 
 #[test]
-fn should_refuse_a_derived_property_in_a_unique_or_skipping_index() {
+fn should_refuse_a_derived_property_in_a_unique_index() {
     assert_refused(
         parse(
             moderated_post(),
@@ -596,25 +596,233 @@ fn should_refuse_a_derived_property_in_a_unique_or_skipping_index() {
         ),
         "a unique index",
     );
+}
+
+/// A permanent post that may leave out its `topic`, its `meta` object (whose `tag` it then
+/// holds) and its `digest`, a byte array of at least `digest_min_items` bytes, with `required`
+/// its required properties.
+fn post_with_optional_fields(digest_min_items: u64, required: Value) -> Value {
+    post(platform_value!({
+        "properties": {
+            "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+            "topic": { "type": "string", "minLength": 1, "maxLength": 20, "position": 1 },
+            "meta": {
+                "type": "object",
+                "properties": {
+                    "tag": { "type": "string", "minLength": 1, "maxLength": 20, "position": 0 },
+                },
+                "required": ["tag"],
+                "additionalProperties": false,
+                "position": 2,
+            },
+            "digest": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": digest_min_items,
+                "maxItems": 32,
+                "position": 3,
+            },
+        },
+        "required": required,
+    }))
+}
+
+fn post_required() -> Value {
+    platform_value!(["hashtag", "$createdAt"])
+}
+
+/// A reply to a permanent post, with an optional `label` of its own and `required` its
+/// required properties, and one index `bySkip` on `properties` skipping on `skip`.
+fn skipping_reply(properties: Value, skip: Value, required: Value) -> Value {
+    merged(
+        reply(permanent_reference(), "postId.$ownerId", Value::Null),
+        platform_value!({
+            "indices": [{ "name": "bySkip", "properties": properties, "skipIfAbsent": skip }],
+            "properties": {
+                "postId": identifier(0, Some(permanent_reference())),
+                "body": { "type": "string", "minLength": 1, "maxLength": 280, "position": 1 },
+                "label": { "type": "string", "minLength": 1, "maxLength": 20, "position": 2 },
+            },
+            "required": required,
+        }),
+    )
+}
+
+/// `derived`, then `$createdAt`.
+fn derived_index(derived: &str) -> Value {
+    platform_value!([{ derived: "asc" }, { "$createdAt": "asc" }])
+}
+
+fn reply_required() -> Value {
+    platform_value!(["postId", "body", "$createdAt"])
+}
+
+fn skip_set(document_types: &BTreeMap<String, DocumentType>) -> Vec<String> {
+    document_types
+        .get("reply")
+        .and_then(|reply| reply.indexes().get("bySkip"))
+        .expect("the index")
+        .skip_if_absent_properties
+        .clone()
+}
+
+#[test]
+fn should_skip_on_a_derived_property_the_array_names() {
+    for full_validation in [true, false] {
+        let document_types = parse(
+            post_with_optional_fields(1, post_required()),
+            skipping_reply(
+                derived_index("postId.topic"),
+                platform_value!(["postId.topic"]),
+                reply_required(),
+            ),
+            full_validation,
+        )
+        .expect("a reply may skip on a topic its post may leave out");
+        assert_eq!(
+            skip_set(&document_types),
+            vec!["postId.topic".to_string()],
+            "full validation {full_validation}"
+        );
+    }
+}
+
+#[test]
+fn should_skip_on_the_owner_of_a_post_only_through_an_optional_reference() {
+    // A reply that may refer to no post has no post owner to be filed under
+    let document_types = parse(
+        post_with_optional_fields(1, post_required()),
+        skipping_reply(
+            derived_index("postId.$ownerId"),
+            platform_value!(["postId.$ownerId"]),
+            platform_value!(["body", "$createdAt"]),
+        ),
+        true,
+    )
+    .expect("a reply without a post skips");
+    assert_eq!(
+        skip_set(&document_types),
+        vec!["postId.$ownerId".to_string()]
+    );
+    // Every post has an owner, so a reply that always refers to one never skips
     assert_refused(
         parse(
-            moderated_post(),
-            reply(
-                moderated_reference(),
-                "postId.$ownerId",
-                platform_value!({
-                    "indices": [
-                        {
-                            "name": "byDerived",
-                            "properties": [{ "postId.$ownerId": "asc" }, { "$createdAt": "asc" }],
-                            "skipIfAbsent": true,
-                        },
-                    ],
-                }),
+            post_with_optional_fields(1, post_required()),
+            skipping_reply(
+                derived_index("postId.$ownerId"),
+                platform_value!(["postId.$ownerId"]),
+                reply_required(),
             ),
             true,
         ),
-        "skip",
+        "never absent: \"postId\" is required and every document of \"post\" has an owner",
+    );
+}
+
+#[test]
+fn should_refuse_a_derived_skip_property_that_is_never_absent() {
+    assert_refused(
+        parse(
+            post_with_optional_fields(1, post_required()),
+            skipping_reply(
+                derived_index("postId.hashtag"),
+                platform_value!(["postId.hashtag"]),
+                reply_required(),
+            ),
+            true,
+        ),
+        "\"post\" requires \"hashtag\"",
+    );
+    // `meta.tag` is required inside `meta`, which a post may leave out, taking the tag with it
+    parse(
+        post_with_optional_fields(1, post_required()),
+        skipping_reply(
+            derived_index("postId.meta.tag"),
+            platform_value!(["postId.meta.tag"]),
+            reply_required(),
+        ),
+        true,
+    )
+    .expect("a tag inside an optional object can be absent");
+    // Once `meta` is required too, every post holds a tag
+    assert_refused(
+        parse(
+            post_with_optional_fields(1, platform_value!(["hashtag", "meta", "$createdAt"])),
+            skipping_reply(
+                derived_index("postId.meta.tag"),
+                platform_value!(["postId.meta.tag"]),
+                reply_required(),
+            ),
+            true,
+        ),
+        "\"post\" requires \"meta.tag\"",
+    );
+    // A required field through an optional reference is absent with the reference
+    parse(
+        post_with_optional_fields(1, post_required()),
+        skipping_reply(
+            derived_index("postId.hashtag"),
+            platform_value!(["postId.hashtag"]),
+            platform_value!(["body", "$createdAt"]),
+        ),
+        true,
+    )
+    .expect("a reply without a post has no hashtag");
+}
+
+#[test]
+fn should_refuse_a_derived_skip_byte_array_that_may_be_empty() {
+    assert_refused(
+        parse(
+            post_with_optional_fields(0, post_required()),
+            skipping_reply(
+                derived_index("postId.digest"),
+                platform_value!(["postId.digest"]),
+                reply_required(),
+            ),
+            true,
+        ),
+        "set its `minItems` to at least 1",
+    );
+    parse(
+        post_with_optional_fields(1, post_required()),
+        skipping_reply(
+            derived_index("postId.digest"),
+            platform_value!(["postId.digest"]),
+            reply_required(),
+        ),
+        true,
+    )
+    .expect("a digest of at least one byte is never keyed like a missing one");
+}
+
+#[test]
+fn should_leave_a_derived_property_out_of_skip_if_absent_true() {
+    // `true` names the reply's own optional properties: `label`, never the post's topic,
+    // whose absence the reply type alone can not tell
+    let document_types = parse(
+        post_with_optional_fields(1, post_required()),
+        skipping_reply(
+            platform_value!([{ "postId.topic": "asc" }, { "label": "asc" }]),
+            Value::Bool(true),
+            reply_required(),
+        ),
+        true,
+    )
+    .expect("the index skips on its label");
+    assert_eq!(skip_set(&document_types), vec!["label".to_string()]);
+    // With no optional property of the reply's own, `true` skips on nothing
+    assert_refused(
+        parse(
+            post_with_optional_fields(1, post_required()),
+            skipping_reply(
+                derived_index("postId.topic"),
+                Value::Bool(true),
+                reply_required(),
+            ),
+            true,
+        ),
+        "name one in the array form",
     );
 }
 

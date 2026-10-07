@@ -23,12 +23,8 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-#[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::{
-    parse_derived_index_property_name, DerivedIndexPropertyName,
-};
-use crate::data_contract::document_type::index::{
-    Index, IndexGrammarAdmissions, IntegerRangeKeyType,
+    reads_through_reference, Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
@@ -985,6 +981,9 @@ fn parse_indices(
                     // parse (validating or not), before the index structure is
                     // built from it. System properties are never in a skip set;
                     // `apply_index_only` refuses the index when none remains.
+                    // Nor is a value read through a reference: whether it can
+                    // be absent depends on the referenced type, which this
+                    // parse does not see, so only the array form skips on one.
                     if index.skip_if_absent && index.skip_if_absent_properties.is_empty() {
                         index.skip_if_absent_properties = index
                             .properties
@@ -992,6 +991,10 @@ fn parse_indices(
                             .filter(|property| {
                                 !property.name.starts_with('$')
                                     && !required_fields.contains(&property.name)
+                                    && !reads_through_reference(
+                                        &property.name,
+                                        flattened_document_properties,
+                                    )
                             })
                             .map(|property| property.name.clone())
                             .collect();
@@ -1447,14 +1450,7 @@ fn validate_index_properties(
         // the index and the referenced field are judged once the whole type, and then the
         // whole contract, is parsed
         if ctx.generation.admit_derived_index_properties
-            && !matches!(
-                parse_derived_index_property_name(
-                    &index_property.name,
-                    flattened_document_properties,
-                    ctx.data_contract_id,
-                ),
-                DerivedIndexPropertyName::NotDerived
-            )
+            && reads_through_reference(&index_property.name, flattened_document_properties)
         {
             return Ok(());
         }
@@ -3677,9 +3673,13 @@ pub(super) fn apply_retracted_when(
 /// - The skip set is non-empty: an index none of whose properties is optional
 ///   could never skip.
 /// - Every skip property is a top-level (non-dotted) schema property that is
-///   not a system property and not listed in `required`. Its presence is then
-///   a single lookup, the same for every walker, and it can actually be
-///   absent.
+///   not a system property and not listed in `required`, or a derived index
+///   property, which reads through a reference of the type. Its presence is
+///   then a single lookup, the same for every walker: Drive puts a derived
+///   value into the document's properties under the derived name before it
+///   keys the document. Whether a schema property can actually be absent is
+///   judged here; a derived one is judged where the referenced type is in
+///   hand (`resolve_derived_index_properties`).
 /// - No ranking level sits above the index's deepest skip property. Such a
 ///   level would count only the documents carrying the deeper property, but a
 ///   query may only read a skip index when it binds every skip property, so
@@ -3689,13 +3689,15 @@ fn skip_if_absent_index_error(
     index: &Index,
     document_type_name: &str,
     required_fields: &BTreeSet<String>,
+    flattened_properties: &IndexMap<String, DocumentProperty>,
 ) -> Option<String> {
     if index.skip_if_absent_properties.is_empty() {
         return Some(format!(
             "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but none of its \
              properties is optional: a required or system property can never be absent, so \
              the index could never skip — remove the flag, or remove a property from \
-             `required`",
+             `required` (`true` leaves out a value read through a reference: name one in \
+             the array form to skip on it)",
             index_name, document_type_name,
         ));
     }
@@ -3708,7 +3710,9 @@ fn skip_if_absent_index_error(
                 index_name, document_type_name, skip_property,
             ));
         }
-        if skip_property.contains('.') {
+        if skip_property.contains('.')
+            && !reads_through_reference(skip_property, flattened_properties)
+        {
             return Some(format!(
                 "index \"{}\" on document type \"{}\" skips on nested property \"{}\": a skip \
                  property must be a top-level property, so that presence is a single lookup \
@@ -3880,9 +3884,13 @@ pub(super) fn apply_index_only(
             if !index.skip_if_absent {
                 continue;
             }
-            if let Some(message) =
-                skip_if_absent_index_error(index_name, index, name, &document_type.required_fields)
-            {
+            if let Some(message) = skip_if_absent_index_error(
+                index_name,
+                index,
+                name,
+                &document_type.required_fields,
+                &document_type.flattened_properties,
+            ) {
                 return Err(structure_error(message));
             }
             // A contest is decided over the document's full value tuple; a
@@ -4198,9 +4206,13 @@ pub(super) fn apply_index_only(
         // index is in its skip set, and each has a skip index of its own) is
         // checked with coverage below.
         if index.skip_if_absent {
-            if let Some(message) =
-                skip_if_absent_index_error(index_name, index, name, &document_type.required_fields)
-            {
+            if let Some(message) = skip_if_absent_index_error(
+                index_name,
+                index,
+                name,
+                &document_type.required_fields,
+                &document_type.flattened_properties,
+            ) {
                 return Err(structure_error(message));
             }
         }
