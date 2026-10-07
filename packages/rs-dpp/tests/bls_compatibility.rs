@@ -106,6 +106,21 @@ fn should_match_frozen_basic_signatures_in_both_backends() {
         let decoded = BlsSignature::<BlsScIetf>::from_bytes(&signature).unwrap();
         assert!(candidate.public_key().verify(&message, &decoded).is_ok());
         assert_eq!(
+            PublicKey::try_from(public.as_slice())
+                .unwrap()
+                .to_legacy_bytes()
+                .unwrap(),
+            bytes::<48>(&v.legacy_public_key)
+        );
+        assert_eq!(
+            SecretKey::from_be_bytes(&secret)
+                .unwrap()
+                .public_key()
+                .to_legacy_bytes()
+                .unwrap(),
+            bytes::<48>(&v.legacy_public_key)
+        );
+        assert_eq!(
             candidate
                 .public_key()
                 .to_scheme::<BlsScChia>()
@@ -242,6 +257,28 @@ fn should_preserve_identity_key_parsing_without_accepting_identity_signatures() 
     assert!(!NativeBlsModule
         .verify_signature(&signature, b"identity", &valid)
         .unwrap());
+
+    let identity_key = PublicKey::try_from(public_key.as_slice()).unwrap();
+    let identity_signature = Signature::from_compressed(&signature).unwrap();
+    assert_eq!(identity_key, PublicKey::default());
+    assert_eq!(identity_key.to_bytes(), public_key);
+    assert_eq!(identity_key.to_legacy_bytes().unwrap(), public_key);
+    assert_eq!(identity_signature.to_bytes(), signature);
+
+    let v = &corpus().basic[0];
+    let message = hex::decode(&v.message).unwrap();
+    let valid_key = PublicKey::try_from(valid.as_slice()).unwrap();
+    let valid_signature = Signature::from_compressed(&bytes(&v.signature)).unwrap();
+    assert!(valid_signature.verify(&identity_key, &message).is_err());
+    assert!(identity_signature.verify(&valid_key, &message).is_err());
+    assert!(valid_signature
+        .verify_secure(&[identity_key], &message)
+        .is_err());
+    assert!(identity_signature
+        .verify_secure(&[valid_key], &message)
+        .is_err());
+    assert!(Signature::aggregate_secure(&[identity_signature], &[valid_key]).is_err());
+    assert!(Signature::aggregate_secure(&[valid_signature], &[identity_key]).is_err());
 }
 
 #[test]

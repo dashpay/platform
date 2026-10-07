@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Changed
+
+- **dpp (Rust API migration):** BLS types now live under `dpp::bls::{PublicKey,
+  SecretKey, Signature, BlsError}`; the generic `dpp::bls_signatures` re-export
+  is removed. Use `PublicKey::to_bytes()`, `SecretKey::from_be_bytes()` returning
+  `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
+  `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
+  Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+
 ## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
 
 
