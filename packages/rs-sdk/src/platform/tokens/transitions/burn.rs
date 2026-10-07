@@ -26,7 +26,8 @@ pub enum BurnResult {
     HistoricalDocument(Document),
     /// Group-based burn action with optional document for history.
     GroupActionWithDocument(GroupSumPower, Option<Document>),
-    /// Group-based burn action with balance and status information.
+    /// Group-based burn action with status and an optional proposer balance.
+    /// Non-proposer co-signers receive no token balance, including for closed actions.
     GroupActionWithBalance(GroupSumPower, GroupActionStatus, Option<TokenAmount>),
 }
 
@@ -78,6 +79,12 @@ impl Sdk {
             .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
+        BurnResult::from_proof_result(proof_result)
+    }
+}
+
+impl BurnResult {
+    fn from_proof_result(proof_result: StateTransitionProofResult) -> Result<Self, Error> {
         match proof_result {
             StateTransitionProofResult::VerifiedTokenBalance(owner_id, remaining_balance) => {
                 Ok(BurnResult::TokenBalance(owner_id, remaining_balance))
@@ -101,6 +108,46 @@ impl Sdk {
                 vec![],
                 Default::default(),
             )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_forward_group_burn_status_without_a_cosigner_balance() {
+        for status in [
+            GroupActionStatus::ActionActive,
+            GroupActionStatus::ActionClosed,
+        ] {
+            let result = BurnResult::from_proof_result(
+                StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
+                    8, status, None,
+                ),
+            )
+            .expect("convert verified co-signer result");
+            assert!(
+                matches!(result, BurnResult::GroupActionWithBalance(8, actual, None) if actual == status)
+            );
+        }
+    }
+
+    #[test]
+    fn should_forward_proposer_group_burn_balance_including_zero() {
+        for balance in [7, 0] {
+            let result = BurnResult::from_proof_result(
+                StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
+                    3,
+                    GroupActionStatus::ActionClosed,
+                    Some(balance),
+                ),
+            )
+            .expect("convert verified proposer result");
+            assert!(
+                matches!(result, BurnResult::GroupActionWithBalance(3, GroupActionStatus::ActionClosed, Some(actual)) if actual == balance)
+            );
         }
     }
 }
