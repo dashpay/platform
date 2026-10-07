@@ -24,7 +24,7 @@ pub struct ValidatorV0 {
     // Tagged enum buffers can carry either hex strings or byte sequences.
     #[cfg_attr(
         feature = "serde-conversion",
-        serde(with = "crate::serialization::dashcore::bls_pubkey::option")
+        serde(with = "crate::bls::serde::option")
     )]
     pub public_key: Option<BlsPublicKey>,
     /// The node address

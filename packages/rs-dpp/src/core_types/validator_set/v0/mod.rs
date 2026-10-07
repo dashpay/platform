@@ -33,10 +33,7 @@ pub struct ValidatorSetV0 {
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
     // Tagged enum buffers can carry either hex strings or byte sequences.
-    #[cfg_attr(
-        feature = "serde-conversion",
-        serde(with = "crate::serialization::dashcore::bls_pubkey")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(with = "crate::bls::serde"))]
     pub threshold_public_key: BlsPublicKey,
 }
 

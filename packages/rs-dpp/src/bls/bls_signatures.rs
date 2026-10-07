@@ -2,8 +2,6 @@
 
 use dash_pkc::bls::{BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature, Fr};
 use rand::{CryptoRng, Rng, RngCore};
-use serde::ser::SerializeTuple;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use zeroize::Zeroizing;
 
@@ -90,49 +88,6 @@ impl fmt::Display for PublicKey {
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
-    }
-}
-
-impl Serialize for PublicKey {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if serializer.is_human_readable() {
-            serializer.serialize_str(&hex::encode(self.0))
-        } else {
-            let mut tuple = serializer.serialize_tuple(48)?;
-            for byte in self.0 {
-                tuple.serialize_element(&byte)?;
-            }
-            tuple.end()
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PublicKey {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        if deserializer.is_human_readable() {
-            crate::serialization::dashcore::bls_pubkey::deserialize(deserializer)
-        } else {
-            struct KeyVisitor;
-            impl<'de> serde::de::Visitor<'de> for KeyVisitor {
-                type Value = PublicKey;
-                fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str("48 compressed public key bytes")
-                }
-                fn visit_seq<A: serde::de::SeqAccess<'de>>(
-                    self,
-                    mut seq: A,
-                ) -> Result<Self::Value, A::Error> {
-                    let mut bytes = [0; 48];
-                    for (i, byte) in bytes.iter_mut().enumerate() {
-                        *byte = seq
-                            .next_element()?
-                            .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
-                    }
-                    PublicKey::try_from(bytes.as_slice()).map_err(serde::de::Error::custom)
-                }
-            }
-            deserializer.deserialize_tuple(48, KeyVisitor)
-        }
     }
 }
 

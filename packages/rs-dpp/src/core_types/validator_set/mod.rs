@@ -165,7 +165,7 @@ mod json_convertible_tests {
     /// keys ARE deterministic, but the 96-char hex / 48-byte literal is too
     /// unwieldy to inline as a string constant, so we interpolate the actual
     /// `to_value`/`to_json` of the same pubkey objects we put in the fixture.
-    /// (The dedicated `serialization::dashcore::bls_pubkey` unit tests
+    /// (The dedicated `bls::serde` unit tests
     /// independently cover the pubkey round-trip.)
     fn build_fixture() -> (ValidatorSet, BlsPublicKey, BlsPublicKey) {
         let mut rng = StdRng::seed_from_u64(42);
@@ -200,7 +200,7 @@ mod json_convertible_tests {
     // visible and verifiable in-place — neither path interpolates `to_json` /
     // `to_value` of the object under test. JSON (HR) uses the hex string
     // directly; the non-HR `Value` form is the *same* 48 bytes decoded into an
-    // `Array` of `U8` (blstrs serializes the pubkey through a `u8` tuple, which
+    // `Array` of `U8` (the DPP key serializes through a `u8` tuple, which
     // platform_value collects as `Array[U8]` — NOT a typed `Bytes` variant).
     const VALIDATOR_PK_HEX: &str =
         "85d81dd12c73cca83f7d1bf8b78fadb695e3a2bc21d53b35ff2f74eaa28c6e163c98d3d5f9bb7252b4d836e484c7cc60";
@@ -230,7 +230,7 @@ mod json_convertible_tests {
         // keyed by ProTxHash hex, hash fields as lowercase hex strings,
         // sized-int fields preserved. The inner Validator's own
         // `$formatVersion` tag (now applied) appears alongside its other
-        // snake_case fields. (`serialization::dashcore::bls_pubkey` additionally
+        // snake_case fields. (`bls::serde` additionally
         // has its own dedicated BLS round-trip tests.)
         assert_eq!(
             json,
