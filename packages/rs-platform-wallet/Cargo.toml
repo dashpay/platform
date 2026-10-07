@@ -92,6 +92,7 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+tempfile = "3.27.0"
 # In-process Signer<IdentityPublicKey> for the manual testnet
 # verification example (`examples/dpns_marketplace_testnet.rs`).
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
