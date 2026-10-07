@@ -28,6 +28,7 @@ pub enum BurnResult {
     GroupActionWithDocument(GroupSumPower, Option<Document>),
     /// Group-based burn action with status and an optional proposer balance.
     /// Non-proposer co-signers receive no token balance, including for closed actions.
+    /// `None` means no balance was supplied, not zero.
     GroupActionWithBalance(GroupSumPower, GroupActionStatus, Option<TokenAmount>),
 }
 

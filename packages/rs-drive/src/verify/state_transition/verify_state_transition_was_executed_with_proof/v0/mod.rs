@@ -86,9 +86,6 @@ use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
-#[cfg(test)]
-mod group_burn_tests;
-
 impl Drive {
     #[inline(always)]
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
@@ -783,7 +780,8 @@ impl Drive {
                                         )?;
 
                                     // Client proof interpretation is not used by block validation or
-                                    // execution. A co-signer's balance is unrelated to the burn target.
+                                    // execution. Group burns debit the proposer recorded in the
+                                    // action, so a co-signer's balance does not describe that burn.
                                     if !group_state_transition_info.action_is_proposer {
                                         Ok((
                                             signer_root_hash,
@@ -3624,6 +3622,9 @@ fn verify_contract_document_change_execution(
         )))),
     }
 }
+
+#[cfg(test)]
+mod group_burn_tests;
 
 #[cfg(test)]
 mod tests {
