@@ -50,17 +50,41 @@ fn orphaned_storage() -> MutexGuard<'static, BTreeMap<PathBuf, String>> {
         .unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Key of a storage directory in [`ORPHANED_STORAGE`]: absolute, with
-/// symlinks resolved while the directory exists, so every spelling of one
-/// directory shares a key.
+/// Key of a storage directory in [`ORPHANED_STORAGE`]: its longest existing
+/// ancestor with symlinks resolved, then the missing remainder. Every
+/// spelling of one directory shares a key, whether or not it still exists.
 fn storage_key(path: &Path) -> PathBuf {
     let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    std::fs::canonicalize(&absolute).unwrap_or(absolute)
+    let mut existing = absolute.clone();
+    let mut missing = Vec::new();
+    let mut key = loop {
+        if let Ok(resolved) = std::fs::canonicalize(&existing) {
+            break resolved;
+        }
+        let last = existing.components().next_back();
+        let Some(name) = last.map(|name| name.as_os_str().to_owned()) else {
+            return absolute;
+        };
+        if !existing.pop() {
+            return absolute;
+        }
+        missing.push(name);
+    };
+    for name in missing.into_iter().rev() {
+        if name == ".." {
+            key.pop();
+        } else {
+            key.push(name);
+        }
+    }
+    key
 }
 
 /// Refuse a storage directory quarantined in [`ORPHANED_STORAGE`].
 fn ensure_storage_usable(path: &Path) -> Result<(), PlatformWalletError> {
-    match orphaned_storage().get(&storage_key(path)) {
+    // Resolved before locking: the registry must not wait on the filesystem.
+    let key = storage_key(path);
+    match orphaned_storage().get(&key) {
         Some(detail) => Err(PlatformWalletError::SpvProcessRestartRequired(
             detail.clone(),
         )),
@@ -475,37 +499,44 @@ impl SpvRuntime {
             let peers = Arc::clone(&self.peer_tracker);
             // Never cancel upstream run/stop: each can own callback-capable tasks
             // that cancellation would detach before their handles are restored.
+            // A panic is recorded by the task that observes it, as soon as it
+            // does: the cleanup after it can stay pending, and a caller that
+            // timed out, was cancelled or dropped this runtime never joins.
+            let observed = storage_key.clone();
             let teardown = tokio::spawn(async move {
                 let startup = match startup {
                     Some(task) => task.await,
                     None => Ok(()),
-                };
+                }
+                .map_err(|error| format!("startup {error}"));
+                if let Err(detail) = &startup {
+                    quarantine(observed.clone(), detail);
+                }
                 // In a task of its own, so a panicking upstream stop cannot
                 // skip the storage stop below.
                 let stopped = match client {
                     Some(client) => tokio::spawn(async move { stop_client(client).await }).await,
                     None => Ok(()),
-                };
+                }
+                .map_err(|error| format!("teardown {error}"));
+                if let Err(detail) = &stopped {
+                    quarantine(observed, detail);
+                }
                 // Upstream stops storage only for a running sync loop, and not
                 // at all once its stop has panicked.
                 if let Some(storage) = storage {
                     storage.lock().await.stop().await;
                 }
                 peers.clear();
-                startup.map_err(|error| format!("startup {error}"))?;
-                stopped.map_err(|error| format!("teardown {error}"))
+                startup.and(stopped)
             });
-            // Recorded by the task itself: a caller that timed out, was
-            // cancelled or dropped this runtime never joins it.
-            let storage_key = storage_key.clone();
+            let observed = storage_key.clone();
             *shutdown = Shutdown::Running(tokio::spawn(async move {
-                let result = teardown
-                    .await
-                    .unwrap_or_else(|error| Err(format!("teardown {error}")));
-                if let Err(detail) = &result {
-                    quarantine(storage_key, detail);
-                }
-                result
+                teardown.await.unwrap_or_else(|error| {
+                    let detail = format!("teardown {error}");
+                    quarantine(observed, &detail);
+                    Err(detail)
+                })
             }));
         }
 
@@ -1781,6 +1812,66 @@ mod tests {
                 "{path:?} reaches the quarantined directory"
             );
         }
+    }
+
+    /// Cleanup after a panic can stay pending, so the panic must be on record
+    /// before it: a symlink to the directory gets past upstream's lock file.
+    #[cfg(unix)]
+    #[tokio::test(start_paused = true)]
+    async fn should_refuse_storage_as_soon_as_a_stop_panic_is_observed() {
+        let (runtime, storage) = offline_runtime().await;
+        let client_storage = runtime.client.read().await.as_ref().unwrap().storage();
+        let cleanup_blocked = client_storage.lock().await;
+        assert!(
+            is_retryable(
+                &runtime
+                    .stop_with(|_client| async { panic!("mock teardown panic") })
+                    .await
+            ),
+            "teardown must still be cleaning up"
+        );
+
+        let links = tempfile::tempdir().unwrap();
+        let symlink = links.path().join("alias");
+        std::os::unix::fs::symlink(storage.path(), &symlink).unwrap();
+        let config = ClientConfig::testnet()
+            .with_storage_path(&symlink)
+            .with_restrict_to_configured_peers(true);
+        assert!(needs_restart(&unstarted_runtime().start(config).await));
+
+        drop(cleanup_blocked);
+        assert!(needs_restart(&runtime.stop().await));
+    }
+
+    /// A quarantined directory that was removed must still be recognised
+    /// through a symlinked parent, or starting there would recreate it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn should_refuse_a_removed_quarantined_directory_through_an_aliased_parent() {
+        let root = tempfile::tempdir().unwrap();
+        let config = |path: &std::path::Path| {
+            ClientConfig::testnet()
+                .with_storage_path(path)
+                .with_restrict_to_configured_peers(true)
+        };
+        let wallet = root.path().join("wallet");
+        let runtime = unstarted_runtime();
+        runtime.start(config(&wallet)).await.unwrap();
+        assert!(needs_restart(
+            &runtime
+                .stop_with(|_client| async { panic!("mock teardown panic") })
+                .await
+        ));
+        std::fs::remove_dir_all(&wallet).unwrap();
+
+        let links = tempfile::tempdir().unwrap();
+        let aliased_root = links.path().join("alias");
+        std::os::unix::fs::symlink(root.path(), &aliased_root).unwrap();
+        assert!(needs_restart(
+            &unstarted_runtime()
+                .start(config(&aliased_root.join("wallet")))
+                .await
+        ));
     }
 
     /// A runtime that stopped cleanly still knows the directory, and must not
