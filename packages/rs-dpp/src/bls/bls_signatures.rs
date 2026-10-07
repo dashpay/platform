@@ -27,19 +27,27 @@ pub enum BlsError {
 
 /// A validated G1 key, including the identity permitted by historical Platform parsing.
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
-pub struct PublicKey(Option<BlsPublicKey<BlsScIetf>>);
+pub struct PublicKey(PublicKeyPoint);
+
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum PublicKeyPoint {
+    #[default]
+    Infinity,
+    Validated(BlsPublicKey<BlsScIetf>),
+}
 
 impl PublicKey {
     /// Return the canonical compressed IETF encoding.
     pub fn to_bytes(&self) -> [u8; 48] {
-        self.0
-            .as_ref()
-            .map_or_else(infinity, BlsPublicKey::to_bytes)
+        match &self.0 {
+            PublicKeyPoint::Infinity => infinity(),
+            PublicKeyPoint::Validated(key) => key.to_bytes(),
+        }
     }
 
     /// Re-encode a public key for Core's legacy wire format.
     pub fn to_legacy_bytes(&self) -> Result<[u8; 48], BlsError> {
-        let Some(key) = &self.0 else {
+        let PublicKeyPoint::Validated(key) = &self.0 else {
             return Ok(infinity());
         };
         key.to_scheme::<BlsScChia>()
@@ -48,7 +56,10 @@ impl PublicKey {
     }
 
     fn validated(&self) -> Result<&BlsPublicKey<BlsScIetf>, BlsError> {
-        self.0.as_ref().ok_or(BlsError::InvalidSignature)
+        match &self.0 {
+            PublicKeyPoint::Infinity => Err(BlsError::InvalidSignature),
+            PublicKeyPoint::Validated(key) => Ok(key),
+        }
     }
 }
 
@@ -67,10 +78,10 @@ impl TryFrom<&[u8]> for PublicKey {
         })?;
         // Persisted state and shipped validation accept canonical infinity, but verification rejects it.
         if bytes == infinity() {
-            return Ok(Self(None));
+            return Ok(Self(PublicKeyPoint::Infinity));
         }
         BlsPublicKey::from_bytes(&bytes)
-            .map(|key| Self(Some(key)))
+            .map(|key| Self(PublicKeyPoint::Validated(key)))
             .map_err(|_| BlsError::InvalidInputs("Invalid byte sequence".into()))
     }
 }
@@ -122,7 +133,7 @@ impl SecretKey {
 
     /// Derive the corresponding public key.
     pub fn public_key(&self) -> PublicKey {
-        PublicKey(Some(self.0.public_key()))
+        PublicKey(PublicKeyPoint::Validated(self.0.public_key()))
     }
 
     /// Sign arbitrary message bytes with the Basic IETF domain separation tag.
@@ -180,10 +191,11 @@ impl Signature {
             .0
             .as_ref()
             .ok_or_else(|| BlsError::InvalidInputs("signature is the identity point".into()))?;
-        let key = public_key
-            .0
-            .as_ref()
-            .ok_or_else(|| BlsError::InvalidInputs("public key is the identity point".into()))?;
+        let PublicKeyPoint::Validated(key) = &public_key.0 else {
+            return Err(BlsError::InvalidInputs(
+                "public key is the identity point".into(),
+            ));
+        };
         key.verify(message.as_ref(), signature)
             .map_err(|_| BlsError::InvalidSignature)
     }
