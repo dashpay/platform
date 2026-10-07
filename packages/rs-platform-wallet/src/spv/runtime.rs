@@ -910,7 +910,7 @@ impl std::fmt::Debug for SpvRuntime {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use dash_spv::error::{NetworkError, SpvError};
@@ -921,7 +921,7 @@ mod tests {
     use super::{classify_spv_send_error, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
-    use crate::events::PlatformEventManager;
+    use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use dash_spv::ClientConfig;
 
@@ -1288,26 +1288,57 @@ mod tests {
     /// through `on_error`, so the retained client must stop counting as
     /// running.
     #[tokio::test]
-    async fn should_not_report_running_after_upstream_sync_stops_on_its_own() {
-        let (runtime, storage) = offline_runtime().await;
-        run_offline(&runtime).await;
+    async fn should_not_report_running_after_upstream_background_sync_fails() {
+        struct ErrorObserver(Mutex<Option<tokio::sync::oneshot::Sender<String>>>);
 
-        let client = runtime
-            .client
-            .read()
+        impl EventHandler for ErrorObserver {
+            fn on_error(&self, error: &str) {
+                if let Some(sender) = self.0.lock().unwrap().take() {
+                    let _ = sender.send(error.to_owned());
+                }
+            }
+        }
+
+        impl PlatformEventHandler for ErrorObserver {}
+
+        let (runtime, storage) = offline_runtime().await;
+        let (sender, error) = tokio::sync::oneshot::channel();
+        runtime
+            .event_manager
+            .add_handler(Arc::new(ErrorObserver(Mutex::new(Some(sender)))));
+        run_offline(&runtime).await;
+        assert!(runtime.is_running().await);
+
+        // Dropping the empty fixture's wallet closes its event channel. The
+        // real upstream monitor reports the failure and stops the sync loop.
+        *runtime.wallet_manager.write().await = WalletManager::new(Network::Testnet);
+        let error = tokio::time::timeout(Duration::from_secs(5), error)
             .await
-            .clone()
-            .expect("startup must retain the client");
-        client.stop().await;
-        drop(client);
+            .expect("upstream must report the background failure")
+            .expect("the error observer must remain registered");
+        assert!(
+            error.contains("WalletEvent monitor channel closed unexpectedly"),
+            "expected a wallet event monitor failure, got {error}"
+        );
 
         assert!(runtime.is_started(), "the client stays owned until stop");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while runtime.is_running().await {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("failed upstream sync must stop reporting running");
         assert!(!runtime.is_running().await);
         runtime.stop().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running().await);
         runtime
             .start(offline_config(&storage))
             .await
             .expect("restart after releasing the stopped client");
+        run_offline(&runtime).await;
+        assert!(runtime.is_running().await);
         runtime.stop().await.unwrap();
     }
 
