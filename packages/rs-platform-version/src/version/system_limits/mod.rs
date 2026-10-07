@@ -387,6 +387,19 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_contested_summed_value_magnitude: Option<u64>,
+    /// The largest magnitude a summed property whose values may be negative may admit on a
+    /// document type with a `ttl`, enforced when a contract is registered or updated (full
+    /// validation only, like `max_document_ttl_seconds`): unless the property's schema
+    /// declares a `minimum` of at least 0, it must declare a `maximum` of at most this and a
+    /// `minimum` of at least its negation. The platform deletes expired documents at the end
+    /// of a block with no transition to refuse, and removing a negative value raises every
+    /// sum it was in, so the values must be small enough that the sums stay in `i64`: with
+    /// every value this small, a sum of fewer than 2^36 documents does. Removing values that
+    /// are never negative only lowers sums. Read by document type parser generation 3
+    /// (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers do not read it.
+    pub max_expiring_signed_summed_value_magnitude: Option<u64>,
 }
 
 #[cfg(test)]
