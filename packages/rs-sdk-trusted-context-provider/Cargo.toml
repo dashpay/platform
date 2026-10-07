@@ -26,8 +26,10 @@ arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
 # `try_join!` / `join!` for the concurrent quorum fetches in `update_quorum_caches`
-# and `refresh_quorum_caches`.
+# and `refresh_quorum_caches`, and `Shared` for the refreshes misses share.
 futures = { version = "0.3.30" }
+# Monotonic clock that also works on wasm32, for spacing out refreshes.
+web-time = "1.1"
 
 [features]
 default = []
@@ -56,6 +58,10 @@ keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Runs the browser's non-`Send` quorum fetches on the local executor.
+wasm-bindgen-futures = { version = "0.4.58" }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.12", features = ["json"] }

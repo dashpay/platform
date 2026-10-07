@@ -1,9 +1,12 @@
 use crate::error::TrustedContextProviderError;
 use crate::get_quorum_base_url;
+use crate::quorum_refresh::{
+    contained, FetchedQuorums, QuorumRefreshes, MIN_GAP, QUORUM_LIST_REQUEST_TIMEOUT,
+};
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
-use dash_context_provider::{ContextProvider, ContextProviderError};
+use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
@@ -32,6 +35,7 @@ use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIA
 use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
+use futures::future::{BoxFuture, FutureExt};
 use lru::LruCache;
 use reqwest::Client;
 use serde::Deserialize;
@@ -47,6 +51,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info};
 use url::Url;
+use web_time::Instant;
 
 #[cfg(target_arch = "wasm32")]
 const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -82,6 +87,18 @@ pub struct TrustedHttpContextProvider {
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
+
+    /// The latest refresh of the quorum lists, shared by clones so that misses
+    /// on any of them share it.
+    quorum_refreshes: Arc<QuorumRefreshes>,
+}
+
+/// The error a quorum key fetch reports when a refresh that could show the
+/// quorum is absent would start too soon after the latest one.
+fn refresh_rate_limited() -> ContextProviderError {
+    ContextProviderError::QuorumSourceUnavailable(format!(
+        "quorum lists were refreshed less than {MIN_GAP:?} ago"
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,6 +134,13 @@ impl TrustedHttpContextProvider {
             .fetch_cache_no_store();
 
         request
+    }
+
+    /// Build a GET request for one of the quorum lists. Proof verification
+    /// waits on these when it meets a quorum newer than the caches, so they
+    /// time out sooner than the client's other requests, on every target.
+    fn quorum_list_request(&self, url: &str) -> reqwest::RequestBuilder {
+        self.http_request(url).timeout(QUORUM_LIST_REQUEST_TIMEOUT)
     }
 
     /// Verify that a URL's domain resolves
@@ -243,6 +267,7 @@ impl TrustedHttpContextProvider {
             known_contracts: Arc::new(Mutex::new(HashMap::new())),
             known_token_configurations: Arc::new(Mutex::new(HashMap::new())),
             refetch_if_not_found: true,
+            quorum_refreshes: Arc::default(),
         })
     }
 
@@ -337,12 +362,12 @@ impl TrustedHttpContextProvider {
     ///
     /// Both endpoints are requested concurrently and both are awaited, so a
     /// failure from one does not prevent usable data from the other from
-    /// reaching the caches.
+    /// reaching the caches. A refresh always starts, and quorum key fetches
+    /// that come in while it runs wait for it instead of starting their own.
     pub async fn refresh_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
-        let (current, previous) =
-            futures::join!(self.fetch_current_quorums(), self.fetch_previous_quorums());
-        let current_error = current.err();
-        let previous_error = previous.err();
+        let fetched = self.quorum_refreshes.start(self.start_refresh()).await;
+        let current_error = fetched.current.as_ref().err();
+        let previous_error = fetched.previous.as_ref().err();
 
         match (current_error, previous_error) {
             (None, None) => Ok(()),
@@ -360,6 +385,118 @@ impl TrustedHttpContextProvider {
                     current_error, previous_error
                 )))
             }
+        }
+    }
+
+    /// A copy of this provider that shares its caches and HTTP client but not
+    /// its latest refresh. A published refresh runs on one of these: a refresh
+    /// holding the provider itself would be held by the provider, so an
+    /// abandoned refresh would keep the provider alive.
+    fn detached(&self) -> Self {
+        Self {
+            quorum_refreshes: Arc::default(),
+            ..self.clone()
+        }
+    }
+
+    /// A refresh of both quorum lists that does nothing until it is polled.
+    fn start_refresh(&self) -> BoxFuture<'static, FetchedQuorums> {
+        let source = self.detached();
+        contained(move || async move { source.fetch_quorum_lists().await }).boxed()
+    }
+
+    /// Fetch both quorum lists concurrently. The fetches fill the caches.
+    async fn fetch_quorum_lists(&self) -> FetchedQuorums {
+        let (current, previous) =
+            futures::join!(self.fetch_current_quorums(), self.fetch_previous_quorums());
+        FetchedQuorums {
+            current: current
+                .map(|response| response.data)
+                .map_err(|error| error.to_string()),
+            previous: previous
+                .map(|response| response.data.quorums)
+                .map_err(|error| error.to_string()),
+        }
+    }
+
+    /// The cached quorum with this hash, from either cache.
+    fn cached_quorum(&self, quorum_hash: &QuorumHash) -> Option<QuorumData> {
+        [&self.current_quorums_cache, &self.previous_quorums_cache]
+            .into_iter()
+            .find_map(|cache| {
+                cache
+                    .lock()
+                    .ok()
+                    .and_then(|mut cache| cache.get(quorum_hash).cloned())
+            })
+    }
+
+    /// The key of the quorum with this hash if `fetched` lists it. The quorum
+    /// is put back into its cache, so the verification that follows finds it
+    /// even if a long list pushed it out.
+    fn listed_key(
+        &self,
+        fetched: &FetchedQuorums,
+        quorum_hash: &QuorumHash,
+    ) -> Result<Option<[u8; 48]>, ContextProviderError> {
+        let Some((quorum, current)) = fetched.find(quorum_hash) else {
+            return Ok(None);
+        };
+        let key = Self::parse_quorum_public_key(&quorum.key)?;
+        let cache = if current {
+            &self.current_quorums_cache
+        } else {
+            &self.previous_quorums_cache
+        };
+        if let Ok(mut cache) = cache.lock() {
+            cache.put(*quorum_hash, quorum.clone());
+        }
+        Ok(Some(key))
+    }
+
+    /// See [`ContextProvider::fetch_quorum_public_key`]. `called` is when the
+    /// SDK asked, which is after the response naming the quorum arrived.
+    async fn fetch_missing_quorum_key(
+        &self,
+        quorum_hash: QuorumHash,
+        called: Instant,
+    ) -> Result<Option<[u8; 48]>, ContextProviderError> {
+        if let Some(quorum) = self.cached_quorum(&quorum_hash) {
+            return Self::parse_quorum_public_key(&quorum.key).map(Some);
+        }
+
+        let (refresh, started) = self
+            .quorum_refreshes
+            .refresh_for(None, || self.start_refresh())
+            .ok_or_else(refresh_rate_limited)?;
+        let mut fetched = refresh.await;
+        if let Some(key) = self.listed_key(&fetched, &quorum_hash)? {
+            return Ok(Some(key));
+        }
+
+        if started < called {
+            // The joined refresh started before this miss, so its lists may
+            // predate the quorum the response was signed with. Only a refresh
+            // that started after the miss can show the quorum is absent.
+            let (refresh, _) = self
+                .quorum_refreshes
+                .refresh_for(Some(called), || self.start_refresh())
+                .ok_or_else(refresh_rate_limited)?;
+            fetched = refresh.await;
+            if let Some(key) = self.listed_key(&fetched, &quorum_hash)? {
+                return Ok(Some(key));
+            }
+        }
+
+        match fetched.incomplete() {
+            None => {
+                debug!(
+                    quorum_hash = %hex::encode(quorum_hash),
+                    "quorum is in neither freshly fetched list"
+                );
+                Ok(None)
+            }
+            Some(reason) => Err(ContextProviderError::QuorumSourceUnavailable(reason)),
         }
     }
 
@@ -453,7 +590,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = match self.http_request(&url).send().await {
+        let response = match self.quorum_list_request(&url).send().await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::error!(error = ?e, url = %url, "HTTP request failed");
@@ -531,7 +668,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/previous", self.base_url);
         debug!("Fetching previous quorums from: {}", url);
 
-        let response = self.http_request(&url).send().await?;
+        let response = self.quorum_list_request(&url).send().await?;
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
@@ -769,6 +906,24 @@ impl ContextProvider for TrustedHttpContextProvider {
         Self::parse_quorum_public_key(&quorum.key)
     }
 
+    fn fetch_quorum_public_key(
+        &self,
+        _quorum_type: u32,
+        quorum_hash: QuorumHash,
+        _core_chain_locked_height: CoreBlockHeight,
+    ) -> Option<QuorumKeyFuture> {
+        // With refetching on, `get_quorum_public_key` has already fetched on
+        // this miss. It cannot on wasm32, where blocking is impossible.
+        if self.refetch_if_not_found && !cfg!(target_arch = "wasm32") {
+            return None;
+        }
+        let provider = self.clone();
+        let called = Instant::now();
+        Some(Box::pin(async move {
+            provider.fetch_missing_quorum_key(quorum_hash, called).await
+        }))
+    }
+
     fn get_data_contract(
         &self,
         id: &Identifier,
@@ -994,7 +1149,15 @@ mod tests {
     fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
         loop {
             match listener.accept() {
-                Ok((stream, _)) => return stream,
+                Ok((stream, _)) => {
+                    // On BSD-derived systems an accepted socket inherits the
+                    // listener's non-blocking mode, so reading the request
+                    // could otherwise fail before the client has written it.
+                    stream
+                        .set_nonblocking(false)
+                        .expect("make accepted quorum request blocking");
+                    return stream;
+                }
                 Err(error)
                     if error.kind() == std::io::ErrorKind::WouldBlock
                         && Instant::now() < deadline =>
@@ -1406,6 +1569,214 @@ mod tests {
             [0x67; 48]
         );
         server.join().expect("mock quorum server must finish");
+    }
+
+    /// Ask the provider for a quorum key it is missing, as the SDK does after
+    /// proof verification failed on it.
+    async fn fetch_missing(
+        provider: &TrustedHttpContextProvider,
+        quorum_hash: u8,
+    ) -> Result<Option<[u8; 48]>, ContextProviderError> {
+        provider
+            .fetch_quorum_public_key(6, [quorum_hash; 32], 1)
+            .expect("a provider that cannot refetch synchronously must fetch asynchronously")
+            .await
+    }
+
+    /// A provider built without synchronous refetching, as wasm builds it,
+    /// must still recover a key newer than its prefetch: otherwise every proof
+    /// signed by a quorum formed after the prefetch fails until the page
+    /// reloads.
+    #[tokio::test]
+    async fn should_fetch_a_quorum_key_newer_than_the_cache() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the quorum service lists the key"),
+            Some([0x41; 48])
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("the fetched key must serve the second verification"),
+            [0x41; 48]
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// Every request meets a new quorum at about the same time, and clones of
+    /// the provider serve them all. They must share one round trip to the
+    /// quorum service. The server answers exactly one pair of requests, so a
+    /// miss that started its own refresh would fail.
+    #[tokio::test]
+    async fn should_share_one_refresh_between_concurrent_misses() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+        let clone = provider.clone();
+
+        let misses = (0..8).map(|i| {
+            let provider = if i % 2 == 0 { &provider } else { &clone };
+            fetch_missing(provider, 0x11)
+        });
+        for result in futures::future::join_all(misses).await {
+            assert_eq!(
+                result.expect("every miss must get the key"),
+                Some([0x41; 48])
+            );
+        }
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// "Absent" is what gets a node banned, so the provider says it only when
+    /// both lists arrived and neither names the quorum.
+    #[tokio::test]
+    async fn should_report_a_quorum_absent_only_when_both_lists_lack_it() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, previous_response(0x12, 0x42)),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x99)
+                .await
+                .expect("both lists arrived"),
+            None
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// When a list fails, the provider cannot tell whether the quorum exists,
+    /// so it must not say "absent" and get an honest node banned for the
+    /// quorum service's outage. A key the arrived list does hold is still
+    /// returned.
+    #[tokio::test]
+    async fn should_not_report_a_quorum_absent_when_a_list_failed() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 500, "{}".to_string()),
+            ("/previous", 200, previous_response(0x22, 0x42)),
+        ]);
+        let provider = provider_for(base_url);
+
+        let (missing, listed) = futures::join!(
+            fetch_missing(&provider, 0x99),
+            fetch_missing(&provider, 0x22)
+        );
+        assert!(
+            matches!(
+                missing,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {missing:?}"
+        );
+        assert_eq!(
+            listed.expect("the arrived list holds the key"),
+            Some([0x42; 48])
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// The start-up prefetch and misses that arrive while it runs share one
+    /// round trip.
+    #[tokio::test]
+    async fn should_let_misses_join_an_explicit_refresh() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        let (refreshed, fetched) = futures::join!(
+            provider.refresh_quorum_caches(),
+            fetch_missing(&provider, 0x11)
+        );
+        refreshed.expect("explicit refresh must succeed");
+        assert_eq!(
+            fetched.expect("the miss must get the key"),
+            Some([0x41; 48])
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// "Absent" gets a node banned, so it may only come from lists fetched
+    /// after the response arrived. A refresh that started before the miss may
+    /// predate the quorum: the miss must not call the quorum absent on its
+    /// word, and once a new refresh may start, it must look again.
+    #[tokio::test]
+    async fn should_judge_a_quorum_absent_only_from_a_refresh_started_after_the_miss() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, current_response(0x99, 0x49)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("the first lists arrive");
+
+        let too_soon = fetch_missing(&provider, 0x99).await;
+        assert!(
+            matches!(
+                too_soon,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "an older refresh must not make the quorum absent, got {too_soon:?}"
+        );
+
+        provider.quorum_refreshes.age_latest(MIN_GAP);
+        assert_eq!(
+            fetch_missing(&provider, 0x99)
+                .await
+                .expect("a new refresh may start"),
+            Some([0x49; 48])
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// An explicit refresh is asked for because the caller wants lists as of
+    /// now, so it never reuses an earlier one.
+    #[tokio::test]
+    async fn should_always_start_an_explicit_refresh() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        for _ in 0..2 {
+            provider
+                .refresh_quorum_caches()
+                .await
+                .expect("each refresh fetches both lists");
+        }
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// With synchronous refetching on, `get_quorum_public_key` has already
+    /// fetched on the miss, so an asynchronous fetch would only repeat it.
+    #[test]
+    fn should_not_fetch_asynchronously_when_the_lookup_refetches() {
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .expect("construct trusted context provider");
+
+        assert!(provider.fetch_quorum_public_key(6, [0x11; 32], 1).is_none());
     }
 
     #[test]
