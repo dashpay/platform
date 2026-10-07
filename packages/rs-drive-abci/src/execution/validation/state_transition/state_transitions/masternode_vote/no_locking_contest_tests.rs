@@ -57,6 +57,8 @@ use std::sync::Arc;
 const NO_LOCKING_CONTRACT: &str =
     "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-no-locking.json";
 const NAME: &str = "quantum";
+/// A second name, for a contest running alongside the one for `NAME`.
+const OTHER_NAME: &str = "quasar";
 
 type IdentityInfo = (Identity, SimpleSigner, IdentityPublicKey);
 
@@ -126,20 +128,25 @@ fn windows(
 }
 
 fn vote_poll(contract: &DataContract) -> VotePoll {
+    vote_poll_for(contract, NAME)
+}
+
+fn vote_poll_for(contract: &DataContract, name: &str) -> VotePoll {
     VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
         contract_id: contract.id(),
         document_type_name: "domain".to_string(),
         index_name: "parentNameAndLabel".to_string(),
         index_values: vec![
             Value::Text("dash".to_string()),
-            Value::Text(convert_to_homograph_safe_chars(NAME)),
+            Value::Text(convert_to_homograph_safe_chars(name)),
         ],
     })
 }
 
-/// The serialized preorder and domain creations of one contender for `NAME`.
+/// The serialized preorder and domain creations of one contender for `name`.
 async fn contest_transitions(
     contract: &DataContract,
+    name: &str,
     (identity, signer, key): &IdentityInfo,
     salt_discriminator: u8,
     rng: &mut StdRng,
@@ -180,10 +187,10 @@ async fn contest_transitions(
         .expect("expected to set the document id");
     domain_document.set("parentDomainName", "dash".into());
     domain_document.set("normalizedParentDomainName", "dash".into());
-    domain_document.set("label", NAME.into());
+    domain_document.set("label", name.into());
     domain_document.set(
         "normalizedLabel",
-        convert_to_homograph_safe_chars(NAME).into(),
+        convert_to_homograph_safe_chars(name).into(),
     );
     domain_document.set("records.identity", domain_document.owner_id().into());
     domain_document.set("subdomainRules.allowSubdomains", false.into());
@@ -191,7 +198,7 @@ async fn contest_transitions(
     salt[31] = salt_discriminator;
     let mut salted_domain_buffer: Vec<u8> = vec![];
     salted_domain_buffer.extend(salt);
-    salted_domain_buffer.extend((convert_to_homograph_safe_chars(NAME) + ".dash").as_bytes());
+    salted_domain_buffer.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
     preorder_document.set("saltedDomainHash", hash_double(salted_domain_buffer).into());
     domain_document.set("preorderSalt", salt.into());
     let preorder_transition = BatchTransition::new_document_creation_transition_from_document(
@@ -278,8 +285,34 @@ async fn join(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> TimestampMillis {
+    join_contest_for(
+        platform,
+        contract,
+        NAME,
+        identity,
+        salt_discriminator,
+        time_ms,
+        rng,
+        platform_version,
+    )
+    .await
+}
+
+/// A contender joins the contest for `name`, as [`join`] does for `NAME`.
+#[allow(clippy::too_many_arguments)]
+async fn join_contest_for(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    name: &str,
+    identity: &IdentityInfo,
+    salt_discriminator: u8,
+    time_ms: TimestampMillis,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> TimestampMillis {
     let (preorder, domain) = contest_transitions(
         contract,
+        name,
         identity,
         salt_discriminator,
         rng,
@@ -689,6 +722,94 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         "plurality"
     );
     assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+}
+
+/// Two contests started in the same block share the end date of their join window. A second
+/// contender moving one of them keeps that end date for the other; it goes once the other moves.
+#[tokio::test]
+async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let (join_window, poll_duration) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let carol = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let dave = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let unique_id = |name| {
+        vote_poll_for(&contract, name)
+            .unique_id()
+            .expect("expected a vote poll id")
+    };
+
+    let start = join_contest_for(
+        &platform,
+        &contract,
+        NAME,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let other_start = join_contest_for(
+        &platform,
+        &contract,
+        OTHER_NAME,
+        &carol,
+        2,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(other_start, start, "both contests start in the same block");
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(
+            start + join_window,
+            BTreeSet::from([unique_id(NAME), unique_id(OTHER_NAME)]),
+        )])
+    );
+
+    join_contest_for(
+        &platform,
+        &contract,
+        NAME,
+        &bob,
+        3,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([
+            (start + join_window, BTreeSet::from([unique_id(OTHER_NAME)])),
+            (start + poll_duration, BTreeSet::from([unique_id(NAME)])),
+        ]),
+        "the join window's end date stays for the contest still under it"
+    );
+
+    join_contest_for(
+        &platform,
+        &contract,
+        OTHER_NAME,
+        &dave,
+        4,
+        start + 120_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(
+            start + poll_duration,
+            BTreeSet::from([unique_id(NAME), unique_id(OTHER_NAME)]),
+        )]),
+        "the join window's end date goes with its last contest"
+    );
 }
 
 #[tokio::test]
