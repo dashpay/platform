@@ -586,10 +586,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     // Under the registry guard on purpose — it mutates the manager's
     // runtime; see `platform_wallet_manager_spv_start`.
     //
-    // A stop that did not complete (the client stop ran over its budget, or
-    // the run loop survived the abort and was re-parked for a retry) is
-    // returned as an error: a start issued after it would find the parked
-    // run loop and spawn none.
+    // A stop that did not complete (teardown outlived the stop deadline and
+    // stays tracked for a retry, or it failed) is returned as an error: a
+    // start issued after it is refused until a later stop joins the teardown.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
         block_on_worker(async move { spv.stop().await })
@@ -651,6 +650,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
 }
 
 /// Clear all persisted SPV storage (headers, filters, state).
+///
+/// A running SPV client is stopped first and stays stopped; nothing is
+/// cleared, and an error is returned, when that stop does not complete.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
