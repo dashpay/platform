@@ -767,7 +767,7 @@ impl Drive {
                                 } else if let Some(group_state_transition_info) =
                                     token_transition.base().using_group_info()
                                 {
-                                    let (_root_hash, status, sum_power) =
+                                    let (signer_root_hash, status, sum_power) =
                                         Drive::verify_action_signer_and_total_power(
                                             proof,
                                             data_contract_id,
@@ -779,27 +779,39 @@ impl Drive {
                                             platform_version,
                                         )?;
 
-                                    let (root_hash, balance) =
-                                        Drive::verify_token_balance_for_identity_id(
-                                            proof,
-                                            token_id.into_buffer(),
-                                            owner_id.into_buffer(),
-                                            true,
-                                            platform_version,
-                                        )?;
-                                    if status == GroupActionStatus::ActionClosed
-                                        && balance.is_none()
-                                    {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
-                                    };
+                                    // Client proof interpretation is not used by block validation or
+                                    // execution. Group burns debit the proposer recorded in the
+                                    // action, so a co-signer's balance does not describe that burn.
+                                    if !group_state_transition_info.action_is_proposer {
+                                        Ok((
+                                            signer_root_hash,
+                                            VerifiedTokenGroupActionWithTokenBalance(
+                                                sum_power, status, None,
+                                            ),
+                                        ))
+                                    } else {
+                                        let (root_hash, balance) =
+                                            Drive::verify_token_balance_for_identity_id(
+                                                proof,
+                                                token_id.into_buffer(),
+                                                owner_id.into_buffer(),
+                                                true,
+                                                platform_version,
+                                            )?;
+                                        if status == GroupActionStatus::ActionClosed
+                                            && balance.is_none()
+                                        {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(
+                                                format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
+                                        };
 
-                                    Ok((
-                                        root_hash,
-                                        VerifiedTokenGroupActionWithTokenBalance(
-                                            sum_power, status, balance,
-                                        ),
-                                    ))
+                                        Ok((
+                                            root_hash,
+                                            VerifiedTokenGroupActionWithTokenBalance(
+                                                sum_power, status, balance,
+                                            ),
+                                        ))
+                                    }
                                 } else {
                                     {
                                         let (root_hash, Some(balance)) =
@@ -3610,6 +3622,9 @@ fn verify_contract_document_change_execution(
         )))),
     }
 }
+
+#[cfg(test)]
+mod group_burn_tests;
 
 #[cfg(test)]
 mod tests {

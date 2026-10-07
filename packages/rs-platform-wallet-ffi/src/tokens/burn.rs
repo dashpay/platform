@@ -4,6 +4,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dash_sdk::platform::tokens::transitions::BurnResult;
+use dpp::prelude::Identifier;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use super::balances_json::{single_token_balance_to_json_cstring, write_empty_balances_json};
@@ -15,16 +16,17 @@ use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
-/// Burn `amount` of token at `token_position` on `token_contract_id`,
-/// debiting the caller's balance.
+/// Burn `amount` of token at `token_position` on `token_contract_id`.
+/// A group co-signer authorizes the proposal without debiting its own balance.
 ///
 /// On success, `out_balances_json` is written with a heap-allocated C
 /// string holding a JSON object mapping the burning identity's base58
 /// id to its proof-verified remaining balance, encoded as a decimal
 /// **string** (u64 exceeds JSON's safe-integer range), e.g.
-/// `{"<ownerBase58>": "<remaining>"}`. History-tracking / group-action
-/// tokens carry no per-identity balance in the proof result, so an
-/// empty object `{}` is written. The caller owns the string and must
+/// `{"<ownerBase58>": "<remaining>"}`. A no-history group burn carries
+/// a balance only when the caller proposed the action.
+/// History results and co-signers carry no per-identity balance, so
+/// an empty object `{}` is written. The caller owns the string and must
 /// free it via
 /// [`platform_wallet_string_free`](crate::types::platform_wallet_string_free).
 /// On error nothing is written through `out_balances_json` (it is set
@@ -95,31 +97,71 @@ pub unsafe extern "C" fn platform_wallet_token_burn(
     let result = unwrap_option_or_return!(option);
     let burn_result = unwrap_result_or_return!(result);
 
-    // Map the proof-verified outcome to the balances JSON. The standard
-    // (non-history, non-group) burn carries the owner's remaining
-    // balance; a group-authorized burn carries the caller's remaining
-    // balance once the action CLOSES (Drive's proof verifier guarantees
-    // `Some` whenever the group action is closed — keyed by `id`, the
-    // burn caller the proof verifies the balance for). The document
-    // variants, and a group action still awaiting co-signatures
-    // (`balance == None`), have nothing to persist.
+    *out_balances_json = unwrap_result_or_return!(burn_result_to_balances_json(burn_result, &id));
+
+    PlatformWalletFFIResult::ok()
+}
+
+// A no-history group burn may carry the proposer's balance, including zero.
+// Co-signers carry no balance even after closure; history results also have
+// nothing to persist. An empty object leaves existing cached balances alone.
+fn burn_result_to_balances_json(
+    burn_result: BurnResult,
+    caller: &Identifier,
+) -> Result<*mut c_char, PlatformWalletFFIResult> {
     match burn_result {
         BurnResult::TokenBalance(owner, remaining) => {
-            let c_str =
-                unwrap_result_or_return!(single_token_balance_to_json_cstring(&owner, remaining));
-            *out_balances_json = c_str;
+            single_token_balance_to_json_cstring(&owner, remaining)
         }
         BurnResult::GroupActionWithBalance(_, _, Some(remaining)) => {
-            let c_str =
-                unwrap_result_or_return!(single_token_balance_to_json_cstring(&id, remaining));
-            *out_balances_json = c_str;
+            single_token_balance_to_json_cstring(caller, remaining)
         }
         BurnResult::HistoricalDocument(_)
         | BurnResult::GroupActionWithDocument(_, _)
-        | BurnResult::GroupActionWithBalance(_, _, None) => {
-            *out_balances_json = unwrap_result_or_return!(write_empty_balances_json());
-        }
+        | BurnResult::GroupActionWithBalance(_, _, None) => write_empty_balances_json(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::group::group_action_status::GroupActionStatus;
+    use dpp::platform_value::string_encoding::Encoding;
+    use std::ffi::CString;
+
+    #[test]
+    fn should_return_empty_balances_for_a_closed_group_burn_cosigner() {
+        let caller = Identifier::from([2; 32]);
+        let ptr = burn_result_to_balances_json(
+            BurnResult::GroupActionWithBalance(8, GroupActionStatus::ActionClosed, None),
+            &caller,
+        )
+        .expect("serialize closed co-signer result");
+        let json = unsafe { CString::from_raw(ptr) };
+        assert_eq!(json.to_str().expect("UTF-8 JSON"), "{}");
     }
 
-    PlatformWalletFFIResult::ok()
+    #[test]
+    fn should_return_proposer_group_burn_balance_including_zero() {
+        let caller = Identifier::from([1; 32]);
+        for balance in [7, 0] {
+            let ptr = burn_result_to_balances_json(
+                BurnResult::GroupActionWithBalance(
+                    3,
+                    GroupActionStatus::ActionClosed,
+                    Some(balance),
+                ),
+                &caller,
+            )
+            .expect("serialize proposer result");
+            let json = unsafe { CString::from_raw(ptr) };
+            let parsed: serde_json::Value =
+                serde_json::from_str(json.to_str().expect("UTF-8 JSON"))
+                    .expect("parse balance object");
+            assert_eq!(
+                parsed,
+                serde_json::json!({caller.to_string(Encoding::Base58): balance.to_string()})
+            );
+        }
+    }
 }
