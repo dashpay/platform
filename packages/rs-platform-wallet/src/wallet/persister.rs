@@ -56,11 +56,30 @@ impl Drop for TransientMissTally {
 pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
+    contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl WalletPersister {
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
-        Self { wallet_id, inner }
+        Self {
+            wallet_id,
+            inner,
+            contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
+
+    /// Keep contact-pool snapshots in reservation order across Core and
+    /// withdrawal sends, including a Core broadcast rejection's pool rollback.
+    ///
+    /// The gate is shared by clones of this handle, not by every handle for
+    /// the same `wallet_id`: each [`Self::new`] mints its own. Ordering holds
+    /// because the only lockers (the DashPay payment paths) run on the handle
+    /// `PlatformWallet::new` builds once per wallet. Any new writer of DashPay
+    /// external-account pool snapshots must lock through a clone of that
+    /// handle; a separately constructed one (such as the incoming-payment
+    /// hook's) would silently bypass the ordering.
+    pub(crate) async fn lock_contact_payments(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.contact_payment_gate.lock().await
     }
 
     pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
