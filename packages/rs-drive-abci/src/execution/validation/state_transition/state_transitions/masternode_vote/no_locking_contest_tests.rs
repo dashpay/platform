@@ -40,11 +40,14 @@ use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::paths::{
+    vote_end_date_queries_tree_path_vec,
     RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
     RESOURCE_STORED_INFO_KEY_U8_32,
 };
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::query::VotePollsByEndDateDriveQuery;
+use drive::grovedb::TreeType;
+use drive::util::common::encode::encode_u64;
 use drive::util::test_helpers::{setup_contract, vote_poll_end_dates};
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
@@ -132,15 +135,7 @@ fn vote_poll(contract: &DataContract) -> VotePoll {
 }
 
 fn vote_poll_for(contract: &DataContract, name: &str) -> VotePoll {
-    VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
-        contract_id: contract.id(),
-        document_type_name: "domain".to_string(),
-        index_name: "parentNameAndLabel".to_string(),
-        index_values: vec![
-            Value::Text("dash".to_string()),
-            Value::Text(convert_to_homograph_safe_chars(name)),
-        ],
-    })
+    VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(contract, name))
 }
 
 /// The serialized preorder and domain creations of one contender for `name`.
@@ -394,12 +389,22 @@ fn winner(
     contract: &DataContract,
     platform_version: &PlatformVersion,
 ) -> Option<Identifier> {
+    winner_for(platform, contract, NAME, platform_version)
+}
+
+/// The identity the finished contest for `name` was awarded to, if it finished.
+fn winner_for(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Option<Identifier> {
     let platform_state = platform.state.load();
     let (_, _, _, finished_vote_info) = get_vote_states(
         platform,
         &platform_state,
         contract,
-        NAME,
+        name,
         None,
         true,
         None,
@@ -627,7 +632,7 @@ async fn should_award_a_single_contender_when_the_join_window_closes() {
         winner(&platform, &contract, platform_version),
         Some(alice.0.id())
     );
-    assert!(end_dates(&platform, platform_version).is_empty());
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
 }
 
 #[tokio::test]
@@ -726,6 +731,7 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
 
 /// Two contests started in the same block share the end date of their join window. A second
 /// contender moving one of them keeps that end date for the other; it goes once the other moves.
+/// Both then end in the one block at the end of their vote window.
 #[tokio::test]
 async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
     let (mut platform, platform_version, contract, mut rng) = setup();
@@ -740,29 +746,24 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
             .expect("expected a vote poll id")
     };
 
-    let start = join_contest_for(
+    // Both preorders in one block, then both domains in the next, which starts both contests
+    let (alice_preorder, alice_domain) =
+        contest_transitions(&contract, NAME, &alice, 1, &mut rng, platform_version).await;
+    let (carol_preorder, carol_domain) =
+        contest_transitions(&contract, OTHER_NAME, &carol, 2, &mut rng, platform_version).await;
+    process_valid(
         &platform,
-        &contract,
-        NAME,
-        &alice,
-        1,
+        &[alice_preorder, carol_preorder],
         10_000,
-        &mut rng,
         platform_version,
-    )
-    .await;
-    let other_start = join_contest_for(
+    );
+    let start = 11_000;
+    process_valid(
         &platform,
-        &contract,
-        OTHER_NAME,
-        &carol,
-        2,
-        10_000,
-        &mut rng,
+        &[alice_domain, carol_domain],
+        start,
         platform_version,
-    )
-    .await;
-    assert_eq!(other_start, start, "both contests start in the same block");
+    );
     assert_eq!(
         vote_poll_end_dates(&platform.drive, platform_version),
         BTreeMap::from([(
@@ -810,6 +811,78 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
         )]),
         "the join window's end date goes with its last contest"
     );
+
+    // Nobody voted, so each contest goes to its earliest contender, both in this one block
+    end_polls_at(&platform, start + poll_duration, 10, platform_version);
+    assert_eq!(
+        winner_for(&platform, &contract, NAME, platform_version),
+        Some(alice.0.id())
+    );
+    assert_eq!(
+        winner_for(&platform, &contract, OTHER_NAME, platform_version),
+        Some(carol.0.id())
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+}
+
+/// End dates left with no contest under them take a slot each of the read of ended contests.
+/// As many of them as a block reads, due before a contest, would leave nothing to end in every
+/// block; the block removes them first and ends the contest behind them.
+#[tokio::test]
+async fn should_end_a_contest_behind_end_dates_left_empty() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let (join_window, _) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let maximum_vote_polls_to_process = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .maximum_vote_polls_to_process as TimestampMillis;
+    for empty_end_date in 1..=maximum_vote_polls_to_process {
+        platform
+            .drive
+            .grove_insert_empty_tree(
+                vote_end_date_queries_tree_path_vec().as_slice().into(),
+                encode_u64(empty_end_date).as_slice(),
+                TreeType::NormalTree,
+                None,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to insert an empty end date");
+    }
+    let mut end_dates_before = (1..=maximum_vote_polls_to_process)
+        .map(|empty_end_date| (empty_end_date, BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    end_dates_before.insert(
+        start + join_window,
+        BTreeSet::from([vote_poll(&contract)
+            .unique_id()
+            .expect("expected a vote poll id")]),
+    );
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        end_dates_before
+    );
+
+    end_polls_at(&platform, start + join_window, 10, platform_version);
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id()),
+        "the contest behind the empty end dates ends"
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
 }
 
 #[tokio::test]

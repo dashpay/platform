@@ -1,6 +1,8 @@
 use crate::drive::contract::paths::contract_root_path;
 use crate::drive::document::ContestWindows;
-use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
+use crate::drive::votes::paths::{
+    vote_contested_resource_end_date_queries_at_time_tree_path_vec, vote_root_path,
+};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -26,12 +28,6 @@ use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::collections::HashMap;
-
-/// Where the removal of a moved end-date entry stops climbing: it removes the entry (a key of
-/// `Votes / e / <time>`) and, once that is empty, the tree of its time (a key of `Votes / e`),
-/// but never `Votes / e` itself, the key of the one-element path `Votes`. An empty time tree
-/// left behind would take a slot of the per-block read of ended vote polls.
-const END_DATE_QUERIES_TREE_HEIGHT: u16 = 1;
 
 impl Drive {
     /// Gathers the operations to add a contested document to a contract.
@@ -234,11 +230,15 @@ impl Drive {
 
                 if join_end != vote_end && join_entry_exists {
                     // The join-window entry goes, and its time tree with it when it was
-                    // the only entry at that time
+                    // the only entry at that time: the climb stops at `Votes`, the path holding
+                    // the end-date queries, so it removes the entry (a key of
+                    // `Votes / e / <time>`) and an emptied time tree (a key of `Votes / e`),
+                    // never `Votes / e` itself. An empty time tree left behind would take a
+                    // slot of the per-block read of ended vote polls
                     self.batch_delete_up_tree_while_empty(
                         KeyInfoPath::from_known_owned_path(join_end_path),
                         unique_id.as_slice(),
-                        Some(END_DATE_QUERIES_TREE_HEIGHT),
+                        Some(vote_root_path().len() as u16),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                             is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                         },

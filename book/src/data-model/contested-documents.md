@@ -124,4 +124,5 @@ A block ends at most `maximum_vote_polls_to_process` contests (a drive-abci `eve
 value, two at protocol version 14), the earliest end date first, so contests due together may end
 over several blocks. The cleanup removes each ended contest's
 end-date entry, and removes an end date only once none of its contests remain under it; the rest
-end in the next blocks.
+end in the next blocks. Before that read, a block removes any end date among the first due that
+holds no contest, since each would take a place in the read and end nothing.
