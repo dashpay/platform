@@ -12,8 +12,7 @@ use crate::validation::ConsensusValidationResult;
 /// Same walk as v0, except a `$ref` whose target is not a map or array is not
 /// walked and `visited` is never cleared. Every ref target is therefore
 /// expanded at most once, so the walk is bounded by the schema size times its
-/// depth. For
-/// schemas without a scalar `$ref` target the result equals v0's.
+/// depth. For schemas without a scalar `$ref` target the result equals v0's.
 #[inline(always)]
 pub(super) fn validate_max_depth_v1(
     platform_value: &Value,

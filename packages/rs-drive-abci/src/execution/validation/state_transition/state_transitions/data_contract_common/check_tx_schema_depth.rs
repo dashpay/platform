@@ -24,14 +24,16 @@ pub(in crate::execution) fn validate_document_schemas_depth_for_check_tx(
     if !matches!(
         validation_mode,
         ValidationMode::CheckTx | ValidationMode::RecheckTx
-    ) || platform_version
+    ) {
+        return Ok(());
+    }
+    let depth_check_version = platform_version
         .dpp
         .contract_versions
         .document_type_versions
         .schema
-        .validate_max_depth
-        < 1
-    {
+        .validate_max_depth;
+    if depth_check_version < 1 {
         return Ok(());
     }
 
@@ -42,11 +44,9 @@ pub(in crate::execution) fn validate_document_schemas_depth_for_check_tx(
             schema_defs.clone(),
             platform_version,
         )?;
-        let mut result = validate_max_depth(&root_schema, platform_version)?;
-        if !result.is_valid() {
-            return Err(ProtocolError::ConsensusError(Box::new(
-                result.errors.remove(0),
-            )));
+        let result = validate_max_depth(&root_schema, platform_version)?;
+        if let Some(error) = result.errors.into_iter().next() {
+            return Err(ProtocolError::ConsensusError(Box::new(error)));
         }
     }
     Ok(())

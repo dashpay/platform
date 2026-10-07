@@ -133,7 +133,7 @@ async fn register_contract_with(
 /// A document type whose property `p` is a `$ref` to `d0`, where each `d<i>` below `levels` is an
 /// object with two members that both `$ref` `d<i+1>`: an acyclic `$defs` graph the non-validating
 /// parse would expand into 2^`levels` properties.
-fn register_ref_dag(levels: usize) -> impl FnOnce(&mut DataContractInSerializationFormat) {
+fn ref_dag_contract(levels: usize) -> impl FnOnce(&mut DataContractInSerializationFormat) {
     move |contract| {
         let mut defs = BTreeMap::new();
         for i in 0..levels {
@@ -175,7 +175,7 @@ fn register_ref_dag(levels: usize) -> impl FnOnce(&mut DataContractInSerializati
 #[tokio::test]
 async fn should_refuse_an_exponential_ref_dag_in_check_tx_as_the_block_does() {
     let outcome = register_contract_with(
-        register_ref_dag(40),
+        ref_dag_contract(40),
         PlatformVersion::latest().protocol_version,
         dash_to_credits!(1.0),
     )
