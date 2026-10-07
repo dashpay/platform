@@ -602,6 +602,13 @@ pub enum PlatformWalletFFIResultCode {
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
 
+    /// Maps `PlatformWalletError::SpvRestartRequired`: SPV teardown panicked
+    /// and may have left background work running that nothing can stop. Not
+    /// retryable: SPV start, stop and storage clear keep returning this until
+    /// the host process restarts. Contrast [`Self::ErrorShutdownIncomplete`]
+    /// (27), where teardown is still tracked and a repeated stop completes it.
+    ErrorSpvRestartRequired = 59,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1018,6 +1025,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // callback context alive and skip any paired persistence wipe.
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
+            PlatformWalletError::SpvRestartRequired(..) => {
+                PlatformWalletFFIResultCode::ErrorSpvRestartRequired
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -2140,6 +2150,30 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorContestedNameNotTradable as i32,
             40
+        );
+    }
+
+    /// Hosts tell "stop again" (27) from "restart the process" (59) by code
+    /// alone, so neither SPV teardown error may flatten to `ErrorUnknown`.
+    #[test]
+    fn spv_teardown_errors_keep_distinct_pinned_codes() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorSpvRestartRequired as i32,
+            59
+        );
+
+        let restart: PlatformWalletFFIResult =
+            PlatformWalletError::SpvRestartRequired("teardown task 1 panicked".into()).into();
+        assert_eq!(
+            restart.code,
+            PlatformWalletFFIResultCode::ErrorSpvRestartRequired
+        );
+
+        let retry: PlatformWalletFFIResult =
+            PlatformWalletError::ShutdownIncomplete("SPV teardown timed out".into()).into();
+        assert_eq!(
+            retry.code,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete
         );
     }
 

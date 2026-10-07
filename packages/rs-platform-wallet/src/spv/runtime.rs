@@ -163,10 +163,16 @@ impl SpvRuntime {
     /// Check that nothing is left to join. Takes the locked `shutdown` state:
     /// `task` only changes under that lock, so the answer cannot go stale.
     fn ensure_joined(&self, shutdown: &Shutdown) -> Result<(), PlatformWalletError> {
-        if !matches!(shutdown, Shutdown::Idle) {
-            return Err(PlatformWalletError::SpvError(
-                "SPV teardown is incomplete; stop SPV again before starting it".to_string(),
-            ));
+        match shutdown {
+            Shutdown::Idle => {}
+            Shutdown::Running(_) => {
+                return Err(PlatformWalletError::ShutdownIncomplete(
+                    "SPV teardown is still running; stop SPV again before starting it".to_string(),
+                ))
+            }
+            Shutdown::Failed(error) => {
+                return Err(PlatformWalletError::SpvRestartRequired(error.clone()))
+            }
         }
         let task = self.task_slot();
         if task.is_some() {
@@ -323,6 +329,13 @@ impl SpvRuntime {
     /// A timeout or cancelled caller leaves teardown tracked for the next stop.
     /// Restart stays blocked until a stop confirms completion. Client queries
     /// already in flight finish before teardown starts; this wait is unbounded.
+    ///
+    /// # Errors
+    ///
+    /// [`PlatformWalletError::ShutdownIncomplete`] when teardown outlives the
+    /// wait: stop again. [`PlatformWalletError::SpvRestartRequired`] when
+    /// teardown panicked: every later stop, start and storage clear returns
+    /// it too, until the process restarts.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         self.stop_with(|client| async move { client.stop().await })
             .await
@@ -369,18 +382,17 @@ impl SpvRuntime {
         if let Shutdown::Running(task) = shutdown {
             match tokio::time::timeout(SPV_STOP_TIMEOUT, task).await {
                 Ok(Ok(Ok(()))) => *shutdown = Shutdown::Idle,
-                Ok(result) => {
-                    *shutdown = Shutdown::Failed(format!("SPV teardown task failed: {result:?}"))
-                }
+                Ok(Ok(Err(error))) => *shutdown = Shutdown::Failed(format!("startup {error}")),
+                Ok(Err(error)) => *shutdown = Shutdown::Failed(format!("teardown {error}")),
                 Err(_) => {
-                    return Err(PlatformWalletError::SpvError(
+                    return Err(PlatformWalletError::ShutdownIncomplete(
                         "SPV teardown timed out; it is still tracked for a retry".to_string(),
                     ))
                 }
             }
         }
         match shutdown {
-            Shutdown::Failed(error) => Err(PlatformWalletError::SpvError(error.clone())),
+            Shutdown::Failed(error) => Err(PlatformWalletError::SpvRestartRequired(error.clone())),
             _ => Ok(()),
         }
     }
@@ -1053,6 +1065,16 @@ mod tests {
         );
     }
 
+    /// Teardown is still tracked: the host should stop again.
+    fn is_retryable(result: &Result<(), PlatformWalletError>) -> bool {
+        matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_)))
+    }
+
+    /// Teardown panicked: only a process restart recovers.
+    fn needs_restart(result: &Result<(), PlatformWalletError>) -> bool {
+        matches!(result, Err(PlatformWalletError::SpvRestartRequired(_)))
+    }
+
     async fn offline_runtime() -> (Arc<SpvRuntime>, tempfile::TempDir) {
         let storage = tempfile::tempdir().unwrap();
         let runtime = Arc::new(unstarted_runtime());
@@ -1080,10 +1102,17 @@ mod tests {
                 completed.store(true, std::sync::atomic::Ordering::SeqCst);
             })
             .await;
-        assert!(result.is_err(), "an incomplete upstream stop must time out");
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
         assert!(
-            runtime.stop().await.is_err(),
+            is_retryable(&result),
+            "an incomplete upstream stop must time out as retryable, got {result:?}"
+        );
+        assert!(is_retryable(&runtime.start(ClientConfig::default()).await));
+        assert!(
+            is_retryable(&runtime.clear_storage().await),
+            "storage must not be cleared under a pending upstream stop"
+        );
+        assert!(
+            is_retryable(&runtime.stop().await),
             "retry must not report clean while upstream stop is pending"
         );
         release
@@ -1282,12 +1311,12 @@ mod tests {
     async fn should_never_report_clean_after_a_startup_task_panics() {
         let runtime = unstarted_runtime();
         *runtime.task.lock().unwrap() = Some(tokio::spawn(async { panic!("mock startup panic") }));
-        assert!(runtime.stop().await.is_err());
+        assert!(needs_restart(&runtime.stop().await));
         assert!(
-            runtime.stop().await.is_err(),
+            needs_restart(&runtime.stop().await),
             "a join failure cannot be forgotten by a retry"
         );
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
     }
 
     #[tokio::test]
@@ -1317,12 +1346,14 @@ mod tests {
     #[tokio::test]
     async fn should_keep_teardown_panics_non_clean_on_every_retry() {
         let (runtime, _storage) = offline_runtime().await;
-        assert!(runtime
-            .stop_with(|_client| async { panic!("mock teardown panic") })
-            .await
-            .is_err());
-        assert!(runtime.stop().await.is_err());
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(needs_restart(
+            &runtime
+                .stop_with(|_client| async { panic!("mock teardown panic") })
+                .await
+        ));
+        assert!(needs_restart(&runtime.stop().await));
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
     }
 
     /// A panic under the `task` mutex must not make every later lifecycle

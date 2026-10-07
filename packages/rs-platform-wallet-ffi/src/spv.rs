@@ -579,6 +579,11 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
 }
 
 /// Stop the SPV client.
+///
+/// `ErrorShutdownIncomplete`: teardown outlived the stop wait and is still
+/// tracked; call stop again. `ErrorSpvRestartRequired`: teardown panicked;
+/// SPV start, stop and storage clear keep returning it until the host
+/// process restarts.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
@@ -586,9 +591,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     // Under the registry guard on purpose — it mutates the manager's
     // runtime; see `platform_wallet_manager_spv_start`.
     //
-    // A stop that did not complete (teardown outlived the stop deadline and
-    // stays tracked for a retry, or it failed) is returned as an error: a
-    // start issued after it is refused until a later stop joins the teardown.
+    // A stop that did not complete is returned as an error, and a start
+    // issued after it is refused: until a later stop joins the teardown when
+    // it outlived the deadline, for good when it panicked.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
         block_on_worker(async move { spv.stop().await })
@@ -652,7 +657,8 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_rescan_filters(
 /// Clear all persisted SPV storage (headers, filters, state).
 ///
 /// A running SPV client is stopped first and stays stopped; nothing is
-/// cleared, and an error is returned, when that stop does not complete.
+/// cleared, and that stop's error is returned (see
+/// [`platform_wallet_manager_spv_stop`]), when it does not complete.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_clear_storage(
     handle: Handle,
