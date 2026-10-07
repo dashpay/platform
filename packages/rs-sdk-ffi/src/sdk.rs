@@ -453,6 +453,12 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     }
 }
 
+/// Quorum and contract cache size of the trusted context provider.
+const TRUSTED_PROVIDER_CACHE_SIZE: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(100) {
+    Some(size) => size,
+    None => panic!("the cache size is not zero"),
+};
+
 /// Build the trusted context provider of [`dash_sdk_create_trusted`].
 ///
 /// The quorum lookup base URL is, in order: the caller's `quorum_url`
@@ -468,7 +474,7 @@ fn build_trusted_provider(
     network: Network,
     quorum_url: Option<String>,
 ) -> Result<rs_sdk_trusted_context_provider::TrustedHttpContextProvider, DashSDKError> {
-    let cache_size = std::num::NonZeroUsize::new(100).unwrap();
+    let cache_size = TRUSTED_PROVIDER_CACHE_SIZE;
     let provider = if let Some(quorum_url) = quorum_url {
         info!(
             quorum_url = %quorum_url,
