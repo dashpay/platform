@@ -230,13 +230,15 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Whether the SPV client is currently running.
+    /// Whether SPV sync is running or still starting. `false` once
+    /// background sync has stopped after a failure, until SPV is stopped
+    /// and started again.
     public func isSpvRunning() throws -> Bool {
         try ensureConfigured()
         return try Self.readIsSpvRunning(handle)
     }
 
-    /// The native read behind [`isSpvRunning()`] (a `try_read`, never parks).
+    /// The native read behind [`isSpvRunning()`]. Never parks.
     nonisolated static func readIsSpvRunning(_ handle: Handle) throws -> Bool {
         var running: Bool = false
         try platform_wallet_manager_spv_is_running(handle, &running).check()

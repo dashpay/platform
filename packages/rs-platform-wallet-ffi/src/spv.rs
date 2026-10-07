@@ -346,17 +346,16 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers_free(
 
 /// Whether SPV sync is running or still starting. `false` once background
 /// sync has stopped after a failure, although its client stays allocated
-/// until SPV stop.
+/// until SPV stop. Never blocks, so it is safe to call from an event
+/// callback.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     handle: Handle,
     out_running: *mut bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let spv = manager.spv_arc();
-        block_on_worker(async move { spv.is_running().await })
-    });
+    let option =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_running());
     *out_running = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
