@@ -548,11 +548,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     of the masternode vote) and always ends with a winner. Its end date is
 ///     the end of the join window until a second contender joins, when
 ///     `add_contested_document_for_contract_operations` 1 moves it to the full
-///     poll duration, so a contest with a single contender is awarded without
-///     the vote window. `check_for_ended_vote_polls` 1 awards a tie to the
+///     poll duration, removing the join window's end date when no other contest
+///     ends then, so a contest with a single contender is awarded without the
+///     vote window. `check_for_ended_vote_polls` 1 awards a tie to the
 ///     **earliest** contender (creation time, block height, core height,
 ///     document id) for every resolution, where the shipped rule awarded the
 ///     latest; DPNS contests ending from this version on follow the new rule.
+///     Before reading the contests due, it removes any end date left with no
+///     contest among the first `maximum_vote_polls_to_process` due, since each
+///     would take a slot of that read and end nothing.
 ///
 /// 24. **Contract references may require elected moderation, a minimum age, a
 ///     minimum time since the last update, an owner relation to the writer or
