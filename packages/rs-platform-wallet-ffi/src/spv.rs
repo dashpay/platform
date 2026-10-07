@@ -344,15 +344,19 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers_free(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
-/// Whether the SPV client is currently running.
+/// Whether SPV sync is running or still starting. `false` once background
+/// sync has stopped after a failure, although its client stays allocated
+/// until SPV stop.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     handle: Handle,
     out_running: *mut bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
-    let option =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_started());
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        let spv = manager.spv_arc();
+        block_on_worker(async move { spv.is_running().await })
+    });
     *out_running = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }

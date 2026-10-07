@@ -812,9 +812,8 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
-    /// SPV startup or teardown panicked, so upstream background work (storage
-    /// writer, network, sync tasks) may still be running with nothing left
-    /// to stop it. No retry helps: this runtime refuses SPV stop, start and
+    /// SPV startup or teardown panicked, so upstream background work (network
+    /// and sync tasks) may still be running with nothing left to stop it. No retry helps: this runtime refuses SPV stop, start and
     /// storage clear, and every runtime in the process refuses to start SPV
     /// on the same storage directory, until the process restarts.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
