@@ -658,3 +658,42 @@ mod tests {
         server.join().expect("the endpoint served both refreshes");
     }
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// In the browser the quorum lists are fetched with `fetch`, and the wait
+    /// between two refreshes is a browser timer; neither is `Send`, so both
+    /// run on the local executor and only their results reach the SDK's
+    /// future. A miss right after a failed refresh waits out the gap, asks
+    /// again, and reports the unreachable quorum service.
+    #[wasm_bindgen_test]
+    async fn should_fetch_through_the_browser_and_wait_out_the_gap() {
+        let context =
+            WasmTrustedContext::for_testing_with_url(Vec::new(), "http://127.0.0.1:1".to_string());
+        assert!(
+            context.refresh_quorums().await.is_err(),
+            "nothing listens on the quorum URL"
+        );
+
+        let started = js_sys::Date::now();
+        let result = context
+            .fetch_quorum_public_key(6, [0x11; 32], 1)
+            .expect("the trusted context fetches keys")
+            .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {result:?}"
+        );
+        assert!(
+            js_sys::Date::now() - started >= 900.0,
+            "the miss waited for a refresh newer than itself"
+        );
+    }
+}
