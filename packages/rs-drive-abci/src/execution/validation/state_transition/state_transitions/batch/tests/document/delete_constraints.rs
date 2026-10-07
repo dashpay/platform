@@ -5,7 +5,10 @@
 //! stored property), and may be edited only before its first vote
 //! (`editableBeforeTheFirstVote`, the same total in `propertyConstraints`). An
 //! `address` keeps at least one per owner (`keepsOne`, a `countOf` of its own
-//! type, which the deleted document no longer counts toward).
+//! type, which the deleted document no longer counts toward), and a `pledge` keeps
+//! its owner's total at 6 or more (`keepsSix`, the same with a `sumOf`). The totals a
+//! rule reads are billed, accepted or refused: two one-type fixture contracts differ only
+//! in whether the rule reads a count.
 //!
 //! A delete that breaks a rule is refused with `DocumentDeleteConstraintViolatedError`
 //! (40147), a paid state error, and the document stays.
@@ -24,6 +27,13 @@ mod delete_constraints_tests {
 
     const CONTRACT_PATH: &str =
         "tests/supporting_files/contract/delete-constraints/delete-constraints-contract.json";
+
+    /// One `entry` type whose delete rule reads a count, and the same type whose rule
+    /// reads only the stored document.
+    const COUNTED_BILLING_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/delete-constraints/delete-constraints-billing-counted.json";
+    const PLAIN_BILLING_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/delete-constraints/delete-constraints-billing-plain.json";
 
     fn identifier_value(id: Identifier) -> Value {
         Value::Identifier(id.to_buffer())
@@ -71,6 +81,33 @@ mod delete_constraints_tests {
             let (poll, result) = self.create("poll", &all).await;
             assert_successful(&result, "the poll is created");
             poll
+        }
+
+        /// Creates a `type_name` document at `level` and returns the processing fee
+        /// its delete pays: accepted at level 0, refused with 40147 at any other.
+        async fn delete_fee(&mut self, type_name: &str, level: u64) -> u64 {
+            let (document, result) = self
+                .create(type_name, &[("level", Value::U64(level))])
+                .await;
+            assert_successful(&result, "the document is created");
+            let result = self.delete(type_name, &document).await;
+            match (result.execution_results().as_slice(), level) {
+                ([StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }], 0) => {
+                    fee_result.processing_fee
+                }
+                (
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error:
+                            ConsensusError::StateError(
+                                StateError::DocumentDeleteConstraintViolatedError(_),
+                            ),
+                        actual_fees,
+                        ..
+                    }],
+                    _,
+                ) if level != 0 => actual_fees.processing_fee,
+                (other, _) => panic!("unexpected outcome at level {level}: {other:?}"),
+            }
         }
 
         async fn vote(&mut self, poll: &Document, choice: u64) -> Document {
@@ -235,6 +272,66 @@ mod delete_constraints_tests {
             "address",
             "keepsOne",
             "the last address is not deleted",
+        );
+    }
+
+    /// A `sumOf` of the type's own documents is read as it will be once the deleted
+    /// document is gone: with pledges of 4 and 6 the 4 may go, leaving 6, and then the
+    /// 6 may not, which would leave nothing.
+    #[tokio::test]
+    async fn should_sum_own_type_totals_without_the_deleted_document() {
+        let mut setup = Setup::new(CONTRACT_PATH, 8405);
+        let (four, result) = setup.create("pledge", &[("amount", Value::U64(4))]).await;
+        assert_successful(&result, "the pledge of 4 is created");
+        let (six, result) = setup.create("pledge", &[("amount", Value::U64(6))]).await;
+        assert_successful(&result, "the pledge of 6 is created");
+
+        let result = setup.delete("pledge", &four).await;
+        assert_successful(&result, "deleting the 4 leaves 6");
+
+        let result = setup.delete("pledge", &six).await;
+        assert_delete_refused_by(
+            &result,
+            six.id(),
+            "pledge",
+            "keepsSix",
+            "deleting the 6 would leave nothing",
+        );
+        // The refused delete left the pledge in place: it is deleted, and refused the
+        // same way, again
+        let result = setup.delete("pledge", &six).await;
+        assert_delete_refused_by(
+            &result,
+            six.id(),
+            "pledge",
+            "keepsSix",
+            "the 6 is still there",
+        );
+    }
+
+    /// The totals a delete rule reads are billed, on an accepted delete and on a refused
+    /// one. The two fixture contracts hold one `entry` type each, alike but for its delete
+    /// rule, which reads a count in one and the stored document alone in the other. The
+    /// same writes run on both from the same seed, so the documents carry the same ids and
+    /// sit in trees of the same shape: each delete of the counted type costs more, by the
+    /// same read whether the delete is accepted or refused.
+    #[tokio::test]
+    async fn should_bill_the_totals_a_delete_rule_reads() {
+        let mut counted = Setup::new(COUNTED_BILLING_CONTRACT_PATH, 8406);
+        let mut plain = Setup::new(PLAIN_BILLING_CONTRACT_PATH, 8406);
+
+        let accepted_read = counted.delete_fee("entry", 0).await as i128
+            - plain.delete_fee("entry", 0).await as i128;
+        assert!(
+            accepted_read > 0,
+            "an accepted delete pays for the count its rule reads, got {accepted_read}"
+        );
+
+        let refused_read = counted.delete_fee("entry", 1).await as i128
+            - plain.delete_fee("entry", 1).await as i128;
+        assert_eq!(
+            refused_read, accepted_read,
+            "a refused delete pays for the same read"
         );
     }
 }

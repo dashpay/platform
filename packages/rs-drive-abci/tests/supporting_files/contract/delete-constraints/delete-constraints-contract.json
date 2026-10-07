@@ -96,6 +96,33 @@
         }
       },
       "additionalProperties": false
+    },
+    "pledge": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "position": 0
+        }
+      },
+      "required": ["amount"],
+      "indices": [
+        {
+          "name": "byOwner",
+          "properties": [{ "$ownerId": "asc" }],
+          "summable": "amount"
+        }
+      ],
+      "deleteConstraints": {
+        "keepsSix": {
+          "greaterThanOrEqual": [{ "sumOf": ["pledge", "amount", { "$ownerId": "$ownerId" }] }, 6]
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
