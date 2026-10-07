@@ -246,12 +246,22 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             Generic(msg) => Self::new(WasmSdkErrorKind::Generic, msg, None, retriable),
-            ContextProviderError(e) => Self::new(
-                WasmSdkErrorKind::ContextProviderError,
-                e.to_string(),
-                None,
-                retriable,
-            ),
+            ContextProviderError(e) => {
+                // A quorum source that gave no answer bans no node, so the
+                // SDK does not count it as retryable, but it is transient:
+                // the app should try again.
+                let retriable = retriable
+                    || matches!(
+                        e,
+                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_)
+                    );
+                Self::new(
+                    WasmSdkErrorKind::ContextProviderError,
+                    e.to_string(),
+                    None,
+                    retriable,
+                )
+            }
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
@@ -442,6 +452,20 @@ mod tests {
         let status =
             Status::with_metadata(Code::InvalidArgument, consensus_error.to_string(), metadata);
         SdkError::from(DapiClientError::Transport(TransportError::Grpc(status)))
+    }
+
+    /// The quorum service that vouches for quorum keys gave no answer. No node
+    /// is banned for that, but the app should try again: it is transient.
+    #[test]
+    fn should_report_an_unavailable_quorum_source_as_retriable() {
+        let error = WasmSdkError::from(SdkError::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                "current quorums: HTTP 503".to_string(),
+            ),
+        ));
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
+        assert!(error.is_retriable());
     }
 
     #[test]

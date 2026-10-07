@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dash_sdk::dpp::dashcore::Network;
-use dash_sdk::platform::ContextProvider;
+use dash_sdk::platform::{ContextProvider, QuorumKeyFuture};
 use dash_sdk::{
     dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
@@ -93,6 +93,19 @@ impl ContextProvider for WasmTrustedContext {
         // Delegate to the inner provider
         self.inner
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        // The prefetched keys are never refetched inside the synchronous
+        // lookup, where wasm cannot block; this is how a newer quorum's key
+        // is fetched.
+        self.inner
+            .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_data_contract(
@@ -487,7 +500,15 @@ mod tests {
     fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
         loop {
             match listener.accept() {
-                Ok((stream, _)) => return stream,
+                Ok((stream, _)) => {
+                    // On BSD-derived systems an accepted socket inherits the
+                    // listener's non-blocking mode, so reading the request
+                    // could otherwise fail before the client has written it.
+                    stream
+                        .set_nonblocking(false)
+                        .expect("make accepted quorum request blocking");
+                    return stream;
+                }
                 Err(error)
                     if error.kind() == std::io::ErrorKind::WouldBlock
                         && Instant::now() < deadline =>
@@ -597,5 +618,43 @@ mod tests {
         server
             .join()
             .expect("all three requests must have been in flight together");
+    }
+
+    /// A browser app keeps its SDK for the whole session, but the context
+    /// fetched its quorum keys when it connected. Through the SDK it builds, a
+    /// quorum newer than that prefetch must be fetchable, or every proof it
+    /// signs fails until the page reloads.
+    #[tokio::test]
+    async fn should_fetch_a_quorum_newer_than_the_prefetch_through_the_sdk() {
+        let (base_url, server) = spawn_endpoint(
+            vec![
+                ("/quorums", quorums_body(0x11, 0x41)),
+                ("/previous", previous_body(0x12, 0x42)),
+                ("/quorums", quorums_body(0x13, 0x43)),
+                ("/previous", previous_body(0x12, 0x42)),
+            ],
+            false,
+        );
+        let context =
+            WasmTrustedContext::prefetch_for(Network::Regtest, None, Some(base_url), Some(false))
+                .await
+                .expect("prefetch");
+        let sdk = crate::sdk::WasmSdkBuilder::new_local()
+            .with_trusted_context(&context)
+            .build()
+            .expect("build");
+        let provider = sdk
+            .inner_sdk()
+            .context_provider()
+            .expect("the trusted context is the SDK's provider");
+
+        let key = provider
+            .fetch_quorum_public_key(6, [0x13; 32], 1)
+            .expect("the trusted context must fetch keys newer than its prefetch")
+            .await
+            .expect("the quorum service answered");
+
+        assert_eq!(key, Some([0x43; 48]));
+        server.join().expect("the endpoint served both refreshes");
     }
 }
