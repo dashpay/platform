@@ -120,7 +120,7 @@ and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 rows below); 49–54 proposed by active #4586 (the persister
 operation × kind block); 55–57 proposed by #4715 for pending identity-funded
 shield debits and durable recovery errors; 58 proposed by #4799 for an unavailable
-identity balance response; 59 proposed by the #5311 follow-up for an SPV
+identity balance response; 59 proposed by #5322 for an SPV
 teardown that needs a process restart; 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
@@ -173,7 +173,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 56 | `ErrorShieldedRecoveryCorrupted` | #4715 | Proposed — durable shielded recovery data is malformed or invalid; preserved for diagnosis. Rust, Swift and Kotlin preserve this typed error |
 | 57 | `ErrorShieldedRecoveryKeysRequired` | #4715 | Proposed — recovery needs the account and compatible keys; ciphertext damage can produce the same symptom. Rust, Swift and Kotlin preserve this typed error |
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
-| 59 | `ErrorSpvRestartRequired` | #5311 follow-up | Proposed — claimed from the frontier. SPV teardown panicked and may have left upstream background work running; SPV start, stop and storage clear keep returning it until the host process restarts. Not retryable, unlike 27 (`ErrorShutdownIncomplete`), which SPV stop now returns while teardown is still tracked. Rust value + pin test and the Swift raw case, `init(ffi:)` arm and typed case; Kotlin falls through to `Generic(59, …)` |
+| 59 | `ErrorSpvRestartRequired` | #5322 | Proposed — claimed from the frontier. SPV teardown panicked and may have left upstream background work running; SPV start, stop and storage clear keep returning it until the host process restarts. Not retryable, unlike 27 (`ErrorShutdownIncomplete`), which SPV stop now returns while teardown is still tracked. Rust value + pin test and the Swift raw case, `init(ffi:)` arm and typed case; Kotlin falls through to `Generic(59, …)` |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
