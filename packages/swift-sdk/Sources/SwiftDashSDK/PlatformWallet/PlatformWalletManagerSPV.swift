@@ -276,6 +276,11 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopSpv()`] is still
     /// tearing the previous client down: the main actor is free during that
     /// stop, so a start issued meanwhile would otherwise race it.
+    ///
+    /// Throws `shutdownIncomplete` while an earlier SPV startup or teardown
+    /// is still unjoined (call [`stopSpv()`] first) and
+    /// `spvProcessRestartRequired` after SPV startup or teardown panicked
+    /// (restart the app).
     public func startSpv(config: PlatformSpvStartConfig) throws {
         try ensureNoSpvStopInFlight(before: "starting SPV")
         // Peer array: allocate contiguous C strings.
@@ -315,6 +320,11 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// that stop is already tearing the client down, and this blocking one
     /// would wait on the same teardown on the calling thread.
+    ///
+    /// Throws `shutdownIncomplete` when teardown outlives the 15 s wait — it
+    /// continues in the background, so stop again, a bounded number of times
+    /// — and `spvProcessRestartRequired` after SPV startup or teardown
+    /// panicked (restart the app).
     public func stopSpv() throws {
         try ensureNoSpvStopInFlight(before: "a blocking stopSpv()")
         try platform_wallet_manager_spv_stop(handle).check()
@@ -325,12 +335,11 @@ extension PlatformWalletManager {
     /// overload resolution prefers this variant; sync contexts keep the sync
     /// one.
     ///
-    /// The native stop waits for the SPV run loop to finish its current sync
-    /// tick and drain its tasks — up to 15 s for the client stop and 15 s for
-    /// the run-loop join plus a 2 s abort grace, about 32 s in all — so on the
-    /// main actor the blocking variant freezes the UI for that long. It first
-    /// waits for an SPV broadcast still waiting for acceptance, which can add
-    /// that broadcast's timeout.
+    /// The native stop waits up to 15 s for SPV startup and teardown to
+    /// finish, and teardown continues in the background past that wait, so on
+    /// the main actor the blocking variant freezes the UI for that long. It
+    /// first waits for an SPV broadcast still waiting for acceptance, which
+    /// can add that broadcast's timeout. Throws as the blocking variant does.
     ///
     /// Admitted like the other async native entry points: [`shutdown()`]
     /// waits for an in-flight stop before destroying the handle, and a stop
@@ -363,6 +372,10 @@ extension PlatformWalletManager {
     }
 
     /// Clear all persisted SPV storage (headers, filters, state).
+    ///
+    /// A running client is stopped first and stays stopped; when that stop
+    /// does not complete, nothing is cleared and this throws as [`stopSpv()`]
+    /// does.
     ///
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// the stopping client can still hold and write the same data directory.

@@ -1,6 +1,8 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
+use std::collections::BTreeMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -33,6 +35,17 @@ const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How often readiness is rechecked for a client with connected peers.
 const SPV_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Storage directories whose SPV startup or teardown panicked in this
+/// process, with the failure detail. Upstream work may still be writing
+/// there, so no runtime reopens one before the process restarts.
+static ORPHANED_STORAGE: Mutex<BTreeMap<PathBuf, String>> = Mutex::new(BTreeMap::new());
+
+fn orphaned_storage() -> MutexGuard<'static, BTreeMap<PathBuf, String>> {
+    ORPHANED_STORAGE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 #[derive(Default)]
 enum Shutdown {
@@ -100,6 +113,13 @@ impl SpvRuntime {
     }
 
     /// Start SPV sync.
+    ///
+    /// # Errors
+    ///
+    /// [`PlatformWalletError::ShutdownIncomplete`] while earlier startup or
+    /// teardown is unjoined: stop first.
+    /// [`PlatformWalletError::SpvProcessRestartRequired`] after either
+    /// panicked on this runtime or on `config`'s storage directory.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
@@ -114,6 +134,10 @@ impl SpvRuntime {
             }
         }
         self.ensure_joined(&shutdown)?;
+        let orphaned = orphaned_storage().get(&config.storage_path).cloned();
+        if let Some(detail) = orphaned {
+            return Err(PlatformWalletError::SpvProcessRestartRequired(detail));
+        }
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
@@ -142,15 +166,19 @@ impl SpvRuntime {
         .await
         .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        let mut client = self.client.write().await;
-        *client = Some(spv_client);
+        // Config first: a client must never be retained without its storage
+        // location, which teardown and storage clearing act on.
         *self.last_config.write().await = Some(retained_config);
+        *self.client.write().await = Some(spv_client);
 
         Ok(())
     }
 
     /// Refuse restart until all previous startup and shutdown work is joined.
     fn ensure_no_live_run_loop(&self) -> Result<(), PlatformWalletError> {
+        // Untyped on purpose: contention cannot tell a start still building
+        // its client from a stop still joining, and the two call for
+        // different host actions.
         let shutdown = self.shutdown.try_lock().map_err(|_| {
             PlatformWalletError::SpvError(
                 "an SPV start or stop is still in progress; wait for it before starting SPV"
@@ -171,12 +199,14 @@ impl SpvRuntime {
                 ))
             }
             Shutdown::Failed(error) => {
-                return Err(PlatformWalletError::SpvRestartRequired(error.clone()))
+                return Err(PlatformWalletError::SpvProcessRestartRequired(
+                    error.clone(),
+                ))
             }
         }
         let task = self.task_slot();
         if task.is_some() {
-            return Err(PlatformWalletError::SpvError(
+            return Err(PlatformWalletError::ShutdownIncomplete(
                 "SPV startup has not been joined; stop SPV before restarting it".to_string(),
             ));
         }
@@ -333,7 +363,9 @@ impl SpvRuntime {
     /// # Errors
     ///
     /// [`PlatformWalletError::ShutdownIncomplete`] when teardown outlives the
-    /// wait: stop again. [`PlatformWalletError::SpvRestartRequired`] when
+    /// wait: stop again, a bounded number of times, since a teardown that
+    /// never finishes keeps returning it.
+    /// [`PlatformWalletError::SpvProcessRestartRequired`] when startup or
     /// teardown panicked: every later stop, start and storage clear returns
     /// it too, until the process restarts.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
@@ -360,6 +392,15 @@ impl SpvRuntime {
         F: FnOnce(SpvClient) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        // Read up front: nothing may await between joining the teardown task
+        // and recording its outcome, or a cancelled caller would lose it.
+        let storage = self
+            .last_config
+            .read()
+            .await
+            .as_ref()
+            .map(|config| config.storage_path.clone());
+
         if matches!(*shutdown, Shutdown::Idle) {
             let client = self.client.write().await.take();
             let startup = self.task_slot().take();
@@ -382,8 +423,8 @@ impl SpvRuntime {
         if let Shutdown::Running(task) = shutdown {
             match tokio::time::timeout(SPV_STOP_TIMEOUT, task).await {
                 Ok(Ok(Ok(()))) => *shutdown = Shutdown::Idle,
-                Ok(Ok(Err(error))) => *shutdown = Shutdown::Failed(format!("startup {error}")),
-                Ok(Err(error)) => *shutdown = Shutdown::Failed(format!("teardown {error}")),
+                Ok(Ok(Err(error))) => *shutdown = Self::failed(storage, format!("startup {error}")),
+                Ok(Err(error)) => *shutdown = Self::failed(storage, format!("teardown {error}")),
                 Err(_) => {
                     return Err(PlatformWalletError::ShutdownIncomplete(
                         "SPV teardown timed out; it is still tracked for a retry".to_string(),
@@ -392,9 +433,21 @@ impl SpvRuntime {
             }
         }
         match shutdown {
-            Shutdown::Failed(error) => Err(PlatformWalletError::SpvRestartRequired(error.clone())),
+            Shutdown::Failed(error) => Err(PlatformWalletError::SpvProcessRestartRequired(
+                error.clone(),
+            )),
             _ => Ok(()),
         }
+    }
+
+    /// Record a panicked startup or teardown: this runtime stays refused, and
+    /// so does its storage directory for every runtime in the process.
+    fn failed(storage: Option<PathBuf>, detail: String) -> Shutdown {
+        tracing::error!(%detail, "SPV startup or teardown panicked; a process restart is required");
+        if let Some(path) = storage {
+            orphaned_storage().insert(path, detail.clone());
+        }
+        Shutdown::Failed(detail)
     }
 
     /// Start upstream background sync on the current Tokio runtime.
@@ -861,8 +914,8 @@ mod tests {
         let result = runtime.start(ClientConfig::default()).await;
 
         assert!(
-            matches!(result, Err(PlatformWalletError::SpvError(_))),
-            "a start over a live parked run loop must fail, got {result:?}"
+            is_retryable(&result),
+            "a start over a live parked run loop must ask for a stop, got {result:?}"
         );
         assert!(!runtime.is_started(), "no client may be started");
         assert!(
@@ -1070,9 +1123,20 @@ mod tests {
         matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_)))
     }
 
-    /// Teardown panicked: only a process restart recovers.
+    /// Startup or teardown panicked: only a process restart recovers.
     fn needs_restart(result: &Result<(), PlatformWalletError>) -> bool {
-        matches!(result, Err(PlatformWalletError::SpvRestartRequired(_)))
+        matches!(
+            result,
+            Err(PlatformWalletError::SpvProcessRestartRequired(_))
+        )
+    }
+
+    /// The detail of a restart-required error, naming the task that panicked.
+    fn restart_detail(result: &Result<(), PlatformWalletError>) -> &str {
+        match result {
+            Err(PlatformWalletError::SpvProcessRestartRequired(detail)) => detail,
+            other => panic!("expected a restart-required error, got {other:?}"),
+        }
     }
 
     async fn offline_runtime() -> (Arc<SpvRuntime>, tempfile::TempDir) {
@@ -1296,8 +1360,8 @@ mod tests {
 
         assert!(!runtime.is_started(), "failed startup must drop its client");
         assert!(
-            runtime.start(config()).await.is_err(),
-            "an unjoined startup must block restart"
+            is_retryable(&runtime.start(config()).await),
+            "an unjoined startup must block restart until a stop joins it"
         );
         runtime.stop().await.unwrap();
         runtime
@@ -1309,14 +1373,20 @@ mod tests {
 
     #[tokio::test]
     async fn should_never_report_clean_after_a_startup_task_panics() {
-        let runtime = unstarted_runtime();
+        let runtime = Arc::new(unstarted_runtime());
         *runtime.task.lock().unwrap() = Some(tokio::spawn(async { panic!("mock startup panic") }));
-        assert!(needs_restart(&runtime.stop().await));
+        assert!(restart_detail(&runtime.stop().await).contains("startup task"));
         assert!(
             needs_restart(&runtime.stop().await),
             "a join failure cannot be forgotten by a retry"
         );
         assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
+        runtime.spawn_run_loop();
+        assert!(
+            runtime.task.lock().unwrap().is_none(),
+            "no run loop may be spawned over a panicked startup"
+        );
     }
 
     #[tokio::test]
@@ -1346,14 +1416,45 @@ mod tests {
     #[tokio::test]
     async fn should_keep_teardown_panics_non_clean_on_every_retry() {
         let (runtime, _storage) = offline_runtime().await;
+        let failed = runtime
+            .stop_with(|_client| async { panic!("mock teardown panic") })
+            .await;
+        assert!(restart_detail(&failed).contains("teardown task"));
+        assert!(needs_restart(&runtime.stop().await));
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
+    }
+
+    /// Upstream work orphaned by the panic outlives the runtime, so a fresh
+    /// one (a recreated manager) must not reopen the same storage directory.
+    #[tokio::test]
+    async fn should_refuse_the_storage_of_a_panicked_teardown_from_a_new_runtime() {
+        let (runtime, storage) = offline_runtime().await;
+        let config = |path: &std::path::Path| {
+            ClientConfig::testnet()
+                .with_storage_path(path)
+                .with_restrict_to_configured_peers(true)
+        };
         assert!(needs_restart(
             &runtime
                 .stop_with(|_client| async { panic!("mock teardown panic") })
                 .await
         ));
-        assert!(needs_restart(&runtime.stop().await));
-        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
-        assert!(needs_restart(&runtime.clear_storage().await));
+
+        let replacement = unstarted_runtime();
+        assert!(
+            restart_detail(&replacement.start(config(storage.path())).await)
+                .contains("teardown task"),
+            "the refusal must name the original failure"
+        );
+        assert!(!replacement.is_started());
+
+        let unrelated = tempfile::tempdir().unwrap();
+        replacement
+            .start(config(unrelated.path()))
+            .await
+            .expect("an unrelated storage directory stays usable");
+        replacement.stop().await.unwrap();
     }
 
     /// A panic under the `task` mutex must not make every later lifecycle

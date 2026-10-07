@@ -2035,6 +2035,10 @@ class PlatformWalletManager(
      * @param peers `host:port` seeds; empty for the network defaults.
      * @param userAgent optional; null → the FFI default.
      * @param devnetName required iff [network] is [Network.DEVNET].
+     * @throws DashSdkError.PlatformWallet.ShutdownIncomplete an earlier SPV
+     *   startup or teardown is still unjoined; call [stopSpv] first.
+     * @throws DashSdkError.PlatformWallet.SpvProcessRestartRequired SPV
+     *   startup or teardown panicked; restart the app process.
      */
     suspend fun startSpv(
         dataDir: String,
@@ -2070,11 +2074,24 @@ class PlatformWalletManager(
         mapNativeErrors { WalletManagerNative.spvIsRunning(managerHandle) }
     }
 
+    /**
+     * Stop the Core SPV client, waiting up to 15 s for its teardown.
+     *
+     * @throws DashSdkError.PlatformWallet.ShutdownIncomplete teardown
+     *   outlived the wait and continues in the background; stop again, a
+     *   bounded number of times.
+     * @throws DashSdkError.PlatformWallet.SpvProcessRestartRequired SPV
+     *   startup or teardown panicked; restart the app process.
+     */
     suspend fun stopSpv() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.spvStop(managerHandle) }
     }
 
-    /** Clear all persisted SPV storage (headers, filters, state). */
+    /**
+     * Clear all persisted SPV storage (headers, filters, state). A running
+     * client is stopped first and stays stopped; when that stop does not
+     * complete, nothing is cleared and this throws as [stopSpv] does.
+     */
     suspend fun clearSpvStorage() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.spvClearStorage(managerHandle) }
     }

@@ -242,7 +242,7 @@ class DashSdkErrorTest {
 
         val panicDetail = "teardown task 12 panicked with message \"boom\""
         val restart = DashSdkError.fromNative(DashSDKException(offset + 59, panicDetail))
-        assertTrue(restart is DashSdkError.PlatformWallet.SpvRestartRequired)
+        assertTrue(restart is DashSdkError.PlatformWallet.SpvProcessRestartRequired)
         assertEquals(panicDetail, restart.message)
         assertFalse("no retry recovers a panicked teardown", restart.isRetryable)
         assertEquals(

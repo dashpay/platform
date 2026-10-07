@@ -812,15 +812,17 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
-    /// SPV teardown panicked, so upstream background work (storage writer,
-    /// network, sync tasks) may still be running with nothing left to stop
-    /// it. No retry helps: SPV stays refused until the process restarts.
-    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvRestartRequired`.
+    /// SPV startup or teardown panicked, so upstream background work (storage
+    /// writer, network, sync tasks) may still be running with nothing left
+    /// to stop it. No retry helps: this runtime refuses SPV stop, start and
+    /// storage clear, and every runtime in the process refuses to start SPV
+    /// on the same storage directory, until the process restarts.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
     #[error(
-        "SPV teardown failed and may have left background work running; \
-         restart the process before using SPV again: {0}"
+        "SPV startup or teardown panicked and may have left background work \
+         running; restart the process before using SPV again: {0}"
     )]
-    SpvRestartRequired(String),
+    SpvProcessRestartRequired(String),
 
     #[error("Token operation failed: {0}")]
     TokenError(String),
@@ -962,7 +964,9 @@ pub enum PlatformWalletError {
     /// fail-closed. The wedged pass may still fire persistence / event
     /// callbacks; the host must keep its callback context alive and must
     /// not commit any wipe it was about to pair with this call.
-    /// Also returned while SPV teardown outlives a stop's wait: stop SPV again.
+    /// Also returned by SPV stop, start and storage clear while an earlier SPV
+    /// startup or teardown is still unjoined: stop SPV again (repeating a
+    /// refused start alone never clears it), a bounded number of times.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),

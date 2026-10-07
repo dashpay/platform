@@ -16,7 +16,7 @@ private const val PERSISTER_UNSAVED_USER_MESSAGE =
 
 // Display text for a failed SPV teardown, whose native message carries the
 // panic text of the task that failed.
-private const val SPV_RESTART_REQUIRED_USER_MESSAGE =
+private const val SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE =
     "Sync could not be stopped cleanly. Restart the app to use it again."
 
 /**
@@ -626,8 +626,9 @@ sealed class DashSdkError(
          * a clear, reset or sync stop needed it drained, or SPV teardown
          * outlived an SPV stop. The operation failed closed — nothing was
          * wiped — and the work is still tracked, so repeating the stop or
-         * clear can complete it. An SPV start refused with this needs an
-         * SPV stop first; repeating the start alone never clears it.
+         * clear can complete it; bound the retries, since a teardown that
+         * never finishes keeps returning it. An SPV start refused with this
+         * needs an SPV stop first; repeating the start alone never clears it.
          * Mirrors Swift's `PlatformWalletError.shutdownIncomplete`.
          */
         class ShutdownIncomplete(message: String, cause: Throwable? = null) :
@@ -636,18 +637,19 @@ sealed class DashSdkError(
         }
 
         /**
-         * `ErrorSpvRestartRequired` (native code 59). SPV startup or
+         * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
          * teardown panicked and may have left background work running that
          * nothing can stop. Do NOT retry: SPV start, stop and storage clear
-         * on this manager keep failing with it. Recover by restarting the
+         * on this manager keep failing with it, as does an SPV start on the
+         * same data directory from any manager. Recover by restarting the
          * app process. Contrast [ShutdownIncomplete], where a repeated stop
-         * completes the teardown. [message] carries the panic detail and is
+         * can complete the teardown. [message] carries the panic detail and is
          * diagnostic — display [userMessage]. Mirrors Swift's
-         * `PlatformWalletError.spvRestartRequired`.
+         * `PlatformWalletError.spvProcessRestartRequired`.
          */
-        class SpvRestartRequired(message: String, cause: Throwable? = null) :
+        class SpvProcessRestartRequired(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
-            override val userMessage: String get() = SPV_RESTART_REQUIRED_USER_MESSAGE
+            override val userMessage: String get() = SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE
         }
 
         /**
@@ -844,7 +846,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
-            59 -> PlatformWallet.SpvRestartRequired(message, cause) // ErrorSpvRestartRequired
+            59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
