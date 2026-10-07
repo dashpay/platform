@@ -1,3 +1,6 @@
+/// The schema depth check `check_tx` runs before parsing a contract.
+pub(in crate::execution) mod check_tx_schema_depth;
+
 /// Validation of the reference declarations a contract's document types carry.
 pub mod data_contract_reference_validation;
 

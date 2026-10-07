@@ -4,6 +4,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct MaxDepthValidationResult {
@@ -23,9 +24,10 @@ pub fn validate_max_depth(
         .validate_max_depth
     {
         0 => Ok(v0::validate_max_depth_v0(value, platform_version)),
+        1 => Ok(v1::validate_max_depth_v1(value, platform_version)),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "validate_max_depth".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }

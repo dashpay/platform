@@ -16,6 +16,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::errors::DataContractError;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::identity::{IdentityPublicKey, SecurityLevel};
 use dpp::platform_value::{platform_value, Value};
@@ -28,6 +29,7 @@ use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 use simple_signer::signer::SimpleSigner;
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 /// The fragment of the parser's message for a summed property that parses as `u64`.
 pub(in crate::execution) const SUMMED_U64_MESSAGE: &str =
@@ -140,6 +142,7 @@ pub(in crate::execution) fn terminal_without_index_only_schema() -> Value {
 pub(in crate::execution) struct Outcome {
     /// The consensus errors `check_tx` refused the transition with, or its own error.
     pub check_tx: Result<Vec<ConsensusError>, String>,
+    pub check_tx_elapsed: Duration,
     pub block: StateTransitionExecutionResult,
     pub nonce_before: Option<u64>,
     pub nonce_after: Option<u64>,
@@ -156,15 +159,31 @@ pub(in crate::execution) async fn resign_with_schemas(
     key: &IdentityPublicKey,
     signer: &SimpleSigner,
 ) -> Vec<u8> {
+    resign_with_contract(
+        state_transition,
+        |contract| edit_schemas(contract.document_schemas_mut()),
+        key,
+        signer,
+    )
+    .await
+}
+
+/// [`resign_with_schemas`], editing the whole serialized contract.
+pub(in crate::execution) async fn resign_with_contract(
+    state_transition: &mut StateTransition,
+    edit_contract: impl FnOnce(&mut DataContractInSerializationFormat),
+    key: &IdentityPublicKey,
+    signer: &SimpleSigner,
+) -> Vec<u8> {
     match state_transition {
         StateTransition::DataContractCreate(create) => {
             let mut serialized_contract = create.data_contract().clone();
-            edit_schemas(serialized_contract.document_schemas_mut());
+            edit_contract(&mut serialized_contract);
             create.set_data_contract(serialized_contract);
         }
         StateTransition::DataContractUpdate(update) => {
             let mut serialized_contract = update.data_contract().clone();
-            edit_schemas(serialized_contract.document_schemas_mut());
+            edit_contract(&mut serialized_contract);
             update.set_data_contract(serialized_contract);
         }
         _ => panic!("expected a data contract create or update transition"),
@@ -198,6 +217,7 @@ pub(in crate::execution) fn check_and_process(
         config: &platform.config,
         core_rpc: &platform.core_rpc,
     };
+    let check_tx_started = Instant::now();
     let check_tx = platform
         .check_tx(
             &transition_bytes,
@@ -207,6 +227,7 @@ pub(in crate::execution) fn check_and_process(
         )
         .map(|result| result.errors)
         .map_err(|error| error.to_string());
+    let check_tx_elapsed = check_tx_started.elapsed();
 
     let fetch_balance = || {
         platform
@@ -239,6 +260,7 @@ pub(in crate::execution) fn check_and_process(
 
     Outcome {
         check_tx,
+        check_tx_elapsed,
         block: processing_result
             .execution_results()
             .first()

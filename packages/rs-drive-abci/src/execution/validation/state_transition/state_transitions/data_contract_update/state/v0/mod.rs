@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_depth::validate_document_schemas_depth_for_check_tx;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -467,13 +468,20 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_operations = vec![];
 
-        let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
-            self,
-            block_info,
-            validation_mode.should_fully_validate_contract_on_transform_into_action(),
-            &mut validation_operations,
+        let result = validate_document_schemas_depth_for_check_tx(
+            self.data_contract(),
+            validation_mode,
             platform_version,
-        );
+        )
+        .and_then(|()| {
+            DataContractUpdateTransitionAction::try_from_borrowed_transition(
+                self,
+                block_info,
+                validation_mode.should_fully_validate_contract_on_transform_into_action(),
+                &mut validation_operations,
+                platform_version,
+            )
+        });
 
         execution_context.add_dpp_operations(validation_operations);
 

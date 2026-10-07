@@ -853,6 +853,7 @@ fn parse_document_properties(
             property_key,
             property_value,
             root_schema,
+            &mut Vec::new(),
             ctx.data_contact_config,
             ctx.platform_version,
         )
