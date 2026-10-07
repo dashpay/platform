@@ -405,11 +405,15 @@ pub(in crate::execution) fn assert_paid_ref_cycle_error(outcome: &Outcome, bumpe
         Some(bumped_nonce),
         "the rejection bumps the nonce"
     );
+    let balance_before = outcome
+        .balance_before
+        .expect("the owner has a balance before the rejection");
+    let balance_after = outcome
+        .balance_after
+        .expect("the owner keeps a balance after the rejection");
     assert!(
-        outcome.balance_after < outcome.balance_before,
-        "the rejection is charged: {:?} -> {:?}",
-        outcome.balance_before,
-        outcome.balance_after
+        balance_after < balance_before,
+        "the rejection is charged: {balance_before} -> {balance_after}"
     );
 }
 
