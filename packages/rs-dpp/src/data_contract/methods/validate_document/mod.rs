@@ -4,6 +4,8 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
 mod v0;
+#[cfg(all(test, feature = "fixtures-and-mocks"))]
+mod duplicate_keys_tests;
 use crate::document::Document;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;

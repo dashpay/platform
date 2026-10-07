@@ -7,6 +7,7 @@ mod deletable_document_reference;
 mod deletion;
 mod derived_index_values;
 mod distinct_from;
+mod duplicate_keys;
 mod document_ttl;
 mod dpns;
 mod encrypted_for;

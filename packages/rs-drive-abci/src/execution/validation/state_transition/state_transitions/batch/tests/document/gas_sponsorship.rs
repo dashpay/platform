@@ -30,11 +30,13 @@ pub(crate) mod gas_sponsorship_tests {
         AgreedFeeMultiplier, DocumentActionFeeAgreement,
     };
     use dpp::data_contract::DataContract;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::{Identifier, Revision};
+    use dpp::platform_value::platform_value;
     use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
     use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::StateTransition;
@@ -753,6 +755,77 @@ pub(crate) mod gas_sponsorship_tests {
             setup.credits(&setup.contract_owner, &tx),
             dash_to_credits!(0.1)
         );
+    }
+
+    #[tokio::test]
+    async fn should_make_the_signer_pay_for_duplicate_keys_in_a_sponsored_creation() {
+        let version = PlatformVersion::latest();
+        let setup = Sponsorship::build_customized(
+            version,
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |contract| {
+                let mut schema = contract
+                    .document_type_for_name("card")
+                    .unwrap()
+                    .schema()
+                    .clone();
+                let properties = schema.get_mut("properties").unwrap().unwrap();
+                let position = properties.as_map().unwrap().len() as u32;
+                properties.insert("meta".into(), platform_value!({
+                    "type": "object", "position": position,
+                    "properties": {"name": {"type": "string", "maxLength": 32, "position": 0}},
+                    "required": ["name"], "additionalProperties": false
+                })).unwrap();
+                contract
+                    .set_document_schema("card", schema, true, &mut Vec::new(), version)
+                    .unwrap();
+            },
+        );
+        let (mut document, entropy) = setup.card_of(&setup.user);
+        document.set(
+            "meta",
+            Value::Map(vec![
+                ("name".into(), "first".into()),
+                ("name".into(), "last".into()),
+            ]),
+        );
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            setup.contract.document_type_for_name("card").unwrap(),
+            entropy.0,
+            &setup.user_key,
+            2,
+            0,
+            Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                payment_token_contract_id: None,
+                token_contract_position: 0,
+                minimum_token_cost: None,
+                maximum_token_cost: Some(CARD_COST),
+                gas_fees_paid_by: GasFeesPaidBy::ContractOwner,
+            })),
+            &setup.user_signer,
+            version,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(setup.check_tx(&transition), vec![10103]);
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+        assert_matches!(&result, PaidConsensusError {error, ..} if error.code() == 10103);
+        let fee = total_fee(&result);
+        assert!(fee > 0);
+        assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1) - fee);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1)
+        );
+        assert_eq!(setup.gold(&setup.user, &tx), 15);
     }
 
     #[tokio::test]
