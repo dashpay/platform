@@ -2,7 +2,7 @@ use super::*;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 
 #[tokio::test]
-async fn should_admit_duplicate_moderator_fields_to_mempool_then_reject_them_paid_in_block() {
+async fn should_reject_duplicate_moderator_fields_in_mempool_and_charge_them_in_block() {
     let version = PlatformVersion::latest();
     let setup = Setup::new_at_with(Some(moderation(false, false, THE_MODERATOR)), version, |contract| {
         add_document_type(contract, "nested", platform_value!({
@@ -51,9 +51,13 @@ async fn should_admit_duplicate_moderator_fields_to_mempool_then_reject_them_pai
         StateTransition::deserialize_from_bytes_untrusted_exact_in_version(&raw, version).unwrap(),
         moderation
     );
-    assert!(
-        setup.check_tx(&moderation).is_empty(),
-        "moderation runs property validation in the block"
+    let mempool_errors = setup.check_tx(&moderation);
+    assert_eq!(
+        mempool_errors
+            .iter()
+            .map(|error| error.code())
+            .collect::<Vec<_>>(),
+        vec![10103]
     );
     let balance = setup.balance(setup.moderator.id(), None);
     let tx = setup.platform.drive.grove.start_transaction();

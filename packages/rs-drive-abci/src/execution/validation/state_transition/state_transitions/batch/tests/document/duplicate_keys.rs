@@ -1,10 +1,9 @@
 use super::*;
 use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
-use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform::PlatformRef;
-use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::identity::IdentityPublicKey;
@@ -12,8 +11,10 @@ use dpp::platform_value::platform_value;
 use dpp::prelude::DataContract;
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
+use drive::util::object_size_info::{
+    DocumentAndContractInfo, DocumentInfo::DocumentRefInfo, OwnedDocumentInfo,
+};
 use simple_signer::signer::SimpleSigner;
-use tenderdash_abci::proto::version::Consensus;
 
 const REPEATED_KEY: u32 = 10103;
 
@@ -509,6 +510,13 @@ async fn should_keep_prior_version_nested_index_behavior_unchanged() {
     );
     assert_eq!(fixture.stored(Some("A")), stored);
     assert!(fixture.stored(Some("B")).is_empty());
+    // Serialization has already discarded the ambiguity; current validation cannot
+    // infer the index key from the canonical stored row or repair its old index.
+    assert!(fixture
+        .contract
+        .validate_document("nested", &stored[0], PlatformVersion::latest())
+        .unwrap()
+        .is_valid());
 }
 
 #[tokio::test]
@@ -580,7 +588,7 @@ async fn should_keep_unfunded_duplicate_input_unpaid_without_consuming_a_nonce()
     assert!(
         matches!(
             result,
-            StateTransitionExecutionResult::UnpaidConsensusError(_)
+            StateTransitionExecutionResult::UnpaidConsensusError(ref error) if error.code() == 40210
         ),
         "{result:?}"
     );
@@ -603,7 +611,7 @@ async fn should_keep_unfunded_duplicate_input_unpaid_without_consuming_a_nonce()
 }
 
 #[tokio::test]
-async fn should_reject_ambiguous_ttl_creation_and_expire_the_clean_nested_index_in_a_proposal() {
+async fn should_reject_ambiguous_ttl_creation_and_expire_the_clean_nested_index() {
     let version = PlatformVersion::latest();
     let platform = TestPlatformBuilder::new()
         .build_with_mock_rpc()
@@ -624,38 +632,20 @@ async fn should_reject_ambiguous_ttl_creation_and_expire_the_clean_nested_index_
         fixture.process(&creation),
         StateTransitionExecutionResult::SuccessfulExecution { .. }
     ));
-    let expires_at = 3_600_000;
-    fixture.platform.drive.set_genesis_time(0);
-    fast_forward_to_block(&fixture.platform, expires_at - 1, 10, 0, 0, false);
-    let state = fixture.platform.state.load();
     let tx = fixture.platform.drive.grove.start_transaction();
-    let raw_state_transitions = vec![];
-    let protocol_version = version.protocol_version as u64;
-    let result = fixture.platform.run_block_proposal(
-        BlockProposal {
-            consensus_versions: Consensus {
-                block: 1,
-                app: protocol_version,
+    // This is the block-end event that run_block_proposal propagates before fee processing.
+    fixture
+        .platform
+        .platform
+        .expire_documents(
+            &BlockInfo {
+                time_ms: 3_600_000,
+                ..Default::default()
             },
-            block_hash: None,
-            height: 11,
-            round: 0,
-            block_time_ms: expires_at,
-            core_chain_locked_height: 0,
-            core_chain_lock_update: None,
-            proposed_app_version: protocol_version,
-            proposer_pro_tx_hash: [0; 32],
-            validator_set_quorum_hash: [0; 32],
-            raw_state_transitions: &raw_state_transitions,
-        },
-        false,
-        &state,
-        &tx,
-        None,
-    );
-    if let Err(error) = result {
-        panic!("expiry must not abort the proposal: {error:?}");
-    }
+            &tx,
+            version,
+        )
+        .expect("clean expiry must not fail after refusing ambiguous input");
     let query = DriveDocumentQuery::from_sql_expr(
         "select * from nested",
         &fixture.contract,
@@ -679,4 +669,120 @@ async fn should_reject_ambiguous_ttl_creation_and_expire_the_clean_nested_index_
         "expired clean row {} must be deleted",
         clean.id()
     );
+    let query = DriveDocumentQuery::from_sql_expr(
+        "select * from nested where `meta.name` = 'clean'",
+        &fixture.contract,
+        Some(&fixture.platform.config.drive),
+        version,
+    )
+    .unwrap();
+    assert!(fixture
+        .platform
+        .drive
+        .query_documents(
+            query,
+            None,
+            false,
+            Some(&tx),
+            Some(version.protocol_version)
+        )
+        .unwrap()
+        .documents()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn should_keep_preexisting_ambiguous_ttl_expiry_failure_visible() {
+    let version = PlatformVersion::latest();
+    let mut schema = nested_schema(false);
+    schema.insert("ttl".into(), 3600u64.into()).unwrap();
+    schema
+        .insert(
+            "required".into(),
+            vec![Value::Text("meta".into()), Value::Text("$createdAt".into())].into(),
+        )
+        .unwrap();
+    for repeated in [false, true] {
+        let mut fixture = Fixture::new(schema.clone(), version, dash_to_credits!(1));
+        let (document, _) = fixture.creation(named("A", repeated.then_some("B"))).await;
+        // Seed state through storage to represent data admitted before the acceptance guard.
+        fixture
+            .platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &fixture.contract,
+                    document_type: fixture.contract.document_type_for_name("nested").unwrap(),
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                version,
+                None,
+            )
+            .unwrap();
+        let stored = fixture.stored(None);
+        assert_eq!(
+            stored[0].get("meta").unwrap(),
+            &map(&[("name", if repeated { "B" } else { "A" }.into())])
+        );
+        assert_eq!(fixture.stored(Some("A")), stored);
+        assert!(fixture.stored(Some("B")).is_empty());
+        let tx = fixture.platform.drive.grove.start_transaction();
+        let result = fixture.platform.platform.expire_documents(
+            &BlockInfo {
+                time_ms: 3_600_000,
+                ..Default::default()
+            },
+            &tx,
+            version,
+        );
+        if repeated {
+            let Err(crate::error::Error::Drive(drive::error::Error::GroveDB(error))) = result
+            else {
+                panic!("expected failure removing the absent B index slot: {result:?}");
+            };
+            let drive::grovedb::Error::PathKeyNotFound(message) = error.as_ref() else {
+                panic!("expected missing unique index key: {error:?}");
+            };
+            assert!(
+                message.contains("key 0x42 (66 in decimal) not found"),
+                "{message}"
+            );
+            assert!(
+                message.ends_with("/0x01/nested/0x6d6574612e6e616d65"),
+                "{message}"
+            );
+        } else {
+            result.expect("the same direct-insert harness must expire a clean row");
+        }
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from nested",
+            &fixture.contract,
+            Some(&fixture.platform.config.drive),
+            version,
+        )
+        .unwrap();
+        let remaining = fixture
+            .platform
+            .drive
+            .query_documents(
+                query,
+                None,
+                false,
+                Some(&tx),
+                Some(version.protocol_version),
+            )
+            .unwrap();
+        if repeated {
+            assert_eq!(remaining.documents(), &stored);
+        } else {
+            assert!(remaining.documents().is_empty());
+        }
+    }
 }

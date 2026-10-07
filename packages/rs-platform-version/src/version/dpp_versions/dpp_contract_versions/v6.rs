@@ -53,7 +53,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         default_current_version: 2,
     },
     methods: DataContractMethodVersions {
-        validate_document: 0,
+        validate_document: 1, // rejects repeated nested text keys before document property reads
         // Generation 1 (requiredSince): feeds the new contract version into
         // per-document-type update validation and validates requiredSince
         // annotations on document types introduced by the update, which the

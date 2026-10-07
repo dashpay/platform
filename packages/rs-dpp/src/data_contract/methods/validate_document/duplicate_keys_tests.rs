@@ -249,6 +249,28 @@ fn should_preserve_invalid_type_depth_and_non_text_key_errors() {
 }
 
 #[test]
+fn should_allow_latest_document_depth_at_the_limit_before_field_size_validation() {
+    let version = PlatformVersion::latest();
+    let contract = contract(version, true);
+    let depth = version.system_limits.max_document_value_depth.unwrap() as usize;
+    let leaf = Value::Text("x".repeat(version.system_limits.max_field_value_size as usize + 1));
+    let nested = (0..depth).fold(leaf, |value, index| {
+        if index % 2 == 0 {
+            Value::Array(vec![value])
+        } else {
+            map(&[("child", value)])
+        }
+    });
+    let result = validate(&contract, properties(nested), version);
+    assert!(matches!(
+        result.first_error(),
+        Some(ConsensusError::BasicError(
+            BasicError::DocumentFieldMaxSizeExceededError(_)
+        ))
+    ));
+}
+
+#[test]
 fn should_keep_distinct_nested_keys_valid_and_prior_version_duplicates_unchanged() {
     let version = PlatformVersion::latest();
     let latest_contract = contract(version, true);
