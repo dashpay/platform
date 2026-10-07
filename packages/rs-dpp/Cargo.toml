@@ -12,7 +12,8 @@ authors = [
 ]
 
 [dependencies]
-blsful = { git = "https://github.com/dashpay/agora-blsful", rev = "0c34a7a488a0bd1c9a9a2196e793b303ad35c900", optional = true }
+dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "e6402ced257c370a586ade9840ebbf545a4b7926", default-features = false, features = ["bls"], optional = true }
+zeroize = { version = "1.9.0", optional = true }
 ed25519-dalek = { version = "=2.2.0", features = ["rand_core"], optional = true }
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
@@ -117,7 +118,7 @@ core_key_wallet_manager = ["dep:key-wallet-manager"]
 core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
 core_spv = ["dep:dash-spv"]
 core_rpc_client = ["dep:dashcore-rpc"]
-bls-signatures = ["dashcore/bls", "dep:blsful"]
+bls-signatures = ["dashcore/bls", "dep:dash-pkc", "dep:zeroize"]
 ed25519-dalek = ["dashcore/eddsa", "dep:ed25519-dalek"]
 all_features = [
   "json-conversion",
