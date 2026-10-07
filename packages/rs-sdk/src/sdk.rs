@@ -47,6 +47,8 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
+mod quorum_key;
+
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many token configs fit in the cache.
@@ -79,8 +81,6 @@ pub const fn min_protocol_version(network: Network) -> u32 {
 /// Called with the new protocol version each time auto-detect ratchets it
 /// upward. See [`SdkBuilder::with_protocol_version_observer`].
 pub type ProtocolVersionObserver = Arc<dyn Fn(u32) + Send + Sync>;
-
-mod quorum_key;
 
 /// Default signed-metadata freshness window for network SDKs.
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;

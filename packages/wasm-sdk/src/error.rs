@@ -247,9 +247,9 @@ impl From<SdkError> for WasmSdkError {
             ),
             Generic(msg) => Self::new(WasmSdkErrorKind::Generic, msg, None, retriable),
             ContextProviderError(e) => {
-                // A quorum source that gave no answer bans no node, so the
-                // SDK does not count it as retryable, but it is transient:
-                // the app should try again.
+                // A quorum source that gave no answer is not held against the
+                // node, so the SDK does not count it as retryable, but it is
+                // transient: the app may try again.
                 let retriable = retriable
                     || matches!(
                         e,

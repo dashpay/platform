@@ -554,7 +554,10 @@ mod tests {
             quorum_type: 6,
         };
 
-        let metadata = test_metadata();
+        let metadata = ResponseMetadata {
+            core_chain_locked_height: 4321,
+            ..test_metadata()
+        };
         let provider = ErroringProvider;
 
         let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);

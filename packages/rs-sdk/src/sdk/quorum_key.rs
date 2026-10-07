@@ -21,8 +21,9 @@ impl Sdk {
     /// * the key: the result of the second verification;
     /// * the quorum is absent: the original, retryable error, so the node that
     ///   named the quorum is banned and the request moves on;
-    /// * no answer: [`ContextProviderError::QuorumSourceUnavailable`], which is
-    ///   not retryable, so no node is banned for the source's failure;
+    /// * no answer: [`ContextProviderError::QuorumSourceUnavailable`]. It is
+    ///   not retryable, so the node is not banned for the source's failure;
+    ///   [`crate::sync::retry`] only steps over it briefly to ask another one;
     /// * nothing, because the provider cannot fetch: the original error.
     pub(crate) async fn verify_fetching_quorum_key<R, O: FromProof<R>>(
         &self,
@@ -34,7 +35,9 @@ impl Sdk {
         O::Request: Clone,
         O::Response: Clone,
     {
-        // Both verifications use the same protocol version.
+        // Both verifications use the same protocol version. The request and
+        // response are copied on every call so a second verification can
+        // follow a fetch; the copy is small next to proof verification itself.
         let version = self.version();
         let missing = match O::maybe_from_proof_with_metadata(
             request.clone(),
@@ -60,16 +63,34 @@ impl Sdk {
         else {
             return Err(missing.into());
         };
+        let unavailable = |reason: String| {
+            tracing::warn!(
+                quorum_type,
+                quorum_hash = %hex::encode(quorum_hash),
+                core_chain_locked_height,
+                %reason,
+                "could not get the key of the quorum a proof names"
+            );
+            Err(ContextProviderError::QuorumSourceUnavailable(reason).into())
+        };
 
         match fetch.await {
-            Ok(Some(_)) => O::maybe_from_proof_with_metadata(
+            Ok(Some(_)) => match O::maybe_from_proof_with_metadata(
                 request,
                 response,
                 self.network,
                 version,
                 provider,
-            )
-            .map_err(Error::from),
+            ) {
+                // The provider broke its contract, for example by not caching
+                // the key it returned. The node is not to blame for that.
+                Err(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. }) => {
+                    unavailable(format!(
+                        "the provider fetched the key but its lookup still misses it: {error}"
+                    ))
+                }
+                verified => verified.map_err(Error::from),
+            },
             Ok(None) => {
                 tracing::warn!(
                     quorum_type,
@@ -79,12 +100,8 @@ impl Sdk {
                 );
                 Err(missing.into())
             }
-            Err(ContextProviderError::QuorumSourceUnavailable(reason)) => Err(
-                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(reason)),
-            ),
-            Err(error) => Err(Error::ContextProviderError(
-                ContextProviderError::QuorumSourceUnavailable(error.to_string()),
-            )),
+            Err(ContextProviderError::QuorumSourceUnavailable(reason)) => unavailable(reason),
+            Err(error) => unavailable(format!("{error:?}")),
         }
     }
 }
@@ -228,11 +245,13 @@ mod tests {
         }
     }
 
-    /// A context provider that counts the lookups and fetches the SDK makes.
+    /// A context provider that counts the lookups and fetches the SDK makes,
+    /// and records the quorum it asked to fetch.
     struct Counting {
         inner: Box<dyn ContextProvider>,
         lookups: AtomicUsize,
         fetches: AtomicUsize,
+        fetched: std::sync::Mutex<Option<(u32, [u8; 32], u32)>>,
     }
 
     impl Counting {
@@ -241,6 +260,7 @@ mod tests {
                 inner: Box::new(inner),
                 lookups: AtomicUsize::new(0),
                 fetches: AtomicUsize::new(0),
+                fetched: std::sync::Mutex::new(None),
             })
         }
     }
@@ -279,6 +299,8 @@ mod tests {
             core_chain_locked_height: u32,
         ) -> Option<QuorumKeyFuture> {
             self.fetches.fetch_add(1, Ordering::SeqCst);
+            *self.fetched.lock().expect("fetched lock") =
+                Some((quorum_type, quorum_hash, core_chain_locked_height));
             self.inner
                 .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
         }
@@ -344,6 +366,15 @@ mod tests {
         let provider = Counting::new(trusted_provider(base_url));
         let sdk = network_sdk(Arc::clone(&provider));
         let (request, response) = recorded_epoch_fetch();
+        let core_chain_locked_height = match response.version.as_ref() {
+            Some(EpochsVersion::V0(v0)) => {
+                v0.metadata
+                    .as_ref()
+                    .expect("recorded metadata")
+                    .core_chain_locked_height
+            }
+            None => panic!("recorded response is v0"),
+        };
 
         let epoch = verify(&sdk, request, response)
             .await
@@ -351,6 +382,15 @@ mod tests {
 
         assert!(epoch.is_some(), "the recorded epoch is proved to exist");
         assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        let signing_quorum: [u8; 32] = hex::decode(SIGNING_QUORUM_HASH)
+            .expect("hex")
+            .try_into()
+            .expect("32 bytes");
+        assert_eq!(
+            *provider.fetched.lock().expect("fetched lock"),
+            Some((106, signing_quorum, core_chain_locked_height)),
+            "the fetch asks for exactly the quorum the proof names"
+        );
         assert_eq!(
             provider.lookups.load(Ordering::SeqCst),
             2,
@@ -431,6 +471,7 @@ mod tests {
             "got {error:?}"
         );
         assert!(error.can_retry(), "a retryable proof error bans the node");
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
         assert_eq!(provider.lookups.load(Ordering::SeqCst), 1);
         let mut asked = service.join().expect("quorum service");
         asked.sort();
@@ -443,7 +484,7 @@ mod tests {
 
     /// When the trusted service cannot answer, the client cannot tell
     /// whether the node lied, so the node is not banned: the error is not
-    /// retryable, and the retry loop moves on without a ban.
+    /// retryable, and the retry loop only steps over the node briefly.
     #[tokio::test]
     async fn should_not_hold_an_unreachable_quorum_service_against_the_node() {
         let (base_url, service) = quorum_service(vec![
@@ -537,10 +578,111 @@ mod tests {
         let (request, response) = recorded_epoch_fetch();
         let response = with_proof(response, |proof| proof.grovedb_proof = vec![0xff; 8]);
 
-        verify(&sdk, request, response)
+        let error = verify(&sdk, request, response)
             .await
             .expect_err("a corrupt proof never verifies");
 
+        assert!(
+            !matches!(
+                error,
+                Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
+            ),
+            "got {error:?}"
+        );
         assert_eq!(cannot_fetch.fetches.load(Ordering::SeqCst), 0);
+    }
+
+    /// A key the trusted service sends that cannot be parsed is the service's
+    /// fault, not the node's: no ban.
+    #[tokio::test]
+    async fn should_not_hold_a_malformed_key_from_the_quorum_service_against_the_node() {
+        let (base_url, service) = quorum_service(vec![
+            ("/quorums", 200, current_list(SIGNING_QUORUM_HASH, "zz")),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("a malformed key verifies nothing");
+
+        assert!(
+            matches!(
+                error,
+                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {error:?}"
+        );
+        assert!(!error.can_retry());
+        service.join().expect("quorum service");
+    }
+
+    /// A provider that reports a key but whose lookup still misses it broke
+    /// its contract; the node that sent the proof is not banned for that.
+    #[tokio::test]
+    async fn should_not_hold_a_provider_that_forgets_a_fetched_key_against_the_node() {
+        let forgetful = Counting::new(Forgetful);
+        let sdk = network_sdk(Arc::clone(&forgetful));
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("the lookup still misses");
+
+        assert!(
+            matches!(
+                error,
+                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {error:?}"
+        );
+        assert!(!error.can_retry());
+        assert_eq!(forgetful.lookups.load(Ordering::SeqCst), 2);
+    }
+
+    /// A provider whose fetch reports a key that its lookup never returns.
+    struct Forgetful;
+
+    impl ContextProvider for Forgetful {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "not cached".to_string(),
+            ))
+        }
+
+        fn fetch_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Option<QuorumKeyFuture> {
+            Some(Box::pin(async { Ok(Some([7u8; 48])) }))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
     }
 }
