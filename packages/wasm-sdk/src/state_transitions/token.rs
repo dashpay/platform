@@ -517,7 +517,8 @@ pub struct TokenBurnResultWasm {
 
 #[wasm_bindgen(js_class = TokenBurnResult)]
 impl TokenBurnResultWasm {
-    /// The remaining token balance after burning.
+    /// The remaining token balance when supplied by the proof.
+    /// Group burn co-signers receive `undefined`, including after the action closes.
     #[wasm_bindgen(getter = "remainingBalance")]
     pub fn remaining_balance(&self) -> Option<BigInt> {
         self.remaining_balance.map(BigInt::from)
@@ -2720,6 +2721,34 @@ impl WasmSdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+
+    #[test]
+    fn should_preserve_closed_group_burn_without_remaining_balance() {
+        let result = TokenBurnResultWasm::from_result(
+            BurnResult::GroupActionWithBalance(8, GroupActionStatus::ActionClosed, None),
+            Identifier::from([3; 32]),
+        );
+        assert!(result.remaining_balance().is_none());
+        assert_eq!(result.group_power, Some(8));
+        assert_eq!(result.group_action_status.as_deref(), Some("ActionClosed"));
+        assert!(result.owner_id.is_none());
+    }
+
+    #[test]
+    fn should_preserve_proposer_group_burn_balance_including_zero() {
+        for balance in [7, 0] {
+            let result = TokenBurnResultWasm::from_result(
+                BurnResult::GroupActionWithBalance(
+                    3,
+                    GroupActionStatus::ActionClosed,
+                    Some(balance),
+                ),
+                Identifier::from([3; 32]),
+            );
+            assert_eq!(result.remaining_balance, Some(balance));
+        }
+    }
 
     /// An empty tier map is passed through as an empty schedule: rs-dpp's structure
     /// validation refuses it, not the SDK.
@@ -2837,5 +2866,82 @@ mod tests {
     #[test]
     fn validate_pricing_mode_selection_accepts_tiers_only() {
         validate_pricing_mode_selection(false, true).expect("tiers-only selection should validate");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod group_burn_wasm_tests {
+    use super::*;
+    use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+    use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_expose_undefined_remaining_balance_for_a_closed_group_burn_cosigner() {
+        let result = TokenBurnResultWasm::from_result(
+            BurnResult::GroupActionWithBalance(8, GroupActionStatus::ActionClosed, None),
+            Identifier::from([3; 32]),
+        );
+        let value = JsValue::from(result);
+        assert!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("remainingBalance"))
+                .expect("read balance getter")
+                .is_undefined()
+        );
+        assert_eq!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("groupActionStatus"))
+                .expect("read status getter")
+                .as_string()
+                .as_deref(),
+            Some("ActionClosed")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_expose_proposer_group_burn_balance_including_zero_as_bigint() {
+        for balance in [7, 0] {
+            let result = TokenBurnResultWasm::from_result(
+                BurnResult::GroupActionWithBalance(
+                    3,
+                    GroupActionStatus::ActionClosed,
+                    Some(balance),
+                ),
+                Identifier::from([3; 32]),
+            );
+            let value = JsValue::from(result);
+            let actual = js_sys::Reflect::get(&value, &JsValue::from_str("remainingBalance"))
+                .expect("read balance getter");
+            assert!(actual.is_bigint());
+            assert_eq!(actual, JsValue::from(BigInt::from(balance)));
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_forward_closed_group_burn_without_balance_through_wasm_dpp() {
+        let value: JsValue = wasm_dpp2::convert_proof_result(
+            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
+                8,
+                GroupActionStatus::ActionClosed,
+                None,
+            ),
+        )
+        .expect("convert raw verifier result")
+        .into();
+        assert!(js_sys::Reflect::get(&value, &JsValue::from_str("balance"))
+            .expect("read optional balance")
+            .is_undefined());
+        assert_eq!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("groupPower"))
+                .expect("read group power")
+                .as_f64(),
+            Some(8.0)
+        );
+        assert_eq!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("actionStatus"))
+                .expect("read action status")
+                .as_string()
+                .as_deref(),
+            Some("ActionClosed")
+        );
     }
 }
