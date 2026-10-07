@@ -1,8 +1,8 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dpp::bls_signatures;
+use dpp::bls;
 
 use crate::Error;
-use dpp::bls_signatures::Signature;
+use dpp::bls::Signature;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},
@@ -134,11 +134,10 @@ pub(crate) fn verify_tenderdash_signature(
         }
     })?;
 
-    let pubkey = bls_signatures::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| {
-        Error::InvalidPublicKey {
+    let pubkey =
+        bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
-        }
-    })?;
+        })?;
 
     tracing::trace!(
         ?state_id,
@@ -165,7 +164,7 @@ pub(crate) fn verify_tenderdash_signature(
 pub fn verify_signature_digest(
     sign_digest: &[u8],
     signature: &[u8; 96],
-    public_key: &bls_signatures::PublicKey,
+    public_key: &bls::PublicKey,
 ) -> Result<bool, Error> {
     if signature == &[0; 96] {
         return Err(Error::SignatureVerificationError {
@@ -337,13 +336,13 @@ mod tests {
     }
 
     /// Helper: create a deterministic BLS key pair for testing.
-    fn test_keypair() -> (bls_signatures::SecretKey, bls_signatures::PublicKey) {
+    fn test_keypair() -> (bls::SecretKey, bls::PublicKey) {
         let scalar =
             hex::decode("659dc45452f29c17f96dda38ae1546e0e9e818423cdb8cc857f3728c518b4cb8")
                 .unwrap()
                 .try_into()
                 .unwrap();
-        let sk = bls_signatures::SecretKey::from_be_bytes(&scalar).unwrap();
+        let sk = bls::SecretKey::from_be_bytes(&scalar).unwrap();
         let pk = sk.public_key();
         (sk, pk)
     }

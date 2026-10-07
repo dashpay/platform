@@ -2,7 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 

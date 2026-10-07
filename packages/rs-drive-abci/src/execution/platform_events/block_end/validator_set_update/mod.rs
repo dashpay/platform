@@ -157,7 +157,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
         use dpp::block::extended_block_info::ExtendedBlockInfo;
-        use dpp::bls_signatures::SecretKey;
+        use dpp::bls::SecretKey;
         use dpp::core_types::validator::v0::ValidatorV0;
         use dpp::core_types::validator_set::v0::ValidatorSetV0;
         use dpp::core_types::validator_set::ValidatorSet;

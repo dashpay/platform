@@ -1,6 +1,6 @@
 use derive_more::{Deref, DerefMut, From};
-use dpp::bls_signatures;
-pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
+use dpp::bls;
+pub use dpp::bls::PublicKey as ThresholdBlsPublicKey;
 
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::{QuorumHash, Txid};
@@ -206,8 +206,8 @@ impl SigningQuorum {
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        let private_key = bls_signatures::SecretKey::from_be_bytes(&self.private_key).ok_or(
-            Error::BLSError(dpp::bls_signatures::BlsError::DeserializationError(
+        let private_key = bls::SecretKey::from_be_bytes(&self.private_key).ok_or(
+            Error::BLSError(dpp::bls::BlsError::DeserializationError(
                 "Could not deserialize private key".to_string(),
             )),
         )?;
@@ -223,7 +223,7 @@ impl SigningQuorum {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::bls_signatures::SecretKey as BlsPrivateKey;
+    use dpp::bls::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
 

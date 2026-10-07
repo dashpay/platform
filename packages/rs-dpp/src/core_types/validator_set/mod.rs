@@ -1,4 +1,4 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 use crate::core_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
@@ -148,7 +148,7 @@ impl ValidatorSetV0Setters for ValidatorSet {
 ))]
 mod json_convertible_tests {
     use super::*;
-    use crate::bls_signatures::SecretKey;
+    use crate::bls::SecretKey;
     use crate::core_types::validator::v0::ValidatorV0;
     use crate::core_types::validator_set::v0::ValidatorSetV0;
     use dashcore::hashes::Hash;

@@ -1,4 +1,4 @@
-use crate::bls_signatures::{PublicKey, SecretKey, Signature};
+use crate::bls::{PublicKey, SecretKey, Signature};
 use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
 
 #[derive(Default)]

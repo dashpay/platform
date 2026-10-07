@@ -391,7 +391,7 @@ mod tests {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::SecretKey as BlsPrivateKey;
+    use dpp::bls::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::ProTxHash;
     use dpp::dashcore::Txid;

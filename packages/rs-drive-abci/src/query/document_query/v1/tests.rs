@@ -3933,7 +3933,7 @@ mod having_trust_boundary {
     use crate::rpc::core::MockCoreRPCLike;
     use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -6749,7 +6749,7 @@ mod chained_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 43;
-            dpp::bls_signatures::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
             pubkey: other_key.public_key().to_bytes(),
@@ -7196,7 +7196,7 @@ mod composite_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 44;
-            dpp::bls_signatures::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
             pubkey: other_key.public_key().to_bytes(),

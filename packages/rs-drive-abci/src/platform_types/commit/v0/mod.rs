@@ -4,8 +4,8 @@ pub mod accessors;
 
 use crate::abci::AbciError;
 use crate::platform_types::cleaned_abci_messages::{cleaned_block_id, cleaned_commit_info};
-use dpp::bls_signatures;
-use dpp::bls_signatures::{BlsError, Signature};
+use dpp::bls;
+use dpp::bls::{BlsError, Signature};
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use tenderdash_abci::proto;
@@ -82,7 +82,7 @@ impl CommitV0 {
     pub(super) fn verify_signature(
         &self,
         signature: &[u8; 96],
-        public_key: &bls_signatures::PublicKey,
+        public_key: &bls::PublicKey,
     ) -> SimpleValidationResult<AbciError> {
         if signature == &[0; 96] {
             return ValidationResult::new_with_error(AbciError::BadRequest(
@@ -137,7 +137,7 @@ mod test {
 
     use super::CommitV0;
     use crate::platform_types::cleaned_abci_messages::cleaned_commit_info::v0::CleanedCommitInfo;
-    use dpp::bls_signatures::PublicKey;
+    use dpp::bls::PublicKey;
     use dpp::dashcore_rpc::{
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };

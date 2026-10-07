@@ -1,4 +1,4 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::{ValidatorV0, ValidatorV0Getters, ValidatorV0Setters};
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
 use crate::serialization::JsonConvertible;

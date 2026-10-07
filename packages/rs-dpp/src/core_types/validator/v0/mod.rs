@@ -1,7 +1,7 @@
 use dashcore::{ProTxHash, PubkeyHash};
 use std::fmt::{Debug, Formatter};
 
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls::PublicKey as BlsPublicKey;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -272,7 +272,7 @@ impl ValidatorV0Setters for ValidatorV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bls_signatures::SecretKey;
+    use crate::bls::SecretKey;
     use bincode::config;
     use rand::prelude::StdRng;
     use rand::SeedableRng;

@@ -24,7 +24,7 @@ use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
 use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::get_contract_moderation_action_counts_response_v0::Result as ModerationActionCountsResult;
 use dapi_grpc::tonic::async_trait;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::core_types::validator_set::ValidatorSet;
@@ -315,7 +315,7 @@ mod tests {
     use dapi_grpc::platform::v0::{
         get_current_quorums_info_response, get_status_response, ResponseMetadata,
     };
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::version::PlatformVersion;
 
     /// Generate a valid BLS public key as compressed bytes (48 bytes) from a

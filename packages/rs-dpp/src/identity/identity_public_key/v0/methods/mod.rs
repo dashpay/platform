@@ -1,5 +1,5 @@
 #[cfg(feature = "bls-signatures")]
-use crate::bls_signatures;
+use crate::bls;
 #[cfg(feature = "ed25519-dalek")]
 use crate::ed25519_dalek;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
@@ -93,8 +93,8 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
             {
-                let private_key: Option<bls_signatures::SecretKey> =
-                    bls_signatures::SecretKey::from_be_bytes(private_key_bytes);
+                let private_key: Option<bls::SecretKey> =
+                    bls::SecretKey::from_be_bytes(private_key_bytes);
                 if private_key.is_none() {
                     return Ok(false);
                 }
@@ -142,7 +142,7 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bls_signatures::Signature;
+    use crate::bls::Signature;
     use crate::identity::{Purpose, SecurityLevel};
     use dashcore::Network;
     use dpp::version::PlatformVersion;
@@ -155,8 +155,8 @@ mod tests {
         let (public_key_data, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key = crate::bls_signatures::SecretKey::from_be_bytes(&secret_key)
-            .expect("expected to get secret key");
+        let decoded_secret_key =
+            crate::bls::SecretKey::from_be_bytes(&secret_key).expect("expected to get secret key");
         let public_key = decoded_secret_key.public_key();
         let decoded_public_key_data = public_key.to_bytes();
         assert_eq!(
@@ -171,8 +171,8 @@ mod tests {
         let (_, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key = crate::bls_signatures::SecretKey::from_be_bytes(&secret_key)
-            .expect("expected to get secret key");
+        let decoded_secret_key =
+            crate::bls::SecretKey::from_be_bytes(&secret_key).expect("expected to get secret key");
         let signature = decoded_secret_key.sign(b"hello").expect("expected to sign");
         let compressed = signature.to_bytes();
         let decoded_signature = Signature::from_compressed(&compressed).expect("valid signature");

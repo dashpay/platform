@@ -26,7 +26,7 @@ use dashcore::hash_types::InputsHash;
 use dashcore::hashes::Hash;
 use dashcore::platform_node_id::PlatformNodeId;
 use dashcore::{Address as DashAddress, Network, Transaction, Txid};
-use dpp::bls_signatures::SecretKey as BlsSecretKey;
+use dpp::bls::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -453,7 +453,7 @@ mod tests {
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
     };
-    use dpp::bls_signatures::{PublicKey as BlsPublicKey, Signature as BlsSignature};
+    use dpp::bls::{PublicKey as BlsPublicKey, Signature as BlsSignature};
     use key_wallet::account::StandardAccountType;
     use std::sync::{Arc, Mutex};
 

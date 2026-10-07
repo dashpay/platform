@@ -180,7 +180,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::bincode::config;
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::core_types::validator::v0::ValidatorV0;
     use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
     use dpp::core_types::validator_set::ValidatorSet;

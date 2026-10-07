@@ -1,6 +1,6 @@
 //! Serde support for Platform BLS keys in hex, byte-sequence and tagged-enum inputs.
 
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls::PublicKey as BlsPublicKey;
 use serde::de::Visitor;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt;

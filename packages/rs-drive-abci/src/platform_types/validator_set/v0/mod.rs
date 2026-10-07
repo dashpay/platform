@@ -6,7 +6,7 @@ use dpp::dashcore::{ProTxHash, PubkeyHash};
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator::v0::NewValidatorIfMasternodeInState;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 pub use dpp::core_types::validator_set::v0::*;
 use dpp::dashcore_rpc::json::QuorumInfoResult;
@@ -313,7 +313,7 @@ fn validator_node_address(node_id: &PubkeyHash, node_ip: &str, platform_p2p_port
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
     use rand::rngs::StdRng;

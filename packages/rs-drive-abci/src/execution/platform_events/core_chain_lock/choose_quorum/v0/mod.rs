@@ -1,4 +1,4 @@
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
@@ -91,7 +91,7 @@ impl<C> Platform<C> {
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::QuorumHash;
     use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;

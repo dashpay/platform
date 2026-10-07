@@ -1,4 +1,4 @@
-use dpp::bls_signatures::Signature;
+use dpp::bls::Signature;
 use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};

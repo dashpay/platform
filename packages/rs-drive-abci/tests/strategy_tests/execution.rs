@@ -19,7 +19,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
-use dpp::bls_signatures::SecretKey as BlsPrivateKey;
+use dpp::bls::SecretKey as BlsPrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};

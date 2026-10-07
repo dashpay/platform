@@ -12,7 +12,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 
 #[cfg(feature = "bls-signatures")]
-use crate::bls_signatures::{self as bls_signatures, BlsError};
+use crate::bls::{self, BlsError};
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -168,7 +168,7 @@ impl KeyType {
                 private_key.public_key().to_bytes()
             }
             KeyType::BLS12_381 => {
-                let private_key = bls_signatures::SecretKey::random(rng);
+                let private_key = bls::SecretKey::random(rng);
                 private_key.public_key().to_bytes().to_vec()
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
@@ -217,8 +217,8 @@ impl KeyType {
             KeyType::BLS12_381 => {
                 #[cfg(feature = "bls-signatures")]
                 {
-                    let private_key: Option<bls_signatures::SecretKey> =
-                        bls_signatures::SecretKey::from_be_bytes(private_key_bytes);
+                    let private_key: Option<bls::SecretKey> =
+                        bls::SecretKey::from_be_bytes(private_key_bytes);
                     if private_key.is_none() {
                         return Err(ProtocolError::BlsError(BlsError::DeserializationError(
                             "private key bytes not a valid secret key".to_string(),
@@ -274,7 +274,7 @@ impl KeyType {
                 )
             }
             KeyType::BLS12_381 => {
-                let private_key = crate::bls_signatures::SecretKey::random(rng);
+                let private_key = crate::bls::SecretKey::random(rng);
                 let public_key_bytes = private_key.public_key().to_bytes().to_vec();
                 (public_key_bytes, private_key.to_be_bytes())
             }

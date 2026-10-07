@@ -1,4 +1,4 @@
-use dpp::bls_signatures::Signature;
+use dpp::bls::Signature;
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
@@ -47,11 +47,9 @@ where
                     platform_state.last_committed_block_height() + 1,
                     round
                 );
-                return Err(Error::BLSError(
-                    dpp::bls_signatures::BlsError::DeserializationError(
-                        "chain lock signature was not deserializable".to_string(),
-                    ),
-                ));
+                return Err(Error::BLSError(dpp::bls::BlsError::DeserializationError(
+                    "chain lock signature was not deserializable".to_string(),
+                )));
             }
         };
 
@@ -231,7 +229,7 @@ where
 mod tests {
     use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::bls_signatures::Signature;
+    use dpp::bls::Signature;
 
     use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
     use dpp::dashcore::{BlockHash, ChainLock, QuorumSigningRequestId};

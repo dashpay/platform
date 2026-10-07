@@ -38,7 +38,7 @@ use dash_sdk::platform::Fetch;
 use dashcore::hashes::{hash160, Hash};
 use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
 use dashcore::{Network, PrivateKey};
-use dpp::bls_signatures::SecretKey as BlsSecretKey;
+use dpp::bls::SecretKey as BlsSecretKey;
 use dpp::ed25519_dalek::SigningKey;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;

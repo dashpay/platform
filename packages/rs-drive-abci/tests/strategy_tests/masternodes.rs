@@ -1,5 +1,5 @@
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
-use dpp::bls_signatures::SecretKey as BlsPrivateKey;
+use dpp::bls::SecretKey as BlsPrivateKey;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash, Txid};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};

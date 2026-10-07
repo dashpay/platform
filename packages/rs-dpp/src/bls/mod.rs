@@ -1,4 +1,8 @@
 #[cfg(feature = "bls-signatures")]
+mod bls_signatures;
+#[cfg(feature = "bls-signatures")]
+pub use bls_signatures::{BlsError, PublicKey, SecretKey, Signature};
+#[cfg(feature = "bls-signatures")]
 pub mod native_bls;
 
 use crate::{ProtocolError, PublicKeyValidationError};

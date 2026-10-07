@@ -1,7 +1,7 @@
 //! Emit deterministic compatibility fixtures from DPP's current BLS backend.
 //! Run with `cargo run -p dpp --example generate_bls_compatibility_vectors`.
 
-use dpp::bls_signatures::{PublicKey, SecretKey, Signature};
+use dpp::bls::{PublicKey, SecretKey, Signature};
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::dashcore::{hashes::Hash, ProTxHash, PubkeyHash, QuorumHash};

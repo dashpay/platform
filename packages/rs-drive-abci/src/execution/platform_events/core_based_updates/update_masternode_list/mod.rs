@@ -92,7 +92,7 @@ mod test {
     use crate::platform_types::validator_set::{ValidatorSet, ValidatorSetExt};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use dpp::core_types::validator_set::v0::ValidatorSetV0;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};

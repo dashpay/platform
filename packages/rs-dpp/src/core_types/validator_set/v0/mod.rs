@@ -1,4 +1,4 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 #[cfg(feature = "core-types-serialization")]
 use bincode::de::BorrowDecoder;
@@ -306,7 +306,7 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bls_signatures::SecretKey;
+    use crate::bls::SecretKey;
     use bincode::config;
     use dashcore::PubkeyHash;
     use rand::rngs::StdRng;

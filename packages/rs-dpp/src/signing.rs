@@ -1,5 +1,5 @@
 #[cfg(feature = "bls-signatures")]
-use crate::bls_signatures::{self, Signature};
+use crate::bls::{self, Signature};
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
@@ -41,7 +41,7 @@ impl PlatformMessageSignable for &[u8] {
                 }
             }
             KeyType::BLS12_381 => {
-                let public_key = match bls_signatures::PublicKey::try_from(public_key_data) {
+                let public_key = match bls::PublicKey::try_from(public_key_data) {
                     Ok(public_key) => public_key,
                     Err(e) => {
                         // dbg!(format!("bls public_key could not be recovered"));
