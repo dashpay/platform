@@ -38,9 +38,7 @@ use dash_sdk::platform::Fetch;
 use dashcore::hashes::{hash160, Hash};
 use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
 use dashcore::{Network, PrivateKey};
-use dpp::bls_signatures::{
-    Bls12381G2Impl, PublicKey as BlsPublicKey, SecretKey as BlsSecretKey, SerializationFormat,
-};
+use dpp::bls_signatures::SecretKey as BlsSecretKey;
 use dpp::ed25519_dalek::SigningKey;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -371,18 +369,10 @@ pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
 }
 
 /// `(basic, legacy)` 48-byte serializations of the BLS public key for
-/// `secret`, or `None` when the scalar is not below the group order.
+/// `secret`, or `None` when the scalar reduces to zero.
 pub fn bls_public_keys(secret: &[u8; 32]) -> Option<([u8; 48], [u8; 48])> {
-    let sk: BlsSecretKey<Bls12381G2Impl> =
-        Option::from(BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(secret))?;
-    let pk = BlsPublicKey::from(&sk);
-    let basic: [u8; 48] = pk.to_bytes().as_slice().try_into().ok()?;
-    let legacy: [u8; 48] = pk
-        .to_bytes_with_mode(SerializationFormat::Legacy)
-        .as_slice()
-        .try_into()
-        .ok()?;
-    Some((basic, legacy))
+    let pk = BlsSecretKey::from_be_bytes(secret)?.public_key();
+    Some((pk.to_bytes(), pk.to_legacy_bytes().ok()?))
 }
 
 /// Tenderdash node id for an ed25519 `seed`.

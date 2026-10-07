@@ -19,7 +19,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey, SignatureSchemes};
+use dpp::bls_signatures::SecretKey as BlsPrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
@@ -733,19 +733,15 @@ pub(crate) async fn run_chain_for_strategy<'a>(
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                let quorum_private_key =
-                    BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(quorum_private_key)
-                        .expect("expected to have a valid private key");
+                let quorum_private_key = BlsPrivateKey::from_be_bytes(quorum_private_key)
+                    .expect("expected to have a valid private key");
                 let signature = quorum_private_key
-                    .sign(
-                        SignatureSchemes::Basic,
-                        message_digest.as_byte_array().as_slice(),
-                    )
+                    .sign(message_digest.as_byte_array().as_slice())
                     .expect("expected to sign");
                 let chain_lock = ChainLock {
                     block_height,
                     block_hash: BlockHash::from_byte_array(*block_hash),
-                    signature: signature.as_raw_value().to_compressed().into(),
+                    signature: signature.to_bytes().into(),
                 };
 
                 Ok(chain_lock)
@@ -860,9 +856,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             .map(
                 |validator_in_quorum| tenderdash_abci::proto::abci::ValidatorUpdate {
                     pub_key: Some(tenderdash_abci::proto::crypto::PublicKey {
-                        sum: Some(Bls12381(
-                            validator_in_quorum.public_key.0.to_compressed().to_vec(),
-                        )),
+                        sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
                     }),
                     power: 100,
                     pro_tx_hash: validator_in_quorum.pro_tx_hash.to_byte_array().to_vec(),
@@ -872,11 +866,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             .collect(),
         threshold_public_key: Some(tenderdash_abci::proto::crypto::PublicKey {
             sum: Some(Bls12381(
-                current_quorum_with_test_info
-                    .public_key
-                    .0
-                    .to_compressed()
-                    .to_vec(),
+                current_quorum_with_test_info.public_key.to_bytes().to_vec(),
             )),
         }),
         quorum_hash: current_validator_quorum_hash.to_byte_array().to_vec(),

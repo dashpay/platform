@@ -1,4 +1,3 @@
-use crate::bls_signatures::Bls12381G2Impl;
 use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 #[cfg(feature = "core-types-serialization")]
@@ -33,14 +32,12 @@ pub struct ValidatorSetV0 {
     /// The list of masternodes
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
-    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
-    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
-    // dependency; accepts hex string or byte sequence through any deserializer).
+    // Tagged enum buffers can carry either hex strings or byte sequences.
     #[cfg_attr(
         feature = "serde-conversion",
         serde(with = "crate::serialization::dashcore::bls_pubkey")
     )]
-    pub threshold_public_key: BlsPublicKey<Bls12381G2Impl>,
+    pub threshold_public_key: BlsPublicKey,
 }
 
 impl Display for ValidatorSetV0 {
@@ -67,7 +64,7 @@ impl Display for ValidatorSetV0 {
                     pro_tx_hash, validator.node_ip
                 ))
                 .join(", "),
-            hex::encode(self.threshold_public_key.0.to_compressed()) // Assuming BlsPublicKey is a byte array
+            hex::encode(self.threshold_public_key.to_bytes()) // Assuming BlsPublicKey is a byte array
         )
     }
 }
@@ -91,7 +88,7 @@ impl Encode for ValidatorSetV0 {
 
         // Custom encoding for BlsPublicKey if needed
         // Assuming BlsPublicKey can be serialized to a byte slice
-        let public_key_bytes = self.threshold_public_key.0.to_compressed();
+        let public_key_bytes = self.threshold_public_key.to_bytes();
         public_key_bytes.encode(encoder)?;
 
         Ok(())
@@ -237,7 +234,7 @@ pub trait ValidatorSetV0Getters {
     /// Returns the members of the validator set.
     fn members_owned(self) -> BTreeMap<ProTxHash, ValidatorV0>;
     /// Returns the threshold public key of the validator set.
-    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl>;
+    fn threshold_public_key(&self) -> &BlsPublicKey;
 }
 
 /// Trait providing setter methods for `ValidatorSetV0` struct
@@ -251,7 +248,7 @@ pub trait ValidatorSetV0Setters {
     /// Sets the members of the validator set.
     fn set_members(&mut self, members: BTreeMap<ProTxHash, ValidatorV0>);
     /// Sets the threshold public key of the validator set.
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>);
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey);
 }
 
 impl ValidatorSetV0Getters for ValidatorSetV0 {
@@ -279,7 +276,7 @@ impl ValidatorSetV0Getters for ValidatorSetV0 {
         self.members
     }
 
-    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl> {
+    fn threshold_public_key(&self) -> &BlsPublicKey {
         &self.threshold_public_key
     }
 }
@@ -301,7 +298,7 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
         self.members = members;
     }
 
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>) {
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
         self.threshold_public_key = threshold_public_key;
     }
 }
@@ -326,7 +323,7 @@ mod tests {
         // Create a sample ProTxHash and ValidatorV0 instance
         let pro_tx_hash = ProTxHash::from_slice(&[2; 32]).unwrap();
         let mut rng = StdRng::seed_from_u64(0);
-        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
+        let public_key = Some(SecretKey::random(&mut rng).public_key());
         let node_ip = "192.168.1.1".to_string();
         let node_id = PubkeyHash::from_slice(&[4; 20]).unwrap();
         let validator = ValidatorV0 {
@@ -345,7 +342,7 @@ mod tests {
         members.insert(pro_tx_hash, validator);
 
         // Create a sample threshold public key
-        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let threshold_public_key = SecretKey::random(&mut rng).public_key();
 
         // Create the ValidatorSetV0 instance
         let validator_set = ValidatorSetV0 {

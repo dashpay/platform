@@ -21,7 +21,9 @@ modulo the group order and permits an identity public key to deserialize; an
 identity signature still fails verification. Replacing those rules requires a
 separate protocol decision. The strict dash-pkc key constructors differ here.
 
-The generator uses DPP only; it does not derive expected values from dash-pkc.
+The frozen expected values come from the original DPP backend listed above.
+The generator calls the current DPP implementation; after a backend change,
+compare its output with the frozen fixture rather than replacing the fixture.
 To inspect its output, run:
 
 ```sh

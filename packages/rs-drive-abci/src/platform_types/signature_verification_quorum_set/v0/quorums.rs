@@ -1,7 +1,7 @@
 use derive_more::{Deref, DerefMut, From};
 use dpp::bls_signatures;
 pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
-use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
+
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::{QuorumHash, Txid};
 use std::collections::BTreeMap;
@@ -149,7 +149,7 @@ pub struct VerificationQuorum {
 
     /// Quorum threshold public key is used to verify
     /// signatures produced by corresponding quorum
-    pub public_key: ThresholdBlsPublicKey<Bls12381G2Impl>,
+    pub public_key: ThresholdBlsPublicKey,
 }
 
 impl Debug for VerificationQuorum {
@@ -206,39 +206,33 @@ impl SigningQuorum {
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        let private_key =
-            bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&self.private_key)
-                .into_option()
-                .ok_or(Error::BLSError(
-                    dpp::bls_signatures::BlsError::DeserializationError(
-                        "Could not deserialize private key".to_string(),
-                    ),
-                ))?;
+        let private_key = bls_signatures::SecretKey::from_be_bytes(&self.private_key).ok_or(
+            Error::BLSError(dpp::bls_signatures::BlsError::DeserializationError(
+                "Could not deserialize private key".to_string(),
+            )),
+        )?;
 
         let signature = private_key
-            .sign(
-                SignatureSchemes::Basic,
-                message_digest.as_byte_array().as_slice(),
-            )
+            .sign(message_digest.as_byte_array().as_slice())
             .map_err(Error::BLSError)?;
 
-        Ok(BLSSignature::from(signature.as_raw_value().to_compressed()))
+        Ok(BLSSignature::from(signature.to_bytes()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::bls_signatures::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
 
     /// Helper: generate a deterministic BLS public key from a seed byte.
-    fn make_public_key(seed: u8) -> ThresholdBlsPublicKey<Bls12381G2Impl> {
+    fn make_public_key(seed: u8) -> ThresholdBlsPublicKey {
         let mut key_bytes = [0u8; 32];
         key_bytes[0] = seed;
         key_bytes[31] = 1; // ensure nonzero
-        let sk = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes)
+        let sk = BlsPrivateKey::from_be_bytes(&key_bytes)
             .expect("expected a valid secret key from test bytes");
         sk.public_key()
     }

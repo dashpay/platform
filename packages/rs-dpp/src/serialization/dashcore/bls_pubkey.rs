@@ -1,122 +1,36 @@
-//! Local serde wrapper for `BlsPublicKey<Bls12381G2Impl>` that tolerates
-//! owned-string sources (`serde_json::Value`, `platform_value::Value`, and
-//! anything routed through serde's `ContentDeserializer` for tagged-enum
-//! buffering).
-//!
-//! ## Why this exists
-//!
-//! Upstream `blstrs_plus` 0.8.18 (`src/serde_impl.rs:119`) implements the
-//! human-readable deserialize path as:
-//!
-//! ```ignore
-//! if d.is_human_readable() {
-//!     let hex_str = <&str>::deserialize(d)?;   // borrowed-only
-//!     ...
-//! }
-//! ```
-//!
-//! `<&str>::deserialize` only succeeds when the deserializer's visitor
-//! receives `visit_borrowed_str` — which `serde_json::from_slice` /
-//! `serde_json::from_str` provide, but `serde_json::from_value`,
-//! `platform_value::from_value`, and `ContentDeserializer` do **not** (they
-//! produce owned `String`). Round-tripping a `BlsPublicKey` through any
-//! `Value` representation therefore fails with
-//! `"invalid type: string ..., expected a borrowed string"`.
-//!
-//! This is technically a serde compatibility quirk rather than a single
-//! crate's bug — but the leaf type is the only place to patch. See plan
-//! §10b "Common pattern: serde's `ContentDeserializer` HR-quirk" for
-//! the broader narrative.
-//!
-//! ## How the workaround works
-//!
-//! A single `deserialize_any` visitor accepts BOTH wire forms upstream emits:
-//! the 96-char hex string (`visit_str`) and the 48-byte compressed-G1 form as
-//! raw bytes or a `u8` sequence (`visit_bytes` / `visit_seq`). Either way it
-//! hex/byte-decodes to the compressed-G1 representation, lifts it to
-//! `G1Projective` via `to_curve`, and wraps into `PublicKey<Bls12381G2Impl>`
-//! directly (the inner field is `pub`).
-//!
-//! Driving it via `deserialize_any` (rather than branching on
-//! `is_human_readable()`) is what makes it robust to serde's internal-tag
-//! `Content` buffer: that buffer's `is_human_readable()` does not reliably
-//! match the original deserializer, so a `Value` (non-HR) pubkey could arrive
-//! as a byte *sequence* while the old HR branch expected a *string* — which is
-//! exactly why the `ValidatorSet` value round-trip test used to be `#[ignore]`d.
-//! Accepting both shapes in one visitor sidesteps that, and also sidesteps the
-//! upstream borrowed-only `<&str>::deserialize` HR path. Both serde_json and
-//! platform_value are self-describing, so `deserialize_any` is safe; bincode
-//! never reaches here (it goes through the separate derived `Decode`).
-//!
-//! Note: `BlsPublicKey<Bls12381G2Impl>` carries a public key on the G1 curve
-//! (the `Bls12381G2Impl` name refers to where signatures live, not keys).
-//! Compressed G1 = 48 bytes = 96 hex chars.
-//!
-//! ## When to remove this
-//!
-//! This wrapper is now self-sufficient (no behavioral dependency on an upstream
-//! fix). Once upstream `blstrs_plus` accepts owned strings AND a byte-sequence
-//! HR form on its own `Deserialize`, this wrapper and the `serde(with = ...)`
-//! annotations on `Validator::public_key` / `ValidatorSetV0::threshold_public_key`
-//! can simply be dropped.
+//! Serde support for Platform BLS keys in hex, byte-sequence and tagged-enum inputs.
 
-use crate::bls_signatures::inner_types::{G1Affine, GroupEncoding, PrimeCurveAffine};
-use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use crate::bls_signatures::PublicKey as BlsPublicKey;
 use serde::de::Visitor;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt;
 
-/// Compressed-G1 wire size for BLS12-381 (where the public key lives in
-/// `Bls12381G2Impl`).
+/// Size of a compressed BLS12-381 G1 public key.
 const COMPRESSED_G1_LEN: usize = 48;
 
-pub fn serialize<S: Serializer>(
-    pk: &BlsPublicKey<Bls12381G2Impl>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    // Upstream serialize already produces a hex string in HR and a byte tuple
-    // in non-HR; both are correct on the wire. Nothing to override here.
+pub fn serialize<S: Serializer>(pk: &BlsPublicKey, serializer: S) -> Result<S::Ok, S::Error> {
     pk.serialize(serializer)
 }
 
-pub fn deserialize<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<BlsPublicKey<Bls12381G2Impl>, D::Error> {
-    // One visitor that accepts BOTH wire forms upstream emits: the
-    // human-readable 96-char hex string, and the non-HR 48-byte compressed-G1
-    // form (as `bytes` or a `u8` sequence). Driving it via `deserialize_any`
-    // makes it robust to serde's internal-tag `Content` buffer, whose
-    // `is_human_readable()` does not always match the original deserializer —
-    // the bug that previously forced the ValidatorSet value round-trip test to
-    // be `#[ignore]`d (the non-HR bytes arrived while the old code's HR branch
-    // expected a string → "invalid type: sequence, expected a string"). It also
-    // sidesteps the upstream `<&str>::deserialize` borrowed-only HR path (the
-    // original reason this wrapper exists). Both serde_json and platform_value
-    // are self-describing, so `deserialize_any` is safe; bincode never reaches
-    // here (it goes through the separate derived `Decode`).
+pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<BlsPublicKey, D::Error> {
+    // Tagged enum buffers may supply either representation regardless of is_human_readable().
     deserializer.deserialize_any(BlsPublicKeyVisitor)
 }
 
-fn from_compressed_g1_bytes<E: serde::de::Error>(
-    bytes: &[u8],
-) -> Result<BlsPublicKey<Bls12381G2Impl>, E> {
+fn from_compressed_g1_bytes<E: serde::de::Error>(bytes: &[u8]) -> Result<BlsPublicKey, E> {
     if bytes.len() != COMPRESSED_G1_LEN {
         return Err(E::custom(format!(
             "expected {COMPRESSED_G1_LEN} compressed-G1 bytes for public key, got {}",
             bytes.len()
         )));
     }
-    let mut compressed = <G1Affine as GroupEncoding>::Repr::default();
-    compressed.as_mut().copy_from_slice(bytes);
-    let affine = Option::<G1Affine>::from(G1Affine::from_bytes(&compressed))
-        .ok_or_else(|| E::custom("not a valid compressed G1 point"))?;
-    Ok(BlsPublicKey::<Bls12381G2Impl>(affine.to_curve()))
+    BlsPublicKey::try_from(bytes).map_err(|_| E::custom("not a valid compressed G1 point"))
 }
 
 struct BlsPublicKeyVisitor;
 
 impl<'de> Visitor<'de> for BlsPublicKeyVisitor {
-    type Value = BlsPublicKey<Bls12381G2Impl>;
+    type Value = BlsPublicKey;
 
     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -172,13 +86,13 @@ fn hex_nibble(c: u8) -> Result<u8, &'static str> {
     }
 }
 
-/// `Option<BlsPublicKey<Bls12381G2Impl>>` variant for fields like
+/// `Option<BlsPublicKey>` variant for fields like
 /// `Validator::public_key`.
 pub mod option {
     use super::*;
 
     pub fn serialize<S: Serializer>(
-        opt: &Option<BlsPublicKey<Bls12381G2Impl>>,
+        opt: &Option<BlsPublicKey>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         // Option<T>'s built-in Serialize delegates to T's Serialize, which
@@ -188,14 +102,14 @@ pub mod option {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<Option<BlsPublicKey<Bls12381G2Impl>>, D::Error> {
+    ) -> Result<Option<BlsPublicKey>, D::Error> {
         struct OptionVisitor;
 
         impl<'de> Visitor<'de> for OptionVisitor {
-            type Value = Option<BlsPublicKey<Bls12381G2Impl>>;
+            type Value = Option<BlsPublicKey>;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("Option<BlsPublicKey<Bls12381G2Impl>>")
+                f.write_str("Option<BlsPublicKey>")
             }
 
             fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
@@ -231,10 +145,10 @@ mod tests {
 
     // Newtypes that drive the `with` module(s) through serde.
     #[derive(Serialize, Deserialize)]
-    struct Wrap(#[serde(with = "super")] BlsPublicKey<Bls12381G2Impl>);
+    struct Wrap(#[serde(with = "super")] BlsPublicKey);
 
     #[derive(Serialize, Deserialize)]
-    struct OptWrap(#[serde(with = "super::option")] Option<BlsPublicKey<Bls12381G2Impl>>);
+    struct OptWrap(#[serde(with = "super::option")] Option<BlsPublicKey>);
 
     #[test]
     fn json_hr_round_trip_is_the_hex_string() {

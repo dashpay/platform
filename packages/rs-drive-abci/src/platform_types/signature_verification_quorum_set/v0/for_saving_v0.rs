@@ -134,10 +134,8 @@ impl From<Quorums<VerificationQuorum>> for Vec<QuorumForSavingV0> {
             .map(|(hash, quorum)| QuorumForSavingV0 {
                 hash: Bytes32::from(hash.as_byte_array()),
                 #[cfg(feature = "bls-signatures")]
-                public_key: bls_signatures::PublicKey::from_bytes(
-                    &quorum.public_key.0.to_compressed(),
-                )
-                .expect("expected to convert between BLS key libraries (to chia)"),
+                public_key: bls_signatures::PublicKey::from_bytes(&quorum.public_key.to_bytes())
+                    .expect("expected to convert between BLS key libraries (to chia)"),
                 index: quorum.index,
             })
             .collect()

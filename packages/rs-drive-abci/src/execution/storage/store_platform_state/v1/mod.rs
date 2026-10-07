@@ -180,7 +180,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::bincode::config;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls_signatures::SecretKey;
     use dpp::core_types::validator::v0::ValidatorV0;
     use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
     use dpp::core_types::validator_set::ValidatorSet;
@@ -259,7 +259,7 @@ mod tests {
     /// threshold key derived from `byte`.
     fn validator_set(byte: u8, core_height: u32) -> ValidatorSet {
         let mut rng = StdRng::seed_from_u64(byte as u64);
-        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let threshold_public_key = SecretKey::random(&mut rng).public_key();
         let member = ValidatorV0 {
             pro_tx_hash: pro_tx_hash(byte),
             public_key: None,

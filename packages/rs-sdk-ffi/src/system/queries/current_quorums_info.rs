@@ -105,7 +105,7 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
                             hex::encode(vs.quorum_hash()),
                             vs.core_height(),
                             members_json.join(","),
-                            hex::encode(vs.threshold_public_key().0.to_compressed())
+                            hex::encode(vs.threshold_public_key().to_bytes())
                         )
                     })
                     .collect();

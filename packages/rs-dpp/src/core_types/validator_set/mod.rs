@@ -1,4 +1,4 @@
-use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 use crate::core_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
@@ -101,7 +101,7 @@ impl ValidatorSetV0Getters for ValidatorSet {
         }
     }
 
-    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl> {
+    fn threshold_public_key(&self) -> &BlsPublicKey {
         match self {
             ValidatorSet::V0(v0) => v0.threshold_public_key(),
         }
@@ -133,7 +133,7 @@ impl ValidatorSetV0Setters for ValidatorSet {
         }
     }
 
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>) {
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
         match self {
             ValidatorSet::V0(v0) => v0.set_threshold_public_key(threshold_public_key),
         }
@@ -148,7 +148,7 @@ impl ValidatorSetV0Setters for ValidatorSet {
 ))]
 mod json_convertible_tests {
     use super::*;
-    use crate::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use crate::bls_signatures::SecretKey;
     use crate::core_types::validator::v0::ValidatorV0;
     use crate::core_types::validator_set::v0::ValidatorSetV0;
     use dashcore::hashes::Hash;
@@ -167,14 +167,10 @@ mod json_convertible_tests {
     /// `to_value`/`to_json` of the same pubkey objects we put in the fixture.
     /// (The dedicated `serialization::dashcore::bls_pubkey` unit tests
     /// independently cover the pubkey round-trip.)
-    fn build_fixture() -> (
-        ValidatorSet,
-        BlsPublicKey<Bls12381G2Impl>,
-        BlsPublicKey<Bls12381G2Impl>,
-    ) {
+    fn build_fixture() -> (ValidatorSet, BlsPublicKey, BlsPublicKey) {
         let mut rng = StdRng::seed_from_u64(42);
         let pro_tx_hash = ProTxHash::from_byte_array([0x11; 32]);
-        let validator_pubkey = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let validator_pubkey = SecretKey::random(&mut rng).public_key();
         let validator_v0 = ValidatorV0 {
             pro_tx_hash,
             public_key: Some(validator_pubkey),
@@ -188,7 +184,7 @@ mod json_convertible_tests {
         let mut members = BTreeMap::new();
         members.insert(pro_tx_hash, validator_v0);
 
-        let threshold_pubkey = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let threshold_pubkey = SecretKey::random(&mut rng).public_key();
         let set = ValidatorSet::V0(ValidatorSetV0 {
             quorum_hash: QuorumHash::from_byte_array([0x33; 32]),
             quorum_index: Some(7),

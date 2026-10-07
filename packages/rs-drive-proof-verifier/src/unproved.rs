@@ -315,7 +315,7 @@ mod tests {
     use dapi_grpc::platform::v0::{
         get_current_quorums_info_response, get_status_response, ResponseMetadata,
     };
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls_signatures::SecretKey;
     use dpp::version::PlatformVersion;
 
     /// Generate a valid BLS public key as compressed bytes (48 bytes) from a
@@ -323,11 +323,8 @@ mod tests {
     fn generate_valid_bls_public_key_bytes(seed: u8) -> Vec<u8> {
         let mut secret_bytes = [0u8; 32];
         secret_bytes[31] = seed.max(1); // ensure nonzero
-        let sk: SecretKey<Bls12381G2Impl> =
-            SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_bytes)
-                .into_option()
-                .expect("valid secret key");
-        sk.public_key().0.to_compressed().to_vec()
+        let sk: SecretKey = SecretKey::from_be_bytes(&secret_bytes).expect("valid secret key");
+        sk.public_key().to_bytes().to_vec()
     }
 
     /// Helper: build a valid GetCurrentQuorumsInfoResponse with one quorum hash,

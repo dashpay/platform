@@ -1,3 +1,5 @@
+#[cfg(feature = "bls-signatures")]
+use crate::bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
 use crate::ed25519_dalek;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
@@ -10,8 +12,6 @@ use dashcore::hashes::Hash;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
-#[cfg(feature = "bls-signatures")]
-use {crate::bls_signatures, crate::bls_signatures::Bls12381G2Impl};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
@@ -93,15 +93,14 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
             {
-                let private_key: Option<bls_signatures::SecretKey<Bls12381G2Impl>> =
-                    bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key_bytes)
-                        .into();
+                let private_key: Option<bls_signatures::SecretKey> =
+                    bls_signatures::SecretKey::from_be_bytes(private_key_bytes);
                 if private_key.is_none() {
                     return Ok(false);
                 }
                 let private_key = private_key.expect("expected private key");
 
-                Ok(private_key.public_key().0.to_compressed() == data.as_slice())
+                Ok(private_key.public_key().to_bytes() == data.as_slice())
             }
             #[cfg(not(feature = "bls-signatures"))]
             return Err(ProtocolError::NotSupported(
@@ -143,7 +142,7 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bls_signatures::{Bls12381G2Impl, Pairing, Signature, SignatureSchemes};
+    use crate::bls_signatures::Signature;
     use crate::identity::{Purpose, SecurityLevel};
     use dashcore::Network;
     use dpp::version::PlatformVersion;
@@ -156,11 +155,10 @@ mod tests {
         let (public_key_data, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key =
-            crate::bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
-                .expect("expected to get secret key");
+        let decoded_secret_key = crate::bls_signatures::SecretKey::from_be_bytes(&secret_key)
+            .expect("expected to get secret key");
         let public_key = decoded_secret_key.public_key();
-        let decoded_public_key_data = public_key.0.to_compressed();
+        let decoded_public_key_data = public_key.to_bytes();
         assert_eq!(
             public_key_data.as_slice(),
             decoded_public_key_data.as_slice()
@@ -173,19 +171,14 @@ mod tests {
         let (_, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key =
-            crate::bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
-                .expect("expected to get secret key");
-        let signature = decoded_secret_key
-            .sign(SignatureSchemes::Basic, b"hello")
-            .expect("expected to sign");
-        let compressed = signature.as_raw_value().to_compressed();
-        let g2 = <Bls12381G2Impl as Pairing>::Signature::from_compressed(&compressed)
-            .expect("G2 projective");
-        let decoded_signature = Signature::<Bls12381G2Impl>::Basic(g2);
+        let decoded_secret_key = crate::bls_signatures::SecretKey::from_be_bytes(&secret_key)
+            .expect("expected to get secret key");
+        let signature = decoded_secret_key.sign(b"hello").expect("expected to sign");
+        let compressed = signature.to_bytes();
+        let decoded_signature = Signature::from_compressed(&compressed).expect("valid signature");
         assert_eq!(
             compressed.as_slice(),
-            decoded_signature.as_raw_value().to_compressed().as_slice()
+            decoded_signature.to_bytes().as_slice()
         )
     }
 

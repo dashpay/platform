@@ -2,7 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 
@@ -24,10 +24,10 @@ where
     // TODO: use CoreQuorumSet.select_quorums instead
     pub fn choose_quorum<'a>(
         llmq_quorum_type: QuorumType,
-        quorums: &'a BTreeMap<QuorumHash, BlsPublicKey<Bls12381G2Impl>>,
+        quorums: &'a BTreeMap<QuorumHash, BlsPublicKey>,
         request_id: &[u8; 32],
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(ReversedQuorumHashBytes, &'a BlsPublicKey<Bls12381G2Impl>)>, Error> {
+    ) -> Result<Option<(ReversedQuorumHashBytes, &'a BlsPublicKey)>, Error> {
         match platform_version
             .drive_abci
             .methods

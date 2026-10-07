@@ -1,9 +1,7 @@
 //! Emit deterministic compatibility fixtures from DPP's current BLS backend.
 //! Run with `cargo run -p dpp --example generate_bls_compatibility_vectors`.
 
-use dpp::bls_signatures::{
-    AggregateSignature, Bls12381G2Impl, PublicKey, SecretKey, SerializationFormat, SignatureSchemes,
-};
+use dpp::bls_signatures::{PublicKey, SecretKey, Signature};
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::dashcore::{hashes::Hash, ProTxHash, PubkeyHash, QuorumHash};
@@ -12,8 +10,8 @@ use std::collections::BTreeMap;
 
 fn main() {
     let key_generation: Vec<_> = [[0u8; 32], [1; 32], [255; 32]].iter().map(|ikm| {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(ikm);
-        json!({"ikm": hex::encode(ikm), "secret_key": hex::encode(key.to_be_bytes()), "public_key": hex::encode(key.public_key().0.to_compressed())})
+        let key = SecretKey::from_ikm(ikm).unwrap();
+        json!({"ikm": hex::encode(ikm), "secret_key": hex::encode(key.to_be_bytes()), "public_key": hex::encode(key.public_key().to_bytes())})
     }).collect();
     // Public test material: unit scalars, asymmetric bytes and the last canonical scalar.
     let keys: Vec<[u8; 32]> = [
@@ -27,19 +25,19 @@ fn main() {
     .collect();
     let mut basic = Vec::new();
     for bytes in &keys {
-        let key = SecretKey::<Bls12381G2Impl>::from_be_bytes(bytes).unwrap();
+        let key = SecretKey::from_be_bytes(bytes).unwrap();
         for message in [
             vec![],
             b"Dash Platform BLS compatibility".to_vec(),
             vec![0; 32],
             (0..=255).collect(),
         ] {
-            let signature = key.sign(SignatureSchemes::Basic, &message).unwrap();
+            let signature = key.sign(&message).unwrap();
             basic.push(json!({
                 "secret_key": hex::encode(bytes), "message": hex::encode(message),
-                "public_key": hex::encode(key.public_key().0.to_compressed()),
-                "legacy_public_key": hex::encode(key.public_key().to_bytes_with_mode(SerializationFormat::Legacy)),
-                "signature": hex::encode(signature.as_raw_value().to_compressed())
+                "public_key": hex::encode(key.public_key().to_bytes()),
+                "legacy_public_key": hex::encode(key.public_key().to_legacy_bytes().unwrap()),
+                "signature": hex::encode(signature.to_bytes())
             }));
         }
     }
@@ -54,23 +52,19 @@ fn main() {
         let message = b"Dash Platform secure aggregation";
         let signers: Vec<_> = indexes
             .iter()
-            .map(|&i| SecretKey::<Bls12381G2Impl>::from_be_bytes(&keys[i]).unwrap())
+            .map(|&i| SecretKey::from_be_bytes(&keys[i]).unwrap())
             .collect();
         let public_keys: Vec<_> = signers.iter().map(|key| key.public_key()).collect();
         let signatures: Vec<_> = signers
             .iter()
-            .map(|key| key.sign(SignatureSchemes::Basic, message).unwrap())
+            .map(|key| key.sign(message).unwrap())
             .collect();
-        let AggregateSignature::Basic(point) =
-            AggregateSignature::from_signatures_secure(&signatures, &public_keys).unwrap()
-        else {
-            panic!("expected Basic signature");
-        };
+        let point = Signature::aggregate_secure(&signatures, &public_keys).unwrap();
         secure_aggregation.push(json!({
             "secret_keys": indexes.iter().map(|&i| hex::encode(keys[i])).collect::<Vec<_>>(),
             "message": hex::encode(message),
-            "public_keys": public_keys.iter().map(|key| hex::encode(key.0.to_compressed())).collect::<Vec<_>>(),
-            "signature": hex::encode(point.to_compressed())
+            "public_keys": public_keys.iter().map(|key| hex::encode(key.to_bytes())).collect::<Vec<_>>(),
+            "signature": hex::encode(point.to_bytes())
         }));
     }
     let mut scalars = Vec::new();
@@ -92,19 +86,17 @@ fn main() {
         ),
         ("max", [255; 32]),
     ] {
-        let key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes).into_option();
+        let key = SecretKey::from_be_bytes(&bytes);
         scalars.push(json!({
             "name": name, "input": hex::encode(bytes),
             "normalized": key.as_ref().map(|key| hex::encode(key.to_be_bytes())),
-            "public_key": key.as_ref().map(|key| hex::encode(key.public_key().0.to_compressed())),
-            "signature": key.as_ref().map(|key| hex::encode(key.sign(SignatureSchemes::Basic, b"scalar boundary").unwrap().as_raw_value().to_compressed()))
+            "public_key": key.as_ref().map(|key| hex::encode(key.public_key().to_bytes())),
+            "signature": key.as_ref().map(|key| hex::encode(key.sign(b"scalar boundary").unwrap().to_bytes()))
         }));
     }
     let mut infinity = [0; 48];
     infinity[0] = 0xc0;
-    let public_key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&keys[0])
-        .unwrap()
-        .public_key();
+    let public_key = SecretKey::from_be_bytes(&keys[0]).unwrap().public_key();
     let mut storage = Vec::new();
     for (name, key) in [
         ("public_key", Some(public_key)),

@@ -303,16 +303,15 @@ impl From<ChainLockConfig> for SignatureVerificationQuorumSetV0 {
 mod tests {
     use super::*;
     use crate::config::ChainLockConfig;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::bls_signatures::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
 
-    fn make_public_key(seed: u8) -> dpp::bls_signatures::PublicKey<Bls12381G2Impl> {
+    fn make_public_key(seed: u8) -> dpp::bls_signatures::PublicKey {
         let mut key_bytes = [0u8; 32];
         key_bytes[0] = seed;
         key_bytes[31] = 1;
-        let sk =
-            BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes).expect("valid secret key");
+        let sk = BlsPrivateKey::from_be_bytes(&key_bytes).expect("valid secret key");
         sk.public_key()
     }
 

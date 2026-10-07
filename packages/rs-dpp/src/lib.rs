@@ -142,7 +142,7 @@ pub mod prelude {
 pub use bincode;
 pub use bincode::enc::Encode;
 #[cfg(feature = "bls-signatures")]
-pub use blsful as bls_signatures;
+pub mod bls_signatures;
 #[cfg(feature = "data-contracts")]
 pub use data_contracts;
 #[cfg(feature = "ed25519-dalek")]

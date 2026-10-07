@@ -26,7 +26,7 @@ use dashcore::hash_types::InputsHash;
 use dashcore::hashes::Hash;
 use dashcore::platform_node_id::PlatformNodeId;
 use dashcore::{Address as DashAddress, Network, Transaction, Txid};
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchemes};
+use dpp::bls_signatures::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -405,25 +405,13 @@ pub(crate) fn finalize_update_service_payload(
     let mut finalized = placeholder.clone();
     finalized.inputs_hash = unsigned.hash_inputs();
 
-    let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-        BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(operator_secret),
-    )
-    .ok_or_else(|| {
+    let secret = BlsSecretKey::from_be_bytes(operator_secret).ok_or_else(|| {
         BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())
     })?;
     let signature = secret
-        .sign(
-            SignatureSchemes::Basic,
-            finalized.base_payload_hash().as_byte_array(),
-        )
+        .sign(finalized.base_payload_hash().as_byte_array())
         .map_err(|e| BuilderError::SigningFailed(format!("BLS payload signing failed: {e}")))?;
-    let signature_bytes: [u8; 96] = signature
-        .to_bytes_with_mode(dpp::bls_signatures::SerializationFormat::Modern)
-        .as_slice()
-        .try_into()
-        .map_err(|_| {
-            BuilderError::SigningFailed("BLS signature did not serialize to 96 bytes".into())
-        })?;
+    let signature_bytes = signature.to_bytes();
     finalized.payload_sig = BLSSignature::from(signature_bytes);
     Ok(TransactionPayload::ProviderUpdateServicePayloadType(
         finalized,
@@ -801,17 +789,10 @@ mod tests {
         // The payload signature verifies under the basic scheme against the
         // operator public key, over base_payload_hash — the exact convention
         // `verify_message_digest` checks real mainnet signatures with.
-        let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-            BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(&OPERATOR_SECRET),
-        )
-        .expect("valid test scalar");
+        let secret = BlsSecretKey::from_be_bytes(&OPERATOR_SECRET).expect("valid test scalar");
         let public_key = BlsPublicKey::from(&secret);
-        let signature = BlsSignature::<Bls12381G2Impl>::from_bytes_with_mode(
-            payload.payload_sig.as_bytes(),
-            SignatureSchemes::Basic,
-            dpp::bls_signatures::SerializationFormat::Modern,
-        )
-        .expect("compressed signature decodes");
+        let signature = BlsSignature::from_compressed(payload.payload_sig.as_bytes())
+            .expect("compressed signature decodes");
         signature
             .verify(&public_key, payload.base_payload_hash().as_byte_array())
             .expect("operator BLS signature verifies over base_payload_hash");

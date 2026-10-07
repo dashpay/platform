@@ -7,7 +7,7 @@ use crate::platform_types::signature_verification_quorum_set::{
     ThresholdBlsPublicKey, VerificationQuorum,
 };
 use bincode::{Decode, Encode};
-use dpp::bls_signatures::Bls12381G2Impl;
+
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
@@ -68,7 +68,7 @@ impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQu
 pub struct QuorumForSavingV1 {
     hash: Bytes32,
     #[bincode(with_serde)]
-    public_key: ThresholdBlsPublicKey<Bls12381G2Impl>,
+    public_key: ThresholdBlsPublicKey,
     index: Option<u32>,
 }
 

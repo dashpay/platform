@@ -1,4 +1,4 @@
-use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
+use dpp::bls_signatures::Signature;
 use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
@@ -21,12 +21,8 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 ) -> Result<bool, Error> {
     // First verify that the signature conforms to a signature
 
-    let signature = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
-        instant_lock.signature.as_bytes(),
-    )
-    .into_option()
-    {
-        Some(signature) => Signature::Basic(signature),
+    let signature = match Signature::from_compressed(instant_lock.signature.as_bytes()) {
+        Some(signature) => signature,
         None => {
             tracing::trace!(
                 instant_lock = ?InstantLockDebug(instant_lock),                "Invalid instant Lock {} signature format",                instant_lock.txid,            );

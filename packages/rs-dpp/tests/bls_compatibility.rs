@@ -1,7 +1,5 @@
 use dash_pkc::bls::{BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature};
-use dpp::bls_signatures::{
-    AggregateSignature, Bls12381G2Impl, Pairing, PublicKey, SecretKey, Signature, SignatureSchemes,
-};
+use dpp::bls_signatures::{PublicKey, SecretKey, Signature};
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::native_bls::NativeBlsModule;
@@ -73,14 +71,11 @@ fn should_preserve_key_generation_from_fixed_material() {
     assert_eq!(vectors.len(), 3);
     for v in vectors {
         let ikm = bytes::<32>(&v.ikm);
-        let current = SecretKey::<Bls12381G2Impl>::from_hash(ikm);
+        let current = SecretKey::from_ikm(&ikm).unwrap();
         let candidate = BlsSecretKey::<BlsScIetf>::from_ikm(&ikm).unwrap();
         assert_eq!(current.to_be_bytes(), bytes::<32>(&v.secret_key));
         assert_eq!(*candidate.to_bytes(), current.to_be_bytes());
-        assert_eq!(
-            current.public_key().0.to_compressed(),
-            bytes::<48>(&v.public_key)
-        );
+        assert_eq!(current.public_key().to_bytes(), bytes::<48>(&v.public_key));
         assert_eq!(
             candidate.public_key().to_bytes(),
             bytes::<48>(&v.public_key)
@@ -148,27 +143,21 @@ fn should_match_frozen_secure_aggregates_in_both_backends() {
         let public_keys: Vec<_> = v
             .public_keys
             .iter()
-            .map(|key| PublicKey::<Bls12381G2Impl>::try_from(bytes::<48>(key).as_slice()).unwrap())
+            .map(|key| PublicKey::try_from(bytes::<48>(key).as_slice()).unwrap())
             .collect();
         let signatures: Vec<_> = v
             .secret_keys
             .iter()
             .map(|key| {
-                SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes(key))
+                SecretKey::from_be_bytes(&bytes(key))
                     .unwrap()
-                    .sign(SignatureSchemes::Basic, &message)
+                    .sign(&message)
                     .unwrap()
             })
             .collect();
-        let AggregateSignature::Basic(point) =
-            AggregateSignature::from_signatures_secure(&signatures, &public_keys).unwrap()
-        else {
-            panic!("expected Basic");
-        };
-        assert_eq!(point.to_compressed(), bytes::<96>(&v.signature));
-        assert!(Signature::Basic(point)
-            .verify_secure(&public_keys, &message)
-            .is_ok());
+        let point = Signature::aggregate_secure(&signatures, &public_keys).unwrap();
+        assert_eq!(point.to_bytes(), bytes::<96>(&v.signature));
+        assert!(point.verify_secure(&public_keys, &message).is_ok());
         let candidate_keys: Vec<_> = v
             .secret_keys
             .iter()
@@ -186,9 +175,7 @@ fn should_match_frozen_secure_aggregates_in_both_backends() {
         assert!(candidate.secure_verify_aggregates(&message, &refs).is_ok());
         let mut wrong_message = message;
         wrong_message.push(1);
-        assert!(Signature::Basic(point)
-            .verify_secure(&public_keys, &wrong_message)
-            .is_err());
+        assert!(point.verify_secure(&public_keys, &wrong_message).is_err());
         assert!(candidate
             .secure_verify_aggregates(&wrong_message, &refs)
             .is_err());
@@ -201,7 +188,7 @@ fn should_preserve_historical_scalar_reduction() {
     assert_eq!(vectors.len(), 4);
     for v in vectors {
         let input = bytes(&v.input);
-        let key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&input).into_option();
+        let key = SecretKey::from_be_bytes(&input);
         assert_eq!(
             key.as_ref().map(|key| hex::encode(key.to_be_bytes())),
             v.normalized,
@@ -306,9 +293,7 @@ fn should_reject_points_outside_the_prime_order_subgroup() {
     signature[95] = 2;
     assert!(NativeBlsModule.validate_public_key(&public_key).is_err());
     assert!(BlsPublicKey::<BlsScIetf>::from_bytes(&public_key).is_err());
-    assert!(bool::from(
-        <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature).is_none()
-    ));
+    assert!(Signature::from_compressed(&signature).is_none());
     let valid = bytes::<48>(&corpus().basic[0].public_key);
     assert!(!NativeBlsModule
         .verify_signature(&signature, b"", &valid)
@@ -328,6 +313,14 @@ fn should_read_and_reemit_frozen_validator_storage() {
         assert_eq!(consumed, encoded.len(), "{}", v.name);
         assert_eq!(bincode::encode_to_vec(&validator, config).unwrap(), encoded);
         assert_eq!(serde_json::to_value(&validator).unwrap(), v.validator);
+        if let Some(key) = &validator.public_key {
+            // QuorumForSavingV1 uses bincode(with_serde): exactly 48 bytes, with no length prefix.
+            let bytes = bincode::serde::encode_to_vec(key, config).unwrap();
+            assert_eq!(bytes, key.to_bytes());
+            let decoded =
+                bincode::serde::decode_from_slice::<PublicKey, _>(&bytes, config).unwrap();
+            assert_eq!(decoded, (*key, 48));
+        }
         assert_eq!(
             serde_json::from_value::<ValidatorV0>(v.validator.clone()).unwrap(),
             validator

@@ -1,7 +1,7 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dpp::bls_signatures::{
-    Bls12381G2Impl, PublicKey as BlsPublicKey, PublicKey, SecretKey as BlsPrivateKey, SecretKey,
+    PublicKey as BlsPublicKey, PublicKey, SecretKey as BlsPrivateKey, SecretKey,
 };
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
@@ -18,9 +18,9 @@ pub struct ValidatorInQuorum {
     /// The hash of the transaction that identifies this validator in the network.
     pub pro_tx_hash: ProTxHash,
     /// The private key for this validator's BLS signature scheme.
-    pub private_key: BlsPrivateKey<Bls12381G2Impl>,
+    pub private_key: BlsPrivateKey,
     /// The public key for this validator's BLS signature scheme.
-    pub public_key: BlsPublicKey<Bls12381G2Impl>,
+    pub public_key: BlsPublicKey,
     /// The node address
     pub node_ip: String,
     /// The node id
@@ -103,9 +103,9 @@ pub struct TestQuorumInfo {
     /// A map of validators indexed by their `ProTxHash` identifiers.
     pub validator_map: BTreeMap<ProTxHash, ValidatorInQuorum>,
     /// The private key used to sign messages for the quorum (for testing purposes only).
-    pub private_key: BlsPrivateKey<Bls12381G2Impl>,
+    pub private_key: BlsPrivateKey,
     /// The public key corresponding to the private key used for signing.
-    pub public_key: BlsPublicKey<Bls12381G2Impl>,
+    pub public_key: BlsPublicKey,
 }
 
 fn random_ipv4_address(rng: &mut StdRng) -> Ipv4Addr {
@@ -274,7 +274,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
                     pro_tx_hash: *pro_tx_hash,
                     pub_key_operator: vec![], //doesn't matter
                     valid: true,
-                    pub_key_share: Some(public_key.0.to_compressed().to_vec()),
+                    pub_key_share: Some(public_key.to_bytes().to_vec()),
                 }
             })
             .collect();
@@ -285,7 +285,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
             quorum_index: 0,
             mined_block: vec![],
             members,
-            quorum_public_key: public_key.0.to_compressed().to_vec(),
+            quorum_public_key: public_key.to_bytes().to_vec(),
             secret_key_share: None,
         }
     }

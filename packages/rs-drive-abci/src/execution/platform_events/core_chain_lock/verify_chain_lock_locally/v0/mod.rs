@@ -1,4 +1,4 @@
-use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
+use dpp::bls_signatures::Signature;
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
@@ -38,11 +38,7 @@ where
 
         // First verify that the signature conforms to a signature
 
-        let decoded_sig = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
-            chain_lock.signature.as_bytes(),
-        )
-        .into_option()
-        {
+        let signature = match Signature::from_compressed(chain_lock.signature.as_bytes()) {
             Some(signature) => signature,
             None => {
                 tracing::error!(
@@ -58,8 +54,6 @@ where
                 ));
             }
         };
-
-        let signature = Signature::Basic(decoded_sig);
 
         // we attempt to verify the chain lock locally
         let chain_lock_height = chain_lock.block_height;
@@ -237,7 +231,8 @@ where
 mod tests {
     use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::bls_signatures::{Bls12381G2Impl, Pairing};
+    use dpp::bls_signatures::Signature;
+
     use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
     use dpp::dashcore::{BlockHash, ChainLock, QuorumSigningRequestId};
     use dpp::version::PlatformVersion;
@@ -327,11 +322,7 @@ mod tests {
         ];
 
         for signature in signatures {
-            assert!(
-                <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature)
-                    .into_option()
-                    .is_some(),
-            );
+            assert!(Signature::from_compressed(&signature).is_some());
         }
     }
 

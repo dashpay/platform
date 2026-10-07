@@ -1,4 +1,4 @@
-use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::{ValidatorV0, ValidatorV0Getters, ValidatorV0Setters};
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
 use crate::serialization::JsonConvertible;
@@ -37,7 +37,7 @@ impl ValidatorV0Getters for Validator {
         }
     }
 
-    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>> {
+    fn public_key(&self) -> &Option<BlsPublicKey> {
         match self {
             Validator::V0(v0) => v0.public_key(),
         }
@@ -87,7 +87,7 @@ impl ValidatorV0Setters for Validator {
         }
     }
 
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>) {
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>) {
         match self {
             Validator::V0(v0) => v0.set_public_key(public_key),
         }

@@ -301,7 +301,7 @@ mod tests {
     use crate::platform_types::validator_set::{ValidatorSet, ValidatorSetExt};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls_signatures::SecretKey;
     use dpp::core_types::validator::v0::ValidatorV0;
     use dpp::core_types::validator_set::v0::ValidatorSetV0;
     use dpp::dashcore::hashes::Hash;
@@ -652,7 +652,7 @@ mod tests {
                 quorum_index: None,
                 core_height: 1,
                 members: BTreeMap::from([(pro_tx_hash, validator)]),
-                threshold_public_key: SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key(),
+                threshold_public_key: SecretKey::random(&mut rng).public_key(),
             }),
         );
         state.mark_saved();
