@@ -261,6 +261,11 @@ fn insert_values(
 /// Records `target`, the schema `schema_ref` resolved to, on the path of
 /// `$ref` targets from the root, refusing one already on it: expanding it
 /// again would never end.
+///
+/// Shared by every parser generation without a version gate. Under full
+/// validation the depth check runs first and refuses such a cycle in every
+/// generation, so this fires only on input the parse never finished before:
+/// accepted contracts, their fees and stored contracts parse as they did.
 fn enter_ref(
     ref_path: &mut Vec<*const Value>,
     schema_ref: &str,
