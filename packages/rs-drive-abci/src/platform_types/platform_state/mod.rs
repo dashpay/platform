@@ -357,7 +357,7 @@ mod tests {
     mod versioned_deserialize {
         use super::*;
         use crate::test::fixture::platform_state::{
-            PLATFORM_STATE_V3_TESTNET, PLATFORM_STATE_V8_DEVNET,
+            PLATFORM_STATE_V3_TESTNET, PLATFORM_STATE_V8_DEVNET, PLATFORM_STATE_V8_DEVNET_SUPPORTED,
         };
         use platform_version::version::v3::PLATFORM_V3;
         use platform_version::version::v9::PLATFORM_V9;
@@ -385,11 +385,8 @@ mod tests {
         /// Serializing through the borrowed conversion must preserve the saved format.
         #[test]
         fn should_preserve_pre_change_serialization_hash() {
-            // Re-serialized from PLATFORM_STATE_V8_DEVNET with commit 734bd4eea7,
-            // before removal of the legacy readers. Platform state V1, quorum V2.
-            let serialized_state =
-                hex::decode(include_str!("../../test/fixture/platform_state_supported.hex").trim())
-                    .expect("failed to decode hex");
+            let serialized_state = hex::decode(PLATFORM_STATE_V8_DEVNET_SUPPORTED.deref())
+                .expect("failed to decode hex");
 
             let state =
                 PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
@@ -407,9 +404,7 @@ mod tests {
 
         #[test]
         fn should_preserve_supported_storage_tags_and_bytes() {
-            let bytes =
-                hex::decode(include_str!("../../test/fixture/platform_state_supported.hex").trim())
-                    .unwrap();
+            let bytes = hex::decode(PLATFORM_STATE_V8_DEVNET_SUPPORTED.deref()).unwrap();
             let state = PlatformState::versioned_deserialize_trusted(&bytes, &PLATFORM_V9).unwrap();
             let config = config::standard().with_big_endian();
             let v1 = PlatformStateForSavingV1::try_from(&state).unwrap();
