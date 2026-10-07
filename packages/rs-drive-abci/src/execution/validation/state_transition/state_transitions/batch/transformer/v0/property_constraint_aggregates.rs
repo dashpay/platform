@@ -25,9 +25,11 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// A document version a write stores or replaces: its properties and its owner.
+/// A document version a write stores, replaces or deletes: its id, its properties and its
+/// owner.
 #[derive(Clone, Copy)]
 struct DocumentVersion<'a> {
+    id: Identifier,
     properties: &'a BTreeMap<String, Value>,
     owner_id: Identifier,
 }
@@ -36,6 +38,7 @@ impl<'a> DocumentVersion<'a> {
     /// `document` as it stands, with its own owner.
     fn of(document: &'a Document) -> Self {
         DocumentVersion {
+            id: document.id(),
             properties: document.properties(),
             owner_id: document.owner_id(),
         }
@@ -81,6 +84,7 @@ pub(super) fn attach_property_constraint_aggregates(
     match action {
         DocumentTransitionAction::CreateAction(action) => {
             let written = DocumentVersion {
+                id: action.base().id(),
                 properties: action.data(),
                 owner_id: writer,
             };
@@ -89,6 +93,7 @@ pub(super) fn attach_property_constraint_aggregates(
         }
         DocumentTransitionAction::ReplaceAction(action) => {
             let written = DocumentVersion {
+                id: action.base().id(),
                 properties: action.data(),
                 owner_id: writer,
             };
@@ -197,61 +202,144 @@ fn read_property_constraint_aggregates(
         .filter(|rule| change.is_none_or(|change| rule.reads_change(change)))
         .flat_map(|rule| rule.aggregate_reads())
         .collect::<BTreeSet<_>>();
+    read_aggregates(
+        drive,
+        contract,
+        reads,
+        Some(written),
+        stored,
+        block_info,
+        execution_context,
+        transaction,
+        platform_version,
+    )
+}
+
+/// Reads from state the `countOf` and `sumOf` totals the `deleteConstraints` rules of the
+/// document type `document_type_name` read, for its owner's delete of `stored`, each as it will
+/// be once the document is gone: the total the count or sum tree keeps now, less what `stored`
+/// adds to it. A filter reads its values (its id, its owner, its properties) from `stored`.
+/// The reads are billed to `execution_context`.
+///
+/// Only document delete state validation 1 calls it (protocol version 14), after the stored
+/// document is fetched and its owner checked; a type without delete rules reads nothing.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_delete_constraint_aggregates(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    stored: &Document,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<AggregateRead, i128>, Error> {
+    let Some(document_type) = contract.document_type_optional_for_name(document_type_name) else {
+        // The action refuses a document type the contract lacks
+        return Ok(BTreeMap::new());
+    };
+    let reads = document_type
+        .delete_constraints()
+        .values()
+        .flat_map(|rule| rule.aggregate_reads())
+        .collect::<BTreeSet<_>>();
+    read_aggregates(
+        drive,
+        contract,
+        reads,
+        None,
+        Some(DocumentVersion::of(stored)),
+        block_info,
+        execution_context,
+        transaction,
+        platform_version,
+    )
+}
+
+/// Reads each total of `reads` from state as it will be once a write storing `written` in place
+/// of `stored` is done (`stored` `None` for a create, `written` `None` for a delete): the total
+/// the count or sum tree keeps now, less what `stored` adds to it, plus what `written` adds. A
+/// filter reads its values from the document the write leaves, `written`, or from `stored` for a
+/// delete. The reads are billed to `execution_context`.
+#[allow(clippy::too_many_arguments)]
+fn read_aggregates(
+    drive: &Drive,
+    contract: &DataContract,
+    reads: BTreeSet<&AggregateRead>,
+    written: Option<DocumentVersion>,
+    stored: Option<DocumentVersion>,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<AggregateRead, i128>, Error> {
     if reads.is_empty() {
         return Ok(BTreeMap::new());
     }
-
-    let written_data = Value::from(written.properties.clone());
-    let stored_data = stored
-        .as_ref()
-        .map(|stored| (Value::from(stored.properties.clone()), stored.owner_id));
+    let version_data = |version: Option<DocumentVersion>| {
+        version.map(|version| {
+            (
+                version.id,
+                Value::from(version.properties.clone()),
+                version.owner_id,
+            )
+        })
+    };
+    let stored_data = version_data(stored);
+    let written_data = version_data(written);
+    let Some((bound_id, bound_data, bound_owner_id)) =
+        written_data.as_ref().or(stored_data.as_ref())
+    else {
+        return Ok(BTreeMap::new());
+    };
     let mut drive_operations = vec![];
     let mut aggregates = BTreeMap::new();
     for read in reads {
         let Some(counted) = contract.document_type_optional_for_name(&read.document_type) else {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "a propertyConstraints rule totals a document type its contract lacks, which \
-                 registration refuses",
+                "a propertyConstraints or deleteConstraints rule totals a document type its \
+                 contract lacks, which registration refuses",
             )));
         };
-        let total =
-            match read.filter_values(counted, &written_data, written.owner_id, platform_version)? {
-                // No document can match a value its key cannot hold
-                None => 0,
-                Some(filter_values) => {
-                    let kept = drive.fetch_property_constraint_aggregate(
-                        contract.id().to_buffer(),
-                        counted,
-                        read,
-                        &filter_values,
-                        transaction,
-                        &mut drive_operations,
-                        platform_version,
-                    )?;
-                    let removed = match &stored_data {
-                        Some((data, owner_id)) => read.contribution(
-                            counted,
-                            &filter_values,
-                            data,
-                            *owner_id,
-                            platform_version,
-                        )?,
-                        None => 0,
-                    };
-                    let added = read.contribution(
+        let total = match read.filter_values(
+            counted,
+            *bound_id,
+            bound_data,
+            *bound_owner_id,
+            platform_version,
+        )? {
+            // No document can match a value its key cannot hold
+            None => 0,
+            Some(filter_values) => {
+                let kept = drive.fetch_property_constraint_aggregate(
+                    contract.id().to_buffer(),
+                    counted,
+                    read,
+                    &filter_values,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contribution = |version: &Option<(Identifier, Value, Identifier)>| match version
+                {
+                    Some((_, data, owner_id)) => read.contribution(
                         counted,
                         &filter_values,
-                        &written_data,
-                        written.owner_id,
+                        data,
+                        *owner_id,
                         platform_version,
-                    )?;
-                    kept.checked_sub(removed)
-                        .and_then(|total| total.checked_add(added))
-                        .ok_or(Error::Execution(ExecutionError::Overflow(
-                            "a propertyConstraints total overflowed an i128",
-                        )))?
-                }
-            };
+                    ),
+                    None => Ok(0),
+                };
+                let removed = contribution(&stored_data)?;
+                let added = contribution(&written_data)?;
+                kept.checked_sub(removed)
+                    .and_then(|total| total.checked_add(added))
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "a propertyConstraints or deleteConstraints total overflowed an i128",
+                    )))?
+            }
+        };
         aggregates.insert(read.clone(), total);
     }
 

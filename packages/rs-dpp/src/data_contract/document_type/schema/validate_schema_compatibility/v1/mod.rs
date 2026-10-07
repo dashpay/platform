@@ -46,8 +46,8 @@
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
 
 use crate::data_contract::document_type::property_names::{
-    ACTION_FEES, CONTAINS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE,
-    ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
+    DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
     KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
     PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
     TOKEN_COST, TRANSIENT, TTL,
@@ -100,6 +100,9 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // The top-level `propertyConstraints` gets it too: a rule added later
     // would judge replaces of documents stored without it, and a rule changed
     // or removed would leave stored documents judged by one no longer there.
+    // `deleteConstraints` too: a rule added later would hold back deletes the
+    // owners of stored documents were promised, and one changed or removed
+    // would free deletes those who point at them counted on being refused.
     // So does every keyword in `FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE`.
     let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
     let frozen_doctype_rules = [
@@ -107,6 +110,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         "creatorRefersTo",
         TRANSIENT,
         PROPERTY_CONSTRAINTS,
+        DELETE_CONSTRAINTS,
     ]
     .into_iter()
     .chain(FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE)
@@ -626,6 +630,45 @@ mod tests {
                 .expect("an unchanged schema is judged")
                 .is_valid()
         );
+    }
+
+    /// The owners of stored documents were promised the deletes the rules allow, and
+    /// whoever points at one counted on those they refuse, so `deleteConstraints` is
+    /// frozen as `propertyConstraints` is: adding, removing or changing a rule is
+    /// incompatible.
+    #[test]
+    fn should_report_every_delete_constraints_change_as_incompatible() {
+        let platform_version = PlatformVersion::latest();
+        let with_delete_constraints = |rules: Option<serde_json::Value>| {
+            let mut schema = with_property_constraints(None);
+            if let Some(rules) = rules {
+                schema["deleteConstraints"] = rules;
+            }
+            schema
+        };
+        let rule = json!({ "unclaimed": { "equal": ["a", 0] } });
+        for (original, new, change_name, change_path) in [
+            (None, Some(rule.clone()), "add", "/deleteConstraints"),
+            (Some(rule.clone()), None, "remove", "/deleteConstraints"),
+            (
+                Some(rule.clone()),
+                Some(json!({ "unclaimed": { "equal": ["a", 1] } })),
+                "replace",
+                "/deleteConstraints/unclaimed/equal/1",
+            ),
+        ] {
+            let result = validate_schema_compatibility(
+                &with_delete_constraints(original.clone()),
+                &with_delete_constraints(new.clone()),
+                platform_version,
+            )
+            .expect("a deleteConstraints change is judged, not an unsupported keyword");
+            assert_matches!(
+                result.errors.as_slice(),
+                [change] if change.name == change_name && change.path == change_path,
+                "{original:?} -> {new:?}"
+            );
+        }
     }
 
     fn document_type_schema() -> serde_json::Value {

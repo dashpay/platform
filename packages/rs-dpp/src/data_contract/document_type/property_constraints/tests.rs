@@ -3391,7 +3391,8 @@ fn should_negate_an_in_with_not_in() {
 
 /// `countOf` and `sumOf` parse to an [`AggregateRead`]: the type they total,
 /// what a `sumOf` totals, and their filter, each key bound to a property of the
-/// document (read as its kind compares), `$ownerId`, an integer or a constant.
+/// document (read as its kind compares), `$ownerId`, `$id`, an integer or a
+/// constant.
 /// The document's own type is marked, and a filter costs a node per key.
 #[test]
 fn should_parse_count_of_and_sum_of_with_their_filters() {
@@ -3456,6 +3457,26 @@ fn should_parse_count_of_and_sum_of_with_their_filters() {
         ]
     );
     assert!(!pledged.reads_owner());
+
+    // The document's own id: the documents pointing at it, which no transfer or price
+    // update changes
+    let votes = parse_rule_value(platform_value!({
+        "equal": [{ "countOf": ["vote", { "pollId": "$id" }] }, 0]
+    }));
+    assert_eq!(
+        votes.aggregate_reads(),
+        [&AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "vote".to_string(),
+            filter: BTreeMap::from([("pollId".to_string(), AggregateBinding::Id)]),
+            of_own_type: false,
+        }]
+    );
+    assert_eq!(votes.node_count(), 1 + 2 + 1);
+    assert!(votes.property_reads().is_empty());
+    assert!(!votes.reads_owner());
+    assert!(!votes.reads_change(SystemChange::Transfer));
+    assert!(!votes.reads_change(SystemChange::PriceUpdate));
 
     // A total over a whole type reads no property, but is no constant either
     let listed = parse_rule_value(platform_value!({
@@ -3536,13 +3557,13 @@ fn should_refuse_a_malformed_aggregate() {
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": "$createdAt" }] }),
-            "at lessThan[0].countOf[1].a takes $createdAt, but the one system value a key takes \
-             is $ownerId",
+            "at lessThan[0].countOf[1].a takes $createdAt, but the system values a key takes are \
+             $ownerId and $id",
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": true }] }),
-            "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, an \
-             integer or a { \"const\": ... }",
+            "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, \
+             $id, an integer or a { \"const\": ... }",
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": { "const": 3 } }] }),

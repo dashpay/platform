@@ -65,9 +65,9 @@ use super::common;
 #[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
-    apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
-    validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources,
+    apply_delete_constraints, apply_property_constraints, parse_doctype_reference,
+    validate_encrypted_for_declarations, validate_generated_from_declarations,
+    validate_list_element_sources, validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -588,6 +588,17 @@ fn parse_generation_3(
     // constants are checked against are read through `$ref`s into the
     // contract's `$defs` too.
     apply_property_constraints(
+        &mut v2,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    // The `deleteConstraints` rules the same way, once `canBeDeleted` is resolved
+    // against the contract default and `indexOnly` and `"onlyWhenConsumed"` are
+    // applied: only a type whose owner deletes its stored documents declares them.
+    apply_delete_constraints(
         &mut v2,
         schema_defs,
         name,
@@ -1856,6 +1867,8 @@ impl DocumentType {
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod delete_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
 mod derived_index_property_tests;
 #[cfg(test)]

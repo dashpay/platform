@@ -4,6 +4,7 @@ mod commit_reveal_lookup;
 mod contract_owner_requirement;
 mod creation;
 mod deletable_document_reference;
+mod delete_constraints;
 mod deletion;
 mod derived_index_values;
 mod distinct_from;

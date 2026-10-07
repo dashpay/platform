@@ -61,9 +61,15 @@
 //! how many documents of a type of the same contract match, or the total of an
 //! integer property over them, from the count and sum trees their indexes keep
 //! (`{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }`), as the total will
-//! be once the write is done. Consensus reads them before judging the rules
+//! be once the write is done. A filter may match by the document's own id
+//! (`{ "countOf": ["vote", { "pollId": "$id" }] }`, the votes pointing at it).
+//! Consensus reads them before judging the rules
 //! ([`DocumentSystemValues::aggregates`]), and a total missing there is an
 //! error; a client, which reads none, does not judge a rule reading one.
+//!
+//! The same grammar declares `deleteConstraints` ([`parse_delete_constraints`]):
+//! named rules the stored document must meet for its owner to delete it, so
+//! that a poll may be deleted only while no vote points at it.
 //! How the arithmetic treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -85,8 +91,8 @@ use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, OWNER_ID, TRANSFERRED_AT,
-    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, ID as DOCUMENT_ID, OWNER_ID,
+    TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0Getters};
@@ -445,7 +451,7 @@ pub enum AggregateKind {
 }
 
 /// The value a key of an aggregate's filter must take, read from the document
-/// being written.
+/// being written, or, for a rule of `deleteConstraints`, deleted.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AggregateBinding {
     /// The document's property at the dotted `path`; `kind` is how it
@@ -456,6 +462,11 @@ pub enum AggregateBinding {
     },
     /// `"$ownerId"`: the document's owner.
     Owner,
+    /// `"$id"`: the document's id, so that a total counts the documents
+    /// pointing at it (`{ "countOf": ["vote", { "pollId": "$id" }] }`). It never
+    /// changes, so a transfer, a purchase or a price update reads it as the
+    /// write before did.
+    Id,
     /// An integer.
     Integer(i128),
     /// `{ "const": ... }`: a string, or a base58 identifier where the key is
@@ -1987,9 +1998,46 @@ pub fn parse_property_constraints(
     document_type_name: &str,
     property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
+    parse_named_rules(
+        schema,
+        property_names::PROPERTY_CONSTRAINTS,
+        document_type_name,
+        property_kind,
+    )
+}
+
+/// Reads the `deleteConstraints` keyword of a document type's `schema`: the
+/// rules, by name and in name order, the stored document must meet for its
+/// owner to delete it. Their grammar and the rules of their shape are those of
+/// `propertyConstraints` ([`parse_property_constraints`]); a rule is judged on
+/// the stored document, and a `countOf` or `sumOf` it reads as the total will
+/// be once the document is gone. Empty when the schema declares none. Which
+/// type may declare them, and what their paths name, is checked against the
+/// parsed document type by parser generation 3.
+pub fn parse_delete_constraints(
+    schema: &Value,
+    document_type_name: &str,
+    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
+    parse_named_rules(
+        schema,
+        property_names::DELETE_CONSTRAINTS,
+        document_type_name,
+        property_kind,
+    )
+}
+
+/// Reads the rules `keyword` of `schema` declares by name
+/// ([`parse_property_constraints`]).
+fn parse_named_rules(
+    schema: &Value,
+    keyword: &str,
+    document_type_name: &str,
+    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
-            "document type \"{document_type_name}\" propertyConstraints {message}"
+            "document type \"{document_type_name}\" {keyword} {message}"
         ))
     };
     // A schema that is not an object carries no keyword: the core parser
@@ -1997,8 +2045,7 @@ pub fn parse_property_constraints(
     let Ok(schema_map) = schema.to_map() else {
         return Ok(BTreeMap::new());
     };
-    let Some(declaration) = schema_map.get_optional_key(property_names::PROPERTY_CONSTRAINTS)
-    else {
+    let Some(declaration) = schema_map.get_optional_key(keyword) else {
         return Ok(BTreeMap::new());
     };
     let Value::Map(rules) = declaration else {
@@ -2876,7 +2923,8 @@ fn parse_expression(
 /// for a `sumOf` the integer property to total, and optionally the filter its
 /// documents must match: an object of one or more keys, each a property path
 /// of that type or `$ownerId`, and the value it must take, a property path of
-/// the document being written, `$ownerId`, an integer or a `{ "const": ... }`.
+/// the document being written, `$ownerId`, `$id`, an integer or a
+/// `{ "const": ... }`.
 fn parse_aggregate(
     sum: bool,
     operands: &Value,
@@ -2945,10 +2993,11 @@ fn parse_aggregate(
             }
             let binding = match binding {
                 Value::Text(path) if path == OWNER_ID => AggregateBinding::Owner,
+                Value::Text(path) if path == DOCUMENT_ID => AggregateBinding::Id,
                 Value::Text(path) if path.starts_with('$') => {
                     return Err(format!(
-                        "at {at}.{key} takes {path}, but the one system value a key takes is \
-                         $ownerId"
+                        "at {at}.{key} takes {path}, but the system values a key takes are \
+                         $ownerId and $id"
                     ))
                 }
                 Value::Text(path) => AggregateBinding::Property {
@@ -2965,7 +3014,8 @@ fn parse_aggregate(
                     _ => {
                         return Err(format!(
                             "at {at}.{key} must be a property path of the document, $ownerId, \
-                             an integer or a {{ \"const\": ... }} string or base58 identifier"
+                             $id, an integer or a {{ \"const\": ... }} string or base58 \
+                             identifier"
                         ))
                     }
                 },
