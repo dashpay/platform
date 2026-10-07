@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::Error;
 use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
 use crate::platform_types::platform::PlatformRef;
 use dpp::consensus::codes::ErrorWithCode;
@@ -11,6 +12,8 @@ use dpp::platform_value::platform_value;
 use dpp::prelude::DataContract;
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
+use drive::error::Error as DriveError;
+use drive::grovedb::Error as GroveError;
 use drive::util::object_size_info::{
     DocumentAndContractInfo, DocumentInfo::DocumentRefInfo, OwnedDocumentInfo,
 };
@@ -743,11 +746,10 @@ async fn should_keep_preexisting_ambiguous_ttl_expiry_failure_visible() {
             version,
         );
         if repeated {
-            let Err(crate::error::Error::Drive(drive::error::Error::GroveDB(error))) = result
-            else {
+            let Err(Error::Drive(DriveError::GroveDB(error))) = result else {
                 panic!("expected failure removing the absent B index slot: {result:?}");
             };
-            let drive::grovedb::Error::PathKeyNotFound(message) = error.as_ref() else {
+            let GroveError::PathKeyNotFound(message) = error.as_ref() else {
                 panic!("expected missing unique index key: {error:?}");
             };
             assert!(
