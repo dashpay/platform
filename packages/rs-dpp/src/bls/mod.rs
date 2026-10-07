@@ -1,5 +1,12 @@
 #[cfg(feature = "bls-signatures")]
+mod bls_signatures;
+#[cfg(feature = "bls-signatures")]
+pub use bls_signatures::{BlsError, PublicKey, SecretKey, Signature};
+#[cfg(feature = "bls-signatures")]
 pub mod native_bls;
+/// Serde implementations and field adapters for BLS public keys.
+#[cfg(feature = "bls-signatures")]
+pub mod serde;
 
 use crate::{ProtocolError, PublicKeyValidationError};
 

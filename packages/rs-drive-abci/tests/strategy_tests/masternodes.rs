@@ -1,5 +1,5 @@
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+use dpp::bls::SecretKey as BlsPrivateKey;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash, Txid};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
@@ -233,11 +233,13 @@ pub fn generate_test_masternodes(
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
@@ -375,11 +377,13 @@ pub fn generate_test_masternodes(
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Evo,
             pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),
