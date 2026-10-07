@@ -24,6 +24,8 @@ pub mod required_identity_public_key_set;
 pub mod signature_verification_quorum_set;
 /// The state transition execution result as part of the block execution outcome
 pub mod state_transitions_processing_result;
+/// Rejection of unsupported legacy BLS storage formats.
+pub mod unsupported_legacy_bls_storage;
 /// The validator module
 /// A validator is a masternode that can participate in consensus by being part of a validator set
 pub mod validator;
