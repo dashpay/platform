@@ -7,12 +7,11 @@ describe('checkMasternodeSafeToStop', () => {
     rpcClient = { quorum: this.sinon.stub(), getBlockCount: this.sinon.stub() };
   });
 
-  it('should allow a non-member immediately using one complete membership response', async () => {
+  it('should allow a non-member immediately using one membership response', async () => {
     rpcClient.quorum.withArgs('dkginfo').resolves({
       result: {
         active_dkgs: 0,
         next_dkg: 1,
-        active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: false }],
         upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
       },
     });
@@ -21,12 +20,11 @@ describe('checkMasternodeSafeToStop', () => {
     expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
-  it('should block a member before Core publishes a local session', async () => {
+  it('should block a positive active_dkgs without inspecting dkgstatus', async () => {
     rpcClient.quorum.withArgs('dkginfo').resolves({
       result: {
         active_dkgs: 1,
-        next_dkg: 1,
-        active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: true }],
+        next_dkg: 24,
         upcoming_dkgs: [],
       },
     });
@@ -35,10 +33,20 @@ describe('checkMasternodeSafeToStop', () => {
     expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
-  it('should retain the imminent-DKG guard for earlier v24 responses', async () => {
+  it('should block a member of an imminent DKG', async () => {
     rpcClient.quorum.withArgs('dkginfo').resolves({
-      result: { active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] },
+      result: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: true }],
+      },
     });
+    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(false);
+    expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
+  });
+
+  it('should retain the imminent-DKG guard without upcoming_dkgs', async () => {
+    rpcClient.quorum.withArgs('dkginfo').resolves({ result: { active_dkgs: 0, next_dkg: 1 } });
     expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(false);
     expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
   });

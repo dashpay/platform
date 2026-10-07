@@ -28,7 +28,6 @@ describe('waitForDKGWindowPass', () => {
       result: {
         active_dkgs: 0,
         next_dkg: 1,
-        active_dkg_sessions: [],
         upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
       },
     });
@@ -51,12 +50,11 @@ describe('waitForDKGWindowPass', () => {
         result: {
           active_dkgs: 0,
           next_dkg: 1,
-          active_dkg_sessions: [],
           upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: true }],
         },
       })
       .onSecondCall()
-      .resolves({ result: { active_dkgs: 0, next_dkg: 24, active_dkg_sessions: [], upcoming_dkgs: [] } });
+      .resolves({ result: { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] } });
 
     const promise = waitForDKGWindowPass(rpcClient);
 
@@ -69,7 +67,7 @@ describe('waitForDKGWindowPass', () => {
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
   });
 
-  it('should wait for an uninitialized current member session to leave its window', async function it() {
+  it('should wait while active_dkgs is positive without inspecting dkgstatus', async function it() {
     const clock = this.sinon.useFakeTimers();
     rpcClient.quorum.withArgs('dkginfo')
       .onFirstCall()
@@ -77,12 +75,11 @@ describe('waitForDKGWindowPass', () => {
         result: {
           active_dkgs: 1,
           next_dkg: 1,
-          active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: true }],
           upcoming_dkgs: [],
         },
       })
       .onSecondCall()
-      .resolves({ result: { active_dkgs: 0, next_dkg: 1, active_dkg_sessions: [], upcoming_dkgs: [] } });
+      .resolves({ result: { active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] } });
 
     const promise = waitForDKGWindowPass(rpcClient);
     await clock.tickAsync(0);
@@ -91,6 +88,7 @@ describe('waitForDKGWindowPass', () => {
     await promise;
 
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+    expect(rpcClient.quorum.withArgs('dkgstatus')).to.not.have.been.called();
     expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 

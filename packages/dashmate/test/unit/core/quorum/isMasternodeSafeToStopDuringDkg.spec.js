@@ -26,9 +26,18 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
       expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
         .to.equal(true);
     });
+
+    it('inspects dkgstatus only when active_dkgs > 0 and no DKG is imminent', () => {
+      expect(shouldInspectDkgStatusForSafeStop({ active_dkgs: 1, next_dkg: NEXT_DKG_NOT_IMMINENT }))
+        .to.equal(true);
+      expect(shouldInspectDkgStatusForSafeStop({ active_dkgs: 1, next_dkg: MIN_BLOCKS_BEFORE_DKG }))
+        .to.equal(false);
+      expect(shouldInspectDkgStatusForSafeStop({ active_dkgs: 0, next_dkg: NEXT_DKG_NOT_IMMINENT }))
+        .to.equal(false);
+    });
   });
 
-  describe('imminent DKG membership from dkginfo.upcoming_dkgs (Core with active_dkg_sessions)', () => {
+  describe('membership from dkginfo.upcoming_dkgs (Core with a proTxHash)', () => {
     // Shape of a `quorum dkginfo` upcoming_dkgs entry once membership is known.
     function upcomingDkg(blocksUntilStart, isMember) {
       return {
@@ -56,89 +65,90 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
 
     it('should allow the stop when an imminent DKG does not include this node', () => {
       const dkgInfo = {
-        active_dkg_sessions: [],
         active_dkgs: 0,
         next_dkg: 1,
         upcoming_dkgs: [upcomingDkg(1, false), upcomingDkg(MIN_BLOCKS_BEFORE_DKG, false)],
       };
 
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(true);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
     });
 
     it('should allow the stop when next_dkg is imminent but no upcoming DKG is listed', () => {
       // next_dkg reports 1 for the whole rotation signing window, even
       // after the last rotated index has started.
-      const dkgInfo = { active_dkg_sessions: [], active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] };
+      const dkgInfo = { active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] };
 
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(true);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
+    });
+
+    it('should block when active_dkgs is positive even if no upcoming DKG blocks', () => {
+      const dkgInfo = {
+        active_dkgs: 1,
+        next_dkg: NEXT_DKG_NOT_IMMINENT,
+        upcoming_dkgs: [upcomingDkg(1, false)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
+    });
+
+    it('should not use dkgstatus to override a positive active_dkgs', () => {
+      const dkgInfo = { active_dkgs: 1, next_dkg: NEXT_DKG_NOT_IMMINENT, upcoming_dkgs: [] };
+      // Every session is past its window, which would allow the legacy path.
+      const dkgStatus = {
+        session: [
+          { llmqType: 'llmq_test_platform', status: { quorumHeight: 1000 } },
+        ],
+      };
+
+      expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, 1000 + PLATFORM_WINDOW))
+        .to.equal(false);
     });
 
     it('should block when this node is a member of an imminent DKG', () => {
       const dkgInfo = {
-        active_dkg_sessions: [],
         active_dkgs: 0,
         next_dkg: 1,
         upcoming_dkgs: [upcomingDkg(1, false), upcomingDkg(MIN_BLOCKS_BEFORE_DKG, true)],
       };
 
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(false);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
     });
 
     it('should allow the stop when this node is a member of a DKG that is not yet imminent', () => {
       const dkgInfo = {
-        active_dkg_sessions: [],
         active_dkgs: 0,
         next_dkg: MIN_BLOCKS_BEFORE_DKG + 1,
         upcoming_dkgs: [upcomingDkg(MIN_BLOCKS_BEFORE_DKG + 1, true)],
       };
 
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(true);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
     });
 
     it('should block when membership of an imminent DKG is unknown', () => {
       const dkgInfo = {
-        active_dkg_sessions: [],
         active_dkgs: 0,
         next_dkg: 1,
         upcoming_dkgs: [unknownUpcomingDkg(1)],
       };
 
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(false);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
     });
 
     it('should allow the stop when membership is unknown only for a DKG that is not yet imminent', () => {
       const dkgInfo = {
-        active_dkg_sessions: [],
         active_dkgs: 0,
         next_dkg: MIN_BLOCKS_BEFORE_DKG + 1,
         upcoming_dkgs: [unknownUpcomingDkg(MIN_BLOCKS_BEFORE_DKG + 1)],
       };
 
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(true);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
     });
 
-    it('should block a current member even when the imminent DKG does not include this node', () => {
+    it('should not inspect dkgstatus when upcoming_dkgs is present', () => {
       const dkgInfo = {
-        active_dkg_sessions: [{ blocksSinceStart: 5, known: true, isMember: true }],
         active_dkgs: 1,
-        next_dkg: 1,
-        upcoming_dkgs: [upcomingDkg(1, false)],
-      };
-      const dkgStatus = {
-        session: [
-          { llmqType: 'llmq_400_60', status: { quorumHeight: 995 } },
-        ],
-      };
-
-      expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
-      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, 1000)).to.equal(false);
-    });
-
-    it('should not inspect dkgstatus when a member DKG is imminent', () => {
-      const dkgInfo = {
-        active_dkg_sessions: [],
-        active_dkgs: 1,
-        next_dkg: 1,
+        next_dkg: NEXT_DKG_NOT_IMMINENT,
         upcoming_dkgs: [upcomingDkg(1, true)],
       };
 
@@ -147,7 +157,8 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
 
     describe('fail-safe on malformed upcoming_dkgs', () => {
       const malformed = {
-        'upcoming_dkgs is not an array': {},
+        'upcoming_dkgs is an object': {},
+        'upcoming_dkgs is null': null,
         'an entry is null': [null],
         'an entry is missing known': [{ blocksUntilStart: 1, isMember: false }],
         'a known entry is missing isMember': [{ blocksUntilStart: 1, known: true }],
@@ -155,77 +166,23 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
         'an entry has a negative blocksUntilStart': [
           { blocksUntilStart: -1, known: true, isMember: false },
         ],
+        'an entry outside the margin is malformed': [
+          { blocksUntilStart: MIN_BLOCKS_BEFORE_DKG + 1, known: true },
+        ],
       };
 
       Object.entries(malformed).forEach(([description, upcomingDkgs]) => {
         it(`should block when ${description}`, () => {
           const dkgInfo = {
-            active_dkg_sessions: [],
             active_dkgs: 0,
             next_dkg: NEXT_DKG_NOT_IMMINENT,
             upcoming_dkgs: upcomingDkgs,
           };
 
-          expect(isMasternodeSafeToStopDuringDkg(dkgInfo, undefined, 1000)).to.equal(false);
+          expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
+          expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
         });
       });
-    });
-  });
-
-  describe('current DKG membership independent of local session tracking', () => {
-    const cases = [
-      ['a member at the start block', [{ blocksSinceStart: 0, known: true, isMember: true }], 1, false],
-      ['a member after the chain advances', [{ blocksSinceStart: 1, known: true, isMember: true }], 1, false],
-      ['a non-member', [{ blocksSinceStart: 0, known: true, isMember: false }], 0, true],
-      ['unknown membership', [{ blocksSinceStart: 0, known: false }], 1, false],
-      ['a malformed list', {}, 0, false],
-      ['a null entry', [null], 0, false],
-      ['a missing start offset', [{ known: true, isMember: false }], 0, false],
-      ['a negative start offset', [{ blocksSinceStart: -1, known: true, isMember: false }], 0, false],
-      ['a missing membership flag', [{ blocksSinceStart: 0, known: true }], 0, false],
-      ['no current session', [], 0, true],
-    ];
-
-    cases.forEach(([description, activeDkgSessions, activeDkgs, expected]) => {
-      it(`should return ${expected} for ${description} before local initialization`, () => {
-        const dkgInfo = {
-          active_dkgs: activeDkgs,
-          next_dkg: 1,
-          active_dkg_sessions: activeDkgSessions,
-          upcoming_dkgs: [],
-        };
-        expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(expected);
-        expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
-      });
-    });
-
-    it('should block when current membership is present but upcoming membership is missing', () => {
-      expect(isMasternodeSafeToStopDuringDkg({
-        active_dkgs: 0, next_dkg: 24, active_dkg_sessions: [],
-      })).to.equal(false);
-    });
-
-    it('should block a positive active count even when the detail lists are clear', () => {
-      expect(isMasternodeSafeToStopDuringDkg({
-        active_dkgs: 1, next_dkg: 1, active_dkg_sessions: [], upcoming_dkgs: [],
-      })).to.equal(false);
-    });
-
-    it('should block a member detail even if the active count is incorrectly zero', () => {
-      expect(isMasternodeSafeToStopDuringDkg({
-        active_dkgs: 0,
-        next_dkg: 24,
-        active_dkg_sessions: [{ blocksSinceStart: 0, known: true, isMember: true }],
-        upcoming_dkgs: [],
-      })).to.equal(false);
-    });
-
-    it('should keep the legacy guard when only upcoming membership is available', () => {
-      expect(isMasternodeSafeToStopDuringDkg({
-        active_dkgs: 0,
-        next_dkg: 1,
-        upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
-      })).to.equal(false);
     });
   });
 

@@ -39,38 +39,19 @@ function hasValidDkgInfoShape(dkgInfo) {
 }
 
 /**
- * Unknown membership and malformed entries block the stop. Upcoming
- * sessions only matter within the restart margin; active_dkg_sessions already
- * contains only sessions inside their active window.
+ * Malformed entries always block; member and unknown-membership entries
+ * block when they start within the restart margin.
  */
-function isDkgBlockingStop(dkg, blocksField, maxBlocks = Infinity) {
+function isUpcomingDkgBlockingStop(dkg) {
   if (!dkg
     || typeof dkg !== 'object'
-    || !isValidDkgCounter(dkg[blocksField])
+    || !isValidDkgCounter(dkg.blocksUntilStart)
     || typeof dkg.known !== 'boolean'
     || (dkg.known && typeof dkg.isMember !== 'boolean')) {
     return true;
   }
 
-  return dkg[blocksField] <= maxBlocks && (!dkg.known || dkg.isMember);
-}
-
-function isDkgMembershipBlockingStop(dkgInfo) {
-  const { active_dkg_sessions: activeDkgSessions, upcoming_dkgs: upcomingDkgs } = dkgInfo;
-
-  // Older Core, and current Core without a proTxHash, omit membership lists.
-  // Keep the legacy guard when active_dkg_sessions is unavailable.
-  if (activeDkgSessions === undefined) {
-    return dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG;
-  }
-
-  if (!Array.isArray(activeDkgSessions) || !Array.isArray(upcomingDkgs)) {
-    return true;
-  }
-
-  return dkgInfo.active_dkgs > 0
-    || activeDkgSessions.some((dkg) => isDkgBlockingStop(dkg, 'blocksSinceStart'))
-    || upcomingDkgs.some((dkg) => isDkgBlockingStop(dkg, 'blocksUntilStart', MIN_BLOCKS_BEFORE_DKG));
+  return dkg.blocksUntilStart <= MIN_BLOCKS_BEFORE_DKG && (!dkg.known || dkg.isMember);
 }
 
 /**
@@ -82,19 +63,19 @@ export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
     return false;
   }
 
-  return dkgInfo.active_dkg_sessions === undefined
+  return dkgInfo.upcoming_dkgs === undefined
     && dkgInfo.active_dkgs > 0
     && dkgInfo.next_dkg > MIN_BLOCKS_BEFORE_DKG;
 }
 
 /**
- * Core's active_dkg_sessions and upcoming_dkgs report membership independently
- * of asynchronous local session tracking. Any current member or unknown
- * session blocks stopping, as does an upcoming one within the restart margin.
+ * With upcoming_dkgs, stopping is safe when no DKG counts toward active_dkgs
+ * and no member or unknown-membership DKG starts within the restart margin.
  *
- * Without active_dkg_sessions, use the legacy next_dkg guard and resolve tracked
- * sessions against dkgstatus and getblockcount. Unknown quorum types or
- * malformed status fail safe; sessions past dkgMiningWindowStart are ignored.
+ * Without upcoming_dkgs (older Core, or no proTxHash), use the legacy next_dkg
+ * guard and resolve tracked sessions against dkgstatus and getblockcount.
+ * Unknown quorum types or malformed status fail safe; sessions past
+ * dkgMiningWindowStart are ignored.
  *
  * @param {Object} dkgInfo Result of quorum dkginfo.
  * @param {Object} [dkgStatus] Result of quorum dkgstatus for older Core.
@@ -110,11 +91,21 @@ export default function isMasternodeSafeToStopDuringDkg(
     return false;
   }
 
-  if (isDkgMembershipBlockingStop(dkgInfo)) {
+  const { upcoming_dkgs: upcomingDkgs } = dkgInfo;
+
+  // Relies on active_dkgs counting member and unknown-membership sessions
+  // (dashpay/dash#7812).
+  if (upcomingDkgs !== undefined) {
+    return dkgInfo.active_dkgs === 0
+      && Array.isArray(upcomingDkgs)
+      && !upcomingDkgs.some(isUpcomingDkgBlockingStop);
+  }
+
+  if (dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG) {
     return false;
   }
 
-  if (dkgInfo.active_dkg_sessions !== undefined || dkgInfo.active_dkgs === 0) {
+  if (dkgInfo.active_dkgs === 0) {
     return true;
   }
 
