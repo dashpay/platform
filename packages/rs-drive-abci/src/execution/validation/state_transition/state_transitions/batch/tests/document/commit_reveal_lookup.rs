@@ -32,6 +32,7 @@ mod commit_reveal_lookup_tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::signature::SignatureError;
     use dpp::data_contract::document_type::{
         DocumentPropertyReferenceTarget, DocumentTypeRef, PropertyReference, ReferenceHolder,
@@ -900,8 +901,8 @@ mod commit_reveal_lookup_tests {
     }
 
     /// A salt inside an object is read the way the key reads it: a create whose
-    /// object holds `salt` twice is refused before any read, since the key
-    /// would hash one value and storage keep the other, and consumes nothing.
+    /// object holds `salt` twice is refused before the lookup reads state, since
+    /// the key would hash one value and storage keep the other, and consumes nothing.
     #[tokio::test]
     async fn should_refuse_a_nested_salt_repeated_in_its_object() {
         let mut fixture = CommitRevealFixture::new();
@@ -931,13 +932,12 @@ mod commit_reveal_lookup_tests {
             )
             .await;
         assert_matches!(
-            result,
+            &result,
             PaidConsensusError {
-                error: ConsensusError::BasicError(
-                    BasicError::DocumentReferencePreimageInvalidError(e)
-                ),
+                error: error @ ConsensusError::BasicError(BasicError::ValueError(e)),
                 ..
-            } if e.path() == "meta.salt" && e.property() == "meta.salt"
+            } if error.code() == 10103
+                && e.value_error() == "document properties contain a repeated map key"
         );
         assert!(fixture.preorder_exists(preorder.id()));
 
