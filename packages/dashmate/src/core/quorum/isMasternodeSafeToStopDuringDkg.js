@@ -58,8 +58,8 @@ function isDkgBlockingStop(dkg, blocksField, maxBlocks = Infinity) {
 function isDkgMembershipBlockingStop(dkgInfo) {
   const { active_dkg_sessions: activeDkgSessions, upcoming_dkgs: upcomingDkgs } = dkgInfo;
 
-  // Earlier Core versions omit current-tip membership while their DKG
-  // worker initializes. Keep the legacy guard until both lists are available.
+  // Older Core, and current Core without a proTxHash, omit membership lists.
+  // Keep the legacy guard when active_dkg_sessions is unavailable.
   if (activeDkgSessions === undefined) {
     return dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG;
   }
