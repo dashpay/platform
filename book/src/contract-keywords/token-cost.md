@@ -75,9 +75,9 @@ When the transition is processed:
 4. The signer's gas request must be one the cost offers, and the whole batch must name one payer (40129, 40130).
 5. Against state: a signer whose account for the token is frozen is refused (`IdentityTokenAccountFrozenError`, 40702), and so is one whose balance is below `amount` (`IdentityDoesNotHaveEnoughTokenBalanceError`, 40700).
 6. From protocol version 14, a transparent payment that transfers or burns tokens is then refused if the token is paused (`TokenIsPausedError`, 40711).
-7. For a transfer to a different identity, the contract owner's account for the token is checked next. A frozen recipient is refused (40702) only when the token issuer's `allowTransferToFrozenBalance` is `false`; its default is `true`. For another contract's token, the issuing contract's policy applies, and the recipient remains the document contract's owner.
+7. From protocol version 14, for a transfer to a different identity, the contract owner's account for the token is checked next. A frozen recipient is refused (40702) only when the token issuer's `allowTransferToFrozenBalance` is `false`; its default is `true`. For another contract's token, the issuing contract's policy applies, and the recipient remains the document contract's owner.
 
-Every state read is charged, including on refusal. The issuer metadata and, for an external token, its contract are read only when the recipient is frozen. A transparent owner self-payment retains the payer freeze and balance checks and makes no transfer, so it performs neither the pause nor recipient checks. A [payment from the shielded pool](../data-model/token-shielded-pools.md#documents-paid-from-the-pool) retains its separate pool validation.
+Every state read is charged, including on refusal. From protocol version 14, the issuer metadata and, for an external token, its contract are read only when the recipient is frozen. A transparent owner self-payment retains the payer freeze and balance checks and makes no transfer, so it performs neither the pause nor recipient checks. A [payment from the shielded pool](../data-model/token-shielded-pools.md#documents-paid-from-the-pool) retains its separate pool validation.
 
 The signer pays: the creator for a create, the owner for a replace, delete, transfer or price update, and the buyer for a purchase.
 

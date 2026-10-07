@@ -41,6 +41,10 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 }
 
 impl DocumentBaseTransitionActionStateValidationV2 for DocumentBaseTransitionAction {
+    /// Version 2 (protocol version 14): transparent payments retain payer freeze and balance
+    /// checks, then enforce pause and the actual issuer's frozen-recipient policy for token
+    /// movements. Elided owner self-payments retain only the payer checks; pool payments
+    /// retain their separate shielded validation.
     fn validate_state_v2(
         &self,
         platform: &PlatformStateRef,

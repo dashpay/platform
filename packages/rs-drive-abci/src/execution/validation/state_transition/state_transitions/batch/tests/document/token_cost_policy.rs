@@ -55,12 +55,13 @@ fn policy_setup(
         None,
         |contract| {
             if external {
+                // Opposing policies distinguish the issuer from the document contract's token.
                 contract
                     .tokens_mut()
                     .expect("tokens")
                     .get_mut(&0)
                     .expect("gold")
-                    .allow_transfer_to_frozen_balance(false);
+                    .allow_transfer_to_frozen_balance(allow_frozen == Some(false));
             }
             if !external {
                 if let Some(allow) = allow_frozen {
@@ -735,7 +736,7 @@ async fn should_allow_optional_credit_payment_while_explicit_token_payment_is_re
 }
 
 #[tokio::test]
-async fn should_pause_document_burn_payments_without_changing_native_burn_policy() {
+async fn should_reject_paused_document_burn_payments_and_allow_active_burn() {
     let setup = policy_setup(
         PlatformVersion::latest(),
         DocumentActionTokenEffect::BurnToken,
@@ -799,6 +800,111 @@ async fn should_preserve_elided_owner_self_payment_while_token_is_paused() {
             )
             .expect("supply"),
         Some(30)
+    );
+}
+
+#[tokio::test]
+async fn should_burn_the_contract_owners_tokens_and_refuse_the_same_payment_when_paused() {
+    let setup = policy_setup(
+        PlatformVersion::latest(),
+        DocumentActionTokenEffect::BurnToken,
+        Some(false),
+        false,
+        false,
+    );
+    add_tokens_to_identity(
+        &setup.platform,
+        token_id(&setup),
+        setup.contract_owner.id(),
+        15,
+    );
+    let transition = setup
+        .card_creation_by_the_contract_owner(GasFeesPaidBy::DocumentOwner)
+        .await;
+    let tx = setup.platform.drive.grove.start_transaction();
+    let (result, operations) = validation_operations(&setup, setup.contract_owner.id(), &tx);
+    assert!(result.is_valid());
+    assert_eq!(
+        operations.len(),
+        3,
+        "a real owner burn reads payer info, balance and pause"
+    );
+    assert_matches!(
+        setup.process(&transition, &tx),
+        StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
+    assert_eq!(balance(&setup, setup.contract_owner.id(), &tx), 5);
+    assert_eq!(
+        setup
+            .platform
+            .drive
+            .fetch_token_total_supply(
+                token_id(&setup).to_buffer(),
+                Some(&tx),
+                setup.platform_version
+            )
+            .expect("supply"),
+        Some(20)
+    );
+    drop(tx);
+
+    pause(&setup, None);
+    let tx = setup.platform.drive.grove.start_transaction();
+    assert_paid_error(&setup.process(&transition, &tx), 40711);
+    let (result, operations) = validation_operations(&setup, setup.contract_owner.id(), &tx);
+    assert!(!result.is_valid());
+    assert_eq!(operations.len(), 3, "owner burns retain the pause read");
+    assert_eq!(balance(&setup, setup.contract_owner.id(), &tx), 15);
+    assert_eq!(
+        setup
+            .platform
+            .drive
+            .fetch_token_total_supply(
+                token_id(&setup).to_buffer(),
+                Some(&tx),
+                setup.platform_version
+            )
+            .expect("supply"),
+        Some(30)
+    );
+}
+
+#[tokio::test]
+async fn should_burn_document_payment_without_recipient_reads_when_contract_owner_is_frozen() {
+    let setup = policy_setup(
+        PlatformVersion::latest(),
+        DocumentActionTokenEffect::BurnToken,
+        Some(false),
+        false,
+        false,
+    );
+    freeze(&setup, setup.contract_owner.id());
+    let transition = creation(&setup, true).await;
+    let tx = setup.platform.drive.grove.start_transaction();
+    let (result, operations) = validation_operations(&setup, setup.user.id(), &tx);
+    assert!(result.is_valid(), "a burn has no recipient to freeze");
+    assert_eq!(
+        operations.len(),
+        3,
+        "burns read only payer info, balance and pause"
+    );
+    assert_matches!(
+        setup.process(&transition, &tx),
+        StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
+    assert_eq!(balance(&setup, setup.user.id(), &tx), 5);
+    assert_eq!(balance(&setup, setup.contract_owner.id(), &tx), 0);
+    assert_eq!(
+        setup
+            .platform
+            .drive
+            .fetch_token_total_supply(
+                token_id(&setup).to_buffer(),
+                Some(&tx),
+                setup.platform_version
+            )
+            .expect("supply"),
+        Some(5)
     );
 }
 
