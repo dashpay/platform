@@ -1,0 +1,65 @@
+name: Rehearse Dashmate macOS notarization
+
+# Signs and notarizes the macOS packages of an earlier release run, with the
+# release secrets, and publishes nothing. It shows whether the certificate,
+# the notary key and the packages are in order before the next release does.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of a Release Platform run that a release started (its packages are kept for 7 days)"
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  rehearse:
+    name: Sign and notarize without publishing
+    runs-on: macos-14
+    timeout-minutes: 150
+    steps:
+      - name: Check out the signing action
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/macos-sign-notarize
+
+      # The release certificate signs only what a release built.
+      - name: Check the source run
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo '::error::run_id must be a number.'; exit 1; }
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
+          path="$(jq -r '.path' <<< "$run")"
+          event="$(jq -r '.event' <<< "$run")"
+          if [ "$path" != '.github/workflows/release.yml' ] || [ "$event" != 'release' ]; then
+            echo "::error::Run $RUN_ID is not a Release Platform run that a release started ($path, $event)."
+            exit 1
+          fi
+          echo "head_sha=$(jq -r '.head_sha' <<< "$run")" >> "$GITHUB_OUTPUT"
+
+      - name: Download the macOS packages
+        uses: actions/download-artifact@v4
+        with:
+          name: dashmate-macos-${{ steps.source.outputs.head_sha }}
+          path: release-artifacts
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+
+      # The signed packages are not uploaded: they are gone with the runner.
+      - name: Sign and notarize macOS installers
+        uses: ./.github/actions/macos-sign-notarize
+        with:
+          path: release-artifacts
+          certificate_base64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
+          certificate_password: ${{ secrets.MACOS_P12_PASSWORD }}
+          keychain_password: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          notary_api_key_base64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
+          notary_api_key_id: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
+          notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
