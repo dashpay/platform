@@ -10,6 +10,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
+use drive::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::platform_types::platform_state::PlatformState;
@@ -36,8 +37,19 @@ impl<C> Platform<C> {
 
         let limit = check_validation_result_with_data!(limit
             .map(|limit| {
-                u16::try_from(limit)
-                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))
+                let limit = u16::try_from(limit)
+                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
+
+                // Drive refuses the same range with an internal error, which clients retry on
+                // every other node.
+                if !(1..=MAX_CONTRACT_HISTORY_FETCH_LIMIT).contains(&limit) {
+                    return Err(QueryError::InvalidArgument(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit, MAX_CONTRACT_HISTORY_FETCH_LIMIT,
+                    )));
+                }
+
+                Ok(limit)
             })
             .transpose());
 
@@ -112,7 +124,9 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use crate::query::tests::{
+        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+    };
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -500,5 +514,28 @@ mod tests {
                 metadata: Some(_),
             })
         ));
+    }
+
+    /// Drive fetches between 1 and 10 history entries and refuses any other limit with an
+    /// internal error, so the handler refuses it first as the request's fault.
+    #[test]
+    fn should_refuse_a_limit_outside_the_fetch_range_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for limit in [0, MAX_CONTRACT_HISTORY_FETCH_LIMIT as u32 + 1] {
+            for prove in [false, true] {
+                let request = GetDataContractHistoryRequestV0 {
+                    id: vec![1; 32],
+                    limit: Some(limit),
+                    offset: None,
+                    start_at_ms: 0,
+                    prove,
+                };
+
+                assert_invalid_argument_status(
+                    platform.query_data_contract_history_v0(request, &state, version),
+                );
+            }
+        }
     }
 }

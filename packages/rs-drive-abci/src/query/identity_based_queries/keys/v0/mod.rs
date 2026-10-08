@@ -107,6 +107,15 @@ impl<C> Platform<C> {
             )));
 
         if let Some(limit) = limit {
+            // GroveDB refuses to prove a query with a limit of 0. Without a proof it is served.
+            if limit == 0 && prove {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::InvalidLimit(format!(
+                        "limit 0 out of bounds of [1, {}] when requesting a proof",
+                        self.config.drive.max_query_limit
+                    )),
+                )));
+            }
             if limit > u16::MAX as u32 {
                 return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                     QuerySyntaxError::InvalidParameter("limit out of bounds".to_string()),
@@ -167,21 +176,36 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
-            // The non-proof specific-keys fetch needs a limit. Default it to the
-            // number of distinct ids, which the bound above already caps, so a
-            // request that omits it behaves like the proof path instead of
-            // failing inside Drive. The proof path is left as requested so the
-            // proof matches what the client verifies against.
             let mut key_request = key_request;
-            if key_request.limit.is_none() {
-                if let KeyRequestType::SpecificKeys(key_ids) = &key_request.request_type {
+            let mut returned_keys_cap = None;
+            match &key_request.request_type {
+                // The non-proof specific-keys fetch only runs under a limit that covers every
+                // distinct id, which the bound above already caps; a smaller one fails inside
+                // GroveDB. The requested limit then caps what is returned instead: the first
+                // keys that exist, in id order, which is what the proof path proves. The proof
+                // path is left as requested so the proof matches what the client verifies.
+                KeyRequestType::SpecificKeys(key_ids) => {
+                    returned_keys_cap = key_request.limit;
                     key_request.limit = key_ids.len().try_into().ok();
                 }
+                // A search can match any number of keys, so nothing bounds it but the limit,
+                // and GroveDB refuses an unbounded fetch with an internal error.
+                KeyRequestType::SearchKey(_) if key_request.limit.is_none() => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                        QuerySyntaxError::InvalidLimit(
+                            "a search key request without a proof must set a limit".to_string(),
+                        ),
+                    )));
+                }
+                _ => {}
             }
 
-            let keys: SerializedKeyVec =
+            let mut keys: SerializedKeyVec =
                 self.drive
                     .fetch_identity_keys(key_request, None, platform_version)?;
+            if let Some(cap) = returned_keys_cap {
+                keys.truncate(cap as usize);
+            }
 
             GetIdentityKeysResponseV0 {
                 result: Some(get_identity_keys_response_v0::Result::Keys(
@@ -198,7 +222,9 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use crate::query::tests::{
+        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+    };
     use dapi_grpc::platform::v0::key_request_type::Request;
     use dapi_grpc::platform::v0::{AllKeys, KeyRequestType, SearchKey, SecurityLevelMap};
     use dpp::dashcore::Network;
@@ -666,6 +692,7 @@ mod tests {
         use drive::drive::identity::key::fetch::KeyRequestType as DriveKeyRequestType;
         use drive::drive::Drive;
         use drive::grovedb::GroveDb;
+        use integer_encoding::VarInt;
 
         /// Stores an identity with `key_count` keys (ids `0..key_count`) and returns it.
         fn seed_identity(
@@ -777,6 +804,71 @@ mod tests {
                     (key.id(), key)
                 })
                 .collect()
+        }
+
+        /// Without a proof, GroveDB only fetches specific keys under a limit that covers every
+        /// requested id. A smaller limit caps what is returned instead: the first keys that
+        /// exist, in id order, the same keys the proof with that limit proves.
+        #[test]
+        fn should_cap_an_unproved_specific_keys_request_like_its_proof() {
+            let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+            let identity = seed_identity(&platform, 5, 44444, version);
+            let identity_id = identity.id().to_buffer();
+
+            for (key_ids, limit) in [
+                (vec![0, 1, 2], 1),
+                (vec![0, 1, 2], 2),
+                (vec![9, 0, 7, 3], 1),
+                (vec![9, 0, 7, 3], 2),
+                (vec![9, 8], 1),
+            ] {
+                let mut unproved =
+                    specific_keys_request(identity_id.to_vec(), key_ids.clone(), false);
+                unproved.limit = Some(limit);
+                let fetched = fetched_keys(
+                    platform
+                        .query_keys_v0(unproved, &state, version)
+                        .expect("expected query to succeed"),
+                );
+
+                let mut proved = specific_keys_request(identity_id.to_vec(), key_ids.clone(), true);
+                proved.limit = Some(limit);
+                let proof = proof_bytes(
+                    platform
+                        .query_keys_v0(proved, &state, version)
+                        .expect("expected query to succeed"),
+                );
+                let path_query = IdentityKeysRequest {
+                    identity_id,
+                    request_type: DriveKeyRequestType::SpecificKeys(key_ids.clone()),
+                    limit: Some(limit as u16),
+                    offset: None,
+                }
+                .into_path_query();
+                let (_, proved_values) =
+                    GroveDb::verify_query(&proof, &path_query, &version.drive.grove_version)
+                        .expect("proof should verify");
+                let proved_ids: Vec<KeyID> = proved_values
+                    .into_iter()
+                    .filter(|(_, _, element)| element.is_some())
+                    .map(|(_, key, _)| KeyID::decode_var(&key).expect("a key id").0)
+                    .collect();
+
+                assert_eq!(
+                    fetched.keys().copied().collect::<Vec<_>>(),
+                    proved_ids,
+                    "ids {key_ids:?}, limit {limit}"
+                );
+            }
+
+            let mut zero = specific_keys_request(identity_id.to_vec(), vec![0, 1], false);
+            zero.limit = Some(0);
+            assert!(fetched_keys(
+                platform
+                    .query_keys_v0(zero, &state, version)
+                    .expect("expected query to succeed")
+            )
+            .is_empty());
         }
 
         #[test]
@@ -931,5 +1023,69 @@ mod tests {
             let proved = verify_specific_keys_proof(&proof, identity_id, key_ids, version);
             assert_eq!(proved, fetched);
         }
+    }
+
+    fn keys_request(request: Request, limit: Option<u32>, prove: bool) -> GetIdentityKeysRequestV0 {
+        GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: Some(KeyRequestType {
+                request: Some(request),
+            }),
+            limit,
+            offset: None,
+            prove,
+        }
+    }
+
+    /// GroveDB refuses to prove a query with a limit of 0, so that proof is refused as the
+    /// request's fault. Without a proof the answer is just empty.
+    #[test]
+    fn should_refuse_a_proof_with_a_zero_limit_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let unproved = platform
+            .query_keys_v0(
+                keys_request(Request::AllKeys(AllKeys {}), Some(0), false),
+                &state,
+                version,
+            )
+            .expect("expected query to succeed");
+        assert!(unproved.is_valid(), "{:?}", unproved.errors);
+
+        assert_invalid_argument_status(platform.query_keys_v0(
+            keys_request(Request::AllKeys(AllKeys {}), Some(0), true),
+            &state,
+            version,
+        ));
+    }
+
+    /// A search without a proof needs a limit: nothing else bounds what it matches. With a
+    /// proof it is served as before.
+    #[test]
+    fn should_refuse_an_unproved_search_without_a_limit_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let search = || {
+            Request::SearchKey(SearchKey {
+                purpose_map: [(
+                    0, // AUTHENTICATION
+                    SecurityLevelMap {
+                        security_level_map: [(0, 0)].into_iter().collect(), // MASTER, current key
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            })
+        };
+
+        assert_invalid_argument_status(platform.query_keys_v0(
+            keys_request(search(), None, false),
+            &state,
+            version,
+        ));
+
+        let proved = platform
+            .query_keys_v0(keys_request(search(), None, true), &state, version)
+            .expect("expected query to succeed");
+        assert!(proved.is_valid(), "{:?}", proved.errors);
     }
 }

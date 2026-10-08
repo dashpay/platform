@@ -1977,27 +1977,20 @@ impl<'a> DriveDocumentQuery<'a> {
     /// the primary tree.
     fn page_ids(&self) -> Result<BTreeSet<Identifier>, Error> {
         let mut ids = BTreeSet::new();
+        // The clauses hold the client's values, so a malformed one is the request's fault, with
+        // the plain query path's errors.
         if let Some(clause) = &self.internal_clauses.primary_key_equal_clause {
             ids.insert(clause.value.to_identifier().map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a primary-key equality clause holds an identifier",
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "primary key equality must compare an identifier",
                 ))
             })?);
         }
         if let Some(clause) = &self.internal_clauses.primary_key_in_clause {
-            for value in clause
-                .in_values()
-                .into_data()
-                .map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a primary-key in clause holds an array",
-                    ))
-                })?
-                .iter()
-            {
+            for value in clause.in_values().into_data_with_error()??.iter() {
                 ids.insert(value.to_identifier().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a primary-key in clause holds identifiers",
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must contain identifiers",
                     ))
                 })?);
             }
