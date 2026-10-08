@@ -681,12 +681,12 @@ mod wasm_tests {
     async fn should_fetch_through_the_browser_and_wait_out_the_gap() {
         let context =
             WasmTrustedContext::for_testing_with_url(Vec::new(), "http://127.0.0.1:1".to_string());
+        let started = web_time::Instant::now();
         assert!(
             context.refresh_quorums().await.is_err(),
             "nothing listens on the quorum URL"
         );
 
-        let started = js_sys::Date::now();
         let result = context
             .fetch_quorum_public_key(6, [0x11; 32], 1)
             .expect("the trusted context fetches keys")
@@ -700,7 +700,7 @@ mod wasm_tests {
             "got {result:?}"
         );
         assert!(
-            js_sys::Date::now() - started >= 900.0,
+            started.elapsed() >= std::time::Duration::from_millis(900),
             "the miss waited for a refresh newer than itself"
         );
     }
