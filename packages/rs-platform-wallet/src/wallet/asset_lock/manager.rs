@@ -274,6 +274,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map(|info| info.tracked_asset_locks.values().cloned().collect())
             .unwrap_or_default()
     }
+
+    /// Applies `read` to the tracked asset lock at `out_point` under the
+    /// wallet read lock, without cloning the tracked set. `None` when no such
+    /// lock is tracked.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn read_tracked_lock<T>(
+        &self,
+        out_point: &OutPoint,
+        read: impl FnOnce(&TrackedAssetLock) -> T,
+    ) -> Option<T> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(read)
+    }
 }
 
 impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for AssetLockManager<B> {
