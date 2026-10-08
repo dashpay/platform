@@ -119,7 +119,7 @@ The value of a reference found by `findBy` is a key part, not a document id. So 
 
 ## Commit and reveal
 
-One `findBy` entry may hold a function: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds the SHA-256 of the SHA-256 of the params' bytes, joined in order. The platform fills that property of the key with the hash to find the document, like any other entry. The document it finds is a commitment made earlier, one that stored that hash, so the document being created may exist only while a commitment to values it carries exists. This is how a name registration that preorders a salted hash works, written as a declaration on the salt:
+One `findBy` entry may hold a function: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds the SHA-256 of the SHA-256 of the params' bytes, joined in order. The platform fills that property of the key with the hash to find the document, like any other entry. The document it finds is a commitment made earlier, one that stored that hash, so the document being created may exist only while a commitment to values it carries exists. This is how the DPNS `domain` type registers a name from protocol version 14 (DPNS contract v3), a declaration on the salt:
 
 ```json
 "preorderSalt": {
@@ -158,7 +158,7 @@ WHERE saltedDomainHash =                                     -- findBy
 
 `minimumAgeBlocks` and `consume` sit on the `refersTo`, beside `findBy`: they describe the document `findBy` finds, and need a function in it.
 
-- **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`.
+- **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`. A commitment recording no creation height counts as old enough: a contract update can not make a system field required, so only a system contract a protocol upgrade re-stored holds such documents, all written before the upgrade's block. DPNS preorders made before protocol version 14 are revealed this way.
 - **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only on a `deletableDocument` reference with the `where` entry `"$ownerId": "$ownerId"`, into a type of the same contract whose owner may delete its documents (`canBeDeleted: true`) or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, see [Deletion](deletion.md#canbedeleted)), that declares no delete token cost or delete action fee and no [`deleteConstraints`](deletion.md#deleteconstraints) (no delete transition charges or judges them), and that requires no stricter signature security level than the revealing type. A contract-bound key signing the create must be allowed to act on the consumed type too (`ContractBoundedKeyOutOfBoundsError`, 20014).
 
 A create missing a param, or with a value holding its separator, is refused before any read (`DocumentReferencePreimageInvalidError`, 10423). No commitment is `ReferencedEntityNotFoundError` (40120), another identity's `ReferencedDocumentPropertyMismatchError` (40127), and one too young `ReferencedDocumentRequirementNotMetError` (40142). The [Documents chapter](../data-model/documents.md#commit-and-reveal-a-findby-function) has the full rules.

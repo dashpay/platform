@@ -17,7 +17,10 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 /// v2 (PROTOCOL_VERSION_14): DashPay `profile` documents gain Create and
 /// Replace triggers enforcing the DIP-33 payment-address type byte
 /// (`0x00` P2PKH / `0x01` P2SH) that the schema vocabulary cannot express.
-/// Everything else is unchanged from v1.
+/// DPNS `domain` Replace and Delete lose their reject bindings: DPNS v3
+/// refuses both with `documentsMutable` and `canBeDeleted` false. Its Create
+/// binding stays for the parent domain checks (`create_domain_data_trigger`
+/// v2). Everything else is unchanged from v1.
 ///
 /// # Returns
 ///
@@ -34,20 +37,6 @@ pub(super) fn data_trigger_bindings_list_v2() -> Result<Vec<DataTriggerBindingV0
             document_type: "domain".to_string(),
             transition_action_type: DocumentTransitionActionType::Create,
             data_trigger: create_domain_data_trigger,
-        },
-        // Domain documents can never be modified or deleted, but since
-        // protocol version 13 they can be transferred and sold
-        DataTriggerBindingV0 {
-            data_contract_id: dpns_contract::ID,
-            document_type: "domain".to_string(),
-            transition_action_type: DocumentTransitionActionType::Replace,
-            data_trigger: reject_data_trigger,
-        },
-        DataTriggerBindingV0 {
-            data_contract_id: dpns_contract::ID,
-            document_type: "domain".to_string(),
-            transition_action_type: DocumentTransitionActionType::Delete,
-            data_trigger: reject_data_trigger,
         },
         DataTriggerBindingV0 {
             data_contract_id: dashpay_contract::ID,

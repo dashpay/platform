@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::dpns::v0::create_domain_data_trigger_v0;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::dpns::v1::create_domain_data_trigger_v1;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::dpns::v2::create_domain_data_trigger_v2;
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
@@ -10,6 +11,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 
 mod v0;
 mod v1;
+mod v2;
 
 pub fn create_domain_data_trigger(
     document_transition: &DocumentTransitionAction,
@@ -30,9 +32,12 @@ pub fn create_domain_data_trigger(
         // PROTOCOL_VERSION_12+: trigger bills via add_operation on the
         // outer execution_context (threaded through the mutable context).
         1 => create_domain_data_trigger_v1(document_transition, context, platform_version),
+        // PROTOCOL_VERSION_14+: only the parent domain checks; DPNS v3's schema
+        // keywords check the normalized names, the preorder and the records.
+        2 => create_domain_data_trigger_v2(document_transition, context, platform_version),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "create_domain_data_trigger".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         })),
     }

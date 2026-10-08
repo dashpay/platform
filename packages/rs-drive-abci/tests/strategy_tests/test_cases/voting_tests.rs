@@ -28,7 +28,11 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::dash_to_duffs;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::DataContract;
+    use dpp::platform_value::Identifier;
     use dpp::state_transition::StateTransition;
+    use dpp::util::hash::hash_double;
+    use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
@@ -40,6 +44,143 @@ mod tests {
     use crate::addresses_with_balance::AddressesWithBalance;
 
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
+
+    /// The `preorder` op of `owner_id` for `label` under `dash` salted with `salt`, and the
+    /// `domain` op revealing it. From protocol version 14 a domain must reveal its owner's
+    /// preorder made in an earlier block, so the preorder op runs in a block before the domain op.
+    fn dpns_preorder_and_domain_ops(
+        dpns_contract: &DataContract,
+        owner_id: Identifier,
+        label: &str,
+        salt: [u8; 32],
+    ) -> (DocumentOp, DocumentOp) {
+        let normalized_label = convert_to_homograph_safe_chars(label);
+        // sha256d(salt ++ normalizedLabel ++ "." ++ parentDomainName)
+        let mut salted_domain_name = salt.to_vec();
+        salted_domain_name.extend(normalized_label.as_bytes());
+        salted_domain_name.extend(b".dash");
+
+        let preorder_op = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([(
+                    "saltedDomainHash".into(),
+                    hash_double(salted_domain_name).into(),
+                )]),
+                Some(owner_id),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: dpns_contract
+                .document_type_for_name("preorder")
+                .expect("expected the preorder document type")
+                .to_owned_document_type(),
+        };
+
+        let domain_op = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), label.into()),
+                    ("normalizedLabel".into(), normalized_label.into()),
+                    ("parentDomainName".into(), "dash".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    ("preorderSalt".into(), salt.into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([("identity", Value::from(owner_id))]).into(),
+                    ),
+                ]),
+                Some(owner_id),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected the domain document type")
+                .to_owned_document_type(),
+        };
+
+        (preorder_op, domain_op)
+    }
+
+    /// `document_op` run once in every block of its stage
+    fn once_per_block(document_op: DocumentOp) -> Operation {
+        Operation {
+            op_type: OperationType::Document(document_op),
+            frequency: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+        }
+    }
+
+    /// Runs the block after `outcome` with `operations`, carrying on the identities, nonces and
+    /// proposer versions it ended with
+    async fn continue_chain_for_one_block<'a>(
+        outcome: ChainExecutionOutcome<'a>,
+        operations: Vec<Operation>,
+        config: PlatformConfig,
+    ) -> ChainExecutionOutcome<'a> {
+        let block_start = outcome
+            .abci_app
+            .platform
+            .state
+            .load()
+            .last_committed_block_info()
+            .as_ref()
+            .expect("expected a committed block")
+            .basic_info()
+            .height
+            + 1;
+
+        let ChainExecutionOutcome {
+            abci_app,
+            identities,
+            addresses_with_balance,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            current_proposer_versions,
+            instant_lock_quorums,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            end_time_ms,
+            strategy,
+            ..
+        } = outcome;
+
+        continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                instant_lock_quorums,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: strategy.start_time_ms,
+                current_time_ms: end_time_ms,
+                current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
+            },
+            NetworkStrategy {
+                strategy: Strategy {
+                    operations,
+                    ..strategy.strategy
+                },
+                ..strategy
+            },
+            config,
+            StrategyRandomness::SeedEntropy(7),
+        )
+        .await
+    }
 
     #[stack_size(STACK_SIZE)]
     #[test]
@@ -105,41 +246,14 @@ mod tests {
             .as_ref()
             .clone();
 
-        let document_type = dpns_contract
-            .document_type_for_name("domain")
-            .expect("expected a profile document type")
-            .to_owned_document_type();
-
         let identity1_id = start_identities.first().unwrap().0.id();
-        let document_op_1 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
-                    ),
-                ]),
-                Some(start_identities.first().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
+        let (preorder_op_1, domain_op_1) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![Operation {
-                    op_type: OperationType::Document(document_op_1.clone()),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
-                    },
-                }],
+                operations: vec![once_per_block(preorder_op_1)],
                 start_identities: StartIdentities {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
@@ -164,34 +278,36 @@ mod tests {
 
         let mut voting_signer = Some(SimpleSigner::default());
 
-        let ChainExecutionOutcome {
-            abci_app,
-            state_transition_results_per_block,
-            ..
-        } = run_chain_for_strategy(
+        let outcome = run_chain_for_strategy(
             &mut platform,
             2,
             strategy,
-            config,
+            config.clone(),
             15,
             &mut voting_signer,
             &mut None,
         )
         .await;
 
+        let ChainExecutionOutcome {
+            abci_app,
+            state_transition_results_per_block,
+            ..
+        } = continue_chain_for_one_block(outcome, vec![once_per_block(domain_op_1)], config).await;
+
         let platform_state = abci_app.platform.state.load();
 
-        // The identity is created in the first block and the contested DPNS name in the second,
-        // long before epoch 4
-        assert_eq!(platform_state.last_committed_block_epoch().index, 1);
+        // The identity is created in the first block, its preorder in the second and the
+        // contested DPNS name in the third, long before epoch 4
+        assert_eq!(platform_state.last_committed_block_epoch().index, 2);
 
-        let state_transitions_block_2 = state_transition_results_per_block
-            .get(&2)
-            .expect("expected to get block 2");
+        let state_transitions_block_3 = state_transition_results_per_block
+            .get(&3)
+            .expect("expected to get block 3");
 
-        assert_eq!(state_transitions_block_2.len(), 1);
+        assert_eq!(state_transitions_block_3.len(), 1);
 
-        let (state_transition, execution_result) = state_transitions_block_2
+        let (state_transition, execution_result) = state_transitions_block_3
             .first()
             .expect("expected a document insert");
 
@@ -550,67 +666,15 @@ mod tests {
 
         let identity1_id = start_identities.first().unwrap().0.id();
         let identity2_id = start_identities.last().unwrap().0.id();
-        let document_op_1 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
-                    ),
-                ]),
-                Some(start_identities.first().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
-
-        let document_op_2 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([(
-                            "identity",
-                            Value::from(start_identities.last().unwrap().0.id()),
-                        )])
-                        .into(),
-                    ),
-                ]),
-                Some(start_identities.last().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
+        let (preorder_op_1, domain_op_1) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
+        let (preorder_op_2, domain_op_2) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity2_id, "quantum", [2u8; 32]);
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![
-                    Operation {
-                        op_type: OperationType::Document(document_op_1),
-                        frequency: Frequency {
-                            times_per_block_range: 1..2,
-                            chance_per_block: None,
-                        },
-                    },
-                    Operation {
-                        op_type: OperationType::Document(document_op_2),
-                        frequency: Frequency {
-                            times_per_block_range: 1..2,
-                            chance_per_block: None,
-                        },
-                    },
-                ],
+                operations: vec![once_per_block(preorder_op_1), once_per_block(preorder_op_2)],
                 start_identities: StartIdentities {
                     hard_coded: start_identities,
                     ..Default::default()
@@ -636,7 +700,19 @@ mod tests {
 
         let mut voting_signer = Some(SimpleSigner::default());
 
-        // On the first block we only have identities and contracts
+        // The first block creates the identities and the second their preorders
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            2,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut voting_signer,
+            &mut None,
+        )
+        .await;
+
+        // The contested names reveal the preorders in the third block
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -649,14 +725,10 @@ mod tests {
             identity_contract_nonce_counter,
             state_transition_results_per_block,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            2,
-            strategy.clone(),
+        } = continue_chain_for_one_block(
+            outcome,
+            vec![once_per_block(domain_op_1), once_per_block(domain_op_2)],
             config.clone(),
-            15,
-            &mut voting_signer,
-            &mut None,
         )
         .await;
 
@@ -664,18 +736,18 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let state_transitions_block_2 = state_transition_results_per_block
-            .get(&2)
-            .expect("expected to get block 2");
+        let state_transitions_block_3 = state_transition_results_per_block
+            .get(&3)
+            .expect("expected to get block 3");
 
-        let first_document_insert_result = &state_transitions_block_2
+        let first_document_insert_result = &state_transitions_block_3
             .first()
             .as_ref()
             .expect("expected a document insert")
             .1;
         assert_eq!(first_document_insert_result.code, 0);
 
-        let second_document_insert_result = &state_transitions_block_2
+        let second_document_insert_result = &state_transitions_block_3
             .get(1)
             .as_ref()
             .expect("expected a document insert")
@@ -909,67 +981,15 @@ mod tests {
 
         let identity1_id = start_identities.first().unwrap().0.id();
         let identity2_id = start_identities.last().unwrap().0.id();
-        let document_op_1 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
-                    ),
-                ]),
-                Some(start_identities.first().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
-
-        let document_op_2 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([(
-                            "identity",
-                            Value::from(start_identities.last().unwrap().0.id()),
-                        )])
-                        .into(),
-                    ),
-                ]),
-                Some(start_identities.last().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
+        let (preorder_op_1, domain_op_1) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
+        let (preorder_op_2, domain_op_2) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity2_id, "quantum", [2u8; 32]);
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![
-                    Operation {
-                        op_type: OperationType::Document(document_op_1),
-                        frequency: Frequency {
-                            times_per_block_range: 1..2,
-                            chance_per_block: None,
-                        },
-                    },
-                    Operation {
-                        op_type: OperationType::Document(document_op_2),
-                        frequency: Frequency {
-                            times_per_block_range: 1..2,
-                            chance_per_block: None,
-                        },
-                    },
-                ],
+                operations: vec![once_per_block(preorder_op_1), once_per_block(preorder_op_2)],
                 start_identities: StartIdentities {
                     hard_coded: start_identities,
                     ..Default::default()
@@ -995,7 +1015,19 @@ mod tests {
 
         let mut voting_signer = Some(SimpleSigner::default());
 
-        // On the first block we only have identities and contracts
+        // The first block creates the identities and the second their preorders
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            2,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut voting_signer,
+            &mut None,
+        )
+        .await;
+
+        // The contested names reveal the preorders in the third block
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -1008,14 +1040,10 @@ mod tests {
             identity_contract_nonce_counter,
             state_transition_results_per_block,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            2,
-            strategy.clone(),
+        } = continue_chain_for_one_block(
+            outcome,
+            vec![once_per_block(domain_op_1), once_per_block(domain_op_2)],
             config.clone(),
-            15,
-            &mut voting_signer,
-            &mut None,
         )
         .await;
 
@@ -1023,18 +1051,18 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let state_transitions_block_2 = state_transition_results_per_block
-            .get(&2)
-            .expect("expected to get block 2");
+        let state_transitions_block_3 = state_transition_results_per_block
+            .get(&3)
+            .expect("expected to get block 3");
 
-        let first_document_insert_result = &state_transitions_block_2
+        let first_document_insert_result = &state_transitions_block_3
             .first()
             .as_ref()
             .expect("expected a document insert")
             .1;
         assert_eq!(first_document_insert_result.code, 0);
 
-        let second_document_insert_result = &state_transitions_block_2
+        let second_document_insert_result = &state_transitions_block_3
             .get(1)
             .as_ref()
             .expect("expected a document insert")
@@ -1726,67 +1754,15 @@ mod tests {
 
         let identity1_id = start_identities.first().unwrap().0.id();
         let identity2_id = start_identities.last().unwrap().0.id();
-        let document_op_1 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
-                    ),
-                ]),
-                Some(start_identities.first().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
-
-        let document_op_2 = DocumentOp {
-            contract: dpns_contract.clone(),
-            action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), "quantum".into()),
-                    ("normalizedLabel".into(), "quantum".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([(
-                            "identity",
-                            Value::from(start_identities.last().unwrap().0.id()),
-                        )])
-                        .into(),
-                    ),
-                ]),
-                Some(start_identities.last().unwrap().0.id()),
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-            ),
-            document_type: document_type.clone(),
-        };
+        let (preorder_op_1, domain_op_1) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
+        let (preorder_op_2, domain_op_2) =
+            dpns_preorder_and_domain_ops(&dpns_contract, identity2_id, "quantum", [2u8; 32]);
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![
-                    Operation {
-                        op_type: OperationType::Document(document_op_1),
-                        frequency: Frequency {
-                            times_per_block_range: 1..2,
-                            chance_per_block: None,
-                        },
-                    },
-                    Operation {
-                        op_type: OperationType::Document(document_op_2),
-                        frequency: Frequency {
-                            times_per_block_range: 1..2,
-                            chance_per_block: None,
-                        },
-                    },
-                ],
+                operations: vec![once_per_block(preorder_op_1), once_per_block(preorder_op_2)],
                 start_identities: StartIdentities {
                     hard_coded: start_identities,
                     ..Default::default()
@@ -1811,7 +1787,19 @@ mod tests {
 
         let mut voting_signer = Some(SimpleSigner::default());
 
-        // On the first block we only have identities and contracts
+        // The first block creates the identities and the second their preorders
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            2,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut voting_signer,
+            &mut None,
+        )
+        .await;
+
+        // The contested names reveal the preorders in the third block
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -1824,14 +1812,10 @@ mod tests {
             identity_contract_nonce_counter,
             state_transition_results_per_block,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            2,
-            strategy.clone(),
+        } = continue_chain_for_one_block(
+            outcome,
+            vec![once_per_block(domain_op_1), once_per_block(domain_op_2)],
             config.clone(),
-            15,
-            &mut voting_signer,
-            &mut None,
         )
         .await;
 
@@ -1839,18 +1823,18 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let state_transitions_block_2 = state_transition_results_per_block
-            .get(&2)
-            .expect("expected to get block 2");
+        let state_transitions_block_3 = state_transition_results_per_block
+            .get(&3)
+            .expect("expected to get block 3");
 
-        let first_document_insert_result = &state_transitions_block_2
+        let first_document_insert_result = &state_transitions_block_3
             .first()
             .as_ref()
             .expect("expected a document insert")
             .1;
         assert_eq!(first_document_insert_result.code, 0);
 
-        let second_document_insert_result = &state_transitions_block_2
+        let second_document_insert_result = &state_transitions_block_3
             .get(1)
             .as_ref()
             .expect("expected a document insert")
@@ -2032,14 +2016,16 @@ mod tests {
 
         assert_eq!(abstain_vote_tally, Some(8));
 
+        // The names were registered in block 3, behind their preorders, so the contest ends
+        // in block 18
         assert_eq!(
             finished_vote_info,
             Some(FinishedVoteInfo {
                 finished_vote_outcome: FinishedVoteOutcome::TowardsIdentity.into(),
                 won_by_identity_id: Some(identity2_id.to_vec()),
-                finished_at_block_height: 17,
+                finished_at_block_height: 18,
                 finished_at_core_block_height: 1,
-                finished_at_block_time_ms: 1682303986000,
+                finished_at_block_time_ms: 1682303989000,
                 finished_at_epoch: 1
             })
         );

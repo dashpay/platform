@@ -11,7 +11,8 @@ use thiserror::Error;
 /// The document a `refersTo` lookup with a computed key found, the commitment a create
 /// reveals, exists but does not meet what the reference requires of it: `minimumAgeBlocks`,
 /// its recorded creation block height at least that many blocks below the height of the
-/// create (a document recording none never meets it).
+/// create (a document recording none, written before a protocol upgrade re-stored its system
+/// contract, counts as old enough).
 #[derive(
     Error,
     Debug,

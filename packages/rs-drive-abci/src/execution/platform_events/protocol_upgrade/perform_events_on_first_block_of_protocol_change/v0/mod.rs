@@ -702,8 +702,9 @@ impl<C> Platform<C> {
     /// When transitioning to version 14 we re-store the DashPay contract whose
     /// v2 schema adds the optional public payment address fields to the
     /// `profile` document type (DIP-33), the withdrawals contract whose v2
-    /// schema admits the terminal FAILED value of the `status` property, and
-    /// register the app-connect contract that carries the wallet-to-app login
+    /// schema admits the terminal FAILED value of the `status` property, the
+    /// DPNS contract whose v3 schema checks a domain create with keywords
+    /// instead of most of its data trigger, and register the app-connect contract that carries the wallet-to-app login
     /// handshake and the moderation charters contract that elected moderation
     /// teams apply through.
     fn transition_to_version_14(
@@ -732,6 +733,23 @@ impl<C> Platform<C> {
 
         self.drive.apply_contract(
             &withdrawals_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // DPNS contract v3: a domain create generates its normalized names, reveals and
+        // deletes the writer's own preorder from an earlier block, and holds its identity
+        // record to its owner, all by schema keywords; the create data trigger keeps only
+        // the parent domain checks. Preorders made before this block record no
+        // `$createdAtBlockHeight` and stay revealable: a document recording none counts as
+        // old enough for `minimumAgeBlocks`.
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+
+        self.drive.apply_contract(
+            &dpns_contract,
             *block_info,
             true,
             None,

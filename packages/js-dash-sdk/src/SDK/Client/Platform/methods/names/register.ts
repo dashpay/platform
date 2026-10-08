@@ -48,9 +48,9 @@ export async function register(
 
   const isSecondLevelDomain = normalizedParentDomainName.length > 0;
 
-  const fullDomainName = isSecondLevelDomain
-    ? `${normalizedLabel}.${normalizedParentDomainName}`
-    : normalizedLabel;
+  // The preorder commits to the normalized label, a dot and the parent domain
+  // name as sent: the hash the platform checks the domain's preorderSalt against
+  const fullDomainName = `${normalizedLabel}.${parentDomainName}`;
 
   const saltedDomainHash = hash(
     Buffer.concat([

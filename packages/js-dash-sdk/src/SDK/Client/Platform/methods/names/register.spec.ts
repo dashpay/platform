@@ -59,7 +59,7 @@ describe('Platform', () => {
         expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
         expect(platformMock.documents.create.getCall(0).args[1]).to.deep.equal(identityMock);
         expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.deep.equal(
-          'df46c47179745ea18c0fdc95910372dca8810127acc9afe3c9b326b07555e6b4',
+          'dad5808c709bec62b65e607b38846d4fe4080b251cb917a2221c81fb7c3b5f5e',
         );
 
         expect(platformMock.documents.create.getCall(1).args).to.have.deep.members([

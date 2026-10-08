@@ -751,8 +751,12 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
+        // from DPNS v3 (protocol version 14)
+        assert_eq!(
+            domain.documents_can_be_deleted(),
+            platform_version.system_data_contracts.dpns < 3
+        );
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -967,7 +971,9 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -1226,8 +1232,12 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
+        // from DPNS v3 (protocol version 14)
+        assert_eq!(
+            domain.documents_can_be_deleted(),
+            platform_version.system_data_contracts.dpns < 3
+        );
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -1367,7 +1377,9 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -1656,7 +1668,9 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -2079,8 +2093,12 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
+        // from DPNS v3 (protocol version 14)
+        assert_eq!(
+            domain.documents_can_be_deleted(),
+            platform_version.system_data_contracts.dpns < 3
+        );
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2219,7 +2237,9 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -2367,8 +2387,12 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
+        // from DPNS v3 (protocol version 14)
+        assert_eq!(
+            domain.documents_can_be_deleted(),
+            platform_version.system_data_contracts.dpns < 3
+        );
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2776,7 +2800,9 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -2800,7 +2826,9 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_3.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -2827,7 +2855,9 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_4],
                 &platform_state,
-                &BlockInfo::default(),
+                // The block after the preorders: from protocol version 14 a domain
+                // reveals a preorder made in an earlier block
+                &BlockInfo::default_with_height(1),
                 &transaction,
                 platform_version,
                 false,
@@ -3456,7 +3486,7 @@ mod creation_tests {
         let extra_time_used = 3000; // add_contender_to_dpns_name_contest uses this extra time
 
         let expected_error_message = format!(
-            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 0, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
+            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 1, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
             time_started + extra_time_used,
             time_started + extra_time_used,
             time_now + extra_time_used,
@@ -3626,9 +3656,15 @@ mod creation_tests {
         let SuccessfulExecution { fee_result, .. } = result else {
             panic!("expected the contender to join, got {result:?}");
         };
+        // From protocol version 14 the join consumes the contender's preorder, whose storage
+        // is refunded to it
+        let preorder_refund = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(contender.id())
+            .unwrap_or_default();
         assert_eq!(
             balance_before_create - balance_of(platform, &contender, platform_version),
-            fund + fee_result.total_base_fee(),
+            fund + fee_result.total_base_fee() - preorder_refund,
             "the contender pays the fund to join and the fees of its document"
         );
     }
@@ -4180,7 +4216,7 @@ mod creation_tests {
         // We expect this to fail
 
         let expected_error_message = format!(
-            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 0, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
+            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 1, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
             time_after_distribution_limit
         );
 

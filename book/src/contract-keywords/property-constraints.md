@@ -169,6 +169,7 @@ A rule can read when the document was created, last updated and last transferred
 - `{ "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, 604800000] }` keeps a listing to a week from its creation.
 - `{ "lessThanOrEqual": ["$updatedAt", "endsAt"] }` refuses a replace or a price update after the listing ends.
 - `{ "lessThanOrEqual": ["$transferredAt", "endsAt"] }` refuses a transfer or a purchase after it ends.
+- `{ "ifThen": [{ "equal": ["$transferredAt", "$createdAt"] }, { "equal": ["records.identity", "$ownerId"] }] }` holds `records.identity` to the owner until the document first changes hands. A create records its block's time as the transfer too, so the condition holds on the create, and a transfer or a purchase in a later block records a later time, so it no longer reads the property. One in the block that created the document has that block's time and is judged as the create was. The DPNS `domain` type's `recordsIdentityIsOwner` (protocol version 14) is this rule.
 
 A rule may read one only when the document type records it by listing it in `required`, so every stored document holds it. None takes an `ifAbsent` default, `present` and `absent` refuse them, and an [index-only](index-only.md) type reads none. Each write is judged with the values the stored document ends up with: a create with its block's time and heights for all three events; a replace with the stored creation and transfer values and its block's as the update; a price update with its block's as the update; a transfer or a purchase with its block's as the transfer.
 

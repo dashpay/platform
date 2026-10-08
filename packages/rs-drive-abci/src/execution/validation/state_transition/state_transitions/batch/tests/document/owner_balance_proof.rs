@@ -621,11 +621,16 @@ async fn should_prove_the_owner_balance_next_to_a_contested_document() {
         .await
         .expect("expected to sign the contested create");
 
+    // The block after the preorder's: from protocol version 14 a domain reveals a preorder
+    // made in an earlier block
     process_and_commit_at(
         &platform,
         &platform_state,
         &create,
-        &BlockInfo::default_with_time(3000),
+        &BlockInfo {
+            height: 1,
+            ..BlockInfo::default_with_time(3000)
+        },
         platform_version,
     );
 

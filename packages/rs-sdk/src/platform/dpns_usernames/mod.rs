@@ -81,7 +81,8 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
 /// Result of a DPNS name registration
 #[derive(Debug)]
 pub struct RegisterDpnsNameResult {
-    /// The preorder document that was created
+    /// The preorder document that was created. From protocol version 14 the domain
+    /// create deletes it, so it is no longer in state once the name is registered
     pub preorder_document: Document,
     /// The domain document that was created
     pub domain_document: Document,

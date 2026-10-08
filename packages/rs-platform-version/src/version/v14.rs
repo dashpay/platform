@@ -1616,7 +1616,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     function the reference may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
-///     40142), and `consume`, which deletes the found document with the create
+///     40142; a found document recording none counts as old enough, 87), and
+///     `consume`, which deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
 ///     it elsewhere refused with 40120). The hash is computed once per key and
 ///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
@@ -1640,8 +1641,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `deletableDocument` target through a function, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
-///     a parent byte for byte; the DPNS contract and its create trigger are
-///     unchanged. See `book/src/data-model/documents.md`.
+///     a parent byte for byte, and DPNS v3 declares it (87). See
+///     `book/src/data-model/documents.md`.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its
@@ -2212,6 +2213,41 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     schemas without a scalar `$ref` target; earlier versions replay
 ///     through generation 0.
 ///
+/// 87. **DPNS v3 checks a name's create with keywords**:
+///     `SYSTEM_DATA_CONTRACT_VERSIONS_V3` selects DPNS contract v3, loaded at
+///     genesis (which still inserts the `dash` top-level domain) and re-stored
+///     by `transition_to_version_14` with `apply_contract`. Its `domain`
+///     generates `normalizedLabel` and `normalizedParentDomainName` with
+///     `sys.stringTransformations.homographSafeASCII` (53; a value sent that
+///     differs is `DocumentPropertyNotGeneratedError`, 10424). Its
+///     `preorderSalt` reveals the writer's own `preorder` from an earlier block
+///     and deletes it, the storage refunded to the writer (61: `findBy` the
+///     sha256d of the salt, the normalized label, `"."` and the parent,
+///     `where` `$ownerId`, `minimumAgeBlocks: 1`, `consume`; refused with 40120,
+///     40127 or 40142). The rule `recordsIdentityIsOwner` (`$transferredAt`
+///     equal to `$createdAt` implies `records.identity` equal to `$ownerId`)
+///     holds a new name's identity record to its owner (10422); a transfer or
+///     a purchase in a later block, judged with its own time, no longer reads
+///     the record, and one in the block that created the name is refused. The
+///     `domain` sets `canBeDeleted: false` and the `preorder` requires
+///     `$createdAtBlockHeight`; property positions, the transient list and the
+///     stored encoding are v2's, so stored domains and preorders decode
+///     unchanged. `create_domain_data_trigger` 2
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`) keeps only the parent domain
+///     checks: a top-level domain only by the contract owner, the parent
+///     present, no subdomains allowed under a name, and the parent's subdomain
+///     rule. Data trigger bindings 2, in place, drop the `domain` Replace and
+///     Delete rejects; `documentsMutable` and `canBeDeleted` false refuse both
+///     (`InvalidDocumentTransitionActionError`, 10404). The reference
+///     validation 0, in place, counts a found document recording no
+///     `$createdAtBlockHeight` as old enough for `minimumAgeBlocks`: an update
+///     can not make a system field required, so only a system contract a
+///     protocol upgrade re-stored holds such documents, all written before the
+///     upgrade's block, and the preorders made before this version stay
+///     revealable. Inert before this version: only the version 14 parser
+///     produces a `minimumAgeBlocks`, and the earlier tables select DPNS v1 or
+///     v2, trigger 0 or 1 and bindings 0 or 1.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -2318,7 +2354,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago; credit_pool_bundle_binding Some(0) — the credit pool's outputs-only bundles bind a kind tag and their owner
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status; DPNS v3 checks a name's create with keywords
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
