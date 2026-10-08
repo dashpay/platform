@@ -10,7 +10,6 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SKIP = 'https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz'
 
 
 def tarball_resolutions_script():
@@ -21,10 +20,13 @@ def tarball_resolutions_script():
 
 class PackDashmateTests(unittest.TestCase):
     # cpu-features compiles a native addon, and Apple does not notarize a
-    # macOS package that holds one.
+    # macOS package that holds one. The workspace skips it, and the packed
+    # Dashmate has to skip it the same way.
     def test_should_skip_cpu_features_in_the_dashmate_package(self):
-        manifest = json.loads((ROOT / 'packages/dashmate/package.json').read_text())
-        self.assertEqual(manifest['resolutions']['cpu-features'], SKIP)
+        workspace, dashmate = (json.loads((ROOT / path).read_text())['resolutions']['cpu-features']
+                               for path in ['package.json', 'packages/dashmate/package.json'])
+        self.assertIn('skip-dependency', workspace)
+        self.assertEqual(dashmate, workspace)
 
     def test_should_keep_the_package_resolutions_when_packing_from_tarballs(self):
         tmp = Path(tempfile.mkdtemp())
@@ -33,7 +35,7 @@ class PackDashmateTests(unittest.TestCase):
         tarballs = tmp / 'npm-packages'
         package.mkdir()
         tarballs.mkdir()
-        (package / 'package.json').write_text(json.dumps({'name': 'dashmate', 'resolutions': {'cpu-features': SKIP}}))
+        (package / 'package.json').write_text(json.dumps({'name': 'dashmate', 'resolutions': {'cpu-features': 'skip'}}))
         for name in ['dashmate', '@dashevo/wallet-lib']:
             manifest = json.dumps({'name': name}).encode()
             with tarfile.open(tarballs / (name.replace('/', '-') + '-1.0.0.tgz'), 'w:gz') as archive:
@@ -46,7 +48,7 @@ class PackDashmateTests(unittest.TestCase):
 
         wallet_lib = (tarballs / '@dashevo-wallet-lib-1.0.0.tgz').resolve()
         self.assertEqual(json.loads((package / 'package.json').read_text())['resolutions'],
-                         {'cpu-features': SKIP, '@dashevo/wallet-lib': f'file:{wallet_lib}'})
+                         {'cpu-features': 'skip', '@dashevo/wallet-lib': f'file:{wallet_lib}'})
 
 
 if __name__ == '__main__':

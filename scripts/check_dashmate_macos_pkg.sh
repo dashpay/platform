@@ -4,8 +4,9 @@
 # Developer ID certificate. Apple does not notarize such a package.
 #
 # This catches the certain rejections early. It does not look inside nested
-# archives (zip files, static libraries) or at the hardened runtime and the
-# timestamp, so the notary service still has the last word.
+# archives (zip files, static libraries), and it leaves the hardened runtime
+# and the timestamp alone, because what Apple asks there depends on the kind
+# of binary. The notary service still has the last word.
 #
 # Usage: check_dashmate_macos_pkg.sh PKG_OR_DIRECTORY...
 
@@ -17,8 +18,11 @@ for argument in "$@"; do
     while IFS= read -r -d '' pkg; do
       packages+=("$pkg")
     done < <(find "$argument" -type f -name '*.pkg' -print0)
-  else
+  elif [ -f "$argument" ]; then
     packages+=("$argument")
+  else
+    echo "::error::$argument is neither a package nor a directory."
+    exit 1
   fi
 done
 
@@ -29,6 +33,10 @@ fi
 
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
+
+# Apple's own definition of "signed with a Developer ID Application
+# certificate". It covers every architecture of a universal binary.
+developer_id='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists'
 
 # `file` prints extra lines for a universal binary. They do not carry the
 # separator, so a line without it is not the start of a new file.
@@ -54,9 +62,7 @@ for pkg in "${packages[@]}"; do
     path="${line%%"$separator"*}"
     binaries=$((binaries + 1))
     # stdin is the listing, so keep it away from codesign.
-    signature="$(codesign -dvv "$path" 2>&1 < /dev/null || true)"
-    if ! grep -q '^Authority=Developer ID Application:' <<< "$signature" \
-      || ! codesign --verify --strict "$path" > /dev/null 2>&1 < /dev/null; then
+    if ! codesign --verify --strict -R="$developer_id" "$path" > /dev/null 2>&1 < /dev/null; then
       echo "${path#"$expanded"/}" >> "$unsigned"
     fi
   done < "$listing"
