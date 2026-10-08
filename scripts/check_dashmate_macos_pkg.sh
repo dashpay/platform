@@ -3,6 +3,10 @@
 # Fails when a macOS installer holds a native binary that is not signed with a
 # Developer ID certificate. Apple does not notarize such a package.
 #
+# This catches the certain rejections early. It does not look inside nested
+# archives or at the hardened runtime and the timestamp, so the notary service
+# still has the last word.
+#
 # Usage: check_dashmate_macos_pkg.sh PKG...
 
 set -euo pipefail
@@ -25,6 +29,7 @@ for pkg in "$@"; do
   unsigned="$work_dir/unsigned.txt"
   rm -rf "$expanded"
   : > "$unsigned"
+  binaries=0
   pkgutil --expand-full "$pkg" "$expanded"
 
   while IFS= read -r line; do
@@ -33,20 +38,26 @@ for pkg in "$@"; do
       *) continue ;;
     esac
     path="${line%%"$separator"*}"
-    signature="$(codesign -dvv "$path" 2>&1 || true)"
-    case "$signature" in
-      *"Authority=Developer ID Application:"*) ;;
-      *) echo "${path#"$expanded"/}" >> "$unsigned" ;;
-    esac
+    binaries=$((binaries + 1))
+    # stdin is the list of files, so keep it away from codesign.
+    signature="$(codesign -dvv "$path" 2>&1 < /dev/null || true)"
+    if ! grep -q '^Authority=Developer ID Application:' <<< "$signature" \
+      || ! codesign --verify --strict "$path" > /dev/null 2>&1 < /dev/null; then
+      echo "${path#"$expanded"/}" >> "$unsigned"
+    fi
   done < <(find "$expanded" -type f -exec file -F "$separator" {} +)
 
-  if [ -s "$unsigned" ]; then
+  # Every package holds at least the node binary.
+  if [ "$binaries" -eq 0 ]; then
+    failed=true
+    echo "::error::Found no native binary in $(basename "$pkg"), not even node: the scan did not work."
+  elif [ -s "$unsigned" ]; then
     failed=true
     count="$(wc -l < "$unsigned" | tr -d ' ')"
-    echo "::error::$(basename "$pkg") holds $count native binaries without a Developer ID signature, so Apple will not notarize it."
+    echo "::error::$(basename "$pkg") holds $count native binaries without a valid Developer ID signature, so Apple will not notarize it."
     cat "$unsigned"
   else
-    echo "$(basename "$pkg"): every native binary has a Developer ID signature."
+    echo "$(basename "$pkg"): native binaries checked: $binaries, each with a valid Developer ID signature."
   fi
 done
 

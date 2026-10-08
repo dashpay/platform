@@ -370,8 +370,13 @@ jobs:
       - name: Check macOS packages for unsigned native code
         if: runner.os == 'macOS'
         run: |
-          find packages/dashmate/dist -type f -name '*.pkg' \
-            -exec "${GITHUB_WORKSPACE}/scripts/check_dashmate_macos_pkg.sh" {} +
+          set -euo pipefail
+          packages=()
+          while IFS= read -r -d '' pkg; do
+            packages+=("$pkg")
+          done < <(find packages/dashmate/dist -type f -name '*.pkg' -print0)
+          [ "${#packages[@]}" -gt 0 ] || { echo '::error::The macOS build produced no .pkg.'; exit 1; }
+          "${GITHUB_WORKSPACE}/scripts/check_dashmate_macos_pkg.sh" "${packages[@]}"
 
       - name: Upload Dashmate packages
         uses: actions/upload-artifact@v4
