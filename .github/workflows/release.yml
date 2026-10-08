@@ -368,15 +368,19 @@ jobs:
       # Apple notarizes a package only when every native binary in it has a
       # Developer ID signature. Stop here instead of after signing.
       - name: Check macOS packages for unsigned native code
+        id: check_macos_packages
         if: runner.os == 'macOS'
         run: |
-          set -euo pipefail
-          packages=()
-          while IFS= read -r -d '' pkg; do
-            packages+=("$pkg")
-          done < <(find packages/dashmate/dist -type f -name '*.pkg' -print0)
-          [ "${#packages[@]}" -gt 0 ] || { echo '::error::The macOS build produced no .pkg.'; exit 1; }
-          "${GITHUB_WORKSPACE}/scripts/check_dashmate_macos_pkg.sh" "${packages[@]}"
+          "${GITHUB_WORKSPACE}/scripts/check_dashmate_macos_pkg.sh" packages/dashmate/dist
+
+      # Under another name, so the release job does not sign them.
+      - name: Keep rejected macOS packages for inspection
+        if: failure() && steps.check_macos_packages.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashmate-macos-rejected-${{ github.sha }}
+          path: packages/dashmate/dist/**
+          retention-days: 7
 
       - name: Upload Dashmate packages
         uses: actions/upload-artifact@v4

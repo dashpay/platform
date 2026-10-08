@@ -4,15 +4,26 @@
 # Developer ID certificate. Apple does not notarize such a package.
 #
 # This catches the certain rejections early. It does not look inside nested
-# archives or at the hardened runtime and the timestamp, so the notary service
-# still has the last word.
+# archives (zip files, static libraries) or at the hardened runtime and the
+# timestamp, so the notary service still has the last word.
 #
-# Usage: check_dashmate_macos_pkg.sh PKG...
+# Usage: check_dashmate_macos_pkg.sh PKG_OR_DIRECTORY...
 
 set -euo pipefail
 
-if [ "$#" -eq 0 ]; then
-  echo "Usage: check_dashmate_macos_pkg.sh PKG..." >&2
+packages=()
+for argument in "$@"; do
+  if [ -d "$argument" ]; then
+    while IFS= read -r -d '' pkg; do
+      packages+=("$pkg")
+    done < <(find "$argument" -type f -name '*.pkg' -print0)
+  else
+    packages+=("$argument")
+  fi
+done
+
+if [ "${#packages[@]}" -eq 0 ]; then
+  echo '::error::No .pkg to check. Usage: check_dashmate_macos_pkg.sh PKG_OR_DIRECTORY...'
   exit 1
 fi
 
@@ -24,13 +35,16 @@ trap 'rm -rf "$work_dir"' EXIT
 separator='|dashmate-pkg-check|'
 
 failed=false
-for pkg in "$@"; do
+for pkg in "${packages[@]}"; do
   expanded="$work_dir/expanded"
+  listing="$work_dir/listing.txt"
   unsigned="$work_dir/unsigned.txt"
   rm -rf "$expanded"
   : > "$unsigned"
   binaries=0
   pkgutil --expand-full "$pkg" "$expanded"
+  # Written to a file first, so that a failing scan stops the script.
+  find "$expanded" -type f -exec file -F "$separator" {} + > "$listing"
 
   while IFS= read -r line; do
     case "$line" in
@@ -39,13 +53,13 @@ for pkg in "$@"; do
     esac
     path="${line%%"$separator"*}"
     binaries=$((binaries + 1))
-    # stdin is the list of files, so keep it away from codesign.
+    # stdin is the listing, so keep it away from codesign.
     signature="$(codesign -dvv "$path" 2>&1 < /dev/null || true)"
     if ! grep -q '^Authority=Developer ID Application:' <<< "$signature" \
       || ! codesign --verify --strict "$path" > /dev/null 2>&1 < /dev/null; then
       echo "${path#"$expanded"/}" >> "$unsigned"
     fi
-  done < <(find "$expanded" -type f -exec file -F "$separator" {} +)
+  done < "$listing"
 
   # Every package holds at least the node binary.
   if [ "$binaries" -eq 0 ]; then
