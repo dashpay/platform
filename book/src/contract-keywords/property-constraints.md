@@ -117,6 +117,7 @@ An integer expression is one of:
 | `abs` | `{ "abs": a }` | The absolute value of its one operand |
 | `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
 | `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
+| `countPresent` | `{ "countPresent": ["email", "phone"] }` | How many of two or more properties, no two alike, the document holds, each as `present` tests it (see [How many of a group](#how-many-of-a-group)) |
 | `byteAt` | `{ "byteAt": ["address", 0] }` | The byte, 0 to 255, at an index (counted from 0) of a byte array property, 0 when the array does not hold it or the document leaves it out (see [Byte arrays](#byte-arrays)) |
 | system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
 | `countOf`, `sumOf` | `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` | A total of documents of a type of the same contract, read from state (see [Totals of other documents](#totals-of-other-documents)) |
@@ -230,6 +231,28 @@ A filter maps each key, a property of the counted type or `$ownerId`, to the val
 - **Every earlier write counts.** A document batch carries one transition, and each state transition of a block is applied before the next is validated, so a total includes every write before it.
 - **SDK pre-checks** cannot read state, so they do not judge a rule reading a total.
 
+## How many of a group
+
+`countPresent` counts the properties of a group that the document holds, each as `present` tests it, so a rule compares the count with a number. A seller is reached by exactly one of three contacts:
+
+```json
+"propertyConstraints": {
+  "oneContact": { "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }
+}
+```
+
+The comparisons and `in` give every bound:
+
+| Want | Rule |
+|---|---|
+| exactly one | `{ "equal": [{ "countPresent": [...] }, 1] }` |
+| at most one | `{ "lessThanOrEqual": [{ "countPresent": [...] }, 1] }` |
+| at least two | `{ "greaterThanOrEqual": [{ "countPresent": [...] }, 2] }` |
+| one or two | `{ "in": [{ "countPresent": [...] }, [1, 2]] }` |
+| none or all three | `{ "in": [{ "countPresent": ["a", "b", "c"] }, [0, 3]] }` |
+
+The count runs from 0 to the size of the group, so an `in` lists a range in a few values. `oneContact` is 6 nodes (the comparison, `countPresent`, three paths and `1`); the same rule written with `present` alone needs an `anyOf` and a `not` of every pair, 17 nodes for three properties and more than 32 for five. Inside `ifThen` the bound applies only when another condition holds: `{ "ifThen": [{ "equal": ["kind", { "const": "shop" }] }, { "greaterThanOrEqual": [{ "countPresent": ["email", "phone", "handle"] }, 1] }] }` asks a shop for at least one contact.
+
 ## Evaluation order and short-circuiting
 
 Conditions are checked in declared order and no further than the outcome needs. A comparison evaluates its left side, then its right. `anyOf` stops at the first condition that holds, `allOf` at the first that fails. Operands are evaluated left to right.
@@ -255,7 +278,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 
 - the keyword is an object of one or more rules, named with 1 to 64 letters, digits or underscores;
 - every condition and every operator object has exactly one key;
-- a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
+- a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings; a `countPresent` two or more distinct paths;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused;
 - a `byteAt` lists a path and an integer index from 0 to 65535;
@@ -263,14 +286,14 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
-- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path `byteAt` reads, and every path a `startsWith` or `endsWith` of byte arrays tests, names a byte array property, within its `maxItems` when it declares one: an index below it, a constant no longer than it; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string, or tested by `startsWith` or `endsWith`, names a string property, and a constant tested against one with an `enum` starts or ends one of its values; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
+- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path `byteAt` reads, and every path a `startsWith` or `endsWith` of byte arrays tests, names a byte array property, within its `maxItems` when it declares one: an index below it, a constant no longer than it; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string, or tested by `startsWith` or `endsWith`, names a string property, and a constant tested against one with an `enum` starts or ends one of its values; every path compared with an identifier names an identifier property; every path `present`, `absent` or `countPresent` tests names a property of any type, an object included;
 - no rule reads a property that is `transient` or inside a transient object, since a stored document could never be held to it;
 - every comparison and `in` reads at least one property: a comparison of constants would hold for every document or for none;
 - strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a byte array is tested only by `startsWith` and `endsWith`, against hex constants (an even number of hex digits) and other byte arrays, never a string or an identifier, and takes no default; a property is never compared with itself;
 - string constants and `ifAbsent` defaults are in the property's `enum` when it has one; identifier constants are base58 identifiers of 32 bytes;
 - no literal divisor is 0 and no literal exponent is negative;
 - every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
-- `present` and `absent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
+- `present`, `absent` and `countPresent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
 - no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
 - no condition or operand nests more than 64 levels deep;
 - once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, and not its own type when that has a contested index, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range, integer-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;
@@ -298,6 +321,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `ifThen`, `ifThenElse` | 1, plus their conditions |
 | `notIn` | as the `in` it negates |
 | An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`), a `byteAt` or a time or height | 1 |
+| `countPresent` | 1, plus 1 per path |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |
 | `countOf`, `sumOf` | 1, plus 1 per filter key |
 

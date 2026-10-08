@@ -1057,7 +1057,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
 ///     UTF-8 bytes of a string property, and `count`, the items
 ///     of an array or byte array property, each 0 for a property the document
-///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     leaves out, `countPresent`, how many of two or more distinct properties
+///     of any type the document holds, each as `present` tests it, so a rule
+///     bounds how many of a group are set, and the system times and heights `$createdAt`, `$updatedAt`
 ///     and `$transferredAt` (block times in milliseconds), each also with
 ///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
 ///     last update (create, replace, price update) and last transfer (create,
@@ -1117,11 +1119,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (none on an indexOnly type), every path compared with identifiers an
 ///     identifier property, every path compared with strings a string property
 ///     (whose `enum`, if it declares one, lists every constant it is compared
-///     with), and every path `present` or `absent` tests a property of any
-///     type, none transient nor inside a transient object; that every
+///     with), and every path `present`, `absent` or `countPresent` tests a
+///     property of any type, none transient nor inside a transient object; that every
 ///     comparison and `in` reads a property or the owner; that nothing is
 ///     compared with itself; that strings and identifiers are only compared for
-///     equality, and never with each other; that no `in` lists a value twice;
+///     equality, and never with each other; that no `in` lists a value twice
+///     and no `countPresent` a path twice;
 ///     that an `anyOf` or `allOf` holds none directly of its own kind and a
 ///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
 ///     no owner, reads no `$ownerId`; and that no condition or operand nests
@@ -1130,7 +1133,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
 ///     comparison, `in`, listed value, `const`, presence test and logical
-///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     operator counting as one, a `countPresent` as one plus one per path), and that no `anyOf` or `allOf` lists the same
 ///     condition twice, and at most `max_property_constraint_aggregates` (4)
 ///     distinct totals per type; once every type is parsed, that a tree keeps
 ///     each total (`documentsCountable` or `documentsSummable`, or an index
