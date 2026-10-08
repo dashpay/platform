@@ -234,21 +234,14 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
 #[cfg(feature = "core_key_wallet")]
 type AuthorizedBundle = Bundle<Authorized, i64, DashMemo>;
 
-/// An output-only Orchard bundle whose Halo 2 proof has been created but that carries no
-/// signatures yet. Produced by [`prove_output_only_bundle`].
+/// An output-only Orchard bundle that is proved but not yet signed. Produced by
+/// [`prove_output_only_bundle`]; [`authorize`](Self::authorize) signs it over the sighash fixed at
+/// proving time, with fresh randomness on every call.
 ///
-/// [`authorize`](Self::authorize) applies the binding signature and the padding spends'
-/// spend-authorization signatures over the sighash fixed when the bundle was proved. Those are
-/// randomized RedPallas signatures, so every call returns a bundle with the same actions,
-/// commitment and proof but different signature bytes.
-///
-/// It therefore retains signing secrets for as long as it lives: the binding signing key `bsk`
-/// (the sum of the actions' value-commitment trapdoors) and each padding spend's spend
-/// authorizing key and randomizer (`dummy_ask`, `alpha`). They are fresh per bundle — no wallet
-/// key is among them — but whoever holds them can sign this proof over a *different* sighash,
-/// i.e. re-bind it to another owner, and the trapdoors open the per-action value commitments.
-/// They live only inside the signing closure: never serialized, persisted or logged (the type
-/// has no `Debug`), and dropped with the value.
+/// It holds the bundle's signing secrets — the binding signing key `bsk` and the padding spends'
+/// `dummy_ask` and `alpha` — which could sign the proof over a different sighash. They are fresh
+/// per bundle (no wallet key is among them), live only inside the signing closure (no `Debug`,
+/// never serialized or logged) and are dropped with the value.
 #[cfg(feature = "core_key_wallet")]
 pub(crate) struct ProvedOutputOnlyBundle {
     /// Signs a clone of the proved bundle. The proved-but-unsigned bundle type
@@ -649,12 +642,8 @@ mod mod_tests {
         );
     }
 
-    // ------------------------------------------------------------------
-    // `prove_output_only_bundle` — one proof, authorized any number of
-    // times. Each authorization must verify on its own (proof + binding
-    // + padding spend-auth signatures, exactly as consensus checks them)
-    // and must not repeat the previous one's signature bytes.
-    // ------------------------------------------------------------------
+    // `prove_output_only_bundle`: each authorization of one proof verifies on its own and does
+    // not repeat the previous one's signature bytes.
 
     #[cfg(feature = "core_key_wallet")]
     #[test]
