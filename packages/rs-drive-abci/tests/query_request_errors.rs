@@ -883,6 +883,8 @@ struct ContractsQuery {
 
 impl Mockable for ContractsQuery {}
 
+// This raw adapter leaves names_nothing at its default so empty proofs reach the
+// server instead of being refused by the generated request's client preflight.
 impl TransportRequest for ContractsQuery {
     type Client = QueryNodeClient;
     type Response = wire::GetDataContractsResponse;

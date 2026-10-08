@@ -6,7 +6,7 @@ But they do need to be well-organized, because Drive is where most of the platfo
 
 ## Query errors on the wire
 
-A gRPC query answers a failed request with a status code, and clients read that code to decide whose fault the failure is. `rs-dapi-client` takes `INVALID_ARGUMENT` as the caller's mistake: the error goes back to the caller, and nothing else happens. It takes `UNKNOWN` and `INTERNAL` as a fault of the node: the client stops using that node for a while (a ban) and sends the request to the next one. A request error answered as `INTERNAL` therefore gets every node banned in turn, since every node refuses the request the same way.
+A gRPC query answers a failed request with a status code, and clients read that code to decide whose fault the failure is. `rs-dapi-client` takes `INVALID_ARGUMENT` as the caller's mistake: the error goes back to the caller, and nothing else happens. It normally takes `UNKNOWN` and `INTERNAL` as a fault of the node: the client stops using that node for a while (a ban) and sends the request to the next one. Known older-node request-refusal messages are exceptions: the client does not retry statuses containing `storage: query: `, `drive error: query: ` or `proved path queries can not be for limit 0`. A request error answered as `INTERNAL` therefore gets every node banned in turn, since every node refuses the request the same way.
 
 The mapping lives in `packages/rs-drive-abci/src/query/service.rs`:
 
@@ -39,7 +39,7 @@ An empty identities balances request with a proof changes from `OK` with an unus
 
 These are query API changes, shared by the protocol versions selecting the affected query generations. They do not change block execution, persisted state or proof formats. The composite by-ID page validation also serves protocol versions 12 and 13; older schemas support value-bounded lookup joins, but predate the property-reference declarations needed for by-ID joins. Ordinary capped composite pages at those versions can still return `INTERNAL` because their GroveDB version does not support per-instance query limits.
 
-Nodes released before these rules answer the same requests with `UNKNOWN`, `INTERNAL`, or that unusable proof. Client-side protection against those nodes is separate from server classification. Offset validation remains incomplete: an unproved key search with offset 1 and proved key, contract-history, document-history and identity-vote queries with offset 1 can still surface GroveDB errors as `INTERNAL`. GroveDB rejects these offsets before producing a usable response.
+Nodes released before these rules answer the same requests with `UNKNOWN`, `INTERNAL`, or that unusable proof. The client also rejects known empty proved selections before choosing a node. This protects callers of older nodes; server classification still matters for requests that reach the wire. Offset validation remains incomplete: an unproved key search with offset 1 and proved key, contract-history, document-history and identity-vote queries with offset 1 can still surface GroveDB errors as `INTERNAL`. GroveDB rejects these offsets before producing a usable response.
 
 ## The Drive `Error` enum
 
