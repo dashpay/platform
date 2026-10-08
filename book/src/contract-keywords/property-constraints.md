@@ -1,6 +1,6 @@
 # propertyConstraints
 
-`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)).
+`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner, a payment address whose first byte names a known type. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)).
 
 | | |
 |---|---|
@@ -75,7 +75,7 @@ A rule is a condition: a JSON object with exactly one key.
 | `lessThan`, `lessThanOrEqual`, `greaterThan`, `greaterThanOrEqual` | `[left, right]` | The left integer expression compares with the right one this way. Integers only |
 | `in` | `[expression, [v1, v2, ...]]` | The expression takes one of the listed values: two or more, no two alike, all integers or all strings. With strings, the expression is a string property, or an identifier property or `$ownerId` with the strings as base58 identifiers |
 | `notIn` | `[expression, [v1, v2, ...]]` | The expression takes none of the listed values: an `in` negated, listed the same way, in as many nodes. A string or identifier property the document leaves out takes none |
-| `startsWith`, `endsWith` | `[text, affix]` | The first string starts, or ends, with the second, byte for byte with no case folding. Each side is a string constant, a string property or an `ifAbsent` string default, at least one a property and never the same one twice. A string property left out without a default takes no string, and the condition does not hold for it |
+| `startsWith`, `endsWith` | `[text, affix]` | The first string starts, or ends, with the second, byte for byte with no case folding. Each side is a string constant, a string property or an `ifAbsent` string default, at least one a property and never the same one twice. A string property left out without a default takes no string, and the condition does not hold for it. Beside a byte array property it tests byte arrays instead (see [Byte arrays](#byte-arrays)) |
 | `contains` | `["path", value]` | The typed array property at the path holds an element equal to the value: an integer expression among integers; a string constant, a string property or an `ifAbsent` string default among strings; an identifier constant, an identifier property or `$ownerId` among identifiers. An array the document leaves out holds nothing, and a string or identifier property it leaves out is among no elements |
 | `present` | `"path"` | The document holds the property, with a value other than null and, for an object, with at least one member present |
 | `absent` | `"path"` | The document leaves the property out, sets it to null, or gives an object no member that is present |
@@ -117,6 +117,7 @@ An integer expression is one of:
 | `abs` | `{ "abs": a }` | The absolute value of its one operand |
 | `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
 | `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
+| `byteAt` | `{ "byteAt": ["address", 0] }` | The byte, 0 to 255, at an index (counted from 0) of a byte array property, 0 when the array does not hold it or the document leaves it out (see [Byte arrays](#byte-arrays)) |
 | system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
 | `countOf`, `sumOf` | `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` | A total of documents of a type of the same contract, read from state (see [Totals of other documents](#totals-of-other-documents)) |
 
@@ -126,7 +127,7 @@ Two more forms appear only in string and identifier comparisons, never inside ar
 
 | Form | Meaning |
 |---|---|
-| `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier |
+| `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier, or, tested against a byte array property, hex digits |
 | `{ "ifAbsent": ["status", "open"] }` | A string property, read as the given string when the document leaves it out |
 
 A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`.
@@ -155,6 +156,30 @@ An identifier property compares in the same three ways: `{ "equal": ["paymentTok
 - `{ "in": ["$ownerId", ["<base58>", "<base58>"]] }` lets only the listed identities own a document of the type.
 
 It is not a property: `present`, `absent` and integer expressions refuse it, and comparing it with itself is refused. On create and replace it is the writer. A transfer or purchase is judged with the new owner, as described in [How it works](#how-it-works). An [index-only](index-only.md) type may not declare a rule that reads it.
+
+## Byte arrays
+
+A byte array property is read a byte at a time, or tested for the bytes it starts or ends with:
+
+- `{ "byteAt": ["address", 0] }` is an integer expression: the byte at index 0, a number from 0 to 255. It goes wherever an integer goes: `{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }` holds the first byte to 0 or 1, `{ "lessThan": [{ "byteAt": ["flags", 1] }, 128] }` keeps the top bit of the second byte clear.
+- `{ "startsWith": ["payload", { "const": "cafe" }] }` holds a payload whose first two bytes are `0xca` and `0xfe`; `endsWith` looks at the last bytes. The constant is written in hex, two digits a byte, in either case and without a `0x`. Either side may be a byte array property instead, as in `{ "startsWith": ["key", "parentKey"] }`, never the same one twice.
+
+What a document that leaves the array out, or holds fewer bytes, reads:
+
+| | Reads |
+|---|---|
+| `byteAt` of an array left out or set to null | 0, as an integer property left out does |
+| `byteAt` past the last byte the array holds | 0 |
+| `startsWith` or `endsWith` of an array left out or set to null | Holds for no constant and no other array, as a string left out does. `not` turns it into a hold |
+| `startsWith` or `endsWith` of an array shorter than the constant | Does not hold |
+
+Since a byte left out reads as 0, a rule admitting 0 holds for an array left out: `{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }` lets a document without an address through. When 0 is not admitted, or a short array must be told from a 0 byte, test the array first: `{ "ifThen": [{ "present": "address" }, { "equal": [{ "byteAt": ["address", 0] }, 1] }] }`, or compare `{ "count": "address" }` with the length it needs.
+
+The index is a literal integer from 0 to 65535, never an expression, and a byte array takes no `ifAbsent` default. `byteAt`, `startsWith` and `endsWith` read only a `byteArray` property, stored (not `transient`, nor inside a transient object). An identifier property is compared whole, with `equal`, `notEqual` or `in` (see [Identifiers](#identifiers-and-ownerid)), and a byte array never is: `equal`, `notEqual`, `in` and `contains` refuse one. A `startsWith` with a constant as long as a fixed-size array says what an `equal` would.
+
+When the property declares `maxItems`, an index at or past it, or a constant longer than it, is refused at registration, since the byte or the bytes are never there.
+
+A rule reading bytes is judged on create and replace like any other; the `$old.` paths of an [`immutable`](mutability.md#immutable) condition or `retractedWhen` read the stored array's bytes (`{ "byteAt": ["$old.address", 0] }`), and a [`deleteConstraints`](deletion.md#deleteconstraints) rule the stored document's. Reading bytes does not make a transfer, a purchase or a price update judge a rule, since none of them changes a byte array.
 
 ## Times and heights
 
@@ -233,14 +258,15 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused;
+- a `byteAt` lists a path and an integer index from 0 to 65535;
 - a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer or a `{ "const": ... }` string.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
-- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string, or tested by `startsWith` or `endsWith`, names a string property, and a constant tested against one with an `enum` starts or ends one of its values; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
+- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path `byteAt` reads, and every path a `startsWith` or `endsWith` of byte arrays tests, names a byte array property, within its `maxItems` when it declares one: an index below it, a constant no longer than it; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string, or tested by `startsWith` or `endsWith`, names a string property, and a constant tested against one with an `enum` starts or ends one of its values; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
 - no rule reads a property that is `transient` or inside a transient object, since a stored document could never be held to it;
 - every comparison and `in` reads at least one property: a comparison of constants would hold for every document or for none;
-- strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a property is never compared with itself;
+- strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a byte array is tested only by `startsWith` and `endsWith`, against hex constants (an even number of hex digits) and other byte arrays, never a string or an identifier, and takes no default; a property is never compared with itself;
 - string constants and `ifAbsent` defaults are in the property's `enum` when it has one; identifier constants are base58 identifiers of 32 bytes;
 - no literal divisor is 0 and no literal exponent is negative;
 - every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
@@ -271,7 +297,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `not` | 1, plus its condition |
 | `ifThen`, `ifThenElse` | 1, plus their conditions |
 | `notIn` | as the `in` it negates |
-| An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`) or a time or height | 1 |
+| An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`), a `byteAt` or a time or height | 1 |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |
 | `countOf`, `sumOf` | 1, plus 1 per filter key |
 
@@ -366,6 +392,41 @@ A create by anyone else is refused, and so is a transfer or sale of a badge to a
 ```
 
 The `equal` comes first, so an empty batch never reaches the division. Written the other way round, an empty batch breaks the rule with a division by zero.
+
+**The type of a payment address.** A DIP-33 address in storage form is a type byte, `0x00` for P2PKH or `0x01` for P2SH, then a 20-byte HASH160. A profile may leave its address out:
+
+```json
+"profile": {
+  "type": "object",
+  "properties": {
+    "corePaymentAddress": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 21,
+      "maxItems": 21,
+      "position": 0
+    }
+  },
+  "additionalProperties": false,
+  "propertyConstraints": {
+    "knownAddressType": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] }
+  }
+}
+```
+
+Four nodes: the `in`, the `byteAt` and two values. An address starting with `0x02` is refused with 10422, and a profile without one is accepted, since its byte 0 reads as 0. The same rule with `startsWith` takes 8 nodes, an `anyOf` of `absent` and two prefixes:
+
+```json
+{
+  "anyOf": [
+    { "absent": "corePaymentAddress" },
+    { "startsWith": ["corePaymentAddress", { "const": "00" }] },
+    { "startsWith": ["corePaymentAddress", { "const": "01" }] }
+  ]
+}
+```
+
+`startsWith` is the one to reach for when a run of bytes is checked: `{ "startsWith": ["content", { "const": "1220" }] }` holds a multihash of a SHA-256 digest in 3 nodes, where two `byteAt` comparisons in an `allOf` take 7.
 
 **A flag in arithmetic.** A boolean reads as 1 or 0, so a waived fee must be 0:
 

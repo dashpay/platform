@@ -377,6 +377,58 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'secureUrl', violation: 'NotMet' });
     });
 
+    it('should read the bytes of byte arrays with byteAt, startsWith and endsWith', () => {
+      const rules = {
+        addressType: { in: [{ byteAt: ['corePaymentAddress', 0] }, [0, 1]] },
+        taggedPayload: {
+          anyOf: [{ absent: 'payload' }, { startsWith: ['payload', { const: 'cafe' }] }],
+        },
+      };
+      const contract = buildContract({
+        profile: {
+          type: 'object',
+          properties: {
+            corePaymentAddress: {
+              type: 'array', byteArray: true, minItems: 21, maxItems: 21, position: 0,
+            },
+            payload: {
+              type: 'array', byteArray: true, maxItems: 8, position: 1,
+            },
+          },
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      expect(contract.documentTypePropertyConstraints('profile').map((rule) => rule.reads))
+        .to.deep.equal([
+          [{ path: 'corePaymentAddress', kind: 'bytes' }],
+          [{ path: 'payload', kind: 'presence' }, { path: 'payload', kind: 'bytes' }],
+        ]);
+
+      // A DIP-33 address in storage form: the type byte, then a HASH160
+      const address = (typeByte: number) => Uint8Array.from([typeByte, ...Array(20).fill(0x5a)]);
+      const profile = (properties: Record<string, unknown>) => new wasm.Document({
+        properties,
+        documentTypeName: 'profile',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      const violationOf = (properties: Record<string, unknown>) => (
+        contract.checkDocumentPropertyConstraints(profile(properties))
+      );
+
+      expect(violationOf({ corePaymentAddress: address(1) })).to.equal(undefined);
+      // An address left out reads its type byte as 0
+      expect(violationOf({})).to.equal(undefined);
+      expect(violationOf({ corePaymentAddress: address(2) }))
+        .to.deep.include({ rule: 'addressType', violation: 'NotMet' });
+      expect(violationOf({ payload: Uint8Array.from([0xca, 0xfe, 1]) })).to.equal(undefined);
+      expect(violationOf({ payload: Uint8Array.from([0xbe, 0xef]) }))
+        .to.deep.include({ rule: 'taggedPayload', violation: 'NotMet' });
+    });
+
     it('should check ifThen, ifThenElse, notIn, min, max and abs', () => {
       const contract = buildContract({
         order: {
