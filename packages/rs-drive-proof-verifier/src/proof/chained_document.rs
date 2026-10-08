@@ -3,8 +3,8 @@
 //! A chained query is `SELECT * FROM <outer> WHERE $id IN (SELECT
 //! <join_property> FROM <inner> WHERE …)` answered as ONE merged
 //! grovedb proof: the limited inner indexOnly page and the outer
-//! by-ids fetch derived from its values, merged by the server (grovedb
-//! lifts the inner limit into a per-instance branch limit). The
+//! by-ids fetch derived from its values, merged by the server (the
+//! inner limit a per-instance cap on its branch). The
 //! verifier ([`DriveDocumentQuery::verify_chained_documents_proof`])
 //! reconstructs the merged query from the response's UNTRUSTED
 //! join-value hint, verifies in one pass, and requires the proven

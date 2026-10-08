@@ -2073,8 +2073,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// so the two can fill a page differently. Everything derived from
     /// the page rides on this selection, so it has to be the proof's.
     /// indexOnly projections are synthesized from their positions,
-    /// stored documents deserialized.
-    fn materialize_component(
+    /// stored documents deserialized. A chained query reads its inner
+    /// page through here too.
+    pub(crate) fn materialize_component(
         query: &DriveDocumentQuery<'a>,
         path_query: &PathQuery,
         drive: &crate::drive::Drive,

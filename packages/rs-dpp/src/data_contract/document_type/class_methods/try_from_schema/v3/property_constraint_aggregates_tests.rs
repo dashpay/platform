@@ -762,11 +762,13 @@ fn should_hold_a_constant_to_the_enum_of_a_key_declared_by_reference() {
 /// create waits in its contest's storage, outside the count and sum trees, and
 /// the document a contest awards is stored without the rules being judged, so
 /// the rule could be passed. Another type may still total it, as it totals any
-/// type whose writes it does not judge.
+/// type whose writes it does not judge, and so may the type's own delete rules,
+/// which read the stored total at the delete.
 #[test]
 fn should_refuse_a_total_of_its_own_type_with_a_contested_index() {
     let contract = |name_rules: Option<serde_json::Value>,
-                    note_rules: Option<serde_json::Value>| {
+                    note_rules: Option<serde_json::Value>,
+                    name_delete_rules: Option<serde_json::Value>| {
         let mut name = json!({
             "type": "object",
             "documentsMutable": false,
@@ -796,6 +798,9 @@ fn should_refuse_a_total_of_its_own_type_with_a_contested_index() {
         });
         if let Some(rules) = name_rules {
             name["propertyConstraints"] = rules;
+        }
+        if let Some(rules) = name_delete_rules {
+            name["deleteConstraints"] = rules;
         }
         let mut note = json!({
             "type": "object",
@@ -827,10 +832,12 @@ fn should_refuse_a_total_of_its_own_type_with_a_contested_index() {
     });
 
     expect_structure_error(
-        contract(Some(one_per_owner.clone()), None),
-        "rule \"onePerOwner\" counts \"name\", its own type, which has a contested index",
+        contract(Some(one_per_owner.clone()), None, None),
+        "propertyConstraints rule \"onePerOwner\" counts \"name\", its own type, which has a \
+         contested index",
     );
-    contract(None, Some(one_per_owner)).expect("another type may count it");
+    contract(None, Some(one_per_owner.clone()), None).expect("another type may count it");
+    contract(None, None, Some(one_per_owner)).expect("the type's own delete rule may count it");
 }
 
 /// A client gives no totals, and a rule reading one is not judged; consensus
