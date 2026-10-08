@@ -402,97 +402,36 @@ jobs:
             os: macos-14
     steps:
       # Treat finished installers as data. This job never installs or runs
-      # package code and never restores caches from the build jobs.
+      # package code and never restores caches from the build jobs. The macOS
+      # leg checks out only the action that signs and notarizes. The checkout
+      # cleans the workspace, so it comes before the download.
+      - name: Check out the signing action
+        if: runner.os == 'macOS'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: /.github/actions/macos-sign-notarize/
+          sparse-checkout-cone-mode: false
+
       - name: Download Dashmate packages
         uses: actions/download-artifact@v4
         with:
           name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
           path: release-artifacts
 
-      - name: Install the Apple certificate
+      # Shared with release-dashmate-macos-rehearsal.yml, which runs the same
+      # steps on a finished release run and publishes nothing.
+      - name: Sign and notarize macOS installers
         if: runner.os == 'macOS'
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-      - name: Sign macOS installers
-        if: runner.os == 'macOS'
-        run: |
-          set -euo pipefail
-          found=false
-          while IFS= read -r -d '' pkg; do
-            found=true
-            productsign --sign 'Developer ID Installer: The Dash Foundation, Inc.' \
-              --keychain "$RUNNER_TEMP/app-signing.keychain-db" \
-              "$pkg" "$RUNNER_TEMP/signed.pkg"
-            mv "$RUNNER_TEMP/signed.pkg" "$pkg"
-          done < <(find release-artifacts -type f -name '*.pkg' -print0)
-          "$found" || { echo '::error::No macOS installers were uploaded.'; exit 1; }
-
-      - name: Notarize MacOS Release Build
-        if: runner.os == 'macOS'
-        # A team App Store Connect API key, so notarization does not depend
-        # on one person's Apple ID staying a member of the developer team.
-        env:
-          NOTARY_API_KEY_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
-          NOTARY_API_KEY_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
-          NOTARY_API_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
-        run: |
-          set -euo pipefail
-          for name in NOTARY_API_KEY_BASE64 NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID; do
-            [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
-          done
-          NOTARY_API_KEY_PATH="$RUNNER_TEMP/notary_api_key.p8"
-          trap 'rm -f "$NOTARY_API_KEY_PATH"' EXIT
-          # macOS base64 exits 0 on input that is not base64, so check the result too.
-          (umask 077; printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH") \
-            && grep -q 'BEGIN PRIVATE KEY' "$NOTARY_API_KEY_PATH" \
-            || { echo '::error::Could not decode MACOS_NOTARY_API_KEY_BASE64 into a .p8 key; it must be the base64 of the key file.'; exit 1; }
-          notary_auth=(--key "$NOTARY_API_KEY_PATH" --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER_ID")
-          submit_log="$RUNNER_TEMP/notarytool_submit.log"
-          while IFS= read -r -d '' pkg; do
-            # stdin is the package list, so keep it away from the tools.
-            if ! xcrun notarytool submit "$pkg" "${notary_auth[@]}" --wait --timeout 1h < /dev/null 2>&1 | tee "$submit_log"; then
-              echo "::error::notarytool failed for $pkg."
-              exit 1
-            fi
-            # notarytool exits 0 when Apple rejects the submission.
-            if ! grep -q 'status: Accepted' "$submit_log"; then
-              submission_id="$(awk '$1 == "id:" { print $2; exit }' "$submit_log")"
-              [ -z "$submission_id" ] || xcrun notarytool log "$submission_id" "${notary_auth[@]}" < /dev/null || true
-              echo "::error::Apple did not report $pkg as accepted: it was rejected or is still in progress."
-              exit 1
-            fi
-            # Attach the ticket so the installer also verifies offline. The
-            # ticket can take a moment to become available after acceptance.
-            # An accepted package without it still verifies online.
-            stapled=false
-            for attempt in 1 2 3 4 5; do
-              if xcrun stapler staple "$pkg" < /dev/null; then
-                stapled=true
-                break
-              fi
-              [ "$attempt" -eq 5 ] || sleep 15
-            done
-            "$stapled" || echo "::warning::Could not staple the notarization ticket to $pkg."
-          done < <(find release-artifacts -type f -name '*.pkg' -print0)
-
-      - name: Delete the Apple keychain
-        if: always() && runner.os == 'macOS'
-        run: |
-          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
-          rm -f "$RUNNER_TEMP/build_certificate.p12"
+        uses: ./.github/actions/macos-sign-notarize
+        with:
+          path: release-artifacts
+          certificate_base64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
+          certificate_password: ${{ secrets.MACOS_P12_PASSWORD }}
+          keychain_password: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          notary_api_key_base64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
+          notary_api_key_id: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
+          notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
