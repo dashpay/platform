@@ -2244,6 +2244,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Inert before this version: the earlier meta-schemas refuse
 ///     `propertyConstraints` and their parsers ignore it.
 ///
+/// 89. **Unsigned integers are keyed in value order**: `serialize_value_for_key`
+///     and `deserialize_value_for_key` 1 (`CONTRACT_VERSIONS_V6`) key a property,
+///     or derived index property, of an unsigned integer type by its plain
+///     big-endian bytes (`DocumentPropertyType::encode_value_for_tree_keys_v1`).
+///     Generation 0 flipped the top bit as for a signed value, so the values from
+///     the middle of the type's range up (128 and above for a `u8`) sorted below
+///     the others in every index: range queries, ordering, range counts and sums
+///     across that point came out wrong, and a count or sum over a range whose
+///     bounds straddled it was refused. A key keeps its width. The `$` system
+///     fields keep their keys, and so do the paths of a contest's vote poll
+///     (`serialize_value_for_vote_poll_key`), which the masternodes' vote records
+///     address. `transition_to_version_14` first rewrites every key generation 0
+///     wrote (`Drive::rekey_unsigned_integer_index_values`), moving each subtree
+///     with its elements and flags. The features of this version that key
+///     integers themselves (an `integerRange` window start, an indexOnly member
+///     key, its row commitment and synthesized id) use the new keys from the
+///     start. Earlier versions replay through generation 0.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -2341,7 +2359,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

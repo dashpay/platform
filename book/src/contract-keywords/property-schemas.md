@@ -148,6 +148,8 @@ With only a `minimum`, the integer takes 8 bytes, unsigned when the minimum is 0
 
 Stored documents and index entries hold each integer at its width, so a contract update may not change the width or the sign. Raising `maximum` past the width, lowering `minimum` below 0, removing a bound, or adding an `enum` value outside the width is refused with `DocumentTypeUpdateError` (40212); so is turning `sizedIntegerTypes` on when it would change an existing integer's width. A change that keeps the width is accepted.
 
+In an index, an integer is keyed so that the keys sort as the numbers do: an unsigned integer by its big-endian bytes, and a signed one by its big-endian bytes with the sign bit flipped, which puts the negative values first. Before protocol version 14 an unsigned integer was keyed with its top bit flipped as well, so the values from the middle of its range up (128 and above, for one byte) sorted below the others in range queries, ordering, counts and sums. The first block of protocol version 14 rewrites the keys stored that way.
+
 ## `enum` and `const`
 
 | | |

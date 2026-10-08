@@ -180,7 +180,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
                 .zip(self.index_values.iter())
                 .map(|(IndexProperty { name, .. }, value)| {
                     document_type
-                        .serialize_value_for_key(name, value, platform_version)
+                        .serialize_value_for_vote_poll_key(name, value, platform_version)
                         .map_err(Error::from)
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?,
@@ -273,7 +273,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
                 .zip(self.index_values.iter())
                 .map(|(IndexProperty { name, .. }, value)| {
                     document_type
-                        .serialize_value_for_key(name, value, platform_version)
+                        .serialize_value_for_vote_poll_key(name, value, platform_version)
                         .map_err(Error::from)
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?,

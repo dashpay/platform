@@ -308,7 +308,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         for index_property in properties_iter {
             if !ended_start_values {
                 if let Some(start_value) = start_values_iter.next() {
-                    let encoded = document_type.serialize_value_for_key(
+                    let encoded = document_type.serialize_value_for_vote_poll_key(
                         &index_property.name,
                         start_value,
                         platform_version,
@@ -319,7 +319,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                     middle_index_property = Some(index_property);
                 }
             } else if let Some(end_value) = end_values_iter.next() {
-                let encoded = document_type.serialize_value_for_key(
+                let encoded = document_type.serialize_value_for_vote_poll_key(
                     &index_property.name,
                     end_value,
                     platform_version,
@@ -411,7 +411,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                 query.insert_all();
             }
             Some((starts_at_key_bytes, start_at_included)) => {
-                let starts_at_key = self.document_type()?.serialize_value_for_key(
+                let starts_at_key = self.document_type()?.serialize_value_for_vote_poll_key(
                     &middle_property.name,
                     starts_at_key_bytes,
                     platform_version,
@@ -508,7 +508,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                             // the result is in the key because we did not provide any end index values
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  -------
-                            document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), key.as_slice(), platform_version).map_err(Error::from)
+                            document_type.deserialize_value_for_vote_poll_key(property_name_being_searched.name.as_str(), key.as_slice(), platform_version).map_err(Error::from)
                         } else if path.len() < result_path_index.unwrap() {
 
                             Err(Error::Drive(DriveError::CorruptedCodeExecution("the path length should always be bigger or equal to the result path index")))
@@ -517,7 +517,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  -------
                             let inner_path_value_bytes = path.remove(result_path_index.unwrap());
-                            document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice(), platform_version).map_err(Error::from)
+                            document_type.deserialize_value_for_vote_poll_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice(), platform_version).map_err(Error::from)
                         }
                     }).collect::<Result<Vec<Value>, Error>>()
             }

@@ -787,6 +787,50 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         }
     }
 
+    /// The type of the property an index key names, when it is one whose key
+    /// generation 1 changes: a property, or a derived index property, keyed
+    /// as an unsigned integer. `None` for the `$` system fields, which keep
+    /// their encoding, and for every other name.
+    fn unsigned_integer_tree_key_property_type(&self, key: &str) -> Option<&DocumentPropertyType> {
+        if key.starts_with('$') {
+            return None;
+        }
+        self.flattened_properties()
+            .get(key)
+            .map(|property| &property.property_type)
+            .or_else(|| self.derived_index_property_type(key))
+            .filter(|property_type| property_type.has_unsigned_integer_tree_key())
+    }
+
+    /// Generation 1 keys a property or derived index property of an unsigned
+    /// integer type by its plain big-endian bytes
+    /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
+    /// sort as its values do. Every other key is generation 0's, the `$`
+    /// system fields included: their values never reach the top bit that
+    /// generation 0 flips.
+    fn serialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &Value,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match self.unsigned_integer_tree_key_property_type(key) {
+            Some(property_type) => property_type.encode_value_for_tree_keys_v1(value),
+            None => self.serialize_value_for_key_v0(key, value),
+        }
+    }
+
+    /// Reads a key [`Self::serialize_value_for_key_v1`] wrote.
+    fn deserialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &[u8],
+    ) -> Result<Value, ProtocolError> {
+        match self.unsigned_integer_tree_key_property_type(key) {
+            Some(property_type) => property_type.decode_value_for_tree_keys_v1(value),
+            None => self.deserialize_value_for_key_v0(key, value),
+        }
+    }
+
     fn deserialize_value_for_key_v0(
         &self,
         key: &str,

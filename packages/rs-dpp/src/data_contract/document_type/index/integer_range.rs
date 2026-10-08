@@ -93,16 +93,19 @@ impl IntegerRangeKeyType {
     }
 
     /// `value` encoded exactly like a value of the source property, or
-    /// `None` when it does not fit.
+    /// `None` when it does not fit: an unsigned value as its plain big-endian
+    /// bytes, as `serialize_value_for_key` 1 keys an unsigned property (the
+    /// only generation an `integerRange` grid, which parses from protocol
+    /// version 14 on, is keyed with), a signed one with its sign bit flipped.
     pub fn encode(self, value: i128) -> Option<Vec<u8>> {
         Some(match self {
-            Self::U8 => DocumentPropertyType::encode_u8(u8::try_from(value).ok()?),
+            Self::U8 => vec![u8::try_from(value).ok()?],
             Self::I8 => DocumentPropertyType::encode_i8(i8::try_from(value).ok()?),
-            Self::U16 => DocumentPropertyType::encode_u16(u16::try_from(value).ok()?),
+            Self::U16 => u16::try_from(value).ok()?.to_be_bytes().to_vec(),
             Self::I16 => DocumentPropertyType::encode_i16(i16::try_from(value).ok()?),
-            Self::U32 => DocumentPropertyType::encode_u32(u32::try_from(value).ok()?),
+            Self::U32 => u32::try_from(value).ok()?.to_be_bytes().to_vec(),
             Self::I32 => DocumentPropertyType::encode_i32(i32::try_from(value).ok()?),
-            Self::U64 => DocumentPropertyType::encode_u64(u64::try_from(value).ok()?),
+            Self::U64 => u64::try_from(value).ok()?.to_be_bytes().to_vec(),
             Self::I64 => DocumentPropertyType::encode_i64(i64::try_from(value).ok()?),
         })
     }
@@ -131,13 +134,13 @@ impl IntegerRangeKeyType {
             return None;
         }
         Some(match self {
-            Self::U8 => DocumentPropertyType::decode_u8(raw)? as i128,
+            Self::U8 => u8::from_be_bytes(raw.try_into().ok()?) as i128,
             Self::I8 => DocumentPropertyType::decode_i8(raw)? as i128,
-            Self::U16 => DocumentPropertyType::decode_u16(raw)? as i128,
+            Self::U16 => u16::from_be_bytes(raw.try_into().ok()?) as i128,
             Self::I16 => DocumentPropertyType::decode_i16(raw)? as i128,
-            Self::U32 => DocumentPropertyType::decode_u32(raw)? as i128,
+            Self::U32 => u32::from_be_bytes(raw.try_into().ok()?) as i128,
             Self::I32 => DocumentPropertyType::decode_i32(raw)? as i128,
-            Self::U64 => DocumentPropertyType::decode_u64(raw)? as i128,
+            Self::U64 => u64::from_be_bytes(raw.try_into().ok()?) as i128,
             Self::I64 => DocumentPropertyType::decode_i64(raw)? as i128,
         })
     }
@@ -472,6 +475,44 @@ mod tests {
         let wide = transform(u64::MAX, u64::MAX, 0, IntegerRangeKeyType::I64);
         assert_eq!(wide.containing_starts(-5), vec![min]);
         assert_eq!(wide.containing_starts(5), vec![0]);
+    }
+
+    #[test]
+    fn should_key_unsigned_window_starts_in_value_order() {
+        // A u8 grid of 100-wide windows every 50: 200 sits in the windows
+        // starting at 200 and 150, keyed by their plain bytes
+        let t = transform(100, 50, 0, IntegerRangeKeyType::U8);
+        assert_eq!(t.entry_keys_for_raw(&[200]), vec![vec![200], vec![150]]);
+        assert_eq!(t.entry_keys_for_raw(&[100]), vec![vec![100], vec![50]]);
+        assert_eq!(t.entry_keys_for_raw(&[0]), vec![vec![0]]);
+        // A window start's key reads back as the start, across the top bit
+        for key_type in [
+            IntegerRangeKeyType::U8,
+            IntegerRangeKeyType::U16,
+            IntegerRangeKeyType::U32,
+            IntegerRangeKeyType::U64,
+        ] {
+            let keys: Vec<Vec<u8>> = [
+                0,
+                1,
+                key_type.max_value() / 2,
+                key_type.max_value() / 2 + 1,
+                key_type.max_value(),
+            ]
+            .into_iter()
+            .map(|value| key_type.encode(value).expect("the value fits"))
+            .collect();
+            assert!(
+                keys.windows(2).all(|pair| pair[0] < pair[1]),
+                "{key_type:?}"
+            );
+            for key in keys {
+                assert_eq!(
+                    key_type.encode(key_type.decode(&key).expect("decodes")),
+                    Some(key)
+                );
+            }
+        }
     }
 
     #[test]

@@ -58,7 +58,7 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                     // like this  <------ start index values (path) --->    Key
                     // properties ------- --------- --------- ----------  -------
                     document_type
-                        .deserialize_value_for_key(
+                        .deserialize_value_for_vote_poll_key(
                             property_name_being_searched.name.as_str(),
                             key.as_slice(),
                             platform_version,
@@ -74,7 +74,7 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                     // properties ------- --------- --------- ----------  -------
                     let inner_path_value_bytes = path.remove(result_path_index.unwrap());
                     document_type
-                        .deserialize_value_for_key(
+                        .deserialize_value_for_vote_poll_key(
                             property_name_being_searched.name.as_str(),
                             inner_path_value_bytes.as_slice(),
                             platform_version,

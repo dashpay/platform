@@ -1,2 +1,3 @@
 mod add_version_items_to_all_contracts;
+mod rekey_unsigned_integer_index_values;
 mod strip_unknown_document_schema_properties;

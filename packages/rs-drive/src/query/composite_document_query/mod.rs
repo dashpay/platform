@@ -1469,6 +1469,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         &path,
                         &key,
                         Some(&element),
+                        platform_version,
                     )
                 })
                 .collect();

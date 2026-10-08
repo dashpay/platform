@@ -743,9 +743,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .serialize_value_for_key
         {
             0 => self.serialize_value_for_key_v0(key, value),
+            1 => self.serialize_value_for_key_v1(key, value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "serialize_value_for_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -764,9 +765,98 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .deserialize_value_for_key
         {
             0 => self.deserialize_value_for_key_v0(key, serialized_value),
+            1 => self.deserialize_value_for_key_v1(key, serialized_value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "deserialize_value_for_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// Whether `key_name`, a property or derived index property, is keyed as
+    /// an unsigned integer: the keys the generations of
+    /// [`Self::serialize_value_for_key`] write differently.
+    fn has_unsigned_integer_tree_key(&self, key_name: &str) -> bool {
+        self.unsigned_integer_tree_key_property_type(key_name)
+            .is_some()
+    }
+
+    /// A contested index's value as the paths of its vote poll key it: the
+    /// generation-0 key of [`Self::serialize_value_for_key`], whatever
+    /// generation keys the document type's own indexes. A poll, the contenders
+    /// and votes under it and the vote records of the masternodes that voted
+    /// address one another by these paths, so a poll keeps one path for its
+    /// whole life, across a protocol version that changes the key generation.
+    fn serialize_value_for_vote_poll_key(
+        &self,
+        key_name: &str,
+        value: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let key = self.serialize_value_for_key(key_name, value, platform_version)?;
+        self.tree_key_in_generation_0(key_name, &key, platform_version)
+    }
+
+    /// Reads a key [`Self::serialize_value_for_vote_poll_key`] wrote.
+    fn deserialize_value_for_vote_poll_key(
+        &self,
+        key_name: &str,
+        key: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
+        let key = self.tree_key_from_generation_0(key_name, key, platform_version)?;
+        self.deserialize_value_for_key(key_name, &key, platform_version)
+    }
+
+    /// The key [`Self::serialize_value_for_key`] of `platform_version` writes
+    /// for `key_name` for the value a generation-0 `key` holds: the inverse of
+    /// [`Self::tree_key_in_generation_0`]. For the first block of a protocol
+    /// version that changes the key generation, which rewrites the keys an
+    /// earlier generation wrote.
+    fn tree_key_from_generation_0(
+        &self,
+        key_name: &str,
+        key: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        // Generation 1 only flips the top bit of an unsigned integer key, and
+        // flipping it twice is the identity: each direction is the other
+        self.tree_key_in_generation_0(key_name, key, platform_version)
+    }
+
+    /// `key`, which [`Self::serialize_value_for_key`] of `platform_version`
+    /// wrote for `key_name`, as generation 0 of it writes the same value.
+    ///
+    /// For what must not change with the key generation: a hash or id built
+    /// over key bytes (an indexOnly row commitment, a synthesized `$id`). A
+    /// stored commitment can not be rewritten when the keys are, so those are
+    /// built over generation-0 bytes whatever generation keys the entries.
+    ///
+    /// Versioned on `serialize_value_for_key`, since it undoes exactly what
+    /// that generation changed: unchanged under generation 0, and under
+    /// generation 1 an unsigned integer key has its top bit flipped back.
+    fn tree_key_in_generation_0(
+        &self,
+        key_name: &str,
+        key: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .serialize_value_for_key
+        {
+            0 => Ok(key.to_vec()),
+            1 => Ok(self
+                .unsigned_integer_tree_key_property_type(key_name)
+                .and_then(|property_type| property_type.unsigned_tree_key_in_other_generation(key))
+                .unwrap_or_else(|| key.to_vec())),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "tree_key_in_generation_0".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -1556,6 +1646,192 @@ mod tests {
             props.get("known").unwrap(),
             &Value::Text("hello".to_string())
         );
+    }
+
+    // --------------------------------------------------------------
+    // serialize_value_for_key / deserialize_value_for_key generations
+    // --------------------------------------------------------------
+
+    /// A `grade` type with an unsigned 8-bit `grade` (its bounds pick u8), a
+    /// signed `delta` and a `name`, each indexed.
+    fn grade_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "indices": [
+                {"name": "byGrade", "properties": [{"grade": "asc"}]},
+                {"name": "byDelta", "properties": [{"delta": "asc"}]},
+                {"name": "byName", "properties": [{"name": "asc"}]},
+            ],
+            "properties": {
+                "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                "delta": {"type": "integer", "minimum": -100, "maximum": 100, "position": 1},
+                "name": {"type": "string", "maxLength": 20, "position": 2},
+            },
+            "required": ["grade", "delta", "name"],
+            "additionalProperties": false,
+        })
+    }
+
+    fn grade_key(value: u8, platform_version: &PlatformVersion) -> Vec<u8> {
+        build_doc_type_at("grade", grade_schema(), platform_version)
+            .as_ref()
+            .serialize_value_for_key("grade", &Value::U8(value), platform_version)
+            .expect("a u8 grade is keyed")
+    }
+
+    #[test]
+    fn should_key_an_unsigned_property_with_its_top_bit_flipped_before_protocol_version_14() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        assert_eq!(grade_key(100, platform_version), vec![0xE4]);
+        assert_eq!(grade_key(200, platform_version), vec![0x48]);
+        // The flip that puts 200 below 100
+        assert!(grade_key(200, platform_version) < grade_key(100, platform_version));
+    }
+
+    #[test]
+    fn should_key_an_unsigned_property_in_value_order() {
+        let platform_version = PlatformVersion::latest();
+        assert_eq!(grade_key(100, platform_version), vec![100]);
+        assert_eq!(grade_key(200, platform_version), vec![200]);
+        let keys: Vec<Vec<u8>> = [0, 1, 127, 128, 200, 255]
+            .into_iter()
+            .map(|grade| grade_key(grade, platform_version))
+            .collect();
+        assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn should_key_signed_strings_and_system_fields_the_same_in_both_generations() {
+        let old = PlatformVersion::get(13).expect("protocol version 13");
+        let new = PlatformVersion::latest();
+        let key = |name: &str, value: Value, platform_version: &PlatformVersion| {
+            build_doc_type_at("grade", grade_schema(), platform_version)
+                .as_ref()
+                .serialize_value_for_key(name, &value, platform_version)
+                .expect("the value is keyed")
+        };
+        for (name, value) in [
+            ("delta", Value::I8(-5)),
+            ("delta", Value::I8(5)),
+            ("name", Value::Text("ann".to_string())),
+            ("$createdAtBlockHeight", Value::U64(1_000)),
+            ("$createdAtCoreBlockHeight", Value::U32(1_000)),
+            ("$createdAt", Value::U64(1_700_000_000_000)),
+        ] {
+            assert_eq!(
+                key(name, value.clone(), old),
+                key(name, value, new),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_read_back_an_unsigned_key_in_each_generation() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
+            for grade in [0u8, 127, 128, 255] {
+                let key = document_type
+                    .as_ref()
+                    .serialize_value_for_key("grade", &Value::U8(grade), platform_version)
+                    .expect("a u8 grade is keyed");
+                assert_eq!(
+                    document_type
+                        .as_ref()
+                        .deserialize_value_for_key("grade", &key, platform_version)
+                        .expect("the key reads back"),
+                    Value::U8(grade),
+                    "protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_key_a_vote_poll_value_as_generation_0_in_every_version() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
+            let key = document_type
+                .as_ref()
+                .serialize_value_for_vote_poll_key("grade", &Value::U8(200), platform_version)
+                .expect("a u8 grade is keyed");
+            assert_eq!(key, vec![0x48], "the generation-0 key of 200");
+            assert_eq!(
+                document_type
+                    .as_ref()
+                    .deserialize_value_for_vote_poll_key("grade", &key, platform_version)
+                    .expect("the key reads back"),
+                Value::U8(200)
+            );
+        }
+    }
+
+    #[test]
+    fn should_convert_keys_between_generation_0_and_the_version_generation() {
+        let old = PlatformVersion::get(13).expect("protocol version 13");
+        let new = PlatformVersion::latest();
+        let at = |platform_version| build_doc_type_at("grade", grade_schema(), platform_version);
+        // Generation 0 is the key generation before protocol version 14
+        assert_eq!(
+            at(old)
+                .as_ref()
+                .tree_key_from_generation_0("grade", &[0x48], old)
+                .expect("converts"),
+            vec![0x48]
+        );
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_from_generation_0("grade", &[0x48], new)
+                .expect("converts"),
+            vec![200]
+        );
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_in_generation_0("grade", &[200], new)
+                .expect("converts"),
+            vec![0x48]
+        );
+        // A signed property and a system field keep their keys
+        let delta = DocumentPropertyType::encode_i8(-5);
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_from_generation_0("delta", &delta, new)
+                .expect("converts"),
+            delta
+        );
+        let height = DocumentPropertyType::encode_u64(1_000);
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_from_generation_0("$createdAtBlockHeight", &height, new)
+                .expect("converts"),
+            height
+        );
+        assert!(at(new).as_ref().has_unsigned_integer_tree_key("grade"));
+        assert!(!at(new).as_ref().has_unsigned_integer_tree_key("delta"));
+        assert!(!at(new)
+            .as_ref()
+            .has_unsigned_integer_tree_key("$createdAtBlockHeight"));
+    }
+
+    #[test]
+    fn should_refuse_an_unsigned_key_of_the_wrong_width() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
+        assert!(document_type
+            .as_ref()
+            .deserialize_value_for_key("grade", &[1, 2], platform_version)
+            .is_err());
     }
 
     // --------------------------------------------------------------

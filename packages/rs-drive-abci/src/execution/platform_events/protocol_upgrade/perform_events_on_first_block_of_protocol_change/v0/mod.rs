@@ -712,6 +712,13 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Unsigned index value keys: from this version a property of an unsigned integer
+        // type is keyed by its big-endian bytes (`serialize_value_for_key` 1), which sort as
+        // the values do. Every key written before is rewritten first, under the contracts
+        // that wrote it.
+        self.drive
+            .rekey_unsigned_integer_index_values(transaction, platform_version)?;
+
         let dashpay_contract =
             load_system_data_contract(SystemDataContract::Dashpay, platform_version)?;
 
@@ -1414,6 +1421,148 @@ mod tests {
             "profile must carry platformPaymentAddress after transition_to_version_14"
         );
         assert!(profile.iter().any(|p| p == "shieldedAddress"));
+    }
+
+    #[test]
+    fn should_rekey_unsigned_index_values_on_transition_to_version_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::document::DocumentV0;
+        use dpp::platform_value::{platform_value, Value};
+        use drive::config::DriveConfig;
+        use drive::query::{
+            CountMode, DocumentCountRequest, DocumentCountResponse, WhereClause, WhereOperator,
+        };
+        use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+        use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+        use drive::util::storage_flags::StorageFlags;
+        use std::borrow::Cow;
+        use std::collections::BTreeMap;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version = PlatformVersion::latest();
+        let transaction = platform.drive.grove.start_transaction();
+
+        // A u8 grade (its bounds pick u8) under a range-countable index, written at 13
+        let contract = DataContractFactory::new(13)
+            .expect("expected a contract factory")
+            .create_with_value_config(
+                Identifier::new([7; 32]),
+                0,
+                platform_value!({ "grade": {
+                    "type": "object",
+                    "properties": {
+                        "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                    },
+                    "required": ["grade"],
+                    "indices": [{
+                        "name": "byGrade",
+                        "properties": [{"grade": "asc"}],
+                        "countable": "countable",
+                        "rangeCountable": true,
+                    }],
+                    "additionalProperties": false,
+                }}),
+                None,
+                None,
+            )
+            .expect("expected the grade contract")
+            .data_contract_owned();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                Some(&transaction),
+                platform_version_13,
+            )
+            .expect("expected to apply the grade contract");
+        let document_type = contract
+            .document_type_for_name("grade")
+            .expect("expected the grade type");
+        for (id, grade) in [5u8, 100, 127, 128, 150, 200, 255].into_iter().enumerate() {
+            let document: dpp::document::Document = DocumentV0 {
+                id: Identifier::new([id as u8 + 1; 32]),
+                owner_id: Identifier::new([1; 32]),
+                properties: BTreeMap::from([("grade".to_string(), Value::U8(grade))]),
+                ..Default::default()
+            }
+            .into();
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(&transaction),
+                    platform_version_13,
+                    None,
+                )
+                .expect("expected to insert the grade document");
+        }
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let drive_config = DriveConfig::default();
+        let count = |operator, value| match platform
+            .drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses: vec![WhereClause {
+                        field: "grade".to_string(),
+                        operator,
+                        value,
+                    }],
+                    order_clauses: Vec::new(),
+                    mode: CountMode::Aggregate,
+                    limit: None,
+                    prove: false,
+                    drive_config: &drive_config,
+                    resolved_time_ranges: vec![],
+                },
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the count")
+        {
+            DocumentCountResponse::Aggregate(count) => count,
+            other => panic!("expected an aggregate count, got {other:?}"),
+        };
+        assert_eq!(count(WhereOperator::GreaterThan, Value::U8(100)), 5);
+        assert_eq!(
+            count(
+                WhereOperator::Between,
+                Value::Array(vec![Value::U8(100), Value::U8(200)])
+            ),
+            5
+        );
     }
 
     #[test]
