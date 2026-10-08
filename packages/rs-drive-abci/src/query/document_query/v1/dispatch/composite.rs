@@ -38,6 +38,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
+use drive::error::Error as DriveError;
+use drive::grovedb::Error as GroveError;
 use drive::query::{
     BindingSource, DriveDocumentQuery, DriveSubQuery, SubQueryBinding, SubQueryKind,
     SubQueryResult, MAX_SUB_QUERIES,
@@ -55,6 +57,28 @@ struct DecodedSubQuery {
     order_by: Vec<drive::query::OrderClause>,
     limit: Option<u16>,
     binding: Option<SubQueryBinding>,
+}
+
+/// Only the per-instance-limit refusal of GroveDB versions without that capability
+/// is attributable to the request.
+/// Other GroveDB failures still identify a node or storage fault.
+fn composite_query_error(
+    error: DriveError,
+    platform_version: &PlatformVersion,
+) -> Result<QueryError, Error> {
+    match error {
+        DriveError::Query(query_error) => Ok(QueryError::Query(query_error)),
+        DriveError::GroveDB(ref grove_error)
+            if platform_version.drive.grove_version.grovedb_versions.path_query_methods.per_instance_query_limits == 0
+                && matches!(grove_error.as_ref(), GroveError::NotSupported(message)
+                    if *message == "per-instance query limits (Query::limit) require a grove version that serves them") =>
+        {
+            Ok(QueryError::Query(QuerySyntaxError::Unsupported(
+                "composite query limits require a protocol version that supports per-instance limits".to_string(),
+            )))
+        }
+        error => Err(error.into()),
+    }
 }
 
 impl<C> Platform<C> {
@@ -283,12 +307,11 @@ impl<C> Platform<C> {
         // before any execution.
         match composite.validate_composite(platform_version) {
             Ok(()) => {}
-            Err(drive::error::Error::Query(query_error)) => {
-                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    query_error,
-                )));
+            Err(error) => {
+                return Ok(QueryValidationResult::new_with_error(
+                    composite_query_error(error, platform_version)?,
+                ));
             }
-            Err(e) => return Err(e.into()),
         }
 
         let response = if prove {
@@ -297,12 +320,11 @@ impl<C> Platform<C> {
                 .query_composite_documents_with_proof(&composite, platform_version)
             {
                 Ok(result) => result,
-                Err(drive::error::Error::Query(query_error)) => {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        query_error,
-                    )));
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        composite_query_error(error, platform_version)?,
+                    ));
                 }
-                Err(e) => return Err(e.into()),
             };
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, merged_proof, GroveDBToUse::Current)?;
@@ -317,12 +339,11 @@ impl<C> Platform<C> {
                     .query_composite_documents(&composite, None, None, platform_version)
                 {
                     Ok(outcome) => outcome,
-                    Err(drive::error::Error::Query(query_error)) => {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            query_error,
-                        )));
+                    Err(error) => {
+                        return Ok(QueryValidationResult::new_with_error(
+                            composite_query_error(error, platform_version)?,
+                        ));
                     }
-                    Err(e) => return Err(e.into()),
                 };
             let serialize_all = |documents: &[dpp::document::Document],
                                  sub: Option<&DriveSubQuery>|
@@ -396,6 +417,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::service::query_result_into_response;
     use crate::query::tests::{
         assert_invalid_argument_status, removal_of, remove_post_by_moderator, setup_platform,
         store_data_contract, store_document, with_moderated_posts,
@@ -411,6 +433,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::Result as ResponseResult;
     use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
     use dapi_grpc::platform::v0::GetDocumentsRequest;
+    use dapi_grpc::tonic::Code;
     use dpp::dashcore::Network;
     use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -421,6 +444,49 @@ mod tests {
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_json_value};
     use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
+
+    #[test]
+    fn should_classify_only_the_exact_historical_composite_capability_failure() {
+        const CAPABILITY: &str =
+            "per-instance query limits (Query::limit) require a grove version that serves them";
+        for version in [
+            PlatformVersion::get(12).unwrap(),
+            PlatformVersion::get(13).unwrap(),
+            PlatformVersion::latest(),
+        ] {
+            for (grove_error, matches_capability) in [
+                (GroveError::NotSupported(CAPABILITY.to_owned()), true),
+                (GroveError::NotSupported("different unsupported storage operation".to_owned()), false),
+                (GroveError::NotSupported("per-instance query limits (Query::limit) require a grove version that serves them extra".to_owned()), false),
+                (GroveError::InvalidQuery(CAPABILITY), false),
+                (GroveError::CorruptedData(CAPABILITY.to_owned()), false),
+            ] {
+                let result: Result<QueryValidationResult<()>, Error> = composite_query_error(
+                    DriveError::GroveDB(Box::new(grove_error)), version,
+                ).map(QueryValidationResult::new_with_error);
+                let status = query_result_into_response(result)
+                    .expect_err("classification returns an error response");
+                assert_eq!(status.code(), if matches_capability && version.protocol_version < 14 {
+                    Code::InvalidArgument
+                } else {
+                    Code::Internal
+                });
+            }
+            let result: Result<QueryValidationResult<()>, Error> = composite_query_error(
+                DriveError::Query(QuerySyntaxError::Unsupported(
+                    "existing proof-shape rejection".to_owned(),
+                )),
+                version,
+            )
+            .map(QueryValidationResult::new_with_error);
+            let status = query_result_into_response(result).unwrap_err();
+            assert_eq!(status.code(), Code::InvalidArgument);
+            assert_eq!(
+                status.message(),
+                "unsupported error: existing proof-shape rejection"
+            );
+        }
+    }
 
     const FEED_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";

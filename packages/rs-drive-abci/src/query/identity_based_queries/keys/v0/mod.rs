@@ -156,6 +156,18 @@ impl<C> Platform<C> {
             platform_version.drive_abci.query.max_returned_elements
         ));
 
+        // Specific-key queries intentionally ignore offsets in both response modes.
+        if prove
+            && offset.is_some_and(|offset| offset > 0)
+            && !matches!(key_request_type, KeyRequestType::SpecificKeys(_))
+        {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(
+                    "proof requests do not support positive offsets".to_string(),
+                ),
+            )));
+        }
+
         let key_request = IdentityKeysRequest {
             identity_id: identity_id.into_buffer(),
             request_type: key_request_type,
@@ -196,6 +208,18 @@ impl<C> Platform<C> {
                             "a search key request without a proof must set a limit".to_string(),
                         ),
                     )));
+                }
+                KeyRequestType::SearchKey(_) => {
+                    if key_request.offset.is_some_and(|offset| offset > 0) {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::InvalidParameter(
+                                "search key requests without a proof do not support positive offsets"
+                                    .to_string(),
+                            ),
+                        )));
+                    }
+                    // The optional-key projection only accepts an omitted offset.
+                    key_request.offset = None;
                 }
                 _ => {}
             }

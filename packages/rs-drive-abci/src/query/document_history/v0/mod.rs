@@ -16,6 +16,7 @@ use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -68,6 +69,14 @@ impl<C> Platform<C> {
                     .map_err(|_| QueryError::InvalidArgument("offset out of bounds".to_string()))
             })
             .transpose());
+
+        if prove && offset.is_some_and(|offset| offset > 0) {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(
+                    "proof requests do not support positive offsets".to_string(),
+                ),
+            )));
+        }
 
         let maybe_contract_fetch_info = self
             .drive
