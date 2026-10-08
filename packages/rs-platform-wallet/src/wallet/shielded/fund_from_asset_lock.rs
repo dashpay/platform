@@ -1063,8 +1063,9 @@ where
         let out_point = out_point.await.ok()?;
         speculate(out_point).await
     };
-    let (resolved, speculative) = tokio::join!(resolve, speculation);
-    Ok((resolved?, speculative))
+    // `try_join!` so a failed resolution returns at once, dropping a
+    // speculative startup still in flight (or the proof it started).
+    tokio::try_join!(resolve, async { Ok(speculation.await) })
 }
 
 /// Pre-flight check for the recipient list.
@@ -1776,6 +1777,29 @@ mod tests {
             .await
             .expect("the proof and the lock wait did not overlap");
             assert_eq!(*bundle, AMOUNT);
+        }
+
+        /// A resolution that fails after reporting the outpoint returns its
+        /// error without waiting for a speculative startup still in flight.
+        #[tokio::test]
+        async fn should_return_a_resolution_error_without_waiting_for_speculation() {
+            let (out_point_tx, out_point_rx) = oneshot::channel();
+            let resolve = async move {
+                let _ = out_point_tx.send(target(AMOUNT).out_point);
+                tokio::task::yield_now().await;
+                Err::<(), _>(PlatformWalletError::ShieldedBuildError(
+                    "lock wait failed".into(),
+                ))
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(10),
+                resolve_while_proving(resolve, out_point_rx, |_| {
+                    std::future::pending::<Option<ProofTask<Credits>>>()
+                }),
+            )
+            .await
+            .expect("a failed resolution must not wait for speculative startup");
+            assert!(result.is_err());
         }
 
         /// Every submission attempt of one call — the first, the IS→CL
