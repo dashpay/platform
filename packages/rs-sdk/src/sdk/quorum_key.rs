@@ -128,11 +128,11 @@ impl Sdk {
 
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
-    use super::super::SdkInstance;
     use crate::platform::transition::broadcast::{require_execution_proved, WaitForOutcome};
     use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
     use crate::platform::transition::put_settings::PutSettings;
     use crate::platform::ContextProvider;
+    use crate::sdk::SdkInstance;
     use crate::{Error, Sdk, SdkBuilder};
     use dapi_grpc::platform::v0::get_epochs_info_response::{
         get_epochs_info_response_v0::Result as EpochsResult, Version as EpochsVersion,
@@ -157,7 +157,8 @@ mod tests {
     use dpp::version::PlatformVersion;
     use rs_dapi_client::mock::MockDapiClient;
     use rs_dapi_client::{
-        Address, AddressList, CanRetry, DumpData, ExecutionResponse, RequestSettings,
+        Address, AddressBanInfo, AddressList, CanRetry, DumpData, ExecutionResponse,
+        RequestSettings,
     };
     use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
     use std::io::{BufRead, BufReader, Write};
@@ -203,47 +204,79 @@ mod tests {
         StateTransition,
         WaitForStateTransitionResultResponse,
         [u8; 48],
+        u64,
     ) {
         let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../rs-drive-proof-verifier/tests/vectors/identity-balance");
         let read =
             |file| std::fs::read_to_string(directory.join(file)).expect("read balance vector");
-        let manifest: serde_json::Value = serde_json::from_str(&read("manifest.json")).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&read("manifest.json"))
+            .expect("recorded fixture and mock response must be well formed");
         let decode = |file| hex::decode(read(file).trim()).expect("decode recorded proof hex");
         let block = &manifest["block"];
         let metadata = ResponseMetadata {
-            height: block["height"].as_u64().unwrap(),
+            height: block["height"]
+                .as_u64()
+                .expect("integer in vector manifest"),
             core_chain_locked_height: block["core_chain_locked_height"]
                 .as_u64()
-                .unwrap()
+                .expect("integer in vector manifest")
                 .try_into()
-                .unwrap(),
-            epoch: block["epoch"].as_u64().unwrap().try_into().unwrap(),
-            time_ms: block["time_ms"].as_u64().unwrap(),
+                .expect("recorded value fits wire field"),
+            epoch: block["epoch"]
+                .as_u64()
+                .expect("integer in vector manifest")
+                .try_into()
+                .expect("recorded value fits wire field"),
+            time_ms: block["time_ms"]
+                .as_u64()
+                .expect("integer in vector manifest"),
             protocol_version: block["protocol_version"]
                 .as_u64()
-                .unwrap()
+                .expect("integer in vector manifest")
                 .try_into()
-                .unwrap(),
-            chain_id: block["chain_id"].as_str().unwrap().to_string(),
+                .expect("recorded value fits wire field"),
+            chain_id: block["chain_id"]
+                .as_str()
+                .expect("string in vector manifest")
+                .to_string(),
         };
         let proof_meta = &manifest["proof_meta"];
         let proof = Proof {
             grovedb_proof: decode("proof.hex"),
             signature: decode("signature.hex"),
-            quorum_hash: hex::decode(proof_meta["quorum_hash_hex"].as_str().unwrap()).unwrap(),
-            block_id_hash: hex::decode(proof_meta["block_id_hash_hex"].as_str().unwrap()).unwrap(),
-            round: proof_meta["round"].as_u64().unwrap().try_into().unwrap(),
+            quorum_hash: hex::decode(
+                proof_meta["quorum_hash_hex"]
+                    .as_str()
+                    .expect("string in vector manifest"),
+            )
+            .expect("recorded fixture and mock response must be well formed"),
+            block_id_hash: hex::decode(
+                proof_meta["block_id_hash_hex"]
+                    .as_str()
+                    .expect("string in vector manifest"),
+            )
+            .expect("recorded fixture and mock response must be well formed"),
+            round: proof_meta["round"]
+                .as_u64()
+                .expect("integer in vector manifest")
+                .try_into()
+                .expect("recorded value fits wire field"),
             quorum_type: proof_meta["quorum_type"]
                 .as_u64()
-                .unwrap()
+                .expect("integer in vector manifest")
                 .try_into()
-                .unwrap(),
+                .expect("recorded value fits wire field"),
         };
         let identity_id = Identifier::from_bytes(
-            &hex::decode(manifest["request"]["identity_id"].as_str().unwrap()).unwrap(),
+            &hex::decode(
+                manifest["request"]["identity_id"]
+                    .as_str()
+                    .expect("string in vector manifest"),
+            )
+            .expect("recorded fixture and mock response must be well formed"),
         )
-        .unwrap();
+        .expect("recorded fixture and mock response must be well formed");
         let transition = StateTransition::IdentityCreditWithdrawal(
             IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
                 identity_id,
@@ -260,7 +293,12 @@ mod tests {
         (
             transition,
             response,
-            decode("quorum_pubkey.hex").try_into().unwrap(),
+            decode("quorum_pubkey.hex")
+                .try_into()
+                .expect("recorded value fits wire field"),
+            manifest["expected"]["balance"]
+                .as_u64()
+                .expect("integer in vector manifest"),
         )
     }
 
@@ -270,6 +308,9 @@ mod tests {
         unavailable: bool,
         dapi: Arc<tokio::sync::Mutex<MockDapiClient>>,
         request: WaitForStateTransitionResultRequest,
+        failover_response: Option<(WaitForStateTransitionResultResponse, Address)>,
+        addresses: AddressList,
+        exclusion_seen: Arc<std::sync::Mutex<Option<AddressBanInfo>>>,
     }
 
     impl ContextProvider for WaitQuorumSource {
@@ -295,6 +336,10 @@ mod tests {
             _core_chain_locked_height: u32,
         ) -> Result<[u8; 48], ContextProviderError> {
             if self.cached.load(Ordering::SeqCst) {
+                if self.failover_response.is_some() {
+                    *self.exclusion_seen.lock().expect("exclusion lock") =
+                        self.addresses.ban_info().into_iter().find(|ban| ban.banned);
+                }
                 Ok(self.key)
             } else {
                 Err(ContextProviderError::InvalidQuorum(
@@ -311,8 +356,29 @@ mod tests {
         ) -> Option<QuorumKeyFuture> {
             // Remove the transport response once it has been buffered: a
             // second wait request must fail instead of silently replaying it.
-            assert!(self.dapi.try_lock().unwrap().remove(&self.request));
+            assert!(self
+                .dapi
+                .try_lock()
+                .expect("transport lock is free during fetch")
+                .remove(&self.request));
             if self.unavailable {
+                if let Some((response, address)) = &self.failover_response {
+                    self.dapi
+                        .try_lock()
+                        .expect("transport lock is free during fetch")
+                        .expect(
+                            &self.request,
+                            &Ok(ExecutionResponse {
+                                inner: response.clone(),
+                                address: address.clone(),
+                                retries: 0,
+                            }),
+                        )
+                        .expect("configure another node's response");
+                    // Another request may fill the cache while this source
+                    // lookup fails; the next node can then verify normally.
+                    self.cached.store(true, Ordering::SeqCst);
+                }
                 Some(Box::pin(async {
                     Err(ContextProviderError::QuorumSourceUnavailable(
                         "source offline".to_string(),
@@ -330,38 +396,84 @@ mod tests {
         }
     }
 
-    #[test_case::test_case(false, false; "key_acquired")]
-    #[test_case::test_case(true, false; "trusted_source_unavailable")]
-    #[test_case::test_case(false, true; "already_stale")]
+    #[derive(Clone, Copy)]
+    enum WaitScenario {
+        KeyAcquired,
+        SourceUnavailable,
+        AlreadyStale,
+        ForgedSignature,
+        SourceFailover,
+    }
+
+    /// Key recovery must verify the buffered response even with retries enabled.
+    /// Source outages cannot cause a health ban; forged signatures must cause one.
+    /// A response stale on arrival remains stale, and source failover uses only
+    /// a brief exclusion when another node can be verified.
+    #[test_case::test_case(WaitScenario::KeyAcquired; "key_acquired")]
+    #[test_case::test_case(WaitScenario::SourceUnavailable; "trusted_source_unavailable")]
+    #[test_case::test_case(WaitScenario::AlreadyStale; "already_stale")]
+    #[test_case::test_case(WaitScenario::ForgedSignature; "forged_signature_bans")]
+    #[test_case::test_case(WaitScenario::SourceFailover; "source_failover_is_brief")]
     #[tokio::test]
     async fn should_verify_the_buffered_broadcast_wait_after_fetching_its_quorum_key(
-        unavailable: bool,
-        initially_stale: bool,
+        scenario: WaitScenario,
     ) {
-        let (transition, response, key) = recorded_withdrawal_wait();
+        let unavailable = matches!(
+            scenario,
+            WaitScenario::SourceUnavailable | WaitScenario::SourceFailover
+        );
+        let initially_stale = matches!(scenario, WaitScenario::AlreadyStale);
+        let forged_signature = matches!(scenario, WaitScenario::ForgedSignature);
+        let failover = matches!(scenario, WaitScenario::SourceFailover);
+        let (transition, mut response, key, expected_balance) = recorded_withdrawal_wait();
+        let expected_identity = transition.owner_id().expect("withdrawal owner");
+        if forged_signature {
+            let Some(WaitVersion::V0(v0)) = response.version.as_mut() else {
+                panic!("v0 wait");
+            };
+            let Some(WaitResult::Proof(proof)) = v0.result.as_mut() else {
+                panic!("proved wait");
+            };
+            proof.signature[10] ^= 1;
+        }
         let Some(WaitVersion::V0(v0)) = response.version.as_ref() else {
             panic!("v0 wait");
         };
-        let metadata = v0.metadata.clone().unwrap();
+        let metadata = v0.metadata.clone().expect("signed wait metadata");
         let mut sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
-            .with_version(PlatformVersion::get(metadata.protocol_version).unwrap())
+            .with_version(
+                PlatformVersion::get(metadata.protocol_version)
+                    .expect("recorded fixture and mock response must be well formed"),
+            )
             .with_time_tolerance(None)
             .with_height_tolerance(Some(1))
             .with_trusted_initial_height(metadata.height + if initially_stale { 20 } else { 0 })
             .build()
-            .unwrap();
+            .expect("build mock wait SDK");
         let SdkInstance::Mock {
             dapi, address_list, ..
         } = &mut sdk.inner
         else {
             panic!("mock SDK");
         };
-        let address: Address = "http://127.0.0.1:3001".parse().unwrap();
-        *address_list = address.to_string().parse().unwrap();
+        // MockDapiClient reconstructs every response with this address,
+        // so bans must be checked against it rather than the supplied metadata.
+        let address: Address = "http://127.0.0.1:9000"
+            .parse()
+            .expect("mock responder address");
+        *address_list = address.to_string().parse().expect("valid fixture address");
+        let second: Address = "http://127.0.0.1:3002".parse().expect("second address");
+        if matches!(
+            scenario,
+            WaitScenario::KeyAcquired | WaitScenario::SourceFailover
+        ) {
+            address_list.add(second.clone());
+        }
+        let failover_response = failover.then(|| (response.clone(), second));
         let request = transition
             .wait_for_state_transition_result_request()
-            .unwrap();
+            .expect("construct withdrawal wait request");
         dapi.lock()
             .await
             .expect(
@@ -372,23 +484,32 @@ mod tests {
                     retries: 0,
                 }),
             )
-            .unwrap();
+            .expect("recorded fixture and mock response must be well formed");
+        let exclusion_seen = Arc::new(std::sync::Mutex::new(None));
         let provider = Counting::new(WaitQuorumSource {
             key,
             cached: AtomicBool::new(false),
             unavailable,
             dapi: Arc::clone(dapi),
             request,
+            failover_response,
+            addresses: address_list.clone(),
+            exclusion_seen: Arc::clone(&exclusion_seen),
         });
-        *provider.raise_on_fetch.lock().unwrap() = Some((
-            Arc::clone(&sdk.metadata_last_seen_height),
-            metadata.height + 10,
-        ));
+        if !failover {
+            *provider.raise_on_fetch.lock().expect("test state lock") = Some((
+                Arc::clone(&sdk.metadata_last_seen_height),
+                metadata.height + 10,
+            ));
+        }
         sdk.set_context_provider(provider.clone());
         let settings = PutSettings {
             request_settings: RequestSettings {
-                ban_failed_address: Some(false),
-                retries: Some(0),
+                ban_failed_address: Some(true),
+                retries: Some(usize::from(matches!(
+                    scenario,
+                    WaitScenario::KeyAcquired | WaitScenario::SourceFailover
+                ))),
                 ..Default::default()
             },
             ..Default::default()
@@ -398,7 +519,7 @@ mod tests {
             .wait_for_outcome_with_metadata(&sdk, Some(settings))
             .await;
 
-        if unavailable {
+        if unavailable && !failover {
             let error = result.unwrap_err();
             assert!(
                 matches!(
@@ -410,6 +531,28 @@ mod tests {
             assert!(!error.can_retry());
             assert!(!sdk.address_list().is_banned(&address));
             assert_eq!(provider.lookups.load(Ordering::SeqCst), 1);
+        } else if forged_signature {
+            let error = result.expect_err("a forged signature cannot verify");
+            assert!(
+                error.can_retry(),
+                "a forged signature is the responding node's fault"
+            );
+            assert!(matches!(error, Error::Proof(_)), "got {error:?}");
+            assert!(
+                sdk.address_list().is_banned(&address),
+                "banning is enabled for this control case"
+            );
+            let ban = sdk
+                .address_list()
+                .ban_info()
+                .into_iter()
+                .find(|ban| ban.uri == address.to_string())
+                .expect("responding node ban");
+            assert!(
+                ban.banned_until.expect("health ban expiry") - chrono::Utc::now()
+                    > chrono::Duration::seconds(30)
+            );
+            assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
         } else if initially_stale {
             assert!(matches!(result, Err(Error::StaleNode(_))), "got {result:?}");
             assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
@@ -422,18 +565,42 @@ mod tests {
             else {
                 panic!("withdrawal balance snapshot");
             };
-            assert_eq!(identity.id, Identifier::from([0x77; 32]));
-            assert_eq!(identity.balance, Some(5_000_000_000));
+            assert_eq!(identity.id, expected_identity);
+            assert_eq!(identity.balance, Some(expected_balance));
             assert!(matches!(
                 require_execution_proved(outcome),
                 Err(Error::ExecutionNotProved(_))
             ));
             assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
         }
+        if failover {
+            let observed = exclusion_seen.lock().expect("exclusion lock");
+            let ban = observed
+                .as_ref()
+                .expect("first responder excluded before retry verification");
+            assert_eq!(ban.uri, address.to_string());
+            assert!(ban.banned);
+            assert_eq!(
+                ban.ban_count, 1,
+                "a brief exclusion stays at the ladder floor"
+            );
+            assert!(
+                ban.banned_until.expect("exclusion expiry") - chrono::Utc::now()
+                    <= chrono::Duration::seconds(2),
+                "source failure must not incur the 60-second health ban"
+            );
+        }
         assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
         assert_eq!(
             sdk.metadata_last_seen_height.load(Ordering::SeqCst),
-            metadata.height + if initially_stale { 20 } else { 10 }
+            metadata.height
+                + if initially_stale {
+                    20
+                } else if failover {
+                    0
+                } else {
+                    10
+                }
         );
     }
 
@@ -857,7 +1024,10 @@ mod tests {
             ("/previous", 200, empty_previous_list()),
         ]);
         let trusted = trusted_provider(base_url);
-        trusted.refresh_quorum_caches().await.unwrap();
+        trusted
+            .refresh_quorum_caches()
+            .await
+            .expect("initial source lists arrive");
         tokio::time::sleep(Duration::from_secs(1)).await;
         let provider = Counting::new(trusted);
         let sdk = network_sdk(Arc::clone(&provider));
