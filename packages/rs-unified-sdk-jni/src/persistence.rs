@@ -206,11 +206,39 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// sync watermark with it, and the round is refused one layer up instead of
 /// advancing past a removal that never happened. Wiring the slot for every
 /// subclass would make "slot present" prove nothing.
+///
+/// The DashPay backfill slot is likewise wired only when the bridge
+/// OVERRIDES `onWalletChangesetHeader`, the callback that stores the cursor.
+/// `on_persist_wallet_changeset_fn` is always wired, so Rust's "cursor
+/// delivered" gate cannot tell a stored cursor from one handed to the
+/// inherited no-op header. A bridge that persists the backfill record but
+/// not the cursor would then commit coverage for a rewind while keeping the
+/// old cursor, and that coverage would suppress the recovery scan after a
+/// restart (dashpay/platform#4302 review). Without the slot the record is
+/// never delivered and every launch re-runs the backfill: slow, never lossy.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
-    let sweeps_overridden = bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept");
+    extension_for(BridgeOverrides {
+        sweeps: bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept"),
+        header: bridge_overrides(env, bridge, "onWalletChangesetHeader"),
+    })
+}
+
+/// Which optional `NativePersistenceBridge` callbacks the concrete bridge
+/// supplies its own body for (see [`bridge_overrides`]).
+#[derive(Debug, Clone, Copy)]
+struct BridgeOverrides {
+    /// `onWalletChangesetTransactionsSwept`.
+    sweeps: bool,
+    /// `onWalletChangesetHeader`, which carries the scan cursor.
+    header: bool,
+}
+
+/// The extension slots wired for a bridge with `overrides` (see
+/// [`build_extension`]).
+fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
-        on_persist_wallet_changeset_sweeps_fn: if sweeps_overridden {
+        on_persist_wallet_changeset_sweeps_fn: if overrides.sweeps {
             Some(tramp_persist_wallet_changeset_sweeps)
         } else {
             None
@@ -218,7 +246,11 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
         on_persist_wallet_changeset_chain_lock_height_fn: Some(
             tramp_persist_wallet_changeset_chain_lock_height,
         ),
-        on_persist_wallet_dashpay_backfill_fn: Some(tramp_persist_wallet_dashpay_backfill),
+        on_persist_wallet_dashpay_backfill_fn: if overrides.header {
+            Some(tramp_persist_wallet_dashpay_backfill)
+        } else {
+            None
+        },
         ..Default::default()
     }
 }
@@ -4893,6 +4925,35 @@ mod tests {
     /// A height past `i32::MAX` must refuse the call, never wrap into a
     /// negative `Int` the handler would read as absent or as a bogus
     /// collection boundary.
+    /// A bridge that inherits the no-op `onWalletChangesetHeader` stores no
+    /// cursor, so it must not be handed the DashPay backfill record either:
+    /// coverage committed beside a cursor that was never lowered would
+    /// suppress the recovery scan after a restart. Overriding the header is
+    /// what wires the slot; the sweep slot keeps its own probe.
+    #[test]
+    fn the_backfill_slot_is_wired_only_for_a_bridge_that_stores_the_cursor() {
+        let inherited_header = extension_for(BridgeOverrides {
+            sweeps: true,
+            header: false,
+        });
+        assert!(
+            inherited_header
+                .on_persist_wallet_dashpay_backfill_fn
+                .is_none(),
+            "an inherited header means the record is never delivered"
+        );
+        assert!(inherited_header
+            .on_persist_wallet_changeset_sweeps_fn
+            .is_some());
+
+        let own_header = extension_for(BridgeOverrides {
+            sweeps: false,
+            header: true,
+        });
+        assert!(own_header.on_persist_wallet_dashpay_backfill_fn.is_some());
+        assert!(own_header.on_persist_wallet_changeset_sweeps_fn.is_none());
+    }
+
     #[test]
     fn a_height_past_i32_max_is_refused_rather_than_wrapped() {
         assert_eq!(jint_height(0).unwrap(), 0);

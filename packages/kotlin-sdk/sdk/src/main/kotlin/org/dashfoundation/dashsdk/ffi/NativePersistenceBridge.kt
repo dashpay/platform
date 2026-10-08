@@ -458,6 +458,10 @@ abstract class NativePersistenceBridge {
      * Purely additive: an implementation that ignores it keeps today's
      * behaviour — the backfill re-fires on every launch, re-walking every
      * filter from the earliest contact's core height. Slow, never lossy.
+     *
+     * Delivered only to a bridge that also overrides [onWalletChangesetHeader]:
+     * the record vouches for the cursor that callback stores, so a bridge
+     * keeping the inherited no-op header never receives it.
      */
     open fun onWalletChangesetDashPayBackfill(
         walletId: ByteArray,
