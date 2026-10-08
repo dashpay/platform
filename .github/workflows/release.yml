@@ -450,9 +450,9 @@ jobs:
           NOTARY_API_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
         run: |
           set -euo pipefail
-          : "${NOTARY_API_KEY_BASE64:?MACOS_NOTARY_API_KEY_BASE64 is not set}"
-          : "${NOTARY_API_KEY_ID:?MACOS_NOTARY_API_KEY_ID is not set}"
-          : "${NOTARY_API_ISSUER_ID:?MACOS_NOTARY_API_ISSUER_ID is not set}"
+          for name in NOTARY_API_KEY_BASE64 NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID; do
+            [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
+          done
           NOTARY_API_KEY_PATH="$RUNNER_TEMP/notary_api_key.p8"
           trap 'rm -f "$NOTARY_API_KEY_PATH"' EXIT
           (umask 077; printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH")
