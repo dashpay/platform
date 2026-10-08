@@ -442,13 +442,22 @@ jobs:
 
       - name: Notarize MacOS Release Build
         if: runner.os == 'macOS'
+        # A team App Store Connect API key, so notarization does not depend
+        # on one person's Apple ID staying a member of the developer team.
         env:
-          APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
-          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
-          NOTARIZING_PASSWORD: ${{ secrets.MACOS_NOTARIZING_PASSWORD }}
+          NOTARY_API_KEY_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
+          NOTARY_API_KEY_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
         run: |
+          set -euo pipefail
+          NOTARY_API_KEY_PATH="$RUNNER_TEMP/notary_api_key.p8"
+          printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH"
           while IFS= read -r -d '' pkg; do
-            xcrun notarytool submit "$pkg" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARIZING_PASSWORD" --wait
+            xcrun notarytool submit "$pkg" \
+              --key "$NOTARY_API_KEY_PATH" \
+              --key-id "$NOTARY_API_KEY_ID" \
+              --issuer "$NOTARY_API_ISSUER_ID" \
+              --wait
           done < <(find release-artifacts -type f -name '*.pkg' -print0)
 
       - name: Delete the Apple keychain
@@ -456,6 +465,7 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
           rm -f "$RUNNER_TEMP/build_certificate.p12"
+          rm -f "$RUNNER_TEMP/notary_api_key.p8"
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
