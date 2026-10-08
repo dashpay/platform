@@ -1856,6 +1856,8 @@ impl DocumentType {
 }
 
 #[cfg(all(test, feature = "validation"))]
+mod byte_array_reads_tests;
+#[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
