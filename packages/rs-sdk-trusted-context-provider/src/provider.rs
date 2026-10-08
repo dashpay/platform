@@ -475,8 +475,11 @@ impl TrustedHttpContextProvider {
         quorum_hash: QuorumHash,
         seen: u64,
     ) -> Result<Option<[u8; 48]>, ContextProviderError> {
-        if let Some(quorum) = self.cached_quorum(&quorum_hash) {
-            return Self::parse_quorum_public_key(&quorum.key).map(Some);
+        if let Some(key) = self
+            .cached_quorum(&quorum_hash)
+            .and_then(|quorum| Self::parse_quorum_public_key(&quorum.key).ok())
+        {
+            return Ok(Some(key));
         }
 
         let (refresh, generation) = self
@@ -1647,6 +1650,42 @@ mod tests {
                 Err(ContextProviderError::QuorumSourceUnavailable(_))
             ),
             "a cached unusable key is still a source failure: {cached:?}"
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn should_recover_a_malformed_cached_key_after_the_source_is_repaired() {
+        let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, malformed),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert!(matches!(
+            fetch_missing(&provider, 0x11).await,
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
+        let generation = provider.quorum_refreshes.generation();
+        assert!(matches!(
+            fetch_missing(&provider, 0x11).await,
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
+        assert_eq!(provider.quorum_refreshes.generation(), generation);
+
+        provider.quorum_refreshes.age_latest(MIN_GAP);
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("a repaired source restores reads on the same provider"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider.get_quorum_public_key(6, [0x11; 32], 1).unwrap(),
+            quorum_key(0x41)
         );
         server.join().expect("mock quorum server must finish");
     }
