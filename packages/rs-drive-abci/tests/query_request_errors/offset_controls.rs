@@ -1,3 +1,5 @@
+use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v0::Result as DocumentHistoryResult;
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::get_contested_resource_identity_votes_response_v0::Result as IdentityVotesResult;
 use super::offsets::{history_contract, search_kind};
 use super::*;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
@@ -402,9 +404,43 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                     panic!("document history V0")
                 };
                 match v0.result.expect("document result") {
-   wire::get_document_history_response::get_document_history_response_v0::Result::DocumentHistory(history)=>{assert!(!prove);assert_eq!(history.document_entries.into_iter().map(|e|(e.date,e.value)).collect::<Vec<_>>(),expected_page.iter().map(|(time,document)|(*time,document.serialize(document_type,&history_contract,version).expect("original document bytes"))).collect::<Vec<_>>());},
-   wire::get_document_history_response::get_document_history_response_v0::Result::Proof(proof)=>{assert!(prove);let(root,documents)=Drive::verify_document_history(&proof.grovedb_proof,history_contract.id().to_buffer(),"profile",document_type,document_id,0,Some(2),offset.map(|o|o as u16),version).expect("original document history proof");assert_eq!(root,stored_root);assert_eq!(documents.expect("history"),expected_page);},
-  }
+                    DocumentHistoryResult::DocumentHistory(history) => {
+                        assert!(!prove);
+                        assert_eq!(
+                            history
+                                .document_entries
+                                .into_iter()
+                                .map(|e| (e.date, e.value))
+                                .collect::<Vec<_>>(),
+                            expected_page
+                                .iter()
+                                .map(|(time, document)| (
+                                    *time,
+                                    document
+                                        .serialize(document_type, &history_contract, version)
+                                        .expect("original document bytes")
+                                ))
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    DocumentHistoryResult::Proof(proof) => {
+                        assert!(prove);
+                        let (root, documents) = Drive::verify_document_history(
+                            &proof.grovedb_proof,
+                            history_contract.id().to_buffer(),
+                            "profile",
+                            document_type,
+                            document_id,
+                            0,
+                            Some(2),
+                            offset.map(|o| o as u16),
+                            version,
+                        )
+                        .expect("original document history proof");
+                        assert_eq!(root, stored_root);
+                        assert_eq!(documents.expect("history"), expected_page);
+                    }
+                }
                 let expected_vote_page = expected_votes
                     .iter()
                     .skip(offset.unwrap_or(0) as usize)
@@ -433,9 +469,51 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                     panic!("votes V0")
                 };
                 match v0.result.expect("votes result") {
-   wire::get_contested_resource_identity_votes_response::get_contested_resource_identity_votes_response_v0::Result::Votes(v)=>{assert!(!prove);let actual=v.contested_resource_identity_votes.into_iter().map(|vote|{let choice=vote.vote_choice.expect("choice");ContestedDocumentResourceVoteStorageForm {contract_id:vote.contract_id.try_into().expect("contract ID"),document_type_name:vote.document_type_name,index_values:vote.serialized_index_storage_values,resource_vote_choice:(choice.vote_choice_type,choice.identity_id).try_into().expect("choice conversion")}.resolve_with_contract(&dpns,version).expect("vote")}).collect::<Vec<_>>();assert_eq!(actual,expected_vote_page.into_values().collect::<Vec<_>>());assert_eq!(v.finished_results,offset==Some(1));},
-   wire::get_contested_resource_identity_votes_response::get_contested_resource_identity_votes_response_v0::Result::Proof(proof)=>{assert!(prove);let query=ContestedResourceVotesGivenByIdentityQuery {identity_id:Identifier::new(identity_id),limit:Some(2),offset:offset.map(|o|o as u16),start_at:None,order_ascending:true};let(root,votes):(_,BTreeMap<Identifier,ResourceVote>)=query.verify_identity_votes_given_proof(&proof.grovedb_proof,lookup.as_ref(),version).expect("original identity votes proof");assert_eq!(root,stored_root);assert_eq!(votes,expected_vote_page);},
-  }
+                    IdentityVotesResult::Votes(v) => {
+                        assert!(!prove);
+                        let actual = v
+                            .contested_resource_identity_votes
+                            .into_iter()
+                            .map(|vote| {
+                                let choice = vote.vote_choice.expect("choice");
+                                ContestedDocumentResourceVoteStorageForm {
+                                    contract_id: vote.contract_id.try_into().expect("contract ID"),
+                                    document_type_name: vote.document_type_name,
+                                    index_values: vote.serialized_index_storage_values,
+                                    resource_vote_choice: (
+                                        choice.vote_choice_type,
+                                        choice.identity_id,
+                                    )
+                                        .try_into()
+                                        .expect("choice conversion"),
+                                }
+                                .resolve_with_contract(&dpns, version)
+                                .expect("vote")
+                            })
+                            .collect::<Vec<_>>();
+                        assert_eq!(actual, expected_vote_page.into_values().collect::<Vec<_>>());
+                        assert_eq!(v.finished_results, offset == Some(1));
+                    }
+                    IdentityVotesResult::Proof(proof) => {
+                        assert!(prove);
+                        let query = ContestedResourceVotesGivenByIdentityQuery {
+                            identity_id: Identifier::new(identity_id),
+                            limit: Some(2),
+                            offset: offset.map(|o| o as u16),
+                            start_at: None,
+                            order_ascending: true,
+                        };
+                        let (root, votes): (_, BTreeMap<Identifier, ResourceVote>) = query
+                            .verify_identity_votes_given_proof(
+                                &proof.grovedb_proof,
+                                lookup.as_ref(),
+                                version,
+                            )
+                            .expect("original identity votes proof");
+                        assert_eq!(root, stored_root);
+                        assert_eq!(votes, expected_vote_page);
+                    }
+                }
             }
         }
         for offset in [None, Some(0u16)] {
