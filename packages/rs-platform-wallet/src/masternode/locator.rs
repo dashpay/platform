@@ -28,7 +28,7 @@
 
 use dashcore::base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use dashcore::base64::{alphabet, Engine};
-use dashcore::eddsa::EddsaPkBytes;
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use std::collections::{BTreeSet, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -378,7 +378,7 @@ pub fn bls_public_keys(secret: &[u8; 32]) -> Option<([u8; 48], [u8; 48])> {
 /// Tenderdash node id for an ed25519 `seed`.
 pub fn ed25519_node_id(seed: &[u8; 32]) -> [u8; 20] {
     let public = SigningKey::from_bytes(seed).verifying_key().to_bytes();
-    EddsaPkBytes::from_bytes(public).hash().to_canonical_bytes()
+    EddsaPkHash::from(EddsaPkBytes::from_bytes(public)).to_canonical_bytes()
 }
 
 // ---------------------------------------------------------------------------

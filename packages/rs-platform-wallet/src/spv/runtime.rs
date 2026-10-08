@@ -490,16 +490,9 @@ impl SpvRuntime {
             return Vec::new();
         }
 
-        let engine = client.masternode_list_engine().ok();
+        let list = client.latest_masternode_list().await;
         drop(client_guard);
-
-        match engine {
-            Some(engine) => {
-                let engine_guard = engine.read().await;
-                classify_peers(&addresses, engine_guard.latest_masternode_list())
-            }
-            None => classify_peers(&addresses, None),
-        }
+        classify_peers(&addresses, list.as_ref())
     }
 
     /// Snapshot of the current deterministic masternode list (DML) keyed
@@ -517,17 +510,10 @@ impl SpvRuntime {
     pub fn masternode_validity_snapshot_blocking(
         &self,
     ) -> Option<std::collections::HashMap<[u8; 32], bool>> {
-        // Clone the engine `Arc` out while holding the client lock, then
-        // drop it before reading the engine — same ordering as
-        // `connected_peers`.
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list_blocking()?
         };
-
-        let engine_guard = engine.blocking_read();
-        let list = engine_guard.latest_masternode_list()?;
 
         let mut map = std::collections::HashMap::with_capacity(list.masternodes.len());
         for qualified in list.masternodes.values() {
@@ -560,55 +546,40 @@ impl SpvRuntime {
     /// it must run off the async runtime (FFI blocking thread), mirroring the
     /// other `*_blocking` accessors.
     pub fn masternodes_by_voting_key_blocking(&self, voting_key_id: &PubkeyHash) -> Vec<[u8; 32]> {
-        // Clone the engine `Arc` out while holding the client lock, then drop
-        // it before reading the engine — same ordering as `connected_peers`.
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
             let Some(client) = client_guard.as_ref() else {
                 return Vec::new();
             };
-            match client.masternode_list_engine().ok() {
-                Some(engine) => engine,
-                None => return Vec::new(),
-            }
+            let Some(list) = client.latest_masternode_list_blocking() else {
+                return Vec::new();
+            };
+            list
         };
 
-        let engine_guard = engine.blocking_read();
-        let Some(list) = engine_guard.latest_masternode_list() else {
-            return Vec::new();
-        };
-
-        masternodes_by_voting_key(list, voting_key_id)
+        masternodes_by_voting_key(&list, voting_key_id)
     }
 
     /// Snapshot of the current-tip deterministic masternode list as typed
     /// summaries. `None` when the list isn't available (SPV client not
     /// running, engine not initialized, or masternode sync not complete).
-    /// Clones the engine `Arc` out under the client lock and reads the
-    /// engine without it — the two never nest, same as
-    /// [`Self::masternode_validity_snapshot_blocking`].
+    /// Reads an owned snapshot through the client's public query API.
     pub async fn masternode_list_summaries(&self) -> Option<Vec<MasternodeListSummary>> {
-        let engine = {
+        let list = {
             let client_guard = self.client.read().await;
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list().await?
         };
-        let engine_guard = engine.read().await;
-        let list = engine_guard.latest_masternode_list()?;
-        Some(MasternodeListSummary::all_from_list(list))
+        Some(MasternodeListSummary::all_from_list(&list))
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
     /// (`blocking_read`; never call from the async runtime).
     pub fn masternode_list_summaries_blocking(&self) -> Option<Vec<MasternodeListSummary>> {
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list_blocking()?
         };
-        let engine_guard = engine.blocking_read();
-        let list = engine_guard.latest_masternode_list()?;
-        Some(MasternodeListSummary::all_from_list(list))
+        Some(MasternodeListSummary::all_from_list(&list))
     }
 
     /// Get the current sync progress.

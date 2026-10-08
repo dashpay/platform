@@ -37,7 +37,8 @@ impl<C> Platform<C> {
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash_bytes, public_key, hash_result.into()));
+            // Scores use raw digest bytes, without reversal, at every protocol version.
+            scores.push((quorum_hash_bytes, public_key, hash_result.to_byte_array()));
         }
 
         if scores.is_empty() {
@@ -79,7 +80,8 @@ impl<C> Platform<C> {
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash_bytes, key, hash_result.into()));
+            // Scores use raw digest bytes, without reversal, at every protocol version.
+            scores.push((quorum_hash_bytes, key, hash_result.to_byte_array()));
         }
 
         scores.sort_by_key(|k| k.2);
