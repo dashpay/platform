@@ -365,6 +365,14 @@ jobs:
         run: |
           "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 
+      # Apple notarizes a package only when every native binary in it has a
+      # Developer ID signature. Stop here instead of after signing.
+      - name: Check macOS packages for unsigned native code
+        if: runner.os == 'macOS'
+        run: |
+          find packages/dashmate/dist -type f -name '*.pkg' \
+            -exec "${GITHUB_WORKSPACE}/scripts/check_dashmate_macos_pkg.sh" {} +
+
       - name: Upload Dashmate packages
         uses: actions/upload-artifact@v4
         with:
