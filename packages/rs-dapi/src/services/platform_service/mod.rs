@@ -7,6 +7,9 @@ mod get_status;
 mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
 
+#[cfg(test)]
+mod protobuf_request_errors;
+
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{

@@ -33,6 +33,21 @@ pub struct TenderdashClient {
     websocket_client: Arc<TenderdashWebSocketClient>,
 }
 
+#[cfg(test)]
+impl TenderdashClient {
+    /// Construct an unused fixture client without probing HTTP or WebSocket endpoints.
+    pub(crate) fn without_test_connection() -> Self {
+        Self {
+            client: ClientBuilder::new(Client::new()).build(),
+            base_url: "http://tenderdash.invalid".to_owned(),
+            websocket_client: Arc::new(TenderdashWebSocketClient::new(
+                "ws://tenderdash.invalid".to_owned(),
+                256,
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TenderdashResponse<T> {
     pub jsonrpc: String,

@@ -1,5 +1,8 @@
 pub use prost::Message;
 
+#[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+mod request_codec;
+
 #[cfg(feature = "core")]
 pub mod core {
     #![allow(non_camel_case_types)]
