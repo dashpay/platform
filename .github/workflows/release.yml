@@ -463,7 +463,10 @@ jobs:
           submit_log="$RUNNER_TEMP/notarytool_submit.log"
           while IFS= read -r -d '' pkg; do
             # stdin is the package list, so keep it away from the tools.
-            xcrun notarytool submit "$pkg" "${notary_auth[@]}" --wait --timeout 1h < /dev/null 2>&1 | tee "$submit_log"
+            if ! xcrun notarytool submit "$pkg" "${notary_auth[@]}" --wait --timeout 1h < /dev/null 2>&1 | tee "$submit_log"; then
+              echo "::error::notarytool failed for $pkg."
+              exit 1
+            fi
             # notarytool exits 0 when Apple rejects the submission.
             if ! grep -q 'status: Accepted' "$submit_log"; then
               submission_id="$(awk '$1 == "id:" { print $2; exit }' "$submit_log")"
