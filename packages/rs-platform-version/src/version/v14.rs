@@ -1619,7 +1619,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     function the reference may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
-///     40142; a found document recording none meets a minimum of 1 only, 88), and
+///     40142; a found document recording none meets a minimum of 1 only, 89), and
 ///     `consume`, which deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
 ///     it elsewhere refused with 40120). The hash is computed once per key and
@@ -1644,7 +1644,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `deletableDocument` target through a function, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
-///     a parent byte for byte, and DPNS v3 declares it (88). See
+///     a parent byte for byte, and DPNS v3 declares it (89). See
 ///     `book/src/data-model/documents.md`.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
@@ -2228,7 +2228,24 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Full property schema validation and `deleteConstraints` are not added to restore.
 ///     Earlier versions are unchanged: contract moderation is inactive before version 14.
 ///
-/// 88. **DPNS v3 checks a name's create with keywords**:
+/// 88. **Rules that read the bytes of a byte array**: the `propertyConstraints`
+///     grammar (item 39; meta-schema v3 and `parse_property_constraints` 0, in
+///     place) gains a `byteAt` integer operand, `{ "byteAt": [path, index] }`,
+///     the byte (0 to 255) at a literal index from 0 to 65535 of a byte array
+///     property, 0 when the array does not hold it or the document leaves it
+///     out, one node; and `startsWith` and `endsWith` test byte arrays when a
+///     side names a byte array property, the other a `{ "const": hex }` or
+///     another byte array property, three nodes, not holding for an array left
+///     out (`PropertyConstraint::BytesAffix`). Parser generation 3 refuses a read
+///     of anything but a stored byte array property, an index at or past its
+///     `maxItems`, a constant longer than it, a constant that is not an even
+///     number of hex digits, a default for a byte array, and an `equal`,
+///     `notEqual`, `in` or `contains` of one (10231). `immutable` conditions,
+///     `retractedWhen` and `deleteConstraints` read bytes the same way.
+///     Inert before this version: the earlier meta-schemas refuse
+///     `propertyConstraints` and their parsers ignore it.
+///
+/// 89. **DPNS v3 checks a name's create with keywords**:
 ///     `SYSTEM_DATA_CONTRACT_VERSIONS_V3` selects DPNS contract v3, loaded at
 ///     genesis (which still inserts the `dash` top-level domain) and re-stored
 ///     by `transition_to_version_14` with `apply_contract`. Its `domain`
