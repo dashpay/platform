@@ -455,10 +455,10 @@ jobs:
           done
           NOTARY_API_KEY_PATH="$RUNNER_TEMP/notary_api_key.p8"
           trap 'rm -f "$NOTARY_API_KEY_PATH"' EXIT
-          (umask 077; printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH")
-          # macOS base64 exits 0 on input that is not base64.
-          grep -q 'BEGIN PRIVATE KEY' "$NOTARY_API_KEY_PATH" \
-            || { echo '::error::MACOS_NOTARY_API_KEY_BASE64 is not a base64-encoded .p8 key.'; exit 1; }
+          # macOS base64 exits 0 on input that is not base64, so check the result too.
+          (umask 077; printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH") \
+            && grep -q 'BEGIN PRIVATE KEY' "$NOTARY_API_KEY_PATH" \
+            || { echo '::error::Could not decode MACOS_NOTARY_API_KEY_BASE64 into a .p8 key; it must be the base64 of the key file.'; exit 1; }
           notary_auth=(--key "$NOTARY_API_KEY_PATH" --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER_ID")
           submit_log="$RUNNER_TEMP/notarytool_submit.log"
           while IFS= read -r -d '' pkg; do
