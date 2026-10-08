@@ -967,6 +967,7 @@ mod tests {
     #[test_case::test_case("zz"; "invalid_hex")]
     #[test_case::test_case(&"00".repeat(47); "wrong_length")]
     #[test_case::test_case(&"00".repeat(48); "invalid_bls_point")]
+    #[test_case::test_case(&format!("c0{}", "00".repeat(47)); "identity_bls_point")]
     #[tokio::test]
     async fn should_not_hold_a_malformed_key_from_the_quorum_service_against_the_node(key: &str) {
         let (base_url, service) = quorum_service(vec![

@@ -7,6 +7,7 @@ use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
+use dpp::bls_signatures::inner_types::Group;
 use dpp::bls_signatures::{Bls12381G2Impl, PublicKey};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -838,11 +839,17 @@ impl TrustedHttpContextProvider {
             )));
         }
 
-        PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice()).map_err(|error| {
-            ContextProviderError::QuorumSourceUnavailable(format!(
-                "Invalid BLS public key: {error}"
-            ))
-        })?;
+        let public_key =
+            PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice()).map_err(|error| {
+                ContextProviderError::QuorumSourceUnavailable(format!(
+                    "Invalid BLS public key: {error}"
+                ))
+            })?;
+        if bool::from(public_key.0.is_identity()) {
+            return Err(ContextProviderError::QuorumSourceUnavailable(
+                "BLS public key is the identity point".to_string(),
+            ));
+        }
         pubkey_bytes.try_into().map_err(|_| {
             ContextProviderError::QuorumSourceUnavailable(
                 "Failed to convert public key to array".to_string(),
