@@ -3,9 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{
-    ClientStartState, ClientWalletStartState, PlatformWalletChangeSet, PlatformWalletPersistence,
-};
+use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -225,7 +223,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            let platform_info = PlatformWalletInfo {
+            let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
@@ -290,18 +288,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // (dashpay/platform#4302 review).
             //
             // The same predecessor can also have changed the host's DashPay
-            // backfill record after the start state was read: registered a
-            // receival account this snapshot does not hold, stored coverage
-            // for it, and been removed. Published without that account, this
-            // wallet would scan past ranges the coverage claims were watched
-            // for it, and a crash would restore both. So when an entry shows
-            // a same-id wallet was published in this process, the record this
-            // wallet carries replaces the host's before the wallet is
-            // published; a contact that loses coverage that way is rewound
-            // for again, once. The existence check comes first, so a wallet
-            // still registered under this id is never overwritten, and every
-            // publisher holds the cursor lock, so none appears before the
-            // insert.
+            // backfill record after the start state was read: stored coverage
+            // for a receival account this snapshot does not hold, or
+            // invalidated coverage this snapshot still carries. So when an
+            // entry shows a same-id wallet was published in this process, the
+            // record this wallet carries replaces the host's before the wallet
+            // is published, paired with the loaded cursor when that is below
+            // the host's (`settle_published_backfill`). The existence check
+            // comes first, so a wallet still registered under this id is never
+            // overwritten, and every publisher holds the cursor lock, so none
+            // appears before the insert.
             {
                 let mut durable_cursors = self.durable_cursors.lock().await;
                 if self
@@ -313,29 +309,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 {
                     continue 'load;
                 }
-                if durable_cursors.contains_key(&wallet_id) {
-                    tracing::info!(
-                        wallet_id = %hex::encode(wallet_id),
-                        covered = platform_info.dashpay_backfill.covered.len(),
-                        "wallet reloaded under an id published earlier in this process: \
-                         the host's DashPay backfill record is replaced with the loaded one \
-                         before the wallet is published"
-                    );
-                    if let Err(e) = self.persister.store(
-                        wallet_id,
-                        PlatformWalletChangeSet {
-                            dashpay_backfill: Some(platform_info.dashpay_backfill.clone()),
-                            ..Default::default()
-                        },
-                    ) {
-                        tracing::error!(
-                            wallet_id = %hex::encode(wallet_id),
-                            error = %e,
-                            "failed to replace the host's DashPay backfill record; \
-                             load aborted before the wallet was registered"
-                        );
-                        load_error =
-                            Some(PlatformWalletError::from_store_failure(&*self.persister, e));
+                match self.settle_published_backfill(
+                    &mut durable_cursors,
+                    wallet_id,
+                    std::mem::take(&mut platform_info.dashpay_backfill),
+                    false,
+                    loaded_cursor,
+                    loaded_cursor,
+                ) {
+                    Ok(record) => platform_info.dashpay_backfill = record,
+                    Err(e) => {
+                        load_error = Some(e);
                         break 'load;
                     }
                 }

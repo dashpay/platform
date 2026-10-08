@@ -509,10 +509,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // An entry in `DurableCursors` is what tells: every publication leaves
         // one and removal keeps it. So with an entry present the host's
         // record is replaced with the one this wallet carries, whatever the
-        // snapshot showed. The duplicate check runs first, so a wallet still
-        // registered under this id never has its record overwritten; every
-        // publisher holds the cursor lock, so none can appear between that
-        // check and the insert.
+        // snapshot showed (`settle_published_backfill`). The duplicate check
+        // runs first, so a wallet still registered under this id never has
+        // its record overwritten; every publisher holds the cursor lock, so
+        // none can appear between that check and the insert.
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let (snapshot_cursor, mut host_backfill) =
             match host_wallets.remove(&registration_wallet_id) {
@@ -548,33 +548,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             {
                 return Err(already_registered(registration_wallet_id));
             }
-            let predecessor = durable_cursors.contains_key(&registration_wallet_id);
-            if dropped || predecessor {
-                tracing::info!(
-                    wallet_id = %hex::encode(registration_wallet_id),
-                    kept = host_backfill.covered.len(),
-                    predecessor,
-                    "wallet recreated: the host's DashPay backfill record is replaced with \
-                     the one this wallet carries before the wallet is published"
-                );
-                self.persister
-                    .store(
-                        registration_wallet_id,
-                        crate::changeset::PlatformWalletChangeSet {
-                            dashpay_backfill: Some(host_backfill.clone()),
-                            ..Default::default()
-                        },
-                    )
-                    .map_err(|e| {
-                        tracing::error!(
-                            wallet_id = %hex::encode(registration_wallet_id),
-                            error = %e,
-                            "failed to re-arm the host's DashPay backfill coverage; \
-                             registration aborted before the wallet was registered"
-                        );
-                        PlatformWalletError::from_store_failure(&*self.persister, e)
-                    })?;
-            }
+            let host_backfill = self.settle_published_backfill(
+                &mut durable_cursors,
+                registration_wallet_id,
+                host_backfill,
+                dropped,
+                created_cursor,
+                snapshot_cursor.unwrap_or(created_cursor),
+            )?;
             let mut wm = self.wallet_manager.write().await;
             let wallet_id = wm
                 .insert_wallet(wallet, platform_info)

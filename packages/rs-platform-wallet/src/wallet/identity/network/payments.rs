@@ -337,7 +337,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //   height, and a cursor written from here could advance it past rows
         //   that never landed — so nothing is stored at all: the in-memory
         //   rewind still runs the rescan, and the next launch re-runs it,
-        //   which is the pre-record behaviour.
+        //   which is the pre-record behaviour;
+        // - a backend whose `store` only buffers (`store_commits_inline()`
+        //   false) commits at a later `flush` that can still fail and drop the
+        //   round. A record "stored" there is not on disk, and neither is the
+        //   cursor it vouches for, so nothing would tell this pass whether the
+        //   coverage it installs is durable. Such a backend gets no record at
+        //   all: the pass runs in memory only, exactly the pre-record guard.
+        //   Coverage is durable only where the store is the commit.
         let mut staged = info.dashpay_backfill.clone();
         staged.retain(|owner, contact, account_index| {
             receival_accounts
@@ -377,7 +384,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         info.dashpay_backfill.unpersisted_cursor_epoch = Some(info.rewind_barrier.epoch());
         info.dashpay_backfill.unpersisted_extent = extent;
         let faulted = self.sync_fault.load(std::sync::atomic::Ordering::Relaxed);
-        let stored = if faulted {
+        let stored = if !self.persister.store_commits_inline() {
+            Ok(false)
+        } else if faulted {
             Err(None)
         } else {
             let changeset = PlatformWalletChangeSet {
@@ -389,12 +398,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 dashpay_backfill: Some(staged.clone()),
                 ..PlatformWalletChangeSet::default()
             };
-            self.persister.store(changeset).map_err(Some)
+            self.persister.store(changeset).map(|()| true).map_err(Some)
         };
         match stored {
-            Ok(()) => {
+            Ok(durable) => {
+                // In memory only (`durable` false), the staged record carries
+                // no debt: nothing will ever be stored for it to settle.
                 info.dashpay_backfill = staged;
-                if let Some(cursor) = cursor_to_write {
+                if let Some(cursor) = cursor_to_write.filter(|_| durable) {
                     durable_cursors
                         .insert(self.wallet_id, crate::changeset::DurableCursor::at(cursor));
                 }
@@ -1900,9 +1911,18 @@ mod tests {
         fail_stores: Mutex<bool>,
         /// When set, the next `store` panics — a backend that dies mid-write.
         panic_next_store: Mutex<bool>,
+        /// When set, `store` only buffers and the backend commits at `flush`
+        /// (`store_commits_inline()` false).
+        buffered: Mutex<bool>,
+        /// When set, every `flush` fails.
+        fail_flushes: Mutex<bool>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
+        fn store_commits_inline(&self) -> bool {
+            !*self.buffered.lock().unwrap()
+        }
+
         fn store(
             &self,
             wallet_id: WalletId,
@@ -1919,6 +1939,9 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if *self.fail_flushes.lock().unwrap() {
+                return Err(PersistenceError::backend("injected flush failure"));
+            }
             Ok(())
         }
 
@@ -3273,6 +3296,10 @@ mod tests {
     }
 
     impl PlatformWalletPersistence for ReloadPersister {
+        fn store_commits_inline(&self) -> bool {
+            true
+        }
+
         fn store(
             &self,
             wallet_id: WalletId,
@@ -4724,6 +4751,209 @@ mod tests {
             predecessor_record,
         )
         .await;
+    }
+
+    /// A backend whose `store` only buffers commits at a later `flush` that
+    /// can still fail and drop the round, so a "stored" record is not proof
+    /// of anything on disk. Such a backend gets no record: the pass rewinds
+    /// and marks in memory only — the pre-record guard — and no accepted
+    /// store moves the durable cursor. A relaunch then finds no record and
+    /// rewinds again: slow, never lossy (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_buffering_backend_keeps_the_backfill_record_in_memory_only() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        *persister.buffered.lock().unwrap() = true;
+        *persister.fail_flushes.lock().unwrap() = true;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 100, 100).await;
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        let durable_before = manager
+            .durable_cursors
+            .lock()
+            .await
+            .get(&wallet_id)
+            .copied();
+        persister.stores.lock().unwrap().clear();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let dashpay = wallet.identity().dashpay();
+        assert_eq!(
+            dashpay.reconcile_dashpay_rescan().await.expect("reconcile"),
+            Some(100),
+            "the rewind still runs, in memory"
+        );
+        assert_eq!(
+            dashpay.reconcile_dashpay_rescan().await.expect("reconcile"),
+            None,
+            "the in-memory guard stops a second rewind this session"
+        );
+        assert!(
+            last_stored_record(&persister.stores.lock().unwrap()).is_none(),
+            "no record is handed to a backend whose store is not the commit"
+        );
+        assert_eq!(
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .get(&wallet_id)
+                .copied(),
+            durable_before,
+            "nothing it accepted is taken as durable"
+        );
+        {
+            let wm = manager.wallet_manager.read().await;
+            let record = &wm
+                .get_wallet_info(&wallet_id)
+                .expect("info")
+                .dashpay_backfill;
+            assert_eq!(record.covered_from(&owner, &contact, 0), Some(100));
+            assert_eq!(
+                record.unpersisted_cursor, None,
+                "no debt for a record never stored"
+            );
+        }
+
+        // A relaunch finds no record on the host and rewinds again.
+        let snapshot =
+            reload_snapshot(&manager, wallet_id, owner, 1_000, Some(Default::default())).await;
+        let (restarted, _, _) = reload(snapshot).await;
+        assert_eq!(
+            restarted
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet")
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile after reload"),
+            Some(100)
+        );
+    }
+
+    /// On a buffering backend the pre-publication replacement is committed
+    /// with a `flush` before the wallet becomes visible, and a failed flush
+    /// fails the registration rather than publishing over a replacement that
+    /// never reached disk (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_buffering_backend_flushes_the_replaced_record_before_publishing() {
+        let (donor, _, wallet_id) = make_wallet().await;
+        drop(donor);
+        let persister = Arc::new(RecordingPersister::default());
+        *persister.buffered.lock().unwrap() = true;
+        *persister.fail_flushes.lock().unwrap() = true;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        // A same-id wallet was published earlier in this process.
+        manager
+            .durable_cursors
+            .lock()
+            .await
+            .insert(wallet_id, crate::changeset::DurableCursor::at(1_000));
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let create = || {
+            manager.create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(101),
+            )
+        };
+        assert!(
+            create().await.is_err(),
+            "the replacement did not commit, so the wallet is not published"
+        );
+        assert!(manager.get_wallet(&wallet_id).await.is_none());
+
+        *persister.fail_flushes.lock().unwrap() = false;
+        persister.stores.lock().unwrap().clear();
+        create().await.expect("the replacement commits");
+        first_store_is_an_empty_record(&persister.stores.lock().unwrap());
+    }
+
+    /// The replacement can also put coverage BACK: the loaded record covers
+    /// account A while a same-id predecessor scanned the host's cursor to
+    /// 1000 without it. Coverage from the snapshot beside cursor 1000 would
+    /// claim (800, 1000] was watched for A, and a crash straight after the
+    /// replacement would restore exactly that. So the replacement carries the
+    /// loaded cursor (800) as a rewind in the same round, and the durable
+    /// entry follows it — nothing is left owed in memory only
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn loading_a_covering_record_below_the_hosts_cursor_writes_the_loaded_cursor_with_it() {
+        let (donor, donor_persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        establish_receival_contact(
+            &donor,
+            &donor_persister,
+            wallet_id,
+            owner,
+            contact,
+            200,
+            200,
+        )
+        .await;
+        let mut record = crate::changeset::DashPayBackfillRecord::default();
+        record.record_pass(800, None, [(owner, contact, 0, 200)]);
+        let snapshot = reload_snapshot(&donor, wallet_id, owner, 800, Some(record.clone())).await;
+        drop(donor);
+
+        let host = Arc::new(snapshot);
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
+        manager.durable_cursors.lock().await.insert(
+            wallet_id,
+            crate::changeset::DurableCursor {
+                height: 1_000,
+                advance_epoch: Some(2),
+            },
+        );
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the snapshot must load");
+
+        {
+            let stores = host.stores.lock().unwrap();
+            let (_, first) = stores.first().expect("the replacement was stored");
+            assert_eq!(first.dashpay_backfill.as_ref(), Some(&record));
+            let core = first
+                .core
+                .as_ref()
+                .expect("the loaded cursor rides the replacement round");
+            assert_eq!(core.synced_height, Some(800));
+            assert!(core.synced_height_is_rewind);
+        }
+        assert_eq!(
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .get(&wallet_id)
+                .copied(),
+            Some(crate::changeset::DurableCursor::at(800)),
+            "the entry follows the committed cursor"
+        );
+        let wm = manager.wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .dashpay_backfill
+                .unpersisted_cursor,
+            None,
+            "nothing is owed: the cursor went to the host with the coverage"
+        );
     }
 
     /// The host snapshot a registration reads comes before it takes the

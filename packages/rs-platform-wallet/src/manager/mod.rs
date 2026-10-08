@@ -14,6 +14,7 @@ mod wallet_lifecycle;
 
 pub(crate) use persistence_load::run_blocking_load;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,8 +26,10 @@ use tokio_util::sync::CancellationToken;
 use key_wallet_manager::WalletManager;
 
 use crate::changeset::{
-    spawn_wallet_event_adapter_with_durable_cursors, DurableCursors, PlatformWalletPersistence,
+    spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet, DashPayBackfillRecord,
+    DurableCursor, DurableCursors, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::dpns_sync::DpnsSyncManager;
@@ -643,6 +646,101 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         entry.epoch = entry.epoch.max(retiring.epoch);
         entry.account_generation = entry.account_generation.max(retiring.account_generation);
         Ok(())
+    }
+
+    /// Settle the host's DashPay backfill record for a wallet about to be
+    /// published under `wallet_id`, holding the durable-cursor lock
+    /// (`durable_cursors`), and return the record the wallet carries in
+    /// memory.
+    ///
+    /// `record` is what the wallet would carry — its snapshot's record,
+    /// already filtered to the receival accounts it holds — and `own_cursor`
+    /// the scan cursor it starts from. `snapshot_cursor` is the host cursor
+    /// the pre-lock snapshot saw; an entry in `durable_cursors` wins over it.
+    /// `dropped` says the filter removed coverage from the snapshot's record.
+    ///
+    /// The host's record is replaced, before the wallet is visible to the
+    /// scanner, when it may disagree with what the wallet carries:
+    /// - the filter dropped coverage for accounts this wallet does not hold;
+    /// - an entry shows a same-id wallet was published in this process — it
+    ///   may have stored or invalidated coverage after the snapshot was read;
+    /// - the backend does not commit inline and the snapshot held a record.
+    ///
+    /// A replacement that puts coverage on the host while this wallet's cursor
+    /// is below the host's carries that cursor, as a rewind, in the same
+    /// round. Otherwise a crash right after it would restore the coverage
+    /// beside a cursor the wallet never scanned up to with those accounts
+    /// watched. The entry follows the cursor only once the round is
+    /// committed, so a lower cursor owed later is measured against it.
+    ///
+    /// A backend whose `store` only buffers (`store_commits_inline()` false)
+    /// gets no record at all, the same as the rescan sweep gives it: only an
+    /// empty one is written, and flushed before the wallet is published, so a
+    /// record an earlier run left cannot outlive this one.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn settle_published_backfill(
+        &self,
+        durable_cursors: &mut BTreeMap<WalletId, DurableCursor>,
+        wallet_id: WalletId,
+        record: DashPayBackfillRecord,
+        dropped: bool,
+        own_cursor: u32,
+        snapshot_cursor: u32,
+    ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
+        let inline = self.persister.store_commits_inline();
+        let predecessor = durable_cursors.contains_key(&wallet_id);
+        let held_on_host = !record.is_empty() || dropped;
+        let record = if inline { record } else { DashPayBackfillRecord::default() };
+        if !(dropped || predecessor || (!inline && held_on_host)) {
+            return Ok(record);
+        }
+        let host_cursor = durable_cursors
+            .get(&wallet_id)
+            .map_or(snapshot_cursor, |entry| entry.height);
+        let cursor = (!record.is_empty() && own_cursor < host_cursor).then_some(own_cursor);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            covered = record.covered.len(),
+            dropped,
+            predecessor,
+            inline,
+            cursor = ?cursor,
+            "the host's DashPay backfill record is replaced with the one this wallet \
+             carries before the wallet is published"
+        );
+        let changeset = PlatformWalletChangeSet {
+            core: cursor.map(|cursor| CoreChangeSet {
+                synced_height: Some(cursor),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(record.clone()),
+            ..PlatformWalletChangeSet::default()
+        };
+        self.persister.store(wallet_id, changeset).map_err(|e| {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to replace the host's DashPay backfill record; \
+                 the wallet was not published"
+            );
+            PlatformWalletError::from_store_failure(&*self.persister, e)
+        })?;
+        if !inline {
+            self.persister.flush(wallet_id).map_err(|e| {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "failed to commit the replaced DashPay backfill record; \
+                     the wallet was not published"
+                );
+                PlatformWalletError::Persistence(e.to_string())
+            })?;
+        }
+        if let Some(cursor) = cursor {
+            durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
+        }
+        Ok(record)
     }
 
     /// Hand a newly published wallet the barrier state a removed wallet of

@@ -1116,8 +1116,14 @@ where
             );
         }
     }));
-    // What each host now holds, for the next writer to measure against.
-    for (wallet_id, height) in &diag.persisted_by_wallet {
+    // What each host now holds, for the next writer to measure against —
+    // known only where the store is the commit. A buffering backend commits
+    // at a later `flush` that can still drop the round, so its accepted
+    // heights are not durable and are not recorded; it gets no backfill
+    // record either (see `reconcile_dashpay_rescan`), so nothing measures
+    // against them.
+    let durable = persister.store_commits_inline();
+    for (wallet_id, height) in diag.persisted_by_wallet.iter().filter(|_| durable) {
         cursors.insert(
             *wallet_id,
             DurableCursor {
@@ -4843,6 +4849,8 @@ mod tests {
         /// for the block to be in effect rather than sleeping and hoping.
         blocked: Arc<AtomicBool>,
         capabilities: crate::changeset::PersistenceCapabilities,
+        /// When set, `store` only buffers: the backend commits at `flush`.
+        buffered: AtomicBool,
     }
 
     impl ProbePersister {
@@ -4854,6 +4862,7 @@ mod tests {
                 block_until: Mutex::new(None),
                 blocked: Arc::new(AtomicBool::new(false)),
                 capabilities: crate::changeset::PersistenceCapabilities::NONE,
+                buffered: AtomicBool::new(false),
             }
         }
         /// A probe that additionally attests `capabilities` — used by the
@@ -4884,6 +4893,10 @@ mod tests {
     }
 
     impl PlatformWalletPersistence for ProbePersister {
+        fn store_commits_inline(&self) -> bool {
+            !self.buffered.load(Ordering::SeqCst)
+        }
+
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
             self.capabilities
         }
@@ -5450,6 +5463,57 @@ mod tests {
         );
         assert!(!fault.is_faulted(&a), "A settled");
         assert!(sync_fault.load(Ordering::Relaxed));
+    }
+
+    /// A backend whose `store` only buffers commits at a later `flush`, which
+    /// can still fail and drop the round. An accepted store there is not a
+    /// durable cursor, so the adapter records nothing for the next writer to
+    /// measure against (dashpay/platform#4302 review).
+    #[test]
+    fn a_buffering_backends_accepted_advance_is_not_recorded_as_durable() {
+        let (obs_tx, _obs_rx) = tokio::sync::mpsc::unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        persister.buffered.store(true, Ordering::SeqCst);
+        let a: WalletId = [1u8; 32];
+        let mut batch = BTreeMap::new();
+        batch.insert(
+            a,
+            super::WalletBatch {
+                core: CoreChangeSet {
+                    synced_height: Some(1_000),
+                    ..CoreChangeSet::default()
+                },
+                advance_epoch: Some(3),
+                ..Default::default()
+            },
+        );
+        let mut fault = super::AdapterFaultState::default();
+        let sync_fault = AtomicBool::new(false);
+        let freeze_logged = AtomicBool::new(false);
+        let mut settled = Vec::new();
+        let mut cursors: BTreeMap<WalletId, super::DurableCursor> =
+            BTreeMap::from([(a, super::DurableCursor::at(100))]);
+        let diag = super::commit_batch_under_writer_lock(
+            &persister,
+            batch,
+            1,
+            &[a],
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut settled,
+            &mut cursors,
+        );
+        assert_eq!(
+            diag.persisted_by_wallet.get(&a).copied(),
+            Some(1_000),
+            "the store accepted the advance"
+        );
+        assert_eq!(
+            cursors.get(&a),
+            Some(&super::DurableCursor::at(100)),
+            "an accepted store that is not a commit is not a durable cursor"
+        );
     }
 
     /// A batch that holds a pre-rewind advance and then the rescan's first
