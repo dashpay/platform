@@ -33,8 +33,13 @@ impl DriveDocumentQuery<'_> {
         // values from its proven positions. These are only CANDIDATES
         // for reconstructing the merged query; the full pass below is
         // the authority, so nothing rests on this pass's completeness
-        // semantics.
-        let inner_path_query = self.construct_path_query(None, platform_version)?;
+        // semantics. The inner query is read in the form the proof carries
+        // it, its limit a per-instance cap (see `chained_proof_path_queries`):
+        // under a global limit a walk fanning out across an index's prefix
+        // values would be refused for showing more branches than the limit.
+        // Edited in place: a chained query needs an indexOnly inner type
+        // (`validate_chained` above), which only protocol version 14 parses.
+        let inner_path_query = self.page_path_query(platform_version)?;
         let (_, bootstrap_trios) =
             GroveDb::verify_subset_query(proof, &inner_path_query, grove_version)?;
         let index = self.index_only_query_index(platform_version)?;
@@ -58,7 +63,7 @@ impl DriveDocumentQuery<'_> {
         // candidates, re-merge at the same grove version (identical to
         // the prover's merge by the single-builder rule), and verify
         // the whole composition with succinctness on — grovedb enforces
-        // the inner page's lifted per-instance limit and range
+        // the inner page's per-instance limit and range
         // completeness here. A proof that covers only the inner half
         // (e.g. a node that predates the chained surface serving the
         // plain inner query) fails this pass whenever the candidates
