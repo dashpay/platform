@@ -982,8 +982,11 @@ async fn should_preserve_zero_defaults_optional_caps_and_key_selection() {
                             &proof.grovedb_proof,
                             IdentityKeysRequest {
                                 identity_id: [1; 32],
-                                request_type: KeyRequestType::SpecificKeys(vec![]),
-                                limit: None,
+                                request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
+                                limit: limit.map(|value| {
+                                    u16::try_from(value)
+                                        .expect("fixture limit fits the Drive request")
+                                }),
                                 offset: None,
                             },
                             false,
@@ -992,8 +995,13 @@ async fn should_preserve_zero_defaults_optional_caps_and_key_selection() {
                             PlatformVersion::latest(),
                         );
                         println!("SpecificKeys {key_ids:?} limit={limit:?} actual Drive verifier: {verified:?}");
-                        let (root, _) =
+                        let (root, partial_identity) =
                             verified.expect("successful specific-key proofs remain verifiable");
+                        assert!(
+                            partial_identity
+                                .is_none_or(|identity| identity.loaded_public_keys.is_empty()),
+                            "absence proof must not return public keys"
+                        );
                         assert_eq!(
                             root,
                             fixture
