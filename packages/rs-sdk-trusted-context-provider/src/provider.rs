@@ -461,6 +461,16 @@ impl TrustedHttpContextProvider {
         if let Ok(mut cache) = cache.lock() {
             cache.put(*quorum_hash, quorum.clone());
         }
+        // A repaired key must not remain hidden behind an older entry in
+        // the other list's cache, which synchronous verification checks first.
+        let other_cache = if current {
+            &self.previous_quorums_cache
+        } else {
+            &self.current_quorums_cache
+        };
+        if let Ok(mut cache) = other_cache.lock() {
+            cache.pop(quorum_hash);
+        }
         info!(
             quorum_hash = %hex::encode(quorum_hash),
             "fetched the key of a quorum newer than the cache"
@@ -1694,6 +1704,25 @@ mod tests {
             provider.get_quorum_public_key(6, [0x11; 32], 1).unwrap(),
             quorum_key(0x41)
         );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn should_recover_when_the_previous_list_repairs_a_malformed_current_key() {
+        let malformed = current_response(0x11, 0x41)
+            .replace(&hex::encode(quorum_key(0x41)), "zz");
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, malformed),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, previous_response(0x11, 0x41)),
+        ]);
+        let provider = provider_for(base_url);
+        assert!(matches!(fetch_missing(&provider, 0x11).await, Err(ContextProviderError::QuorumSourceUnavailable(_))));
+        provider.quorum_refreshes.age_latest(MIN_GAP);
+
+        assert_eq!(fetch_missing(&provider, 0x11).await.expect("the previous list repaired the key"), Some(quorum_key(0x41)));
+        assert_eq!(provider.get_quorum_public_key(6, [0x11; 32], 1).expect("the repaired key must not be shadowed"), quorum_key(0x41));
         server.join().expect("mock quorum server must finish");
     }
 
