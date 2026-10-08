@@ -35,9 +35,9 @@ fn join_request_lookup() -> serde_json::Value {
     json!({
         "type": "permanentDocument",
         "documentType": "joinRequest",
-        "lookup": {
-            "index": "bySubmittedCharter",
-            "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." }
+        "findBy": {
+            "submittedCharterId": "submittedCharterId",
+            "$ownerId": "."
         }
     })
 }
@@ -46,9 +46,9 @@ fn added_moderator_lookup() -> serde_json::Value {
     json!({
         "type": "permanentDocument",
         "documentType": "addedModerator",
-        "lookup": {
-            "index": "byModerator",
-            "keys": { "submittedCharterId": "submittedCharterId", "moderatorId": "." }
+        "findBy": {
+            "submittedCharterId": "submittedCharterId",
+            "moderatorId": "."
         }
     })
 }
@@ -194,7 +194,6 @@ fn expected_join_request_lookup() -> DocumentPropertyReferenceTarget {
         document_type_name: "joinRequest".to_string(),
         property_agreement: BTreeMap::new(),
         lookup: DocumentReferenceLookup {
-            index: "bySubmittedCharter".to_string(),
             keys: [
                 (
                     "submittedCharterId".to_string(),
@@ -203,6 +202,8 @@ fn expected_join_request_lookup() -> DocumentPropertyReferenceTarget {
                 ("$ownerId".to_string(), LookupKeySource::ReferenceValue),
             ]
             .into(),
+            minimum_age_blocks: None,
+            consume: false,
         },
     }
 }
@@ -213,7 +214,6 @@ fn expected_added_moderator_lookup() -> DocumentPropertyReferenceTarget {
         document_type_name: "addedModerator".to_string(),
         property_agreement: BTreeMap::new(),
         lookup: DocumentReferenceLookup {
-            index: "byModerator".to_string(),
             keys: [
                 (
                     "submittedCharterId".to_string(),
@@ -222,6 +222,8 @@ fn expected_added_moderator_lookup() -> DocumentPropertyReferenceTarget {
                 ("moderatorId".to_string(), LookupKeySource::ReferenceValue),
             ]
             .into(),
+            minimum_age_blocks: None,
+            consume: false,
         },
     }
 }
@@ -288,7 +290,7 @@ fn should_parse_an_all_of_of_a_lookup_and_an_identity() {
     );
 }
 
-/// A `deletableDocument` found through a lookup is an operand like a permanent one: the
+/// A `deletableDocument` found by `findBy` is an operand like a permanent one: the
 /// leader takes an added moderator off by deleting the addition, and the expression is then
 /// re-validated on every replace. An immutable property may not hold it, since once the
 /// document is gone the property could never change to pass again.
@@ -330,7 +332,7 @@ fn should_parse_a_deletable_document_lookup_operand_and_refuse_it_in_an_immutabl
     assert_refused(
         contract(immutable),
         "lists \"memberId\" as immutable, but \"memberId\" is a deletableDocument reference \
-         through a lookup",
+         found by findBy",
     );
 }
 
@@ -343,7 +345,9 @@ fn should_parse_an_any_of_of_an_identity_and_a_document_with_its_own_agreement()
         json!({
             "type": "permanentDocument",
             "documentType": "joinRequest",
-            "propertyAgreement": { "title": "message" }
+            "where": {
+                "message": "title"
+            }
         }),
     ])))
     .expect("parses");
@@ -608,7 +612,7 @@ fn should_refuse_keys_beside_a_combinator() {
     );
 
     let mut agreement_beside = all_of(vec![identity(), join_request_lookup()]);
-    agreement_beside["propertyAgreement"] = json!({ "title": "message" });
+    agreement_beside["where"] = json!({ "message": "title" });
     assert_refused_by_parser_and_meta_schema(
         charter_contract(any_of(vec![added_moderator_lookup(), agreement_beside])),
         "refersTo anyOf[1].allOf declares nothing beside allOf",
@@ -679,27 +683,27 @@ fn should_check_each_leaf_as_it_would_be_checked_alone() {
     expect_json_schema_error(contract(malformed));
 
     let mut optional_source = added_moderator_lookup();
-    optional_source["lookup"]["keys"]["submittedCharterId"] = json!("alternateCharterId");
+    optional_source["findBy"]["submittedCharterId"] = json!("alternateCharterId");
     assert_refused(
         contract_on(
             charter_contract(any_of(vec![join_request_lookup(), optional_source])),
             false,
             PlatformVersion::latest(),
         ),
-        "document type \"resignation\" property \"memberId\" refersTo anyOf[1] lookup: key \
+        "document type \"resignation\" property \"memberId\" refersTo anyOf[1] findBy: findBy \
          \"submittedCharterId\" reads \"alternateCharterId\", which is not required",
     );
 
     let mut not_unique = join_request_lookup();
-    not_unique["lookup"] = json!({ "index": "byMessage", "keys": { "message": "." } });
+    not_unique["findBy"] = json!({ "message": "." });
     let not_unique_nested = charter_contract(any_of(vec![
         added_moderator_lookup(),
         all_of(vec![identity(), not_unique]),
     ]));
     assert_refused(
         contract(not_unique_nested.clone()),
-        "property \"memberId\" refersTo anyOf[1].allOf[1] lookup: index \"byMessage\" of \
-         \"joinRequest\" is not unique",
+        "property \"memberId\" refersTo anyOf[1].allOf[1] findBy: index \"byMessage\" of \
+         \"joinRequest\" over (message) is not unique",
     );
     // The referenced side needs the whole contract, so a stored parse leaves it
     contract_on(not_unique_nested, false, PlatformVersion::latest())
@@ -707,14 +711,14 @@ fn should_check_each_leaf_as_it_would_be_checked_alone() {
 
     // A single declaration's error names no leaf, as before expressions
     let mut single_optional = join_request_lookup();
-    single_optional["lookup"]["keys"]["submittedCharterId"] = json!("alternateCharterId");
+    single_optional["findBy"]["submittedCharterId"] = json!("alternateCharterId");
     assert_refused(
         contract_on(
             charter_contract(single_optional),
             false,
             PlatformVersion::latest(),
         ),
-        "property \"memberId\" refersTo lookup: key",
+        "property \"memberId\" refersTo findBy: findBy",
     );
 }
 

@@ -1,7 +1,7 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause};
+use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
@@ -38,14 +38,14 @@ impl Drive {
             withdrawal::properties::STATUS.to_string(),
             WhereClause {
                 field: withdrawal::properties::STATUS.to_string(),
-                operator: crate::query::WhereOperator::Equal,
+                operator: WhereOperator::Equal,
                 value: Value::U8(status as u8),
             },
         );
 
         let transaction_index_in_clause = WhereClause {
             field: withdrawal::properties::TRANSACTION_INDEX.to_string(),
-            operator: crate::query::WhereOperator::In,
+            operator: WhereOperator::In,
             value: Value::Array(
                 transaction_indices
                     .iter()

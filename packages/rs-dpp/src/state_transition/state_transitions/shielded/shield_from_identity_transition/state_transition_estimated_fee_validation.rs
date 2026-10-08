@@ -12,9 +12,9 @@ use platform_version::version::PlatformVersion;
 
 impl StateTransitionEstimatedFeeValidation for ShieldFromIdentityTransition {
     /// The stateless floor is the conservative complete fee: the shielded compute fee,
-    /// the per-action note storage allowance, and the flat identity balance write
-    /// allowance (`compute_shielded_identity_balance_write_fee`). Storage and processing
-    /// of the note and identity writes are metered by GroveDB, so the authoritative
+    /// the per-action note and nullifier write allowance, and the flat identity balance
+    /// write allowance (`compute_shielded_identity_balance_write_fee`). Storage and processing
+    /// of the note, nullifier and identity writes are metered by GroveDB, so the authoritative
     /// funding gate is still the identity-paid fee validation of the execution event;
     /// this floor exists so an identity that could not pay the complete fee is refused
     /// before the expensive Orchard proof verification runs.

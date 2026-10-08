@@ -353,9 +353,13 @@ mod tests {
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType;
     use crate::util::object_size_info::DataContractResolvedInfo;
+    use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::{add_dpns_name_contenders, dpns_name_contender_id};
     use dpp::block::block_info::BlockInfo;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
+    use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use std::sync::Arc;
 
     #[test]
@@ -416,5 +420,133 @@ mod tests {
         assert_eq!(result.locked_vote_tally, None);
         assert_eq!(result.abstaining_vote_tally, None);
         assert_eq!(result.winner, None);
+    }
+
+    /// A poll holding the most contenders a contest accepts, its choices in a count tree, is
+    /// read page by page as clients read it: each page proved, verified against the state and
+    /// equal to the unproved read, the pages together every contender once, in identity order
+    #[test]
+    fn should_page_proved_vote_states_through_the_most_contenders_a_contest_accepts() {
+        let platform_version = PlatformVersion::latest();
+        let contenders = platform_version.system_limits.max_contenders_per_contest as u64;
+        let page_size = 100;
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let dpns_contract = get_dpns_data_contract_fixture(
+            Some(Identifier::from([7; 32])),
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        drive
+            .apply_contract(
+                &dpns_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the DPNS contract");
+        let vote_poll = add_dpns_name_contenders(
+            &drive,
+            &dpns_contract,
+            "quantum",
+            0..contenders,
+            |_| 1,
+            &BlockInfo::default(),
+            platform_version,
+        );
+        // Every seventh contender gets a vote, and one vote locks
+        let votes = (0..contenders)
+            .step_by(7)
+            .map(|n| ResourceVoteChoice::TowardsIdentity(dpns_name_contender_id(n)))
+            .chain([ResourceVoteChoice::Lock]);
+        for (voter, choice) in votes.enumerate() {
+            let mut pro_tx_hash = [0xFFu8; 32];
+            pro_tx_hash[..8].copy_from_slice(&(voter as u64).to_be_bytes());
+            drive
+                .register_contested_resource_identity_vote(
+                    pro_tx_hash,
+                    1,
+                    vote_poll.clone(),
+                    choice,
+                    None,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to register the vote");
+        }
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected the root hash");
+
+        let mut read = vec![];
+        let mut start_at = None;
+        let mut pages = 0;
+        loop {
+            let query = ResolvedContestedDocumentVotePollDriveQuery {
+                vote_poll: (&vote_poll).into(),
+                result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                offset: None,
+                limit: Some(page_size),
+                start_at,
+                allow_include_locked_and_abstaining_vote_tally: start_at.is_none(),
+            };
+            let proof = drive
+                .grove_get_proved_path_query(
+                    &query
+                        .construct_path_query(platform_version)
+                        .expect("expected the path query"),
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected the proof");
+            let (proved_root_hash, proved) = query
+                .verify_vote_poll_vote_state_proof(proof.as_slice(), platform_version)
+                .expect("expected the proof to verify");
+            assert_eq!(proved_root_hash, root_hash, "page {pages}");
+            let unproved = query
+                .execute(&drive, None, &mut vec![], platform_version)
+                .expect("expected the unproved read");
+            assert_eq!(proved, unproved, "page {pages}");
+            if pages == 0 {
+                assert_eq!(proved.locked_vote_tally, Some(1));
+                assert_eq!(proved.abstaining_vote_tally, Some(0));
+            }
+            pages += 1;
+
+            let last = proved
+                .contenders
+                .last()
+                .map(|contender| contender.identity_id());
+            let full_page = proved.contenders.len() == page_size as usize;
+            read.extend(proved.contenders);
+            match last {
+                Some(last) if full_page => start_at = Some((last.to_buffer(), false)),
+                _ => break,
+            }
+        }
+
+        assert_eq!(pages, contenders as usize / page_size as usize + 1);
+        assert_eq!(
+            read.iter()
+                .map(|contender| contender.identity_id())
+                .collect::<Vec<_>>(),
+            (0..contenders)
+                .map(dpns_name_contender_id)
+                .collect::<Vec<_>>()
+        );
+        for (n, contender) in read.iter().enumerate() {
+            assert!(contender.serialized_document().is_some(), "contender {n}");
+            assert_eq!(
+                contender.vote_tally(),
+                Some(u32::from(n % 7 == 0)),
+                "contender {n}"
+            );
+        }
     }
 }

@@ -64,6 +64,16 @@ impl Drive {
             return Ok(());
         }
 
+        // A summableOffCountIndex index has no entry to write: the walker moves its
+        // counter at the value position instead of descending here. Inert before protocol
+        // version 14: only parser generation 3 admits the keyword, and only the v2 walkers,
+        // which no earlier version selects, reach such an index.
+        if index_type.is_summable_off_count_index() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a summableOffCountIndex index's counter is moved by the walker, never written as an entry",
+            )));
+        }
+
         // indexOnly terminal: the member key is the terminal property's
         // value and the element is an empty `Item` — there is no
         // primary-storage row to reference. `terminal` can only be `Some`
@@ -363,7 +373,9 @@ impl Drive {
     /// validation probes every index's entry before the batch applies, so
     /// reaching this error at apply time means validation was bypassed —
     /// the same backstop role the unique-index "reference already exists"
-    /// above plays.
+    /// above plays. The exception is an index whose entries outlive a delete
+    /// (`outlivesDelete`): validation does not probe it, and an entry there
+    /// already, left by a deleted document with the same key, is written over.
     ///
     /// Under a summable index the element is
     /// `ItemWithSumItem(commitment, amount, flags)` instead — the same
@@ -600,6 +612,14 @@ impl Drive {
             }
         };
 
+        // An index whose entries outlive a delete may hold the entry of a
+        // deleted document with the same key (registration makes sure no
+        // document in state shares it): the create writes over it, so the
+        // entry carries the commitment of the row writing it, and the count
+        // does not move. Nothing is read.
+        if index_type.outlives_delete {
+            return self.batch_insert(path_key_element_info, batch_operations, drive_version);
+        }
         let inserted = self.batch_insert_if_not_exists(
             path_key_element_info,
             apply_type,
@@ -607,6 +627,7 @@ impl Drive {
             batch_operations,
             drive_version,
         )?;
+        // Every other index's collision was refused by state validation.
         if !inserted {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
                 "index-only entry already exists: state validation must reject a create \

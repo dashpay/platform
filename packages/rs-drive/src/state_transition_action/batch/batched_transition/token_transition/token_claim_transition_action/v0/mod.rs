@@ -1,4 +1,9 @@
 mod transformer;
+// The claim resolution body is shared with the claim-into-pool transition rather than copied.
+// Re-exporting it changes no behaviour for a plain claim: the shared function takes the moment to
+// claim up to as a parameter, and the plain claim passes none, which leaves the current interval
+// exactly as it was computed before.
+pub(crate) use transformer::resolve_token_claim;
 
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;

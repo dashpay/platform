@@ -1,3 +1,4 @@
 mod v0;
+mod v1;
 
-//internal method, doesn't need to be be versioned off of platform version
+// Private helpers are selected by the update_masternode_list generation.

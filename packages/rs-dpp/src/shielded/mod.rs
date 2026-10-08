@@ -5,6 +5,7 @@ mod compute_minimum_shielded_fee;
 pub mod memo;
 mod sighash;
 
+use crate::util::hash::hash_single;
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -17,19 +18,73 @@ pub use compute_minimum_shielded_fee::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee,
+    compute_shielded_withdrawal_fee, compute_token_pool_paid_shielded_fee,
+    compute_token_purchase_from_shielded_pool_fee,
+    compute_token_shielded_transfer_with_shielded_fee_fee,
+    compute_token_unshield_with_shielded_fee_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
 // builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
+/// A digest of serialized Orchard actions in wire order: every field of every action, hashed
+/// once. A group action stores it so every signer commits to exactly the same notes, and a
+/// pool mint or burn folds it into its group action id.
+///
+/// FROZEN once a protocol version ships it. This is a hash preimage, not a serialization
+/// format, so there is nothing to decode and no version byte to carry — but a group action
+/// stores the digest and a later block re-derives it to compare, and the comparison has no way
+/// to learn which version the action was proposed at. Changing the layout here would leave every
+/// pending group action permanently unconfirmable, and versioning the function on the *current*
+/// protocol version would not help, because that is not the version the stored digest came from.
+/// A new layout needs a new function and a new transition generation, the way
+/// `calculate_action_id_with_fields` is handled.
+///
+/// The concatenation carries no length prefixes, so it is only unambiguous because every field is
+/// fixed-width in practice: `encrypted_note` is a `Vec<u8>` that bundle reconstruction refuses
+/// unless it is exactly the Orchard ciphertext length, on every path where this digest matters.
+pub fn serialized_actions_digest(actions: &[SerializedAction]) -> [u8; 32] {
+    let mut bytes = Vec::new();
+    for action in actions {
+        bytes.extend_from_slice(&action.nullifier);
+        bytes.extend_from_slice(&action.rk);
+        bytes.extend_from_slice(&action.cmx);
+        bytes.extend_from_slice(&action.encrypted_note);
+        bytes.extend_from_slice(&action.cv_net);
+        bytes.extend_from_slice(&action.spend_auth_sig);
+    }
+    hash_single(bytes)
+}
+
 pub use sighash::{
-    compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
+    compute_platform_sighash, credit_pool_output_only_extra_sighash_data_v0,
+    document_token_payment_extra_sighash_data, document_token_payment_extra_sighash_data_v0,
+    identity_create_from_shielded_extra_sighash_data,
     identity_create_from_shielded_extra_sighash_data_v0,
     identity_top_up_from_shielded_extra_sighash_data,
-    identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
-    shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
-    unshield_extra_sighash_data_v0,
+    identity_top_up_from_shielded_extra_sighash_data_v0, shield_extra_sighash_data,
+    shield_from_asset_lock_extra_sighash_data, shield_from_identity_extra_sighash_data,
+    shielded_withdrawal_extra_sighash_data, shielded_withdrawal_extra_sighash_data_v0,
+    token_burn_from_pool_extra_sighash_data, token_burn_from_pool_extra_sighash_data_v0,
+    token_pool_fee_bundle_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data_v0,
+    token_pool_output_only_extra_sighash_data, token_pool_output_only_extra_sighash_data_v0,
+    token_purchase_from_shielded_pool_extra_sighash_data,
+    token_purchase_from_shielded_pool_extra_sighash_data_v0,
+    token_shielded_transfer_extra_sighash_data, token_shielded_transfer_extra_sighash_data_v0,
+    token_shielded_transfer_with_shielded_fee_extra_sighash_data,
+    token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0,
+    token_unshield_extra_sighash_data, token_unshield_extra_sighash_data_v0,
+    token_unshield_with_shielded_fee_extra_sighash_data,
+    token_unshield_with_shielded_fee_extra_sighash_data_v0, unshield_extra_sighash_data,
+    unshield_extra_sighash_data_v0, SHIELD_BUNDLE_TAG, SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+    SHIELD_FROM_IDENTITY_BUNDLE_TAG, TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
+    TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG, TOKEN_MINT_TO_POOL_BUNDLE_TAG,
+    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+    TOKEN_SHIELD_BUNDLE_TAG, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
 };
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a
@@ -97,30 +152,53 @@ pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_top_up_fee`].
 pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 
-/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side writes a
-/// `ShieldFromIdentity` performs on top of its per-action note inserts: the `UpdateIdentityNonce`
-/// and `RemoveFromIdentityBalance` operations.
+/// Effective storage bytes for crediting the contract owner's existing identity
+/// balance when tokens are bought from a shielded pool.
+pub const SHIELDED_TOKEN_PURCHASE_OWNER_BALANCE_STORAGE_BYTES: u64 = 20;
+
+/// Flat component (in effective bytes at the per-byte storage rate) for the recipient's token
+/// balance item a `TokenUnshieldWithShieldedFee` writes on top of its per-action nullifier and
+/// note writes.
 ///
-/// The transition's real fee is metered and only known at execution, so its stateless admission
-/// floor needs a conservative stand-in for the metered part: [`compute_minimum_shielded_fee`]
-/// (compute plus the per-action note allowance, which covers the note inserts with headroom)
-/// plus this component. Admission below `amount + floor` is refused BEFORE the Orchard proof is
-/// verified, so a short identity never occupies a proof-verification slot.
+/// It prices the write as an INSERT, not a rewrite. A recipient who already holds the token has a
+/// balance sum item to replace, which adds no storage; a recipient who has never held it has no
+/// item, so the write creates one and it is real new storage. Measured at protocol version 14:
+/// 6,102,000 credits of storage, the same for the smallest balance and the widest, because the
+/// item is fixed-width — 223 effective bytes at 27,400 credits/byte, against 8 for the rewrite.
+/// 230 leaves headroom for the node layout gaining a few bytes without a fresh calibration.
 ///
-/// What the two writes do: the identity already exists, so neither adds storage. Each rewrites
-/// its element and every Merk node on the path to the root (replaced bytes, charged at the
-/// per-byte processing rate), loads the path, seeks, and rehashes the nodes. Measured at protocol
-/// version 14: the nonce update replaces 563 bytes and the balance debit 320 bytes (883 in
-/// total) for 466,760 credits of processing applied one at a time, 424,400 when batched together
-/// (shared path work). Like every other flat shielded component (`shielded_storage_bytes_per_action`,
-/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`), that variable tree work is folded into ONE flat
-/// effective-byte figure priced at the full storage rate so it tracks the rate as it evolves,
-/// rather than modelled per replaced byte: 466,760 credits is 17.0 effective bytes at 27,400
-/// credits/byte, and 20 leaves headroom for the path growing by about a node (roughly 0.7
-/// effective bytes) each time the identity count doubles. The pool-total update is not priced
-/// separately, exactly as for the other pool-paid transitions. See
-/// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
-pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
+/// The expensive case is priced unconditionally, and there are two independent reasons for that.
+///
+/// The first is that the component may never fall below what the write really costs.
+/// `execute_event` books a pool-paid transition as `storage = min(real_storage, carved_fee)` and
+/// pays the proposer only the remainder, so a component under the real cost comes out of the
+/// proposer's reward for the proof it verified and leaves the storage pool short of an item the
+/// chain then carries forever. Recipient state is not reachable where the number is needed in any
+/// case: the builder that fixes the fee takes no drive and no transaction, and the stateless
+/// `validate_minimum_shielded_fee` gate that re-derives it takes neither either, so no balance is
+/// reachable from where the number is decided. (That builder has no caller outside tests yet; the
+/// argument is about what it can read, not about who calls it.)
+///
+/// The second reason is decisive even where that state IS reachable, and it is why the cheap case
+/// must not be split out later as an optimisation: `credit_amount` is public and must equal this
+/// fee EXACTLY, so a fee that varied with the recipient's holdings would publish whether the
+/// recipient holds this token for the first time. That is precisely the fee fingerprint the
+/// shielded design exists to deny.
+///
+/// Pricing the worst case is the standing choice here, not an exception:
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES` sizes an `AddBalanceToAddress` to its new-address
+/// worst case, and the estimation branch of `add_to_identity_token_balance_operations` assumes
+/// the insert for the same reason. See
+/// [`compute_minimum_shielded_fee::compute_token_unshield_with_shielded_fee_fee`].
+pub const SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES: u64 = 230;
+
+/// Creating a balance item costs more than rewriting one, so the unshield's allowance has to
+/// exceed the replace-only allowance the identity top-up keeps. Checked when the crate is built
+/// rather than when a test runs, because both sides are constants and a change to either should
+/// stop the build rather than wait for a test to notice.
+const _: () = assert!(
+    SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES > SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES
+);
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
@@ -128,6 +206,7 @@ pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 /// the serialized actions, Sinsemilla anchor, Halo 2 proof, and RedPallas
 /// binding signature. Using this struct reduces parameter counts in SDK
 /// helper functions from 10-12 down to 5-8.
+#[derive(Debug, Clone, PartialEq)]
 pub struct OrchardBundleParams {
     /// The serialized Orchard actions (spends + outputs).
     pub actions: Vec<SerializedAction>,
@@ -215,10 +294,10 @@ pub struct SerializedAction {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for SerializedAction {}
+impl JsonConvertible for SerializedAction {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for SerializedAction {}
+impl ValueConvertible for SerializedAction {}
 
 #[cfg(all(
     test,

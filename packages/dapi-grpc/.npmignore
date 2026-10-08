@@ -6,3 +6,7 @@ node_modules
 
 # Ultra runner build cache
 .ultra.cache.json
+
+# Native generator regression tests and local Python bytecode are not runtime files.
+tests/codegen
+**/__pycache__

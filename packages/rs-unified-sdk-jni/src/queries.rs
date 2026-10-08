@@ -1,12 +1,14 @@
 //! JNI exports for read-only Platform queries: identities, DPNS names,
 //! data contracts, documents. All payloads are JSON strings produced by
-//! `rs-sdk-ffi`; parsing happens on the Kotlin side.
+//! `rs-sdk-ffi`; parsing happens on the Kotlin side. The two
+//! `propertyConstraints` exports read a contract the caller already holds
+//! and make no network call.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.QueriesNative`.
 
 use crate::results::{
-    unwrap_address_info, unwrap_address_info_map, unwrap_handle, unwrap_identity_balance_map,
-    unwrap_string,
+    throw_sdk_error, unwrap_address_info, unwrap_address_info_map, unwrap_handle,
+    unwrap_identity_balance_map, unwrap_string,
 };
 use crate::support::{guard, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
@@ -16,13 +18,14 @@ use rs_sdk_ffi::{
     dash_sdk_add_known_contracts, dash_sdk_address_fetch_info, dash_sdk_addresses_fetch_infos,
     dash_sdk_calculate_token_id, dash_sdk_contested_resource_get_identity_votes,
     dash_sdk_contested_resource_get_resources, dash_sdk_contested_resource_get_vote_state,
-    dash_sdk_contested_resource_get_voters_for_identity, dash_sdk_data_contract_destroy,
+    dash_sdk_contested_resource_get_voters_for_identity,
+    dash_sdk_data_contract_check_property_constraints, dash_sdk_data_contract_destroy,
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_json,
     dash_sdk_data_contract_fetch_result_free, dash_sdk_data_contract_fetch_with_serialization,
-    dash_sdk_data_contracts_fetch_by_range, dash_sdk_document_average, dash_sdk_document_count,
-    dash_sdk_document_search, dash_sdk_document_sum, dash_sdk_dpns_check_availability,
-    dash_sdk_dpns_get_usernames, dash_sdk_dpns_resolve, dash_sdk_dpns_search,
-    dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
+    dash_sdk_data_contract_get_property_constraints, dash_sdk_data_contracts_fetch_by_range,
+    dash_sdk_document_average, dash_sdk_document_count, dash_sdk_document_search,
+    dash_sdk_document_sum, dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
+    dash_sdk_dpns_resolve, dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
     dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_identities_fetch_balances,
     dash_sdk_identities_fetch_contract_keys, dash_sdk_identity_fetch,
@@ -57,6 +60,40 @@ fn opt_c_string(env: &mut JNIEnv, value: &JString) -> Option<CString> {
 
 fn c_ptr(opt: &Option<CString>) -> *const c_char {
     opt.as_ref().map_or(ptr::null(), |s| s.as_ptr())
+}
+
+/// Copy a required Java `byte[]` into an owned buffer that outlives the FFI
+/// call; throws + returns None for a null or unreadable array.
+fn read_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<Vec<u8>> {
+    if arr.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} was null"));
+        return None;
+    }
+    match env.convert_byte_array(arr) {
+        Ok(bytes) => Some(bytes),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
+            None
+        }
+    }
+}
+
+/// Read a required 32-byte id from a Java `byte[]`; throws + returns None
+/// on the wrong length or a JNI error.
+fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+    let bytes = read_bytes(env, arr, field)?;
+    match <[u8; 32]>::try_from(bytes.as_slice()) {
+        Ok(id) => Some(id),
+        Err(_) => {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("{field} must be 32 bytes, got {}", bytes.len()),
+            );
+            None
+        }
+    }
 }
 
 /// Shorthand for the guard + required-string preamble every query shares.
@@ -1476,15 +1513,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
         // Error path: throw, free inner buffers, bail with null.
         if !result.error.is_null() {
             // SAFETY: non-null error is a valid CString-backed DashSDKError.
-            let err = unsafe { &*result.error };
-            let message = if err.message.is_null() {
-                String::from("Unknown SDK error")
-            } else {
-                unsafe { CStr::from_ptr(err.message) }
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            throw_sdk_exception(env, err.code as i32, &message);
+            unsafe { throw_sdk_error(env, &*result.error) };
             unsafe { dash_sdk_data_contract_fetch_result_free(&mut result) };
             return ptr::null_mut();
         }
@@ -1650,5 +1679,102 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_addKnow
         };
         // Success carries no payload; take_error throws + frees on error.
         unsafe { crate::results::take_error(env, &result) };
+    })
+}
+
+/// The `propertyConstraints` rules (protocol version 14) of `documentType`,
+/// as the JSON array `dash_sdk_data_contract_get_property_constraints`
+/// returns: every rule in name order (the order consensus checks them in),
+/// each as `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner"}`.
+/// `[]` for a type declaring none, and for every type while the SDK's
+/// protocol version is below 14.
+///
+/// * `serialized_contract` is the contract's platform serialization, the
+///   bytes `dataContractFetchWithSerialization` returns and
+///   `DataContractEntity.binarySerialization` keeps; Rust reads it at the
+///   SDK's protocol version. No network call.
+///
+/// Returns the JSON, or null after throwing: `NotFound` for a document type
+/// the contract does not declare, `SerializationError` for bytes that are not
+/// a contract, `InvalidParameter` for a null or empty argument.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataContractGetPropertyConstraints(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    serialized_contract: JByteArray,
+    document_type: JString,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(contract) = read_bytes(env, &serialized_contract, "serializedContract") else {
+            return ptr::null_mut();
+        };
+        let document_type = require_cstr!(env, document_type);
+        // `contract` and `document_type` outlive the synchronous call.
+        let result = unsafe {
+            dash_sdk_data_contract_get_property_constraints(
+                sdk as *const SDKHandle,
+                contract.as_ptr(),
+                contract.len(),
+                document_type.as_ptr(),
+            )
+        };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// The first `propertyConstraints` rule a document to create would break, as
+/// the JSON `dash_sdk_data_contract_check_property_constraints` returns:
+/// `{"rule", "violation", "message"}`, or the JSON text `null` when it meets
+/// every rule (always so while the SDK's protocol version is below 14). Rust
+/// builds the document the create path builds and judges it with the check
+/// consensus runs; nothing but the rules is checked.
+///
+/// * `serialized_contract` is as for `dataContractGetPropertyConstraints`.
+/// * `properties_json` is the properties JSON the document would be created
+///   with (what `documentTransactions.create` takes).
+/// * `owner_id` is the 32-byte identity that would own it, which `$ownerId`
+///   reads.
+///
+/// Returns the JSON, or null after throwing: `NotFound` for a document type
+/// the contract does not declare, `SerializationError` for bytes that are not
+/// a contract, `InvalidParameter` for a null or empty argument, an owner id
+/// that is not 32 bytes, or properties that are not a JSON object.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataContractCheckPropertyConstraints(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    serialized_contract: JByteArray,
+    document_type: JString,
+    properties_json: JString,
+    owner_id: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(contract) = read_bytes(env, &serialized_contract, "serializedContract") else {
+            return ptr::null_mut();
+        };
+        let document_type = require_cstr!(env, document_type);
+        let properties = require_cstr!(env, properties_json);
+        // The FFI reads exactly 32 bytes behind the owner pointer.
+        let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
+        };
+        // Every buffer outlives the synchronous call.
+        let result = unsafe {
+            dash_sdk_data_contract_check_property_constraints(
+                sdk as *const SDKHandle,
+                contract.as_ptr(),
+                contract.len(),
+                document_type.as_ptr(),
+                properties.as_ptr(),
+                owner.as_ptr(),
+            )
+        };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
     })
 }

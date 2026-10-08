@@ -28,7 +28,7 @@ mod value_serialization;
 
 pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub type Hash256 = [u8; 32];
 
@@ -1559,6 +1559,36 @@ impl Value {
                 return Some(depth);
             }
             pending.extend(children.iter().rev().map(|value| (value, depth)));
+        }
+
+        None
+    }
+
+    /// Returns the first repeated text key in maps nested in this value's values and arrays.
+    ///
+    /// Each map is checked before its children, and children are visited in input order.
+    /// Keys compare exactly, without normalization; non-text keys are left to value validation.
+    /// Traversal is iterative so its stack use does not depend on the nesting depth.
+    /// This order is consensus behavior: a later generation must use a new helper if it changes.
+    pub fn first_repeated_text_key(&self) -> Option<&str> {
+        let mut pending = vec![self];
+
+        while let Some(value) = pending.pop() {
+            match value {
+                Value::Map(map) => {
+                    let mut seen = BTreeSet::new();
+                    for (key, _) in map {
+                        if let Value::Text(key) = key {
+                            if !seen.insert(key.as_str()) {
+                                return Some(key.as_str());
+                            }
+                        }
+                    }
+                    pending.extend(map.iter().rev().map(|(_, value)| value));
+                }
+                Value::Array(values) => pending.extend(values.iter().rev()),
+                _ => {}
+            }
         }
 
         None

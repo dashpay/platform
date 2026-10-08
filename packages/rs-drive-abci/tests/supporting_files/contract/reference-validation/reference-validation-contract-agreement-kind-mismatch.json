@@ -40,8 +40,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
-              "topic": "count"
+            "where": {
+              "count": "topic"
             }
           }
         },

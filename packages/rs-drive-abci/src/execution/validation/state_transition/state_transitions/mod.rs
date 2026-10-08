@@ -69,6 +69,14 @@ pub mod shielded_common;
 pub mod shielded_transfer;
 /// Module for shielded withdrawal transition validation
 pub mod shielded_withdrawal;
+/// Checks shared by the identity-less token pool transitions
+pub mod token_pool_paid_common;
+/// Token purchase paid from the credit shielded pool into a token's pool
+pub mod token_purchase_from_shielded_pool;
+/// Token shielded transfer with the fee paid from the credit shielded pool
+pub mod token_shielded_transfer_with_shielded_fee;
+/// Token unshield with the fee paid from the credit shielded pool
+pub mod token_unshield_with_shielded_fee;
 /// Module for unshield transition validation
 pub mod unshield;
 
@@ -167,7 +175,12 @@ pub(in crate::execution) mod tests {
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
     use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
@@ -188,9 +201,16 @@ pub(in crate::execution) mod tests {
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::{ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery};
     use drive::util::test_helpers::setup_contract;
+    use drive::drive::votes::paths::VotePollPaths;
+    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+    use drive::fees::op::LowLevelDriveOperation;
+    use drive::grovedb::Element;
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::expect_match;
+    use crate::execution::check_tx::CheckTxLevel;
+    use dpp::consensus::ConsensusError;
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
@@ -739,7 +759,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -747,14 +767,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address,
+                    owner_address: Some(owner_address),
                     voting_address: rng.gen(),
-                    payout_address,
+                    payout_address: Some(payout_address),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -828,7 +852,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -836,14 +860,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address: rng.gen(),
+                    owner_address: Some(rng.gen()),
                     voting_address,
-                    payout_address: rng.gen(),
+                    payout_address: Some(rng.gen()),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -1822,10 +1850,64 @@ pub(in crate::execution) mod tests {
         expect_err: Option<&str>,
         platform_version: &PlatformVersion,
     ) -> Identity {
+        let DpnsContenderJoin {
+            contender: identity,
+            result,
+            ..
+        } = add_contender_to_dpns_name_contest_paying(
+            platform,
+            platform_state,
+            seed,
+            name,
+            None,
+            platform_version,
+        )
+        .await;
+
+        if let Some(expected_err) = expect_err {
+            let StateTransitionExecutionResult::PaidConsensusError {
+                error: consensus_error,
+                ..
+            } = result
+            else {
+                panic!("expected a paid consensus error, got {result:?}");
+            };
+            assert_eq!(consensus_error.to_string(), expected_err);
+        } else {
+            assert_matches!(result, SuccessfulExecution { .. });
+        }
+        identity
+    }
+
+    /// A contender joining a DPNS name contest, see [`add_contender_to_dpns_name_contest_paying`]
+    pub(in crate::execution) struct DpnsContenderJoin {
+        /// The contender
+        pub contender: Identity,
+        /// Its balance once its preorder is in, before its document create
+        pub balance_before_create: Credits,
+        /// How its document create executed
+        pub result: StateTransitionExecutionResult,
+    }
+
+    /// Adds a contender to the DPNS name contest on `name` like
+    /// [`add_contender_to_dpns_name_contest`], stating `contest_fund` as the most it pays into
+    /// the contest (the contest's fund when `None`) and holding that much beside 0.5 Dash for
+    /// fees.
+    pub(in crate::execution) async fn add_contender_to_dpns_name_contest_paying(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        seed: u64,
+        name: &str,
+        contest_fund: Option<Credits>,
+        platform_version: &PlatformVersion,
+    ) -> DpnsContenderJoin {
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let (identity_1, signer_1, key_1) =
-            setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_1, signer_1, key_1) = setup_identity(
+            platform,
+            rng.gen(),
+            dash_to_credits!(0.5) + contest_fund.unwrap_or_default(),
+        );
 
         let dpns = platform
             .drive
@@ -1927,7 +2009,10 @@ pub(in crate::execution) mod tests {
                 None,
                 &signer_1,
                 platform_version,
-                None,
+                Some(StateTransitionCreationOptions {
+                    contest_fund,
+                    ..Default::default()
+                }),
             )
             .await
             .expect("expect to create documents batch transition");
@@ -1963,7 +2048,18 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 1);
+        assert_eq!(
+            processing_result.valid_count(),
+            1,
+            "expected the preorder to pass: {:?}",
+            processing_result.execution_results()
+        );
+
+        let balance_before_create = platform
+            .drive
+            .fetch_identity_balance(identity_1.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch the contender's balance")
+            .expect("expected the contender to have a balance");
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -1992,21 +2088,11 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        if let Some(expected_err) = expect_err {
-            let result = processing_result.into_execution_results().remove(0);
-
-            let StateTransitionExecutionResult::PaidConsensusError {
-                error: consensus_error,
-                ..
-            } = result
-            else {
-                panic!("expected a paid consensus error");
-            };
-            assert_eq!(consensus_error.to_string(), expected_err);
-        } else {
-            assert_eq!(processing_result.valid_count(), 1);
+        DpnsContenderJoin {
+            contender: identity_1,
+            balance_before_create,
+            result: processing_result.into_execution_results().remove(0),
         }
-        identity_1
     }
 
     pub(in crate::execution) fn verify_dpns_name_contest(
@@ -2233,6 +2319,54 @@ pub(in crate::execution) mod tests {
         }
     }
 
+    /// Fills the contest `vote_poll` up to `contenders` contenders with bare contender entries,
+    /// written straight to GroveDB in one batch: a join reads how many contenders a contest
+    /// holds, never what they hold, so this stands in for thousands of contested documents.
+    pub(in crate::execution) fn fill_contest_with_bare_contenders(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        vote_poll: &ContestedDocumentResourceVotePoll,
+        contenders: u64,
+        platform_version: &PlatformVersion,
+    ) {
+        let resolved_vote_poll = vote_poll
+            .resolve(&platform.drive, None, platform_version)
+            .expect("expected to resolve the vote poll");
+        let choices_path = resolved_vote_poll
+            .contenders_path(platform_version)
+            .expect("expected the choices path");
+        let (_, held) = platform
+            .drive
+            .fetch_contested_document_vote_poll_contender_count(
+                &resolved_vote_poll,
+                u16::MAX,
+                &Default::default(),
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected the contender count");
+        let operations = (held as u64..contenders)
+            .map(|n| {
+                let mut key = [0xEEu8; 32];
+                key[24..].copy_from_slice(&n.to_be_bytes());
+                LowLevelDriveOperation::insert_for_known_path_key_element(
+                    choices_path.clone(),
+                    key.to_vec(),
+                    Element::empty_tree(),
+                )
+            })
+            .collect();
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to write the bare contenders");
+    }
+
     /// A masternode's signed vote on the DPNS name contest on `name`, serialized as broadcast
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) async fn serialized_dpns_name_vote(
@@ -2266,6 +2400,29 @@ pub(in crate::execution) mod tests {
         .expect("expected to make transition vote")
         .serialize_to_bytes()
         .expect("expected to serialize the masternode vote")
+    }
+
+    /// The errors check_tx refuses a serialized transition with when it is first broadcast
+    pub(in crate::execution) fn first_time_check_tx_errors(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        serialized_transition: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Vec<ConsensusError> {
+        platform
+            .check_tx(
+                serialized_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &PlatformRef {
+                    drive: &platform.drive,
+                    state: platform_state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                },
+                platform_version,
+            )
+            .expect("expected check_tx to run")
+            .errors
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2302,6 +2459,19 @@ pub(in crate::execution) mod tests {
                 platform,
                 &masternode_vote_serialized_transition,
                 "masternode vote",
+            );
+        } else {
+            // A block refuses a failed vote without charging anyone, and its proposer drops it
+            // silently, so check_tx must refuse it first or the voter never learns why.
+            assert!(
+                !first_time_check_tx_errors(
+                    platform,
+                    platform_state,
+                    &masternode_vote_serialized_transition,
+                    platform_version,
+                )
+                .is_empty(),
+                "check_tx must refuse a vote that a block refuses"
             );
         }
 

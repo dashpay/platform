@@ -126,6 +126,8 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 cleanup_expired_locks_of_withdrawal_amounts: 0,
                 record_credit_inflows_for_withdrawals: None,
                 record_total_credits_history_for_withdrawals: None,
+                scan_core_blocks_for_withdrawals: None,
+                calculate_core_anchored_withdrawal_limit: None,
             },
             voting: DriveAbciVotingMethodVersions {
                 keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -163,6 +165,8 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 update_checkpoints: None,
                 record_shielded_pool_anchor: None,
                 prune_shielded_pool_anchors: None,
+                record_token_shielded_pool_anchors: None,
+                expire_documents: None,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,

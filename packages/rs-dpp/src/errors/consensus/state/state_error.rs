@@ -13,6 +13,11 @@ use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShie
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::contract_moderation::{
     ContractModeratedDocumentTypeNotYetUsableError, ContractModerationAbilityNotGrantedError,
+    ContractModerationTeamNotSeatedError, DocumentNotSettledError,
+    ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
+    ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
+    ContractTeamMemberAddedAfterDocumentError,
+    DocumentTypeNotDeletableOnceSettledError, SettledDeletionNotRestorableError,
     ModerationCharterAddedModeratorLimitReachedError, ModerationReasonNotListedError,
     ContractModerationNotEnabledError, ContractModerationTargetNotAllowedError,
     ContractFeeClaimNotAllowedError, ContractFeesAlreadyClaimedThisEpochError,
@@ -23,7 +28,8 @@ use crate::consensus::state::contract_moderation::{
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserSuspendedError, ContractUserWarningLimitReachedError,
     ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
-    DocumentModerationWindowElapsedError, DocumentRestoreHashMismatchError,
+    DocumentFieldNotChangeableByModeratorsError, DocumentModerationWindowElapsedError,
+    DocumentModeratorFieldNotWritableError, DocumentRestoreHashMismatchError,
     DocumentRestoreWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
     IdentityNotContractModeratorError,
 };
@@ -37,6 +43,7 @@ use crate::consensus::state::data_contract::data_contract_is_readonly_error::Dat
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use crate::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use crate::consensus::state::document::document_expired_error::DocumentExpiredError;
 use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -63,6 +70,7 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use crate::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -71,6 +79,12 @@ use crate::consensus::state::document::referenced_document_type_deletable_error:
 use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
+use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -98,7 +112,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -621,6 +635,99 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     ModerationReasonNotListedError(ModerationReasonNotListedError),
+
+    // NOTE: `StateError` is bincode-encoded positionally, so a new variant MUST be appended at
+    // the tail: inserting mid-enum shifts the wire discriminant of every variant after it and
+    // mis-decodes errors already encoded. The error code in `codes.rs` is independent of order.
+
+    // A document whose type declares a `ttl` is changed or restored after it expired
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentExpiredError(DocumentExpiredError),
+
+    // A contest holding the most contenders a contest accepts refuses another (protocol version
+    // 14).
+    #[error(transparent)]
+    DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
+
+    // Fields of a document only the contract's moderators write, `moderatorAbilities.changeFields`
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentFieldNotChangeableByModeratorsError(DocumentFieldNotChangeableByModeratorsError),
+
+    #[error(transparent)]
+    DocumentModeratorFieldNotWritableError(DocumentModeratorFieldNotWritableError),
+
+    // The commitment a `refersTo` `findBy` function found does not meet the reference's
+    // `minimumAgeBlocks` (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
+
+    // A `moderatedDocument` reference names a document type whose documents can leave state
+    // otherwise than through a moderator's recorded removal, a `deletableDocument` reference
+    // names one whose documents leave it only that way, and a replace keeping a reference to a
+    // removed document had to compare one of its properties (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeNotModeratedError(ReferencedDocumentTypeNotModeratedError),
+
+    #[error(transparent)]
+    ReferencedDocumentTypeModeratedError(ReferencedDocumentTypeModeratedError),
+
+    #[error(transparent)]
+    ReferencedDocumentRemovedError(ReferencedDocumentRemovedError),
+
+    // The deletion of a settled document by the approvals of a seated moderation team,
+    // `moderatorAbilities.deleteSettled`, and the team actions that carry them (protocol
+    // version 14).
+    #[error(transparent)]
+    DocumentTypeNotDeletableOnceSettledError(DocumentTypeNotDeletableOnceSettledError),
+
+    #[error(transparent)]
+    ContractModerationTeamNotSeatedError(ContractModerationTeamNotSeatedError),
+
+    #[error(transparent)]
+    DocumentNotSettledError(DocumentNotSettledError),
+
+    #[error(transparent)]
+    ContractTeamActionDoesNotExistError(ContractTeamActionDoesNotExistError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadySignedError(ContractTeamActionAlreadySignedError),
+
+    #[error(transparent)]
+    SettledDeletionNotRestorableError(SettledDeletionNotRestorableError),
+
+    #[error(transparent)]
+    ContractTeamActionAlreadyCompletedError(ContractTeamActionAlreadyCompletedError),
+
+    #[error(transparent)]
+    ContractTeamActionDocumentChangedError(ContractTeamActionDocumentChangedError),
+
+    // A token shielded pool refuses a transition (protocol version 14).
+    #[error(transparent)]
+    TokenShieldedPoolNotEnabledError(TokenShieldedPoolNotEnabledError),
+
+    #[error(transparent)]
+    TokenShieldedPaymentAmountMismatchError(TokenShieldedPaymentAmountMismatchError),
+
+    #[error(transparent)]
+    TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
+
+    // A member the leader added after a settled document was created proposes or approves its
+    // deletion, the type's rule admitting only members from before it
+    // (`deleteSettled.approversPredateDocument`, protocol version 14).
+    #[error(transparent)]
+    ContractTeamMemberAddedAfterDocumentError(ContractTeamMemberAddedAfterDocumentError),
+
+    // A document reference resolved by a document's id names an indexOnly document type, whose
+    // documents can not be fetched by id (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeIndexOnlyError(ReferencedDocumentTypeIndexOnlyError),
+
+    // The owner's delete of a document breaks a rule of its type's `deleteConstraints`
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentDeleteConstraintViolatedError(DocumentDeleteConstraintViolatedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -632,6 +739,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::{ContractModerationList, ModerationAbility};
@@ -660,11 +768,13 @@ mod tests {
     /// that follows the document contest block (the one an insertion there
     /// would shift first), and of the variants appended since, down to the
     /// last one, which the test's final assertion pins.
-    fn discriminant_of(error: StateError) -> u8 {
+    fn discriminant_of(error: StateError) -> u32 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
-        // Discriminants below 251 are a single byte under bincode's varint.
-        bytes[0]
+        let (discriminant, _): (u32, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("expected to decode the discriminant");
+        discriminant
     }
 
     /// A reference error for an id reference encodes exactly as it did before
@@ -714,8 +824,9 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
-                    index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }),
             6
@@ -741,8 +852,9 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
-                    index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }),
             10
@@ -1289,13 +1401,218 @@ mod tests {
             )),
             149
         );
+
         // A seated moderation team's action names a reason its proposal lists (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(StateError::ModerationReasonNotListedError(
                 ModerationReasonNotListedError::new(group_id, identity_id, None)
             )),
             150
+        );
+        // A document changed or restored after its time to live passed (protocol version
+        // 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentExpiredError(DocumentExpiredError::new(
+                group_id,
+                "note".to_string(),
+                identity_id,
+                1_000,
+                2_000,
+            ))),
+            151
+        );
+        // A contest holding the most contenders a contest accepts refuses another (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestMaximumContendersReachedError(
+                DocumentContestMaximumContendersReachedError::new(
+                    ContestedDocumentResourceVotePoll::default(),
+                    1_000,
+                )
+            )),
+            152
+        );
+        // Fields only the contract's moderators write (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentFieldNotChangeableByModeratorsError(
+                DocumentFieldNotChangeableByModeratorsError::new(
+                    group_id,
+                    "report".to_string(),
+                    "status".to_string(),
+                )
+            )),
+            153
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentModeratorFieldNotWritableError(
+                DocumentModeratorFieldNotWritableError::new(
+                    group_id,
+                    "report".to_string(),
+                    identity_id,
+                    "status".to_string(),
+                    identity_id,
+                )
+            )),
+            154
+        );
+        // A commitment a `findBy` function found that does not meet the reference's
+        // `minimumAgeSeconds` (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
+                ReferencedDocumentRequirementNotMetError::new(
+                    identity_id,
+                    "minimumAgeSeconds".to_string(),
+                    "60".to_string(),
+                    "$creatorId".to_string(),
+                )
+            )),
+            155
+        );
+        // The third kind of document reference, `moderatedDocument` (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeNotModeratedError(
+                ReferencedDocumentTypeNotModeratedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            156
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeModeratedError(
+                ReferencedDocumentTypeModeratedError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            157
+        );
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRemovedError(
+                ReferencedDocumentRemovedError::new(
+                    identity_id,
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                )
+            )),
+            158
+        );
+        // The deletion of a settled document by the approvals of a seated moderation team
+        // (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentTypeNotDeletableOnceSettledError(
+                DocumentTypeNotDeletableOnceSettledError::new(group_id, "post".to_string())
+            )),
+            159
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractModerationTeamNotSeatedError(
+                ContractModerationTeamNotSeatedError::new(group_id)
+            )),
+            160
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentNotSettledError(
+                DocumentNotSettledError::new(group_id, identity_id, 1_000, 60, 2_000)
+            )),
+            161
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDoesNotExistError(
+                ContractTeamActionDoesNotExistError::new(group_id, identity_id)
+            )),
+            162
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadySignedError(
+                ContractTeamActionAlreadySignedError::new(group_id, identity_id, identity_id)
+            )),
+            163
+        );
+        assert_eq!(
+            discriminant_of(StateError::SettledDeletionNotRestorableError(
+                SettledDeletionNotRestorableError::new(group_id, identity_id, 1_000)
+            )),
+            164
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionAlreadyCompletedError(
+                ContractTeamActionAlreadyCompletedError::new(group_id, identity_id)
+            )),
+            165
+        );
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamActionDocumentChangedError(
+                ContractTeamActionDocumentChangedError::new(group_id, identity_id, identity_id)
+            )),
+            166
+        );
+        // Token shielded pools (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
+                TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
+            )),
+            167
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPaymentAmountMismatchError(
+                TokenShieldedPaymentAmountMismatchError::new(
+                    Identifier::from([1; 32]),
+                    10,
+                    9,
+                    "create".to_string(),
+                )
+            )),
+            168
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
+                TokenShieldedPaymentNotRequiredError::new(
+                    Identifier::from([1; 32]),
+                    "create".to_string(),
+                )
+            )),
+            169
+        );
+        // The deletion of settled documents again (protocol version 14): who approves it.
+        assert_eq!(
+            discriminant_of(StateError::ContractTeamMemberAddedAfterDocumentError(
+                ContractTeamMemberAddedAfterDocumentError::new(
+                    group_id,
+                    identity_id,
+                    2_000,
+                    identity_id,
+                    1_000
+                )
+            )),
+            170
+        );
+        // A document reference by id to an indexOnly document type (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeIndexOnlyError(
+                ReferencedDocumentTypeIndexOnlyError::new(
+                    identity_id,
+                    "like".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            171
+        );
+        // The owner's delete of a document a deleteConstraints rule refuses (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentDeleteConstraintViolatedError(
+                DocumentDeleteConstraintViolatedError::new(
+                    identity_id,
+                    "poll".to_string(),
+                    "noVotes".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            172
         );
     }
 }

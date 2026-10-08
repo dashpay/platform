@@ -55,13 +55,21 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// schema-driven sanitize step on the Rust side converts them to the
 /// protocol's native types. Pass `"{}"` for a document type with no
 /// required properties.
+///
+/// `contest_fund` is the most, in credits, a contested document pays
+/// into the contest it joins (the fund to join doubles once a contest
+/// holds 250 contenders and again for every 50 more). `0` states the
+/// fund to join read just before the document is submitted. A document
+/// that joins no contest ignores it.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
     wallet_handle: Handle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
     properties_json: *const c_char,
+    contest_fund: u64,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -82,6 +90,11 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
     let document_type_str =
         unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
     let properties_str = unwrap_result_or_return!(CStr::from_ptr(properties_json).to_str());
+    let contest_fund = if contest_fund == 0 {
+        None
+    } else {
+        Some(contest_fund)
+    };
 
     let signer_addr = signer_handle as usize;
     let owner_id_for_async = owner_id;
@@ -98,6 +111,7 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
                         &contract_id_for_async,
                         &document_type_str,
                         properties_str,
+                        contest_fund,
                         signer,
                     )
                     .await?;
@@ -547,6 +561,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let json: serde_json::Value =

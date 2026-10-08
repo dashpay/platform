@@ -400,7 +400,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_mint(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to mint tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to mint tokens", e))?;
 
         Ok(TokenMintResultWasm::from_result(result, contract_id))
     }
@@ -517,7 +517,8 @@ pub struct TokenBurnResultWasm {
 
 #[wasm_bindgen(js_class = TokenBurnResult)]
 impl TokenBurnResultWasm {
-    /// The remaining token balance after burning.
+    /// The remaining token balance when supplied by the proof.
+    /// Group burn co-signers receive `undefined`, including after the action closes.
     #[wasm_bindgen(getter = "remainingBalance")]
     pub fn remaining_balance(&self) -> Option<BigInt> {
         self.remaining_balance.map(BigInt::from)
@@ -628,7 +629,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_burn(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to burn tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to burn tokens", e))?;
 
         Ok(TokenBurnResultWasm::from_result(result, contract_id))
     }
@@ -867,7 +868,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_transfer(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to transfer tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to transfer tokens", e))?;
 
         Ok(TokenTransferResultWasm::from_result(
             result,
@@ -1085,7 +1086,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_freeze(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to freeze tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to freeze tokens", e))?;
 
         Ok(TokenFreezeResultWasm::from_result(result, contract_id))
     }
@@ -1298,7 +1299,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_unfreeze_identity(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to unfreeze tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to unfreeze tokens", e))?;
 
         Ok(TokenUnfreezeResultWasm::from_result(result, contract_id))
     }
@@ -1497,9 +1498,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_destroy_frozen_funds(builder, &identity_key, &signer)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to destroy frozen tokens: {}", e))
-            })?;
+            .map_err(|e| WasmSdkError::with_context("Failed to destroy frozen tokens", e))?;
 
         Ok(TokenDestroyFrozenResultWasm::from_result(
             result,
@@ -1715,9 +1714,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_emergency_action(builder, &identity_key, &signer)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to perform emergency action: {}", e))
-            })?;
+            .map_err(|e| WasmSdkError::with_context("Failed to perform emergency action", e))?;
 
         Ok(TokenEmergencyActionResultWasm::from_result(
             result,
@@ -1911,7 +1908,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_claim(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to claim tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to claim tokens", e))?;
 
         Ok(TokenClaimResultWasm::from_result(result, contract_id))
     }
@@ -2027,33 +2024,6 @@ fn deserialize_token_set_price_options(
     )
 }
 
-/// Validate a constructed `priceTiers` map.
-///
-/// Rejects:
-/// - empty maps (caller must specify at least one tier)
-/// - a `0` minimum bulk-buy amount (use the flat `price` field for that)
-///
-/// A `0` credits value is permitted — it mirrors the lower/consensus
-/// `SetPrices` schedule, which allows zero-credit tiers for free
-/// direct purchases at that bulk amount.
-///
-/// Pure function so it can be unit-tested without a JS runtime.
-fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), WasmSdkError> {
-    if tiers.is_empty() {
-        return Err(WasmSdkError::invalid_argument(
-            "'priceTiers' must contain at least one entry",
-        ));
-    }
-    for amount in tiers.keys() {
-        if *amount == 0 {
-            return Err(WasmSdkError::invalid_argument(
-                "'priceTiers' minimum bulk-buy amount must be > 0; use 'price' for a flat single-token price",
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Build a `priceTiers` map from already-parsed `(originalKey, amount, credits)` entries.
 ///
 /// Detects keys that parse to the same `TokenAmount` (e.g. `"1"` and `"01"`) and rejects
@@ -2076,7 +2046,8 @@ fn build_price_tiers(
         original_keys.insert(amount, key_str);
         tiers.insert(amount, credits);
     }
-    validate_price_tiers(&tiers)?;
+    // Whether the schedule is valid (at least one tier) is decided once, by rs-dpp's
+    // structure validation of the transition, not here.
     Ok(tiers)
 }
 
@@ -2106,8 +2077,10 @@ fn validate_pricing_mode_selection(
 /// Extract the optional `priceTiers` field from the raw JS options object.
 ///
 /// Returns `Ok(None)` when the field is absent, null, or undefined.
-/// Returns `Err` when the field is present but malformed (wrong type,
-/// empty, non-numeric keys, non-bigint/integer values, zero amount key, etc.).
+/// Returns `Err` when the field is present but cannot be converted: not an
+/// object, non-numeric keys, non-bigint/integer values, or two keys that parse to
+/// the same token amount. An empty map and a zero amount key pass through;
+/// whether the schedule is valid is left to rs-dpp's structure validation.
 fn extract_price_tiers(
     options: &JsValue,
 ) -> Result<Option<BTreeMap<TokenAmount, Credits>>, WasmSdkError> {
@@ -2321,7 +2294,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_set_price_for_direct_purchase(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to set token price: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to set token price", e))?;
 
         Ok(TokenSetPriceResultWasm::from_result(result, contract_id))
     }
@@ -2533,7 +2506,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_purchase(builder, &identity_key, &signer)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to purchase tokens: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to purchase tokens", e))?;
 
         Ok(TokenDirectPurchaseResultWasm::from_result(
             result,
@@ -2736,9 +2709,7 @@ impl WasmSdk {
             .inner_sdk()
             .token_update_contract_token_configuration(builder, &identity_key, &signer)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to update token configuration: {}", e))
-            })?;
+            .map_err(|e| WasmSdkError::with_context("Failed to update token configuration", e))?;
 
         Ok(TokenConfigUpdateResultWasm::from_result(
             result,
@@ -2750,53 +2721,50 @@ impl WasmSdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 
-    /// A single non-zero tier passes validation.
     #[test]
-    fn validate_price_tiers_accepts_single_tier() {
-        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::from([(1u64, 1_000u64)]);
-        validate_price_tiers(&tiers).expect("single non-zero tier should validate");
-    }
-
-    /// Multiple non-zero tiers pass validation.
-    #[test]
-    fn validate_price_tiers_accepts_multiple_tiers() {
-        let tiers: BTreeMap<TokenAmount, Credits> =
-            BTreeMap::from([(1u64, 1_000u64), (100u64, 900u64), (1000u64, 800u64)]);
-        validate_price_tiers(&tiers).expect("multi-tier schedule should validate");
-    }
-
-    /// An empty tier map is rejected — the caller must specify at least one tier.
-    #[test]
-    fn validate_price_tiers_rejects_empty() {
-        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
-        let err = validate_price_tiers(&tiers).expect_err("empty tiers should be rejected");
-        assert!(
-            err.message().contains("at least one entry"),
-            "unexpected error message: {}",
-            err.message()
+    fn should_preserve_closed_group_burn_without_remaining_balance() {
+        let result = TokenBurnResultWasm::from_result(
+            BurnResult::GroupActionWithBalance(8, GroupActionStatus::ActionClosed, None),
+            Identifier::from([3; 32]),
         );
+        assert!(result.remaining_balance().is_none());
+        assert_eq!(result.group_power, Some(8));
+        assert_eq!(result.group_action_status.as_deref(), Some("ActionClosed"));
+        assert!(result.owner_id.is_none());
     }
 
-    /// A `0` minimum bulk-buy amount is rejected — direct callers should use `price`.
     #[test]
-    fn validate_price_tiers_rejects_zero_amount_key() {
-        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::from([(0u64, 1_000u64)]);
-        let err = validate_price_tiers(&tiers).expect_err("zero amount key should be rejected");
-        assert!(
-            err.message().contains("amount must be > 0"),
-            "unexpected error message: {}",
-            err.message()
-        );
+    fn should_preserve_proposer_group_burn_balance_including_zero() {
+        for balance in [7, 0] {
+            let result = TokenBurnResultWasm::from_result(
+                BurnResult::GroupActionWithBalance(
+                    3,
+                    GroupActionStatus::ActionClosed,
+                    Some(balance),
+                ),
+                Identifier::from([3; 32]),
+            );
+            assert_eq!(result.remaining_balance, Some(balance));
+        }
     }
 
-    /// A `0` per-token price is accepted — mirrors lower/consensus `SetPrices`,
-    /// which permits zero-credit tiers for free direct purchases.
+    /// An empty tier map is passed through as an empty schedule: rs-dpp's structure
+    /// validation refuses it, not the SDK.
     #[test]
-    fn validate_price_tiers_accepts_zero_credits() {
-        let tiers: BTreeMap<TokenAmount, Credits> =
-            BTreeMap::from([(1u64, 1_000u64), (100u64, 0u64)]);
-        validate_price_tiers(&tiers).expect("zero credits tier should validate");
+    fn should_pass_an_empty_tier_map_through() {
+        let tiers = build_price_tiers(Vec::new()).expect("an empty map should build");
+        assert!(tiers.is_empty());
+    }
+
+    /// A tier at token amount `0` is passed through unchanged: rs-dpp accepts it (a purchase
+    /// of any amount falls in it), so the SDK does not refuse it either.
+    #[test]
+    fn should_keep_a_zero_amount_tier() {
+        let entries = vec![("0".to_string(), 0u64, 1_000u64)];
+        let tiers = build_price_tiers(entries).expect("a zero amount tier should build");
+        assert_eq!(tiers, BTreeMap::from([(0u64, 1_000u64)]));
     }
 
     /// Distinct token amount keys build a tier map preserving all entries.
@@ -2898,5 +2866,82 @@ mod tests {
     #[test]
     fn validate_pricing_mode_selection_accepts_tiers_only() {
         validate_pricing_mode_selection(false, true).expect("tiers-only selection should validate");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod group_burn_wasm_tests {
+    use super::*;
+    use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
+    use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_expose_undefined_remaining_balance_for_a_closed_group_burn_cosigner() {
+        let result = TokenBurnResultWasm::from_result(
+            BurnResult::GroupActionWithBalance(8, GroupActionStatus::ActionClosed, None),
+            Identifier::from([3; 32]),
+        );
+        let value = JsValue::from(result);
+        assert!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("remainingBalance"))
+                .expect("read balance getter")
+                .is_undefined()
+        );
+        assert_eq!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("groupActionStatus"))
+                .expect("read status getter")
+                .as_string()
+                .as_deref(),
+            Some("ActionClosed")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_expose_proposer_group_burn_balance_including_zero_as_bigint() {
+        for balance in [7, 0] {
+            let result = TokenBurnResultWasm::from_result(
+                BurnResult::GroupActionWithBalance(
+                    3,
+                    GroupActionStatus::ActionClosed,
+                    Some(balance),
+                ),
+                Identifier::from([3; 32]),
+            );
+            let value = JsValue::from(result);
+            let actual = js_sys::Reflect::get(&value, &JsValue::from_str("remainingBalance"))
+                .expect("read balance getter");
+            assert!(actual.is_bigint());
+            assert_eq!(actual, JsValue::from(BigInt::from(balance)));
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_forward_closed_group_burn_without_balance_through_wasm_dpp() {
+        let value: JsValue = wasm_dpp2::convert_proof_result(
+            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
+                8,
+                GroupActionStatus::ActionClosed,
+                None,
+            ),
+        )
+        .expect("convert raw verifier result")
+        .into();
+        assert!(js_sys::Reflect::get(&value, &JsValue::from_str("balance"))
+            .expect("read optional balance")
+            .is_undefined());
+        assert_eq!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("groupPower"))
+                .expect("read group power")
+                .as_f64(),
+            Some(8.0)
+        );
+        assert_eq!(
+            js_sys::Reflect::get(&value, &JsValue::from_str("actionStatus"))
+                .expect("read action status")
+                .as_string()
+                .as_deref(),
+            Some("ActionClosed")
+        );
     }
 }

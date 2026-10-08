@@ -41,6 +41,8 @@ pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
 mod traits;
+#[cfg(feature = "state-transition-validation")]
+mod verify_identity_signed_signature;
 
 // pub mod state_transition_fee;
 
@@ -53,9 +55,7 @@ use crate::consensus::signature::{
     ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
 };
 #[cfg(feature = "state-transition-validation")]
-use crate::consensus::signature::{
-    InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
-};
+use crate::consensus::signature::{InvalidStateTransitionSignatureError, SignatureError};
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::ConsensusError;
 pub use traits::*;
@@ -64,10 +64,7 @@ use crate::address_funds::PlatformAddress;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoundsCheck;
@@ -75,13 +72,14 @@ use crate::identity::identity_public_key::contract_bounds::BatchedTransitionBoun
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::Purpose;
-#[cfg(any(
-    feature = "state-transition-signing",
-    feature = "state-transition-validation"
-))]
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializableUntrusted, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
@@ -113,15 +111,15 @@ use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionSignable,
 };
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::InvalidSignaturePublicKeyError;
 #[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError;
+#[cfg(feature = "state-transition-validation")]
+use crate::state_transition::errors::StateTransitionIsNotSignedError;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
-#[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
-};
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::{
     IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
@@ -178,6 +176,16 @@ use crate::state_transition::shielded_withdrawal_transition::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::token_purchase_from_shielded_pool_transition::{
+    TokenPurchaseFromShieldedPoolTransition, TokenPurchaseFromShieldedPoolTransitionSignable,
+};
+use crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::{
+    TokenShieldedTransferWithShieldedFeeTransition,
+    TokenShieldedTransferWithShieldedFeeTransitionSignable,
+};
+use crate::state_transition::token_unshield_with_shielded_fee_transition::{
+    TokenUnshieldWithShieldedFeeTransition, TokenUnshieldWithShieldedFeeTransitionSignable,
+};
 use crate::state_transition::unshield_transition::{
     UnshieldTransition, UnshieldTransitionSignable,
 };
@@ -212,6 +220,9 @@ macro_rules! call_method {
             StateTransition::ShieldedTransfer(st) => st.$method($args),
             StateTransition::Unshield(st) => st.$method($args),
             StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method($args),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method($args),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method($args),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method($args),
             StateTransition::ShieldFromAssetLock(st) => st.$method($args),
             StateTransition::ShieldedWithdrawal(st) => st.$method($args),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method($args),
@@ -242,6 +253,9 @@ macro_rules! call_method {
             StateTransition::ShieldedTransfer(st) => st.$method(),
             StateTransition::Unshield(st) => st.$method(),
             StateTransition::IdentityTopUpFromShieldedPool(st) => st.$method(),
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => st.$method(),
+            StateTransition::TokenUnshieldWithShieldedFee(st) => st.$method(),
+            StateTransition::TokenPurchaseFromShieldedPool(st) => st.$method(),
             StateTransition::ShieldFromAssetLock(st) => st.$method(),
             StateTransition::ShieldedWithdrawal(st) => st.$method(),
             StateTransition::IdentityCreateFromShieldedPool(st) => st.$method(),
@@ -275,6 +289,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -305,6 +322,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -338,6 +358,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -368,6 +391,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
@@ -423,6 +449,15 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token purchase from shielded pool transition can not be called for identity signing".to_string(),
             )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
@@ -481,6 +516,15 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::IdentityTopUpFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::TokenPurchaseFromShieldedPool(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "token purchase from shielded pool transition can not be called for identity signing".to_string(),
             )),
             StateTransition::ShieldFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "shield from asset lock transition can not be called for identity signing".to_string(),
@@ -566,13 +610,16 @@ pub enum StateTransition {
     IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
     ContractUserModeration(ContractUserModerationTransition),
     ContractFeeClaim(ContractFeeClaimTransition),
+    TokenShieldedTransferWithShieldedFee(TokenShieldedTransferWithShieldedFeeTransition),
+    TokenUnshieldWithShieldedFee(TokenUnshieldWithShieldedFeeTransition),
+    TokenPurchaseFromShieldedPool(TokenPurchaseFromShieldedPoolTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StateTransition {}
+impl JsonConvertible for StateTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StateTransition {}
+impl ValueConvertible for StateTransition {}
 
 #[cfg(all(
     test,
@@ -889,6 +936,30 @@ mod json_convertible_tests {
             "identityTopUpFromShieldedPool",
         );
     }
+    #[test]
+    fn umbrella_token_shielded_transfer_with_shielded_fee() {
+        let inner = crate::state_transition::token_shielded_transfer_with_shielded_fee_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenShieldedTransferWithShieldedFee(inner),
+            "tokenShieldedTransferWithShieldedFee",
+        );
+    }
+    #[test]
+    fn umbrella_token_unshield_with_shielded_fee() {
+        let inner = crate::state_transition::token_unshield_with_shielded_fee_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenUnshieldWithShieldedFee(inner),
+            "tokenUnshieldWithShieldedFee",
+        );
+    }
+    #[test]
+    fn umbrella_token_purchase_from_shielded_pool() {
+        let inner = crate::state_transition::token_purchase_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::TokenPurchaseFromShieldedPool(inner),
+            "tokenPurchaseFromShieldedPool",
+        );
+    }
 
     #[test]
     fn umbrella_shield_from_identity() {
@@ -1140,13 +1211,24 @@ impl StateTransition {
             StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
+            // From protocol version 14 the bundle must bind its kind and its asset lock, which
+            // only version 1 does. Version 0 is refused there on its version byte, before any
+            // proof is verified: uncharged, with its asset lock left unspent, so a version 0 still
+            // waiting when 14 activates costs its sender nothing. There is no window in which 14
+            // accepts version 0.
+            StateTransition::ShieldFromAssetLock(st) => match st {
+                ShieldFromAssetLockTransition::V0(_) => 12..=13,
+                ShieldFromAssetLockTransition::V1(_) => 14..=LATEST_VERSION,
+            },
             StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
-            | StateTransition::ContractFeeClaim(_) => 14..=LATEST_VERSION,
+            | StateTransition::ContractFeeClaim(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_) => 14..=LATEST_VERSION,
         }
     }
 
@@ -1162,6 +1244,9 @@ impl StateTransition {
                 | StateTransition::ShieldedWithdrawal(_)
                 | StateTransition::IdentityCreateFromShieldedPool(_)
                 | StateTransition::IdentityTopUpFromShieldedPool(_)
+                | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                | StateTransition::TokenUnshieldWithShieldedFee(_)
+                | StateTransition::TokenPurchaseFromShieldedPool(_)
         )
     }
 
@@ -1247,6 +1332,25 @@ impl StateTransition {
                         BatchedTransitionRef::Token(
                             TokenTransition::SetPriceForDirectPurchase(_),
                         ) => "SetPriceForDirectPurchase",
+                        BatchedTransitionRef::Token(TokenTransition::Shield(_)) => "TokenShield",
+                        BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
+                            "TokenUnshield"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(_)) => {
+                            "TokenShieldedTransfer"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
+                            "TokenMintToPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
+                            "TokenBurnFromPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
+                            "TokenClaimToPool"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(_)) => {
+                            "TokenDirectPurchaseToPool"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }
@@ -1271,6 +1375,11 @@ impl StateTransition {
             Self::ShieldedTransfer(_) => "ShieldedTransfer".to_string(),
             Self::Unshield(_) => "Unshield".to_string(),
             Self::IdentityTopUpFromShieldedPool(_) => "IdentityTopUpFromShieldedPool".to_string(),
+            Self::TokenShieldedTransferWithShieldedFee(_) => {
+                "TokenShieldedTransferWithShieldedFee".to_string()
+            }
+            Self::TokenUnshieldWithShieldedFee(_) => "TokenUnshieldWithShieldedFee".to_string(),
+            Self::TokenPurchaseFromShieldedPool(_) => "TokenPurchaseFromShieldedPool".to_string(),
             Self::ShieldFromAssetLock(_) => "ShieldFromAssetLock".to_string(),
             Self::ShieldedWithdrawal(_) => "ShieldedWithdrawal".to_string(),
             Self::IdentityCreateFromShieldedPool(_) => "IdentityCreateFromShieldedPool".to_string(),
@@ -1303,6 +1412,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(st) => Some(st.signature()),
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1321,6 +1433,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
             StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
             StateTransition::ShieldFromAssetLock(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
@@ -1355,6 +1470,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => 0,
             StateTransition::Unshield(_) => 0,
             StateTransition::IdentityTopUpFromShieldedPool(_) => 0,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => 0,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => 0,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => 0,
             StateTransition::ShieldedWithdrawal(_) => 0,
             StateTransition::IdentityCreateFromShieldedPool(_) => 0,
             StateTransition::ShieldFromIdentity(st) => st.user_fee_increase(),
@@ -1427,6 +1545,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1459,6 +1580,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => None,
             StateTransition::Unshield(_) => None,
             StateTransition::IdentityTopUpFromShieldedPool(_) => None,
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => None,
+            StateTransition::TokenUnshieldWithShieldedFee(_) => None,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => None,
             StateTransition::ShieldFromAssetLock(_) => None,
             StateTransition::ShieldedWithdrawal(_) => None,
             StateTransition::IdentityCreateFromShieldedPool(_) => None,
@@ -1539,6 +1663,9 @@ impl StateTransition {
             | StateTransition::Unshield(_)
             | StateTransition::ShieldedWithdrawal(_)
             | StateTransition::IdentityCreateFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_) => false,
             StateTransition::ShieldFromIdentity(st) => {
                 st.set_signature(signature);
@@ -1603,6 +1730,9 @@ impl StateTransition {
             StateTransition::ShieldedTransfer(_) => {}
             StateTransition::Unshield(_) => {}
             StateTransition::IdentityTopUpFromShieldedPool(_) => {}
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {}
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {}
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {}
             StateTransition::ShieldedWithdrawal(_) => {}
             StateTransition::IdentityCreateFromShieldedPool(_) => {}
             StateTransition::ShieldFromIdentity(st) => st.set_user_fee_increase(user_fee_increase),
@@ -1785,6 +1915,21 @@ impl StateTransition {
             StateTransition::IdentityTopUpFromShieldedPool(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "identity top up from shielded pool transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token shielded transfer with shielded fee transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token unshield with shielded fee transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "token purchase from shielded pool transition can not be called for identity signing".to_string(),
                 ))
             }
             StateTransition::ShieldFromAssetLock(_) => {
@@ -2140,70 +2285,6 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-validation")]
-    fn verify_by_raw_public_key<T: BlsModule>(
-        &self,
-        public_key: &[u8],
-        public_key_type: KeyType,
-        bls: &T,
-    ) -> Result<(), ProtocolError> {
-        match public_key_type {
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key),
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
-            }
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(public_key_type),
-                ))
-            }
-        }
-    }
-
-    #[cfg(feature = "state-transition-validation")]
-    pub fn verify_identity_signed_signature(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-    ) -> Result<(), ProtocolError> {
-        // self.verify_public_key_level_and_purpose(public_key)?;
-        if public_key.disabled_at().is_some() {
-            return Err(ProtocolError::PublicKeyIsDisabledError(
-                PublicKeyIsDisabledError::new(public_key.id()),
-            ));
-        }
-
-        let Some(signature) = self.signature() else {
-            return Err(ProtocolError::CorruptedCodeExecution("verifying identity signature for a state transition that doesn't use identity signatures".to_string()));
-        };
-        if signature.is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone()),
-            ));
-        }
-
-        if self.signature_public_key_id() != Some(public_key.id()) {
-            return Err(ProtocolError::PublicKeyMismatchError(
-                PublicKeyMismatchError::new(public_key.clone()),
-            ));
-        }
-
-        let public_key_bytes = public_key.data().as_slice();
-        match public_key.key_type() {
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
-            }
-
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key_bytes),
-
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
-
-            // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(()),
-        }
-    }
-
-    #[cfg(feature = "state-transition-validation")]
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
@@ -2261,12 +2342,13 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-validation")]
-    /// Verifies a BLS signature with the public key
+    /// Verifies a BLS signature with the public key: `Ok(false)` when the signature is well
+    /// formed but does not verify, an error when the key or the signature cannot be read
     fn verify_bls_signature_by_public_key<T: BlsModule>(
         &self,
         public_key: &[u8],
         bls: &T,
-    ) -> Result<(), ProtocolError> {
+    ) -> Result<bool, ProtocolError> {
         let Some(signature) = self.signature() else {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
                 needed: self.required_number_of_private_keys(),
@@ -2283,7 +2365,6 @@ impl StateTransition {
         let data = self.signable_bytes()?;
 
         bls.verify_signature(signature.as_slice(), &data, public_key)
-            .map(|_| ())
             .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
@@ -2348,6 +2429,15 @@ impl StateTransitionStructureValidation for StateTransition {
                 transition.validate_structure(platform_version)
             }
             StateTransition::IdentityTopUpFromShieldedPool(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(transition) => {
                 transition.validate_structure(platform_version)
             }
             StateTransition::ShieldFromAssetLock(transition) => {
@@ -2986,6 +3076,70 @@ mod tests {
         sample_batch_st_with_delete()
             .sign(&key.into(), &private_key, &bls)
             .expect("unbounded keys must still sign");
+    }
+
+    // Generation 1 of `verify_identity_signed_signature` (protocol version 14) refuses a
+    // BLS12_381 signature that does not verify; generation 0 keeps accepting it for replay.
+    #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]
+    #[test]
+    fn should_refuse_a_bls_signature_that_does_not_verify_from_protocol_version_14() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [7; 32];
+        let key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 11,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            key_type: KeyType::BLS12_381,
+            data: bls
+                .private_key_to_public_key(&private_key)
+                .expect("a valid BLS private key")
+                .into(),
+            ..Default::default()
+        }
+        .into();
+
+        let mut signed = sample_transfer_st();
+        signed
+            .sign(&key, &private_key, &bls)
+            .expect("the key signs the transfer");
+
+        // The same transfer signed by another BLS key, and 96 bytes that are not a compressed
+        // curve point
+        let mut by_another_key = signed.clone();
+        by_another_key
+            .sign_by_private_key(&[8; 32], KeyType::BLS12_381, &bls)
+            .expect("another key signs the transfer");
+        let mut not_a_point = signed.clone();
+        not_a_point.set_signature(BinaryData::new(vec![0; 96]));
+
+        let latest = PlatformVersion::latest();
+        let last_without_the_check = PlatformVersion::get(13).expect("protocol version 13");
+        for platform_version in [latest, last_without_the_check] {
+            signed
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect("a signature by the key verifies");
+        }
+
+        for (transition, label) in [
+            (by_another_key, "signed by another key"),
+            (not_a_point, "not a curve point"),
+        ] {
+            let error = transition
+                .verify_identity_signed_signature(&key, &bls, latest)
+                .expect_err(label);
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(e)
+                ) if e.message() == "BLS12_381 signature does not verify")),
+                "{label}: {error:?}"
+            );
+            transition
+                .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                .expect("protocol version 13 replays as it ran");
+        }
     }
 
     fn sample_batch_st_with_delete() -> StateTransition {
@@ -3881,6 +4035,72 @@ mod tests {
         ));
     }
 
+    // A `ShieldFromAssetLock` is refused on its version byte at decode, before any proof work:
+    // version 0 (whose bundle binds nothing) up to protocol version 13 only, version 1 (whose
+    // bundle binds its kind and asset lock) from 14 only.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn should_decode_each_shield_from_asset_lock_version_only_where_it_is_active() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+
+        let v0 = sample_shield_from_asset_lock_st();
+        let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(body)) = &v0
+        else {
+            panic!("expected a version 0 shield from asset lock");
+        };
+        let v1 = StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+            ShieldFromAssetLockTransitionV1 {
+                asset_lock_proof: body.asset_lock_proof.clone(),
+                actions: body.actions.clone(),
+                value_balance: body.value_balance,
+                anchor: body.anchor,
+                proof: body.proof.clone(),
+                binding_signature: body.binding_signature,
+                surplus_output: body.surplus_output,
+                signature: body.signature.clone(),
+            },
+        ));
+        assert_eq!(v0.active_version_range(), 12..=13);
+        assert_eq!(v1.active_version_range(), 14..=LATEST_VERSION);
+
+        let decodes_at = |transition: &StateTransition, protocol_version: u32| {
+            let bytes =
+                PlatformSerializable::serialize_to_bytes(transition).expect("serialize succeeds");
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("known protocol version");
+            match StateTransition::deserialize_from_bytes_untrusted_in_version(
+                &bytes,
+                platform_version,
+            ) {
+                Ok(decoded) => {
+                    assert_eq!(&decoded, transition);
+                    true
+                }
+                Err(ProtocolError::StateTransitionError(
+                    crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                        current_protocol_version,
+                        ..
+                    },
+                )) => {
+                    assert_eq!(current_protocol_version, protocol_version);
+                    false
+                }
+                Err(other) => panic!("unexpected decode error: {other:?}"),
+            }
+        };
+
+        for protocol_version in [12, 13] {
+            assert!(decodes_at(&v0, protocol_version));
+            assert!(!decodes_at(&v1, protocol_version));
+        }
+        assert!(
+            !decodes_at(&v0, 14),
+            "protocol version 14 must refuse version 0"
+        );
+        assert!(decodes_at(&v1, 14));
+    }
+
     // A version 1 data contract create carries contract groups, which only exist from
     // protocol version 14. Below that a node must reject it rather than create the
     // contract and drop the group data.
@@ -4302,10 +4522,10 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_from_asset_lock_active_range_12_latest() {
+    fn test_shield_from_asset_lock_version_0_active_range_12_to_13() {
+        // Version 0's bundle binds nothing; protocol version 14 admits only version 1.
         let range = sample_shield_from_asset_lock_st().active_version_range();
-        assert_eq!(*range.start(), 12);
-        assert_eq!(*range.end(), LATEST_VERSION);
+        assert_eq!(range, 12..=13);
     }
 
     // ---------- Batch with Token transition exercises TokenTransfer arm

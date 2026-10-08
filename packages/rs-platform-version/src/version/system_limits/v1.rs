@@ -10,6 +10,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_reference_expression_depth: 4,
     max_property_constraints: 16,
     max_property_constraint_nodes: 32,
+    max_property_constraint_aggregates: 4,
     max_state_transition_size: 20480, //20 KiB
     // TODO: this is currently capped at 1 because the batch state-transition
     // pipeline has known correctness issues with multi-transition batches:
@@ -41,7 +42,10 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
-    max_daily_withdrawal_amount: None,
+    core_credit_pool_unlock_limit_percent: None,
+    core_credit_pool_unlock_limit_floor: None,
+    core_credit_pool_window_blocks: None,
+    regtest_core_credit_pool_window_blocks: None,
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,
@@ -57,12 +61,14 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
-    min_contract_moderation_election_window_seconds: 86_400, // one day
-    max_contract_moderation_election_window_seconds: 2_419_200, // four weeks
-    min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
+    min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day
+    max_contract_moderation_election_window_seconds: 2_419_200,      // four weeks
+    min_contract_moderation_challenge_cool_down_seconds: 1_209_600,  // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
-    contract_document_restore_window_ms: 604_800_000,        // 7 days
+    contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
+    max_moderation_charter_elected_members: 15,
+    max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
@@ -73,8 +79,14 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
     min_time_range_ttl_drop_operations_per_write: None,
-    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    min_document_ttl_seconds: None,
+    max_document_ttl_seconds: None,
+    max_document_expirations_per_block: 0,
+    max_document_expiration_weight_per_block: 0,
+    max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
 };

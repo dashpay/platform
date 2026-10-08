@@ -16,10 +16,12 @@
 //!
 //! A ranking flag upgrades that tree to the matching *indexed* variant
 //! (grovedb PR 657): a primary Merk that is a byte-compatible mirror of the
-//! tree it replaces, plus one ordered secondary Merk per declared axis. Every
-//! pre-existing range-aggregate read keeps working against the primary
-//! unchanged; the secondaries are what make "top / bottom K groups by
-//! count / sum / average" O(log n + k) with a proof.
+//! tree it replaces, plus one ordered secondary Merk per declared axis.
+//! Per-value range reads keep working against the primary; a range total
+//! does not (grovedb's range aggregates take provable trees only and do not
+//! prove through an indexed tree), so the query surfaces refuse one through
+//! any index whose path passes through a ranked level. The secondaries are what make "top / bottom
+//! K groups by count / sum / average" O(log n + k) with a proof.
 //!
 //! The upgrade table (`axes` = the declared ranking axes, canonically sorted
 //! Count < Sum < Avg):
@@ -48,7 +50,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::{IndexLevel, IndexLevelTypeInfo};
 use grovedb::element::IndexAxis;
-use grovedb::TreeType;
+use grovedb_merk::tree_type::TreeType;
 
 /// The ranking axes an index level declares, in grovedb's canonical TLV order
 /// (Count < Sum < Avg, no duplicates).
@@ -64,19 +66,37 @@ pub(crate) fn ranked_axes_for_index_level_info(
     let Some(info) = index_level_info else {
         return Vec::new();
     };
-    // Pushed in ascending tag order so the resulting list is already the
-    // canonical TLV order `Element::validate_pcpsit_axes` demands.
-    let mut axes = Vec::with_capacity(3);
-    if info.ranked_countable {
-        axes.push(IndexAxis::Count);
+    ranked_axes(
+        info.ranked_countable,
+        info.ranked_summable,
+        info.ranked_averageable,
+    )
+}
+
+/// The axes `count`, `sum` and `avg` name, pushed in ascending tag order so
+/// the list is already the canonical TLV order `Element::validate_pcpsit_axes`
+/// demands.
+fn ranked_axes(count: bool, sum: bool, avg: bool) -> Vec<IndexAxis> {
+    [
+        (count, IndexAxis::Count),
+        (sum, IndexAxis::Sum),
+        (avg, IndexAxis::Avg),
+    ]
+    .into_iter()
+    .filter_map(|(ranked, axis)| ranked.then_some(axis))
+    .collect()
+}
+
+/// The provable tree carrying `counts` and `sums`: the range-flag-selected
+/// base of a terminal property-name tree, and the base a ranked chain level's
+/// indexed tree mirrors. `NormalTree` when it carries neither.
+fn provable_tree_type(counts: bool, sums: bool) -> TreeType {
+    match (counts, sums) {
+        (true, true) => TreeType::ProvableCountProvableSumTree,
+        (true, false) => TreeType::ProvableCountTree,
+        (false, true) => TreeType::ProvableSumTree,
+        (false, false) => TreeType::NormalTree,
     }
-    if info.ranked_summable {
-        axes.push(IndexAxis::Sum);
-    }
-    if info.ranked_averageable {
-        axes.push(IndexAxis::Avg);
-    }
-    axes
 }
 
 /// Render a canonical axis list as the `(tag, secondary_root_key)` TLV a
@@ -127,6 +147,10 @@ pub(crate) fn ranked_property_name_tree_type(
 /// Callers pass the `has_index_with_type()` of the level *named after the
 /// property* — `None` for pure prefix levels, which resolve to
 /// `(NormalTree, [])`.
+///
+/// Shipped generations depend on this function through
+/// [`property_name_tree_type_and_ranked_axes_for_level`]: see the note there
+/// before changing what it returns.
 pub(crate) fn property_name_tree_type_and_ranked_axes(
     index_level_info: Option<&IndexLevelTypeInfo>,
 ) -> Result<(TreeType, Vec<IndexAxis>), Error> {
@@ -136,12 +160,7 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
     let range_summable = index_level_info
         .map(|info| info.range_summable)
         .unwrap_or(false);
-    let base = match (range_countable, range_summable) {
-        (true, true) => TreeType::ProvableCountProvableSumTree,
-        (true, false) => TreeType::ProvableCountTree,
-        (false, true) => TreeType::ProvableSumTree,
-        (false, false) => TreeType::NormalTree,
-    };
+    let base = provable_tree_type(range_countable, range_summable);
     let ranked_axes = ranked_axes_for_index_level_info(index_level_info);
     Ok((
         ranked_property_name_tree_type(base, &ranked_axes)?,
@@ -150,38 +169,80 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
 }
 
 /// Level-aware form of [`property_name_tree_type_and_ranked_axes`], covering
-/// the prefix-level Count ranking (`rankedCountable: { at }`, meta-schema v3):
+/// the prefix-level rankings (`rankedCountable: { at }`, and on a
+/// `summableOffCountIndex` index `rankedSummable: { at }` and
+/// `rankedAverageable: { at }`, meta-schema v3):
 ///
-/// - A **grouping** level (`ranked_count_grouping`) hosts the ranking itself:
-///   its property-name tree is the Count-axis indexed tree, whose secondary
-///   ranks the property's values by each value tree's whole-subtree count.
-/// - A **propagating** level (`count_propagating`, strictly between the
-///   grouping level and its index's terminal) gets a `CountTree` property-name
-///   tree so the subtree counts flow through it toward the grouping secondary.
+/// - A **grouping** level (`ranked_count_grouping`, `ranked_sum_grouping`,
+///   `ranked_average_grouping`) hosts the rankings itself: its property-name
+///   tree is the indexed tree carrying those axes, whose secondaries rank the
+///   property's values by each value tree's whole-subtree aggregate. A level
+///   carrying only counts is a `ProvableCountIndexedTree`, only sums a
+///   `ProvableSumIndexedTree`, and both a `ProvableCountProvableSumIndexedTree`.
+/// - A **propagating** level (`count_propagating` / `sum_propagating`,
+///   strictly between the shallowest grouping level and its index's terminal)
+///   gets a `CountTree`, `SumTree` or `CountSumTree` property-name tree, for
+///   what it carries, so the subtree aggregates flow through it toward the
+///   grouping secondaries.
 /// - Every other level resolves through the terminator-info path unchanged.
 ///
 /// rs-dpp's structural validation guarantees no index terminates at a
 /// grouping or propagating level; both fail closed here on a stamped
 /// terminator rather than pick one of two contradictory layouts.
+///
+/// Shipped generations depend on this function: the `insert_contract` v0 and
+/// `update_contract` v0 operations call it to choose the tree type of every
+/// top-level index level they create, and every later generation of both
+/// composes those operations, so every protocol version reaches it. Changing what it returns
+/// for an index level protocol versions 1-13 can declare changes the trees
+/// and fees of those versions; make such a change a new versioned method
+/// instead of editing this function. (The Sum and Avg chains are reachable
+/// only through `summableOffCountIndex`, which protocol version 14 brings, so
+/// their arms change nothing earlier versions can declare.)
 pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
     level: &IndexLevel,
 ) -> Result<(TreeType, Vec<IndexAxis>), Error> {
-    if level.ranked_count_grouping() || level.count_propagating() {
+    // A level on a prefix-ranking chain (`is_ranked_chain_level`): the tree
+    // its values get, aggregating what the chain carries.
+    if let Some(value_tree_type) = ranked_chain_value_tree_type(level) {
         if level.has_index_with_type().is_some() {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                "a prefix-ranking (grouping or count-propagating) index level cannot also \
+                "a prefix-ranking (grouping or propagating) index level cannot also \
                  terminate an index; contract validation rejects every shape that shares \
                  such a level"
                     .to_string(),
             )));
         }
-        return if level.ranked_count_grouping() {
-            Ok((TreeType::ProvableCountIndexedTree, vec![IndexAxis::Count]))
-        } else {
-            Ok((TreeType::CountTree, Vec::new()))
-        };
+        let axes = ranked_axes(
+            level.ranked_count_grouping(),
+            level.ranked_sum_grouping(),
+            level.ranked_average_grouping(),
+        );
+        // A propagating level's tree is the tree its values get; a grouping
+        // level's is the indexed mirror of the provable tree carrying the
+        // same aggregates, for the axes ranked at it.
+        if axes.is_empty() {
+            return Ok((value_tree_type, axes));
+        }
+        let provable_base =
+            provable_tree_type(level.chain_carries_counts(), level.chain_carries_sums());
+        return Ok((ranked_property_name_tree_type(provable_base, &axes)?, axes));
     }
     property_name_tree_type_and_ranked_axes(level.has_index_with_type())
+}
+
+/// The value-tree type of a prefix-ranking chain level: the tree each of the
+/// level's values gets, aggregating what the chain carries up to its grouping
+/// level. A count chain's value trees are `CountTree`s, a sum chain's (only a
+/// `summableOffCountIndex` index has one) `SumTree`s and a chain carrying both
+/// `CountSumTree`s. `None` for a level off every chain.
+pub(crate) fn ranked_chain_value_tree_type(level: &IndexLevel) -> Option<TreeType> {
+    match (level.chain_carries_counts(), level.chain_carries_sums()) {
+        (true, false) => Some(TreeType::CountTree),
+        (false, true) => Some(TreeType::SumTree),
+        (true, true) => Some(TreeType::CountSumTree),
+        (false, false) => None,
+    }
 }
 
 /// The non-indexed tree type an indexed tree mirrors, or `tree_type` itself
@@ -230,7 +291,10 @@ mod tests {
             ranked_averageable,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             flat: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 

@@ -73,15 +73,26 @@
 //! provable variant did, so a ranked index's secondaries keep ranking
 //! correctly over a shared-prefix shape.
 
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
-use crate::error::Error;
-use crate::util::object_size_info::DriveKeyInfo;
-use dpp::data_contract::document_type::{
-    IndexCountability, IndexLevel, IndexLevelTypeInfo, TimeRangeTransform,
+use crate::drive::document::ranked_index_tree_type::{
+    property_name_tree_type_and_ranked_axes_for_level, ranked_chain_value_tree_type,
 };
+use crate::error::Error;
+#[cfg(feature = "server")]
+use crate::util::object_size_info::DriveKeyInfo;
+#[cfg(feature = "server")]
+use crate::util::object_size_info::{DocumentInfo, DocumentInfoV0Methods};
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::IndexBucketing;
+use dpp::data_contract::document_type::{
+    DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
+};
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::platform_value::Value;
+#[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
-use grovedb::TreeType;
+use grovedb_merk::tree_type::TreeType;
 
 /// The two tree types an index sub-level materializes: the
 /// property-name tree (keys = the property's distinct values) and the
@@ -118,30 +129,33 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 ) -> Result<IndexLevelTreeTypes, Error> {
     let (property_name_tree_type, ranked_axes) =
         property_name_tree_type_and_ranked_axes_for_level(sub_level)?;
-    // A prefix-ranking chain level (the `rankedCountable: { at }` grouping
-    // level or a count-propagating level below it) counts its chain
-    // continuation: the value tree's count IS the subtree total the
-    // grouping secondary ranks by, so that continuation is inserted
+    // A prefix-ranking chain level (a `{ at }` grouping level or a
+    // propagating level below it) counts its chain continuation: the value
+    // tree's count (and, on a `summableOffCountIndex` chain, its sum) IS the
+    // subtree total the grouping secondaries rank by, so that continuation is inserted
     // contributing rather than zero-wrapped (see the walkers). A plain
     // sibling's branch sharing such a level (`count_exempt_branch` on the
     // CHILD level) is the one other child the validation admits — the
-    // walkers insert it `Element::NonCounted`-wrapped, contributing zero,
-    // which a `CountTree` parent accepts (only the provable count-bearing
-    // variants reject suppressed children). No index terminates at a chain
+    // walkers insert it contributing zero, wrapped as the chain's value tree
+    // needs (`zero_contribution_wrapper`: `Element::NonCounted` under a
+    // `CountTree`, not counted or summed under a `CountSumTree`, and under a
+    // `SumTree` not summed when it carries a sum, else unwrapped); only the
+    // provable count-bearing variants reject suppressed children. No index terminates at a chain
     // level itself (the resolver above fails closed on one), so the
     // terminator-flag derivation below never applies to it.
-    let value_tree_type = if sub_level.ranked_count_grouping() || sub_level.count_propagating() {
-        TreeType::CountTree
-    } else {
-        let info = sub_level.has_index_with_type();
-        derive_value_tree_type(
-            info.map(|i| i.countable.is_countable()).unwrap_or(false),
-            info.map(|i| i.range_countable).unwrap_or(false),
-            info.map(|i| i.summable.is_some()).unwrap_or(false),
-            info.map(|i| i.range_summable).unwrap_or(false),
-            !sub_level.sub_levels().is_empty(),
-        )
-    };
+    let value_tree_type =
+        if let Some(chain_value_tree_type) = ranked_chain_value_tree_type(sub_level) {
+            chain_value_tree_type
+        } else {
+            let info = sub_level.has_index_with_type();
+            derive_value_tree_type(
+                info.map(|i| i.countable.is_countable()).unwrap_or(false),
+                info.map(|i| i.range_countable).unwrap_or(false),
+                info.map(|i| i.summable.is_some()).unwrap_or(false),
+                info.map(|i| i.range_summable).unwrap_or(false),
+                !sub_level.sub_levels().is_empty(),
+            )
+        };
     Ok(IndexLevelTreeTypes {
         property_name_tree_type,
         ranked_axes,
@@ -150,17 +164,17 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 }
 
 /// Expands a document's raw top-field key into the set of index-entry keys a
-/// time-range first-property node stores it under. For a node without a
-/// transform the single key passes through untouched.
+/// bucketed (time- or integer-range) first-property node stores it under.
+/// For a node without a grid the single key passes through untouched.
 ///
 /// Shared by the insert and delete v2 walkers (same must-not-drift contract
 /// as the tree-type derivation above); the entry-key rule itself — null keeps
 /// its single null entry, epoch-sliver timestamps produce no entries,
 /// undecodable values keep their raw key — lives in
-/// [`TimeRangeTransform::entry_keys_for_raw`], which the update walker also
+/// [`IndexBucketing::entry_keys_for_raw`], which the update walker also
 /// calls.
 ///
-/// On the estimated-cost path (`KeySize`) the real timestamp isn't available,
+/// On the estimated-cost path (`KeySize`) the real value isn't available,
 /// so this assumes the worst case of `overlap_factor` overlapping buckets —
 /// and makes each worst-case key **distinct** by suffixing an ordinal:
 /// identical `(path, key)` operations collapse inside grovedb's batch
@@ -172,8 +186,9 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 /// never exceed it, so the clamp only bounds estimation work for a transform
 /// built outside validation, and reading it from the version keeps the
 /// estimated fan-out in step with whatever a future protocol version allows.
-pub(crate) fn time_range_index_keys<'a>(
-    transform: Option<&TimeRangeTransform>,
+#[cfg(feature = "server")]
+pub(crate) fn bucket_index_keys<'a>(
+    transform: Option<&IndexBucketing>,
     document_top_field: DriveKeyInfo<'a>,
     max_overlap_factor: u64,
 ) -> Vec<DriveKeyInfo<'a>> {
@@ -224,6 +239,15 @@ pub(crate) fn time_range_index_keys<'a>(
 /// × stored/indexOnly): the insert side creates the tree and the delete
 /// side emits `EstimatedLayerInformation` describing it, and any drift
 /// produces dry-run fees that disagree with applied fees.
+///
+/// Shipped generations depend on this function:
+/// `add_reference_for_index_level_for_contract_operations` v0 (protocol
+/// versions 1-14) and `remove_reference_for_index_level_for_contract_operations`
+/// v0 (protocol versions 1-13) call it for every stored-type index terminal;
+/// protocol version 14's remove-reference v1 calls it too.
+/// Changing what it returns for an index shape protocol versions 1-13 can
+/// declare changes the trees and fees of those versions; make such a change a
+/// new versioned method instead of editing this function.
 pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
     let count_provable = matches!(
         index_type.countable,
@@ -304,6 +328,255 @@ fn derive_value_tree_type(
     }
 }
 
+/// The wrapper an empty continuation property-name tree is inserted in so
+/// it contributes nothing to the aggregating value tree above it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZeroContributionWrapper {
+    /// `Element::NonCounted`: counted as zero by a count-bearing parent.
+    NonCounted,
+    /// `Element::NotSummed`: summed as zero by a sum-bearing parent.
+    NotSummed,
+    /// `Element::NotCountedOrSummed`: neither counted nor summed.
+    NotCountedOrSummed,
+}
+
+/// Why a continuation tree cannot be made to contribute zero to its parent.
+/// `LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent`
+/// turns each into its `NotSupported` error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ZeroContributionRefusal {
+    /// An indexed (ranked) tree cannot be wrapped under an aggregating parent.
+    IndexedInner,
+    /// An indexed tree is a property-name tree, never a value tree.
+    IndexedParent,
+    /// A provable count-bearing parent rejects count-suppressed children.
+    ProvableCountParent,
+    /// The parent does not aggregate, so no wrapper applies.
+    NonAggregatingParent,
+}
+
+/// Whether the continuation property-name tree of `sub_level`, under a value
+/// tree of `parent_level` whose type is `parent_value_tree_type`, is inserted
+/// so it contributes zero to that value tree: the parent aggregates, and its
+/// level is no prefix-ranking chain level (a grouping or propagating level of
+/// a count, sum or average chain, [`IndexLevel::is_ranked_chain_level`], whose
+/// value trees aggregate their chain continuation), unless `sub_level` is a
+/// count-exempt branch. The entry-insert walker and the preallocation path both decide
+/// with this.
+pub(crate) fn continuation_contributes_zero(
+    parent_value_tree_type: TreeType,
+    parent_counts_continuations: bool,
+    sub_level: &IndexLevel,
+) -> bool {
+    !matches!(parent_value_tree_type, TreeType::NormalTree)
+        && (!parent_counts_continuations || sub_level.count_exempt_branch())
+}
+
+/// Whether a document without a value for `property` writes nothing under a
+/// level keyed by it: an unrequired property of an indexOnly type is a skip
+/// property of every index that holds it (the parser admits no other
+/// optional property), so every index through the level skips the document.
+/// The walkers prune such a level before reaching it
+/// ([`level_reaches_entry`]); this is the defensive arm for a level reached
+/// anyway, and `drive::document::layout` notes it.
+pub(crate) fn index_only_level_skips_when_absent(
+    document_type: DocumentTypeRef,
+    property: &str,
+) -> bool {
+    document_type.index_only() && !document_type.required_fields().contains(property)
+}
+
+/// Whether a document takes part in an index whose skip set is `skip_set`
+/// (`Index::skip_if_absent_properties`): it carries every one of those
+/// properties, as `carries` reports. An index that does not skip has an empty
+/// set, so every document takes part in it. The single definition the write,
+/// delete and replace walkers, the indexOnly delete probes and the SDK's
+/// document cost all apply.
+pub(crate) fn takes_part_in_index_by<F>(skip_set: &[String], carries: &mut F) -> Result<bool, Error>
+where
+    F: FnMut(&str) -> Result<bool, Error>,
+{
+    for skip_property in skip_set {
+        if !carries(skip_property)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Whether the document writes an entry at or below `level`: the index ending
+/// at `level` takes part ([`takes_part_in_index_by`]), or a level below
+/// reaches such an entry.
+///
+/// The walkers build a level (its property-name tree and value tree) only
+/// when this holds, so an index that skips a document leaves no tree of its
+/// own behind, while a level it shares with an index the document takes part
+/// in is built as usual. A level no skipIfAbsent index passes through
+/// ([`IndexLevel::skip_at_or_below`]) reaches an entry for every document, so
+/// it is answered without looking at the document; that is every level of a
+/// document type without a skipping index.
+pub(crate) fn level_reaches_entry_by<F>(level: &IndexLevel, carries: &mut F) -> Result<bool, Error>
+where
+    F: FnMut(&str) -> Result<bool, Error>,
+{
+    if !level.skip_at_or_below() {
+        return Ok(true);
+    }
+    if let Some(index_type) = level.has_index_with_type() {
+        if takes_part_in_index_by(&index_type.skip_if_absent_properties, carries)? {
+            return Ok(true);
+        }
+    }
+    for sub_level in level.sub_levels().values() {
+        if level_reaches_entry_by(sub_level, carries)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Whether `document` carries `property`, a skip property: it holds a value
+/// for it other than null. A skip property is a top-level, non-system property
+/// or a derived index property (the parser refuses any other), so its presence
+/// is a single lookup. Drive puts a derived value into the document before
+/// keying it (`derived_index_values`), null where the reference or the field
+/// it reads is absent, and that null is absent as a missing property is: it
+/// would be keyed under the same empty key.
+pub(crate) fn document_carries(document: &Document, property: &str) -> bool {
+    !matches!(
+        document.properties().get(property),
+        None | Some(Value::Null)
+    )
+}
+
+/// Whether `document_info` carries `property` ([`document_carries`]). A
+/// worst-case size carries every property: estimation then walks every index,
+/// which keeps it an upper bound. A create's dry run reads the real document,
+/// so it skips where the apply does, though never on a derived value it does
+/// not read, which is a placeholder of the field's type.
+#[cfg(feature = "server")]
+fn document_info_carries(document_info: &DocumentInfo, property: &str) -> bool {
+    match document_info.get_borrowed_document() {
+        Some(document) => document_carries(document, property),
+        None => true,
+    }
+}
+
+/// [`takes_part_in_index_by`] for the document of `document_info`.
+#[cfg(feature = "server")]
+pub(crate) fn document_takes_part_in_index(
+    skip_set: &[String],
+    document_info: &DocumentInfo,
+) -> Result<bool, Error> {
+    takes_part_in_index_by(skip_set, &mut |property| {
+        Ok(document_info_carries(document_info, property))
+    })
+}
+
+/// [`level_reaches_entry_by`] for the document of `document_info`.
+#[cfg(feature = "server")]
+pub(crate) fn level_reaches_entry(
+    level: &IndexLevel,
+    document_info: &DocumentInfo,
+) -> Result<bool, Error> {
+    level_reaches_entry_by(level, &mut |property| {
+        Ok(document_info_carries(document_info, property))
+    })
+}
+
+/// Whether a delete of the document of `document_info` removes an entry at or
+/// below `level`: an index ending there that neither skipped the document nor
+/// outlives its delete ([`IndexLevelTypeInfo::outlives_delete`]), or a level
+/// below reaching one. The delete walkers descend only where this holds, so
+/// they leave the entries of an index that outlives the delete, and never
+/// read the values only such an index is keyed by (a delete does not carry
+/// them). A level no such index passes through is answered by
+/// [`level_reaches_entry`], every level of a document type without one, and a
+/// level only such indexes pass through by its stamps alone; only a level both
+/// kinds share is walked.
+#[cfg(feature = "server")]
+pub(crate) fn level_removes_entry(
+    level: &IndexLevel,
+    document_info: &DocumentInfo,
+) -> Result<bool, Error> {
+    if !level.outlives_delete_at_or_below() {
+        return level_reaches_entry(level, document_info);
+    }
+    // Only indexes whose entries outlive the delete pass here
+    if !level.cleared_on_delete_at_or_below() {
+        return Ok(false);
+    }
+    if let Some(index_type) = level.has_index_with_type() {
+        if !index_type.outlives_delete
+            && document_takes_part_in_index(&index_type.skip_if_absent_properties, document_info)?
+        {
+            return Ok(true);
+        }
+    }
+    for sub_level in level.sub_levels().values() {
+        if level_removes_entry(sub_level, document_info)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The wrapper that makes an empty `inner_tree_type` tree contribute zero to
+/// an `aggregating_parent_tree_type` parent, or `None` when it contributes
+/// zero unwrapped (a non-sum tree under a sum-only parent):
+/// - a `CountTree` parent: `NonCounted`, whatever the inner;
+/// - a `CountSumTree` parent: `NotCountedOrSummed` for a sum-bearing inner,
+///   else `NonCounted`;
+/// - a `SumTree`, `BigSumTree` or `ProvableSumTree` parent: `NotSummed` for a
+///   sum-bearing inner, else no wrapper.
+///
+/// An indexed inner, an indexed or provable count-bearing parent, and a
+/// parent that does not aggregate are refused.
+pub(crate) fn zero_contribution_wrapper(
+    aggregating_parent_tree_type: TreeType,
+    inner_tree_type: TreeType,
+) -> Result<Option<ZeroContributionWrapper>, ZeroContributionRefusal> {
+    if matches!(
+        inner_tree_type,
+        TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree
+    ) {
+        return Err(ZeroContributionRefusal::IndexedInner);
+    }
+    let inner_is_sum_bearing = matches!(
+        inner_tree_type,
+        TreeType::SumTree
+            | TreeType::BigSumTree
+            | TreeType::ProvableSumTree
+            | TreeType::CountSumTree
+            | TreeType::ProvableCountSumTree
+            | TreeType::ProvableCountProvableSumTree
+    );
+    match aggregating_parent_tree_type {
+        TreeType::CountTree => Ok(Some(ZeroContributionWrapper::NonCounted)),
+        TreeType::CountSumTree => Ok(Some(if inner_is_sum_bearing {
+            ZeroContributionWrapper::NotCountedOrSummed
+        } else {
+            ZeroContributionWrapper::NonCounted
+        })),
+        TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
+            Ok(inner_is_sum_bearing.then_some(ZeroContributionWrapper::NotSummed))
+        }
+        TreeType::ProvableCountIndexedTree
+        | TreeType::ProvableSumIndexedTree
+        | TreeType::ProvableCountProvableSumIndexedTree => {
+            Err(ZeroContributionRefusal::IndexedParent)
+        }
+        TreeType::ProvableCountTree
+        | TreeType::ProvableCountSumTree
+        | TreeType::ProvableCountProvableSumTree => {
+            Err(ZeroContributionRefusal::ProvableCountParent)
+        }
+        _ => Err(ZeroContributionRefusal::NonAggregatingParent),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,7 +612,10 @@ mod tests {
             ranked_averageable: false,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             flat: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -469,12 +745,18 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec!["hashtag".to_string()],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
 
         let index_structure =
@@ -556,12 +838,18 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
         let mut ranked = base("byAuthorPost", &["postAuthor", "postId"]);
         ranked.countable = IndexCountability::Countable;
@@ -649,12 +937,18 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
         let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
         prefix_ranked.ranked_countable_at = vec!["hashtag".to_string()];
@@ -728,12 +1022,18 @@ mod tests {
             range_summable: true,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -756,12 +1056,18 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
+            outlives_delete: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
 
         let index_structure =
@@ -804,7 +1110,7 @@ mod tests {
         )
         .expect("the continuation must be insertable under the demoted value tree");
     }
-    /// The estimated-cost (`KeySize`) branch of [`time_range_index_keys`] is
+    /// The estimated-cost (`KeySize`) branch of [`bucket_index_keys`] is
     /// consensus-sensitive fee math: it must emit exactly the bounded
     /// overlap count, keep every synthetic key's `max_size` untouched, and
     /// make each `unique_id` distinct — grovedb's batch structure collapses
@@ -812,7 +1118,7 @@ mod tests {
     /// would silently estimate a single bucket's cost.
     #[test]
     fn estimated_time_range_fan_out_emits_distinct_worst_case_keys() {
-        use super::time_range_index_keys;
+        use super::bucket_index_keys;
         use crate::util::object_size_info::DriveKeyInfo;
         use dpp::data_contract::document_type::TimeRangeTransform;
         use grovedb::batch::key_info::KeyInfo;
@@ -830,7 +1136,7 @@ mod tests {
             max_size: 8,
         });
 
-        let keys = time_range_index_keys(Some(&transform), key.clone(), 24);
+        let keys = bucket_index_keys(Some(&transform.into()), key.clone(), 24);
         assert_eq!(keys.len(), 3, "one worst-case key per overlapping bucket");
         let mut unique_ids = Vec::new();
         for entry in &keys {
@@ -865,7 +1171,7 @@ mod tests {
             ttl_seconds: None,
         };
         assert_eq!(oversized.overlap_factor(), 100);
-        let keys = time_range_index_keys(Some(&oversized), key, 24);
+        let keys = bucket_index_keys(Some(&oversized.into()), key, 24);
         assert_eq!(keys.len(), 24, "fan-out must clamp to the versioned cap");
     }
 }

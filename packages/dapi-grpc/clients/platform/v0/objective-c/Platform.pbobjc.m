@@ -134,6 +134,12 @@ GPBObjCClassDeclaration(GetContractGroupsForContractResponse_ContractGroupMember
 GPBObjCClassDeclaration(GetContractGroupsForContractResponse_DocumentTypeMemberships);
 GPBObjCClassDeclaration(GetContractGroupsForContractResponse_GetContractGroupsForContractResponseV0);
 GPBObjCClassDeclaration(GetContractGroupsForContractResponse_TokenMemberships);
+GPBObjCClassDeclaration(GetContractModerationActionCountsRequest);
+GPBObjCClassDeclaration(GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0);
+GPBObjCClassDeclaration(GetContractModerationActionCountsResponse);
+GPBObjCClassDeclaration(GetContractModerationActionCountsResponse_ContractModerationActionCount);
+GPBObjCClassDeclaration(GetContractModerationActionCountsResponse_ContractModerationActionCounts);
+GPBObjCClassDeclaration(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0);
 GPBObjCClassDeclaration(GetContractModerationEntriesRequest);
 GPBObjCClassDeclaration(GetContractModerationEntriesRequest_GetContractModerationEntriesRequestV0);
 GPBObjCClassDeclaration(GetContractModerationEntriesResponse);
@@ -145,6 +151,19 @@ GPBObjCClassDeclaration(GetContractModerationStatusRequest_GetContractModeration
 GPBObjCClassDeclaration(GetContractModerationStatusResponse);
 GPBObjCClassDeclaration(GetContractModerationStatusResponse_ContractModerationStatus);
 GPBObjCClassDeclaration(GetContractModerationStatusResponse_GetContractModerationStatusResponseV0);
+GPBObjCClassDeclaration(GetContractTeamActionSignersRequest);
+GPBObjCClassDeclaration(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0);
+GPBObjCClassDeclaration(GetContractTeamActionSignersResponse);
+GPBObjCClassDeclaration(GetContractTeamActionSignersResponse_ContractTeamActionSigners);
+GPBObjCClassDeclaration(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0);
+GPBObjCClassDeclaration(GetContractTeamActionsRequest);
+GPBObjCClassDeclaration(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0);
+GPBObjCClassDeclaration(GetContractTeamActionsRequest_StartAtActionId);
+GPBObjCClassDeclaration(GetContractTeamActionsResponse);
+GPBObjCClassDeclaration(GetContractTeamActionsResponse_ContractTeamAction);
+GPBObjCClassDeclaration(GetContractTeamActionsResponse_ContractTeamActions);
+GPBObjCClassDeclaration(GetContractTeamActionsResponse_DeleteSettledDocument);
+GPBObjCClassDeclaration(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0);
 GPBObjCClassDeclaration(GetCurrentQuorumsInfoRequest);
 GPBObjCClassDeclaration(GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0);
 GPBObjCClassDeclaration(GetCurrentQuorumsInfoResponse);
@@ -192,6 +211,8 @@ GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingAggregate);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingClause);
+GPBObjCClassDeclaration(GetDocumentsRequest_IntegerRangeSelection);
+GPBObjCClassDeclaration(GetDocumentsRequest_IntegerRangeSelection_Grid);
 GPBObjCClassDeclaration(GetDocumentsRequest_OrderClause);
 GPBObjCClassDeclaration(GetDocumentsRequest_TimeRangeSelection);
 GPBObjCClassDeclaration(GetDocumentsRequest_TimeRangeSelection_Grid);
@@ -250,6 +271,7 @@ GPBObjCClassDeclaration(GetGroupActionsRequest_StartAtActionId);
 GPBObjCClassDeclaration(GetGroupActionsResponse);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent);
+GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_ContractUpdateEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_DestroyFrozenFundsEvent);
@@ -261,6 +283,7 @@ GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupA
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActions);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent);
+GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent);
@@ -7609,6 +7632,7 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRestoration__
 @dynamic hasReason, reason;
 @dynamic documentHash;
 @dynamic hasRestoration, restoration;
+@dynamic keptFields;
 
 typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_ {
   uint32_t _has_storage_[1];
@@ -7618,6 +7642,7 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__stor
   ContractModerationReason *reason;
   NSData *documentHash;
   GetContractDocumentRemovalsResponse_ContractDocumentRestoration *restoration;
+  NSData *keptFields;
   uint64_t removedAt;
 } GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_;
 
@@ -7689,6 +7714,15 @@ typedef struct GetContractDocumentRemovalsResponse_ContractDocumentRemoval__stor
         .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, restoration),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "keptFields",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractDocumentRemovalsResponse_ContractDocumentRemoval_FieldNumber_KeptFields,
+        .hasIndex = 7,
+        .offset = (uint32_t)offsetof(GetContractDocumentRemovalsResponse_ContractDocumentRemoval__storage_, keptFields),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -7833,6 +7867,1348 @@ typedef struct GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsRe
 
 void GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsResponseV0_ClearResultOneOfCase(GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsResponseV0 *message) {
   GPBDescriptor *descriptor = [GetContractDocumentRemovalsResponse_GetContractDocumentRemovalsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractTeamActionsRequest
+
+@implementation GetContractTeamActionsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContractTeamActionsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractTeamActionsRequest_GetContractTeamActionsRequestV0 *v0;
+} GetContractTeamActionsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0),
+        .number = GetContractTeamActionsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionsRequest_ClearVersionOneOfCase(GetContractTeamActionsRequest *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - Enum GetContractTeamActionsRequest_ActionStatus
+
+GPBEnumDescriptor *GetContractTeamActionsRequest_ActionStatus_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Active\000Closed\000";
+    static const int32_t values[] = {
+        GetContractTeamActionsRequest_ActionStatus_Active,
+        GetContractTeamActionsRequest_ActionStatus_Closed,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetContractTeamActionsRequest_ActionStatus)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetContractTeamActionsRequest_ActionStatus_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetContractTeamActionsRequest_ActionStatus_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetContractTeamActionsRequest_ActionStatus_Active:
+    case GetContractTeamActionsRequest_ActionStatus_Closed:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetContractTeamActionsRequest_StartAtActionId
+
+@implementation GetContractTeamActionsRequest_StartAtActionId
+
+@dynamic startActionId;
+@dynamic startActionIdIncluded;
+
+typedef struct GetContractTeamActionsRequest_StartAtActionId__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *startActionId;
+} GetContractTeamActionsRequest_StartAtActionId__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startActionId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsRequest_StartAtActionId_FieldNumber_StartActionId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsRequest_StartAtActionId__storage_, startActionId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startActionIdIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsRequest_StartAtActionId_FieldNumber_StartActionIdIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsRequest_StartAtActionId class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsRequest_StartAtActionId__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractTeamActionsRequest_GetContractTeamActionsRequestV0
+
+@implementation GetContractTeamActionsRequest_GetContractTeamActionsRequestV0
+
+@dynamic contractId;
+@dynamic status;
+@dynamic hasStartAtActionId, startAtActionId;
+@dynamic hasCount, count;
+@dynamic prove;
+
+typedef struct GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  GetContractTeamActionsRequest_ActionStatus status;
+  uint32_t count;
+  NSData *contractId;
+  GetContractTeamActionsRequest_StartAtActionId *startAtActionId;
+} GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "status",
+        .dataTypeSpecific.enumDescFunc = GetContractTeamActionsRequest_ActionStatus_EnumDescriptor,
+        .number = GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_Status,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_, status),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "startAtActionId",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionsRequest_StartAtActionId),
+        .number = GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_StartAtActionId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_, startAtActionId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_Count,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_, count),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_Prove,
+        .hasIndex = 4,
+        .offset = 5,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsRequest_GetContractTeamActionsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_Status_RawValue(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0 *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionsRequest_GetContractTeamActionsRequestV0 descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_Status];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetContractTeamActionsRequest_GetContractTeamActionsRequestV0_Status_RawValue(GetContractTeamActionsRequest_GetContractTeamActionsRequestV0 *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetContractTeamActionsRequest_GetContractTeamActionsRequestV0 descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContractTeamActionsRequest_GetContractTeamActionsRequestV0_FieldNumber_Status];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - GetContractTeamActionsResponse
+
+@implementation GetContractTeamActionsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContractTeamActionsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractTeamActionsResponse_GetContractTeamActionsResponseV0 *v0;
+} GetContractTeamActionsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0),
+        .number = GetContractTeamActionsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionsResponse_ClearVersionOneOfCase(GetContractTeamActionsResponse *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractTeamActionsResponse_DeleteSettledDocument
+
+@implementation GetContractTeamActionsResponse_DeleteSettledDocument
+
+@dynamic documentTypeName;
+@dynamic documentId;
+@dynamic documentLastModifiedAt;
+@dynamic hasDocumentRevision, documentRevision;
+@dynamic hasReason, reason;
+
+typedef struct GetContractTeamActionsResponse_DeleteSettledDocument__storage_ {
+  uint32_t _has_storage_[1];
+  NSString *documentTypeName;
+  NSData *documentId;
+  ContractModerationReason *reason;
+  uint64_t documentLastModifiedAt;
+  uint64_t documentRevision;
+} GetContractTeamActionsResponse_DeleteSettledDocument__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_DeleteSettledDocument_FieldNumber_DocumentTypeName,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_DeleteSettledDocument__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "documentId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_DeleteSettledDocument_FieldNumber_DocumentId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_DeleteSettledDocument__storage_, documentId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentLastModifiedAt",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_DeleteSettledDocument_FieldNumber_DocumentLastModifiedAt,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_DeleteSettledDocument__storage_, documentLastModifiedAt),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "documentRevision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_DeleteSettledDocument_FieldNumber_DocumentRevision,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_DeleteSettledDocument__storage_, documentRevision),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "reason",
+        .dataTypeSpecific.clazz = GPBObjCClass(ContractModerationReason),
+        .number = GetContractTeamActionsResponse_DeleteSettledDocument_FieldNumber_Reason,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_DeleteSettledDocument__storage_, reason),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsResponse_DeleteSettledDocument class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsResponse_DeleteSettledDocument__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractTeamActionsResponse_ContractTeamAction
+
+@implementation GetContractTeamActionsResponse_ContractTeamAction
+
+@dynamic eventOneOfCase;
+@dynamic actionId;
+@dynamic proposerId;
+@dynamic proposedAt;
+@dynamic deleteSettledDocument;
+@dynamic approvalCount;
+
+typedef struct GetContractTeamActionsResponse_ContractTeamAction__storage_ {
+  uint32_t _has_storage_[2];
+  uint32_t approvalCount;
+  NSData *actionId;
+  NSData *proposerId;
+  GetContractTeamActionsResponse_DeleteSettledDocument *deleteSettledDocument;
+  uint64_t proposedAt;
+} GetContractTeamActionsResponse_ContractTeamAction__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "actionId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ActionId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, actionId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proposerId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ProposerId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, proposerId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proposedAt",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ProposedAt,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, proposedAt),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "deleteSettledDocument",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionsResponse_DeleteSettledDocument),
+        .number = GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_DeleteSettledDocument,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, deleteSettledDocument),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "approvalCount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionsResponse_ContractTeamAction_FieldNumber_ApprovalCount,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamAction__storage_, approvalCount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsResponse_ContractTeamAction class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsResponse_ContractTeamAction__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "event",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionsResponse_ContractTeamAction_ClearEventOneOfCase(GetContractTeamActionsResponse_ContractTeamAction *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionsResponse_ContractTeamAction descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractTeamActionsResponse_ContractTeamActions
+
+@implementation GetContractTeamActionsResponse_ContractTeamActions
+
+@dynamic actionsArray, actionsArray_Count;
+
+typedef struct GetContractTeamActionsResponse_ContractTeamActions__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *actionsArray;
+} GetContractTeamActionsResponse_ContractTeamActions__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "actionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionsResponse_ContractTeamAction),
+        .number = GetContractTeamActionsResponse_ContractTeamActions_FieldNumber_ActionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_ContractTeamActions__storage_, actionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsResponse_ContractTeamActions class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsResponse_ContractTeamActions__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractTeamActionsResponse_GetContractTeamActionsResponseV0
+
+@implementation GetContractTeamActionsResponse_GetContractTeamActionsResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic actions;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContractTeamActionsResponse_GetContractTeamActionsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractTeamActionsResponse_ContractTeamActions *actions;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContractTeamActionsResponse_GetContractTeamActionsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "actions",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionsResponse_ContractTeamActions),
+        .number = GetContractTeamActionsResponse_GetContractTeamActionsResponseV0_FieldNumber_Actions,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0__storage_, actions),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContractTeamActionsResponse_GetContractTeamActionsResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContractTeamActionsResponse_GetContractTeamActionsResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionsResponse_GetContractTeamActionsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionsResponse_GetContractTeamActionsResponseV0_ClearResultOneOfCase(GetContractTeamActionsResponse_GetContractTeamActionsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionsResponse_GetContractTeamActionsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractTeamActionSignersRequest
+
+@implementation GetContractTeamActionSignersRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContractTeamActionSignersRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0 *v0;
+} GetContractTeamActionSignersRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0),
+        .number = GetContractTeamActionSignersRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionSignersRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionSignersRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionSignersRequest_ClearVersionOneOfCase(GetContractTeamActionSignersRequest *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionSignersRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - Enum GetContractTeamActionSignersRequest_ActionStatus
+
+GPBEnumDescriptor *GetContractTeamActionSignersRequest_ActionStatus_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Active\000Closed\000";
+    static const int32_t values[] = {
+        GetContractTeamActionSignersRequest_ActionStatus_Active,
+        GetContractTeamActionSignersRequest_ActionStatus_Closed,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetContractTeamActionSignersRequest_ActionStatus)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetContractTeamActionSignersRequest_ActionStatus_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetContractTeamActionSignersRequest_ActionStatus_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetContractTeamActionSignersRequest_ActionStatus_Active:
+    case GetContractTeamActionSignersRequest_ActionStatus_Closed:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0
+
+@implementation GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0
+
+@dynamic contractId;
+@dynamic status;
+@dynamic actionId;
+@dynamic prove;
+
+typedef struct GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  GetContractTeamActionSignersRequest_ActionStatus status;
+  NSData *contractId;
+  NSData *actionId;
+} GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "status",
+        .dataTypeSpecific.enumDescFunc = GetContractTeamActionSignersRequest_ActionStatus_EnumDescriptor,
+        .number = GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_FieldNumber_Status,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0__storage_, status),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "actionId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_FieldNumber_ActionId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0__storage_, actionId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_FieldNumber_Prove,
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionSignersRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_Status_RawValue(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0 *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0 descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_FieldNumber_Status];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_Status_RawValue(GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0 *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0 descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContractTeamActionSignersRequest_GetContractTeamActionSignersRequestV0_FieldNumber_Status];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - GetContractTeamActionSignersResponse
+
+@implementation GetContractTeamActionSignersResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContractTeamActionSignersResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0 *v0;
+} GetContractTeamActionSignersResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0),
+        .number = GetContractTeamActionSignersResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionSignersResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionSignersResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionSignersResponse_ClearVersionOneOfCase(GetContractTeamActionSignersResponse *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionSignersResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractTeamActionSignersResponse_ContractTeamActionSigners
+
+@implementation GetContractTeamActionSignersResponse_ContractTeamActionSigners
+
+@dynamic signerIdsArray, signerIdsArray_Count;
+
+typedef struct GetContractTeamActionSignersResponse_ContractTeamActionSigners__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *signerIdsArray;
+} GetContractTeamActionSignersResponse_ContractTeamActionSigners__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "signerIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractTeamActionSignersResponse_ContractTeamActionSigners_FieldNumber_SignerIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersResponse_ContractTeamActionSigners__storage_, signerIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionSignersResponse_ContractTeamActionSigners class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionSignersResponse_ContractTeamActionSigners__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionSignersResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0
+
+@implementation GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic signers;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractTeamActionSignersResponse_ContractTeamActionSigners *signers;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "signers",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractTeamActionSignersResponse_ContractTeamActionSigners),
+        .number = GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0_FieldNumber_Signers,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0__storage_, signers),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractTeamActionSignersResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0_ClearResultOneOfCase(GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContractTeamActionSignersResponse_GetContractTeamActionSignersResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractModerationActionCountsRequest
+
+@implementation GetContractModerationActionCountsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContractModerationActionCountsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0 *v0;
+} GetContractModerationActionCountsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0),
+        .number = GetContractModerationActionCountsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractModerationActionCountsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractModerationActionCountsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractModerationActionCountsRequest_ClearVersionOneOfCase(GetContractModerationActionCountsRequest *message) {
+  GPBDescriptor *descriptor = [GetContractModerationActionCountsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0
+
+@implementation GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0
+
+@dynamic contractId;
+@dynamic prove;
+
+typedef struct GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *contractId;
+} GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractModerationActionCountsRequest_GetContractModerationActionCountsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractModerationActionCountsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractModerationActionCountsResponse
+
+@implementation GetContractModerationActionCountsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContractModerationActionCountsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0 *v0;
+} GetContractModerationActionCountsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0),
+        .number = GetContractModerationActionCountsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractModerationActionCountsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractModerationActionCountsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractModerationActionCountsResponse_ClearVersionOneOfCase(GetContractModerationActionCountsResponse *message) {
+  GPBDescriptor *descriptor = [GetContractModerationActionCountsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContractModerationActionCountsResponse_ContractModerationActionCount
+
+@implementation GetContractModerationActionCountsResponse_ContractModerationActionCount
+
+@dynamic identityId;
+@dynamic count;
+
+typedef struct GetContractModerationActionCountsResponse_ContractModerationActionCount__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  NSData *identityId;
+} GetContractModerationActionCountsResponse_ContractModerationActionCount__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractModerationActionCountsResponse_ContractModerationActionCount_FieldNumber_IdentityId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse_ContractModerationActionCount__storage_, identityId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContractModerationActionCountsResponse_ContractModerationActionCount_FieldNumber_Count,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse_ContractModerationActionCount__storage_, count),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractModerationActionCountsResponse_ContractModerationActionCount class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractModerationActionCountsResponse_ContractModerationActionCount__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractModerationActionCountsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractModerationActionCountsResponse_ContractModerationActionCounts
+
+@implementation GetContractModerationActionCountsResponse_ContractModerationActionCounts
+
+@dynamic countsArray, countsArray_Count;
+
+typedef struct GetContractModerationActionCountsResponse_ContractModerationActionCounts__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *countsArray;
+} GetContractModerationActionCountsResponse_ContractModerationActionCounts__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "countsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractModerationActionCountsResponse_ContractModerationActionCount),
+        .number = GetContractModerationActionCountsResponse_ContractModerationActionCounts_FieldNumber_CountsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse_ContractModerationActionCounts__storage_, countsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractModerationActionCountsResponse_ContractModerationActionCounts class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractModerationActionCountsResponse_ContractModerationActionCounts__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractModerationActionCountsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0
+
+@implementation GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic counts;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContractModerationActionCountsResponse_ContractModerationActionCounts *counts;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "counts",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractModerationActionCountsResponse_ContractModerationActionCounts),
+        .number = GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0_FieldNumber_Counts,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0__storage_, counts),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContractModerationActionCountsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0_ClearResultOneOfCase(GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContractModerationActionCountsResponse_GetContractModerationActionCountsResponseV0 descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
@@ -9673,7 +11049,8 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         "Equal\000GreaterThan\000GreaterThanOrEquals\000Le"
         "ssThan\000LessThanOrEquals\000Between\000BetweenE"
         "xcludeBounds\000BetweenExcludeLeft\000BetweenE"
-        "xcludeRight\000In\000StartsWith\000InTimeRange\000";
+        "xcludeRight\000In\000StartsWith\000InTimeRange\000In"
+        "IntegerRange\000";
     static const int32_t values[] = {
         GetDocumentsRequest_WhereOperator_Equal,
         GetDocumentsRequest_WhereOperator_GreaterThan,
@@ -9687,6 +11064,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         GetDocumentsRequest_WhereOperator_In,
         GetDocumentsRequest_WhereOperator_StartsWith,
         GetDocumentsRequest_WhereOperator_InTimeRange,
+        GetDocumentsRequest_WhereOperator_InIntegerRange,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_WhereOperator)
@@ -9716,6 +11094,7 @@ BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
     case GetDocumentsRequest_WhereOperator_In:
     case GetDocumentsRequest_WhereOperator_StartsWith:
     case GetDocumentsRequest_WhereOperator_InTimeRange:
+    case GetDocumentsRequest_WhereOperator_InIntegerRange:
       return YES;
     default:
       return NO;
@@ -10086,6 +11465,131 @@ typedef struct GetDocumentsRequest_TimeRangeSelection_Grid__storage_ {
 
 @end
 
+#pragma mark - GetDocumentsRequest_IntegerRangeSelection
+
+@implementation GetDocumentsRequest_IntegerRangeSelection
+
+@dynamic hasStart, start;
+@dynamic hasGrid, grid;
+
+typedef struct GetDocumentsRequest_IntegerRangeSelection__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_DocumentFieldValue *start;
+  GetDocumentsRequest_IntegerRangeSelection_Grid *grid;
+} GetDocumentsRequest_IntegerRangeSelection__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "start",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue),
+        .number = GetDocumentsRequest_IntegerRangeSelection_FieldNumber_Start,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection__storage_, start),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "grid",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_IntegerRangeSelection_Grid),
+        .number = GetDocumentsRequest_IntegerRangeSelection_FieldNumber_Grid,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection__storage_, grid),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_IntegerRangeSelection class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_IntegerRangeSelection__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetDocumentsRequest_IntegerRangeSelection_Grid
+
+@implementation GetDocumentsRequest_IntegerRangeSelection_Grid
+
+@dynamic range;
+@dynamic step;
+@dynamic phase;
+
+typedef struct GetDocumentsRequest_IntegerRangeSelection_Grid__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t range;
+  uint64_t step;
+  uint64_t phase;
+} GetDocumentsRequest_IntegerRangeSelection_Grid__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "range",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Range,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_, range),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "step",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Step,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_, step),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "phase",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Phase,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_, phase),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_IntegerRangeSelection_Grid class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest_IntegerRangeSelection)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentsRequest_WhereClause
 
 @implementation GetDocumentsRequest_WhereClause
@@ -10094,6 +11598,7 @@ typedef struct GetDocumentsRequest_TimeRangeSelection_Grid__storage_ {
 @dynamic operator_p;
 @dynamic hasValue, value;
 @dynamic hasTimeRange, timeRange;
+@dynamic hasIntegerRange, integerRange;
 
 typedef struct GetDocumentsRequest_WhereClause__storage_ {
   uint32_t _has_storage_[1];
@@ -10101,6 +11606,7 @@ typedef struct GetDocumentsRequest_WhereClause__storage_ {
   NSString *field;
   GetDocumentsRequest_DocumentFieldValue *value;
   GetDocumentsRequest_TimeRangeSelection *timeRange;
+  GetDocumentsRequest_IntegerRangeSelection *integerRange;
 } GetDocumentsRequest_WhereClause__storage_;
 
 // This method is threadsafe because it is initially called
@@ -10142,6 +11648,15 @@ typedef struct GetDocumentsRequest_WhereClause__storage_ {
         .number = GetDocumentsRequest_WhereClause_FieldNumber_TimeRange,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, timeRange),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "integerRange",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_IntegerRangeSelection),
+        .number = GetDocumentsRequest_WhereClause_FieldNumber_IntegerRange,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, integerRange),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -12467,12 +13982,14 @@ void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCas
 @dynamic innerDocumentsArray, innerDocumentsArray_Count;
 @dynamic outerDocumentsArray, outerDocumentsArray_Count;
 @dynamic missingOuterIdsArray, missingOuterIdsArray_Count;
+@dynamic removedOuterDocumentsArray, removedOuterDocumentsArray_Count;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *innerDocumentsArray;
   NSMutableArray *outerDocumentsArray;
   NSMutableArray *missingOuterIdsArray;
+  NSMutableArray *removedOuterDocumentsArray;
 } GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_;
 
 // This method is threadsafe because it is initially called
@@ -12507,6 +14024,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__sto
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_, missingOuterIdsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "removedOuterDocumentsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractDocumentRemovalsResponse_ContractDocumentRemoval),
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments_FieldNumber_RemovedOuterDocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_ChainedDocuments__storage_, removedOuterDocumentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -12593,12 +14119,14 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments__s
 @dynamic documents;
 @dynamic counts;
 @dynamic missingIdsArray, missingIdsArray_Count;
+@dynamic removedArray, removedArray_Count;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_ {
   uint32_t _has_storage_[2];
   GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
   GetDocumentsResponse_GetDocumentsResponseV1_CountEntries *counts;
   NSMutableArray *missingIdsArray;
+  NSMutableArray *removedArray;
 } GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_;
 
 // This method is threadsafe because it is initially called
@@ -12633,6 +14161,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_Su
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_, missingIdsArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "removedArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContractDocumentRemovalsResponse_ContractDocumentRemoval),
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult_FieldNumber_RemovedArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResult__storage_, removedArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -26990,6 +28527,142 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPur
 
 @end
 
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent
+
+@implementation GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent
+
+@dynamic amount;
+@dynamic actionsDigest;
+@dynamic hasPublicNote, publicNote;
+
+typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *actionsDigest;
+  NSString *publicNote;
+  uint64_t amount;
+} GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "amount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_Amount,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_, amount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "actionsDigest",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_ActionsDigest,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_, actionsDigest),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "publicNote",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_PublicNote,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_, publicNote),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent
+
+@implementation GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent
+
+@dynamic amount;
+@dynamic actionsDigest;
+@dynamic hasPublicNote, publicNote;
+
+typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *actionsDigest;
+  NSString *publicNote;
+  uint64_t amount;
+} GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "amount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_Amount,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_, amount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "actionsDigest",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_ActionsDigest,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_, actionsDigest),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "publicNote",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_PublicNote,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_, publicNote),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
 
 @implementation GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
@@ -27291,6 +28964,8 @@ void GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent_ClearTypeOn
 @dynamic emergencyAction;
 @dynamic tokenConfigUpdate;
 @dynamic updatePrice;
+@dynamic mintToPool;
+@dynamic burnFromPool;
 
 typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_ {
   uint32_t _has_storage_[2];
@@ -27302,6 +28977,8 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
   GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent *emergencyAction;
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent *tokenConfigUpdate;
   GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *updatePrice;
+  GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent *mintToPool;
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent *burnFromPool;
 } GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_;
 
 // This method is threadsafe because it is initially called
@@ -27379,6 +29056,24 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
         .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_UpdatePrice,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, updatePrice),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "mintToPool",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent),
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_MintToPool,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, mintToPool),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "burnFromPool",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent),
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_BurnFromPool,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, burnFromPool),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -30084,10 +31779,12 @@ void GetShieldedEncryptedNotesRequest_ClearVersionOneOfCase(GetShieldedEncrypted
 @dynamic startIndex;
 @dynamic count;
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_ {
   uint32_t _has_storage_[1];
   uint32_t count;
+  NSData *tokenId;
   uint64_t startIndex;
 } GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_;
 
@@ -30123,6 +31820,15 @@ typedef struct GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequest
         .offset = 3,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_TokenId,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -30468,9 +32174,11 @@ void GetShieldedAnchorsRequest_ClearVersionOneOfCase(GetShieldedAnchorsRequest *
 @implementation GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -30487,6 +32195,15 @@ typedef struct GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_ {
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -30753,9 +32470,11 @@ void GetMostRecentShieldedAnchorRequest_ClearVersionOneOfCase(GetMostRecentShiel
 @implementation GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -30772,6 +32491,15 @@ typedef struct GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorReq
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -30992,9 +32720,11 @@ void GetShieldedPoolStateRequest_ClearVersionOneOfCase(GetShieldedPoolStateReque
 @implementation GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -31011,6 +32741,15 @@ typedef struct GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storag
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -31231,9 +32970,11 @@ void GetShieldedNotesCountRequest_ClearVersionOneOfCase(GetShieldedNotesCountReq
 @implementation GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -31250,6 +32991,15 @@ typedef struct GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__stor
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -31471,10 +33221,12 @@ void GetShieldedNullifiersRequest_ClearVersionOneOfCase(GetShieldedNullifiersReq
 
 @dynamic nullifiersArray, nullifiersArray_Count;
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *nullifiersArray;
+  NSData *tokenId;
 } GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -31500,6 +33252,15 @@ typedef struct GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__stor
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

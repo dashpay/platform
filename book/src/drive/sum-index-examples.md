@@ -18,7 +18,7 @@ The `tip` document type carries four properties (`recipient`, `amount`, `sentAt`
   "properties": {
     "recipient": { "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
                    "position": 0, "contentMediaType": "application/x.dash.dpp.identifier" },
-    "amount":    { "type": "integer", "minimum": 1, "position": 1 },
+    "amount":    { "type": "integer", "minimum": 1, "maximum": 4294967295, "position": 1 },
     "sentAt":    { "type": "integer", "minimum": 0, "position": 2 },
     "note":      { "type": "string", "maxLength": 280, "position": 3 }
   },

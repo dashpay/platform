@@ -2664,7 +2664,8 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
+          ["ts-protoc-gen", "npm:0.15.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -12883,6 +12884,13 @@ const RAW_RUNTIME_STATE =
           ["google-protobuf", "npm:3.19.1"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.21.4", {\
+        "packageLocation": "./.yarn/cache/google-protobuf-npm-3.21.4-48c47540d3-0d87fe8ef2.zip/node_modules/google-protobuf/",\
+        "packageDependencies": [\
+          ["google-protobuf", "npm:3.21.4"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["gopd", [\
@@ -21663,6 +21671,16 @@ const RAW_RUNTIME_STATE =
           "@types/swc__core",\
           "@types/swc__wasm",\
           "@types/typescript"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["ts-protoc-gen", [\
+      ["npm:0.15.0", {\
+        "packageLocation": "./.yarn/cache/ts-protoc-gen-npm-0.15.0-4bb1076a19-de1d526b47.zip/node_modules/ts-protoc-gen/",\
+        "packageDependencies": [\
+          ["google-protobuf", "npm:3.21.4"],\
+          ["ts-protoc-gen", "npm:0.15.0"]\
         ],\
         "linkType": "HARD"\
       }]\

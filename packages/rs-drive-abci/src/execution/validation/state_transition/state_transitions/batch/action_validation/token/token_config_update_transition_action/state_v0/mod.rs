@@ -312,6 +312,12 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
             ))
             | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
                 AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                AuthorizedActionTakers::Identity(identity_id),
+            )
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(
+                AuthorizedActionTakers::Identity(identity_id),
             ) => {
                 let (identity_balance, fee) = platform.drive.fetch_identity_balance_with_costs(
                     identity_id.to_buffer(),
@@ -392,6 +398,12 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
             ))
             | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
                 AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
+            )
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(
+                AuthorizedActionTakers::Group(group_contract_position),
             ) => {
                 if !self
                     .data_contract_fetch_info()
@@ -452,6 +464,12 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
             )
             | TokenConfigurationChangeItem::EmergencyAction(AuthorizedActionTakers::MainGroup)
             | TokenConfigurationChangeItem::EmergencyActionAdminGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                AuthorizedActionTakers::MainGroup,
+            )
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(
                 AuthorizedActionTakers::MainGroup,
             ) if token_configuration.main_control_group().is_none() => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(

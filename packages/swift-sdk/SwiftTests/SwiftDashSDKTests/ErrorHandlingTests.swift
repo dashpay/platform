@@ -285,6 +285,117 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertNil(invented.consensusError)
     }
 
+    /// rs-sdk-ffi's kind decodes to the same four families from its own
+    /// generated C constants, and its `None` value is absence rather than a
+    /// family.
+    func testShouldMapEveryDashSDKConsensusErrorKindFromFFI() {
+        let mappings: [(DashSDKConsensusErrorKind, PlatformConsensusError.Kind)] = [
+            (ConsensusErrorKindBasic, .basic),
+            (ConsensusErrorKindSignature, .signature),
+            (ConsensusErrorKindFee, .fee),
+            (ConsensusErrorKindState, .state),
+        ]
+        for (ffi, expected) in mappings {
+            XCTAssertEqual(PlatformConsensusError.Kind(ffi: ffi), expected)
+        }
+        XCTAssertNil(PlatformConsensusError.Kind(ffi: ConsensusErrorKindNone))
+    }
+
+    /// An rs-sdk-ffi error that carries Platform's verdict becomes the typed
+    /// consensus case, whatever coarse code the message earned it. 10422 is a
+    /// violated propertyConstraints rule.
+    func testShouldSurfaceAConsensusRejectionFromAnSDKError() {
+        let rendered = "Protocol error: document violates propertyConstraints rule 0"
+        let message = strdup(rendered)
+        defer { free(message) }
+
+        let error = SDKError.fromDashSDKError(
+            DashSDKError(
+                code: DashSDKErrorCode(rawValue: 5), // ProtocolError
+                message: message,
+                consensus_code: 10422,
+                consensus_kind: ConsensusErrorKindBasic
+            )
+        )
+
+        guard case .consensusRejection(let consensus, let text) = error else {
+            return XCTFail("expected typed consensusRejection error, got \(error)")
+        }
+        XCTAssertEqual(consensus, PlatformConsensusError(code: 10422, kind: .basic))
+        XCTAssertEqual(text, rendered)
+        XCTAssertEqual(error.errorDescription, "Rejected by Platform: \(rendered)")
+        // The accessor is what callers branch on, so it must agree.
+        XCTAssertEqual(error.consensusError, consensus)
+    }
+
+    /// Without a verdict the coarse code still picks the case.
+    func testShouldKeepTheCoarseCaseOfAnSDKErrorWithoutAVerdict() {
+        let rendered = "Protocol error: unexpected response"
+        let message = strdup(rendered)
+        defer { free(message) }
+
+        let error = SDKError.fromDashSDKError(
+            DashSDKError(
+                code: DashSDKErrorCode(rawValue: 5), // ProtocolError
+                message: message,
+                consensus_code: 0,
+                consensus_kind: ConsensusErrorKindNone
+            )
+        )
+
+        guard case .protocolError(let text) = error else {
+            return XCTFail("an error with no verdict must keep its coarse case, got \(error)")
+        }
+        XCTAssertEqual(text, rendered)
+        XCTAssertNil(error.consensusError)
+    }
+
+    /// A failed state transition call throws Platform's verdict when the FFI
+    /// error carries one, and the case the call site always threw when it
+    /// does not, with the call site's message either way.
+    func testShouldThrowTheVerdictOfAFailedStateTransitionOnlyWhenThereIsOne() {
+        let refusedByPlatform = DashSDKError(
+            code: DashSDKErrorCode(rawValue: 99), // InternalError
+            message: nil,
+            consensus_code: 41107,
+            consensus_kind: ConsensusErrorKindState
+        )
+        let refused = SDKError.stateTransitionFailure(
+            "Token mint failed: user banned", ffiError: refusedByPlatform)
+        guard case .consensusRejection(let consensus, let text) = refused else {
+            return XCTFail("expected typed consensusRejection error, got \(refused)")
+        }
+        XCTAssertEqual(consensus, PlatformConsensusError(code: 41107, kind: .state))
+        XCTAssertEqual(text, "Token mint failed: user banned")
+
+        let noVerdict = DashSDKError(
+            code: DashSDKErrorCode(rawValue: 99), // InternalError
+            message: nil,
+            consensus_code: 0,
+            consensus_kind: ConsensusErrorKindNone
+        )
+        let failed = SDKError.stateTransitionFailure(
+            "Token mint failed: timed out", ffiError: noVerdict)
+        guard case .internalError(let failedText) = failed else {
+            return XCTFail("a failure with no verdict must stay internalError, got \(failed)")
+        }
+        XCTAssertEqual(failedText, "Token mint failed: timed out")
+        XCTAssertNil(failed.consensusError)
+
+        // A call site that threw protocolError keeps it, and a missing FFI
+        // error is no verdict either.
+        guard case .protocolError = SDKError.stateTransitionFailure(
+            "Broadcast failed", ffiError: noVerdict, otherwise: SDKError.protocolError
+        ) else {
+            return XCTFail("the call site's own case must survive without a verdict")
+        }
+        guard case .internalError = SDKError.stateTransitionFailure(
+            "Unknown error", ffiError: nil
+        ) else {
+            return XCTFail("a missing FFI error must not become a rejection")
+        }
+    }
+
     func testPlatformWalletNotFoundFFIResultMapping() {
         // Code 98 (the blanket Option→result miss) stays typed inside the
         // wallet-error family — the mapping Kotlin now converges on

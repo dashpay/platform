@@ -62,6 +62,10 @@ pub struct TokenVersions {
     /// `TokenPreProgrammedDistribution::validate_amounts`. Called from protocol version 14 on
     /// (data contract create `basic_structure` v2 and `DataContract::validate_update` v1).
     pub validate_pre_programmed_distribution_amounts: FeatureVersion,
+    /// Accepted `TokenConfiguration` format versions. `max_version` 0 admits only `V0`; 1 also
+    /// admits `V1`, which adds the per-token shielded pool flag. Contract creates and updates
+    /// carrying a format above the bound are rejected with `UnsupportedVersionError`.
+    pub token_configuration_format: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -99,6 +103,18 @@ pub struct DocumentTypeMethodVersions {
     /// contender names one contest with one poll. `None` on versions that predate it, where
     /// the values are taken as given.
     pub canonical_contested_index_values: OptionalFeatureVersion,
+    /// `fill_generated_properties`: writes each `generatedFrom` property a
+    /// created or replaced document leaves out, generated from its params,
+    /// before anything reads the document's data. `None` on versions that predate the
+    /// keyword: the method leaves the data untouched there, so the shipped action
+    /// transformers and proof verification that call it are inert.
+    pub fill_generated_properties: OptionalFeatureVersion,
+    /// `validate_generated_from_properties`: refuses a document whose
+    /// `generatedFrom` property is not what its function generates from its
+    /// params, or is present while a param is absent. `None` on versions that predate the
+    /// keyword: the method returns an empty result there, so the shipped
+    /// `DataContract::validate_document_properties` 0 that calls it is inert.
+    pub validate_generated_from: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -145,6 +161,12 @@ pub struct DocumentTypeSchemaVersions {
     /// read. `None` on versions that predate the keyword: they ignore it
     /// entirely, exactly as they parsed before it existed.
     pub parse_property_constraints: OptionalFeatureVersion,
+    /// Parses the `generatedFrom` property keyword (a string property whose
+    /// value a built-in function generates from other properties of the same
+    /// document) onto the property, and checks the properties it reads at
+    /// contract registration. `None` on versions that predate the keyword: they ignore
+    /// it entirely, exactly as they parsed before it existed.
+    pub apply_generated_from: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

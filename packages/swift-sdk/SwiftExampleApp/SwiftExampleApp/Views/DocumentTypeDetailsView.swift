@@ -9,17 +9,27 @@ struct DocumentTypeDetailsView: View {
     @Environment(\.dismiss) var dismiss
     @State private var expandedIndices: Set<String> = []
     @State private var showingCreateDocument = false
+    /// The type's `propertyConstraints` rules as Rust reads them; `nil` until
+    /// loaded.
+    @State private var propertyConstraints: [DocumentPropertyConstraint]?
+    @State private var propertyConstraintsError: String?
 
     var body: some View {
         List {
             newDocumentSection
             documentInfoSection
             documentSettingsSection
+            propertyConstraintsSection
             documentIndexesSection
             documentPropertiesSection
         }
         .navigationTitle(documentType.name)
         .navigationBarTitleDisplayMode(.inline)
+        // Re-read when the SDK learns the network's protocol version: the
+        // rules are parsed at that version, and none exist below 14.
+        .task(id: appState.platformProtocolVersion) {
+            loadPropertyConstraints()
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -181,6 +191,57 @@ struct DocumentTypeDetailsView: View {
         }
     }
 
+    /// Protocol version 14: named rules every created or replaced document
+    /// must meet, checked in name order. Rust parses them from the stored
+    /// contract; this section only shows what it reports.
+    @ViewBuilder
+    private var propertyConstraintsSection: some View {
+        if let error = propertyConstraintsError {
+            Section("Property Constraints") {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        } else if let rules = propertyConstraints, !rules.isEmpty {
+            Section {
+                ForEach(rules, id: \.name) { rule in
+                    PropertyConstraintRowView(rule: rule)
+                }
+            } header: {
+                Text("Property Constraints (\(rules.count))")
+            } footer: {
+                Text("Every created or replaced document must meet each rule, checked in name order. A document breaking one is refused (error 10422) and the fee is still charged.")
+            }
+        } else if propertyConstraints != nil, documentType.declaresPropertyConstraints {
+            Section("Property Constraints") {
+                Text("The schema declares propertyConstraints, but the network's protocol version does not enforce them (they take effect at protocol version 14).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func loadPropertyConstraints() {
+        // A schema without the keyword has no rules to read
+        guard documentType.declaresPropertyConstraints else {
+            propertyConstraints = []
+            propertyConstraintsError = nil
+            return
+        }
+        guard let sdk = appState.sdk else {
+            propertyConstraints = nil
+            propertyConstraintsError = "Connect to a network to read the property constraints."
+            return
+        }
+        do {
+            propertyConstraints = try documentType.propertyConstraints(using: sdk)
+            propertyConstraintsError = nil
+        } catch {
+            propertyConstraints = nil
+            propertyConstraintsError = "Could not read the property constraints: \(error.localizedDescription)"
+        }
+    }
+
     @ViewBuilder
     private var documentIndexesSection: some View {
         if let indices = documentType.indices, !indices.isEmpty {
@@ -279,11 +340,18 @@ struct ExpandableIndexRowView: View {
                         }
                     }
 
+                    // Read once: each keyword accessor parses the document
+                    // type's whole persisted schema.
+                    let keywords = index.authoredKeywords
+
                     // An omitted terminal on an indexOnly type means
                     // $ownerId per DPP; the SDK persists verbatim, so the
-                    // display default is applied here.
-                    let displayTerminal = index.terminal
-                        ?? (index.documentType?.indexOnly == true ? "$ownerId" : nil)
+                    // display default is applied here. A
+                    // summableOffCountIndex index keeps one counter per
+                    // group instead of entries, so it has no terminal.
+                    let displayTerminal: String? = keywords.summableOffCountIndex != nil
+                        ? nil
+                        : index.terminal ?? (index.documentType?.indexOnly == true ? "$ownerId" : nil)
                     if let terminal = displayTerminal {
                         HStack {
                             Text("Terminal:")
@@ -328,10 +396,18 @@ struct ExpandableIndexRowView: View {
                         if let summable = index.summable ?? index.averageable {
                             labels.append("Summable (\(summable))")
                         }
+                        if let source = keywords.summableOffCountIndex {
+                            labels.append("Counter of \(source)")
+                        }
                         if index.rangeSummable || index.rangeAverageable { labels.append("Range Sum") }
-                        if index.rankedCountable { labels.append("Ranked by Count") }
-                        if index.rankedSummable { labels.append("Ranked by Sum") }
-                        if index.rankedAverageable { labels.append("Ranked by Average") }
+                        let rankings: [(label: String, declared: Bool, at: [String])] = [
+                            ("Ranked by Count", index.rankedCountable, keywords.rankedCountableAt),
+                            ("Ranked by Sum", index.rankedSummable, keywords.rankedSummableAt),
+                            ("Ranked by Average", index.rankedAverageable, keywords.rankedAverageableAt)
+                        ]
+                        labels.append(contentsOf: rankings.compactMap {
+                            Self.rankingLabel($0.label, declared: $0.declared, at: $0.at)
+                        })
                         return labels
                     }()
                     if !axisLabels.isEmpty {
@@ -386,6 +462,132 @@ struct ExpandableIndexRowView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// `label` for a declared ranking, naming the levels of its
+    /// `{ "at": ... }` form when it has one, like the Kotlin example app's
+    /// rankingDescriptor. Named levels count as declared on their own: a row
+    /// persisted before the parser kept the object form has its column false.
+    private static func rankingLabel(_ label: String, declared: Bool, at levels: [String]) -> String? {
+        if !levels.isEmpty {
+            return "\(label) at \(levels.joined(separator: ", "))"
+        }
+        return declared ? label : nil
+    }
+}
+
+/// One `propertyConstraints` rule: its name, the rule as declared, what it
+/// reads (properties, `$ownerId`, system times and heights, `countOf` and
+/// `sumOf` totals), and whether an owner change is judged against it too.
+struct PropertyConstraintRowView: View {
+    let rule: DocumentPropertyConstraint
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(rule.name)
+                    .font(.headline)
+                Spacer()
+                if rule.readsOwner {
+                    Text("$ownerId")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.2))
+                        .foregroundColor(.purple)
+                        .cornerRadius(4)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(rule.prettyRuleJSON)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+
+            if !readsText.isEmpty {
+                Text("Reads: \(readsText)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if rule.readsOwner {
+                Label(
+                    "Reads $ownerId, the document's owner: transfers and purchases are judged against this rule too.",
+                    systemImage: "person.crop.circle.badge.checkmark"
+                )
+                .font(.caption2)
+                .foregroundColor(.purple)
+            }
+
+            if !systemReadsText.isEmpty {
+                Label("Reads \(systemReadsText)", systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundColor(.teal)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsSystem")
+                Text("A price update is judged against the rules reading $updatedAt or its block heights, and a transfer or purchase against those reading $transferredAt or its block heights.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if !totalReadsText.isEmpty {
+                Label("Reads totals: \(totalReadsText)", systemImage: "sum")
+                    .font(.caption2)
+                    .foregroundColor(.indigo)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsTotals")
+                Text("The platform reads these totals when the document is sent; the check before sending does not, so it cannot catch this rule.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        // Keeps the row's identifier on the row and the readsSystem and
+        // readsTotals lines' on those lines, rather than the row's on every
+        // child
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
+    }
+
+    /// Each property the rule reads with how it reads it, repeats dropped.
+    private var readsText: String {
+        var seen = Set<PropertyConstraintRead>()
+        return rule.reads
+            .filter { seen.insert($0).inserted }
+            .map { "\($0.path) (\($0.kind.name))" }
+            .joined(separator: ", ")
+    }
+
+    /// The system times and heights the rule reads, repeats dropped.
+    private var systemReadsText: String {
+        var seen = Set<String>()
+        return rule.readsSystem
+            .filter { seen.insert($0).inserted }
+            .joined(separator: ", ")
+    }
+
+    /// The `countOf` and `sumOf` totals the rule reads, repeats dropped, each
+    /// as `countOf <type>` or `sumOf <property> of <type>`, followed by
+    /// `by <filter keys>` when it filters: `countOf listing by $ownerId;
+    /// sumOf price of listing by category`. The Android example app builds the
+    /// same text, for cross-platform UAT: keep the two identical.
+    private var totalReadsText: String {
+        var seen = Set<String>()
+        return rule.readsTotals
+            .map { total in
+                // Only a `sumOf` names a property
+                var text = total.kind.name
+                if let property = total.property {
+                    text += " \(property) of"
+                }
+                text += " \(total.documentType)"
+                if !total.filter.isEmpty {
+                    text += " by \(total.filter.joined(separator: ", "))"
+                }
+                return text
+            }
+            .filter { seen.insert($0).inserted }
+            .joined(separator: "; ")
     }
 }
 

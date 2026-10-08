@@ -944,6 +944,203 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "tokens.shielded_pools",
+            "key": {
+              "type": "fixed",
+              "hex": "e0",
+              "label": "TokenShieldedPools",
+              "constant": "TOKEN_SHIELDED_POOLS_KEY"
+            },
+            "kinds": [
+              "BigSumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+            "book": "data-model/token-shielded-pools.md",
+            "description": "The shielded balances of tokens that enable an Orchard pool.",
+            "children": [
+              {
+                "id": "tokens.shielded_pools.token",
+                "key": {
+                  "type": "dynamic",
+                  "name": "token_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The token id"
+                },
+                "kinds": [
+                  "SumTree"
+                ],
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                "description": "The Orchard pool for one token.",
+                "children": [
+                  {
+                    "id": "tokens.shielded_pools.token.total_balance",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "20",
+                      "label": "TotalBalance",
+                      "constant": "SHIELDED_TOTAL_BALANCE_KEY"
+                    },
+                    "kinds": [
+                      "SumItem"
+                    ],
+                    "value": "token amount",
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "Every token in the pool.",
+                    "children": []
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.nullifiers",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "40",
+                      "label": "Nullifiers",
+                      "constant": "SHIELDED_NULLIFIERS_KEY"
+                    },
+                    "kinds": [
+                      "ProvableCountTree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "The nullifier of every spent note, so none is spent twice.",
+                    "children": [
+                      {
+                        "id": "tokens.shielded_pools.token.nullifiers.nullifier",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "nullifier",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The nullifier"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "empty",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                        "description": "One spent note.",
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.anchors_by_height",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "60",
+                      "label": "AnchorsByHeight",
+                      "constant": "SHIELDED_ANCHORS_BY_HEIGHT_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "The commitment tree anchor after each block that added notes, for pruning old anchors.",
+                    "children": [
+                      {
+                        "id": "tokens.shielded_pools.token.anchors_by_height.height",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "block_height",
+                          "matcher": {
+                            "type": "len",
+                            "len": 8
+                          },
+                          "encoding": "u64_be",
+                          "description": "The block height"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "the anchor, 32 bytes",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                        "description": "The anchor at that height.",
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.notes",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "80",
+                      "label": "Notes",
+                      "constant": "SHIELDED_NOTES_KEY"
+                    },
+                    "kinds": [
+                      "CommitmentTree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "Every note ever added to the pool. Read by every wallet sync.",
+                    "opaque": "Note commitments with their encrypted notes in a bulk append tree, plus the Sinsemilla frontier the anchors are computed from.",
+                    "children": []
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.anchors_in_pool",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "c0",
+                      "label": "AnchorsInPool",
+                      "constant": "SHIELDED_ANCHORS_IN_POOL_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "The anchors a spend may still prove against.",
+                    "children": [
+                      {
+                        "id": "tokens.shielded_pools.token.anchors_in_pool.anchor",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "anchor",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The anchor"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "the block height, u64 big endian",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                        "description": "One valid anchor.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -1915,6 +2112,48 @@
         "description": "Credits collected as fees and not yet paid out. A sum tree, so its total is every credit held by the pools.",
         "children": [
           {
+            "id": "pools.lifetime_storage_fee_pools",
+            "key": {
+              "type": "fixed",
+              "hex": "6c",
+              "label": "LifetimeStorageFeePools",
+              "constant": "KEY_LIFETIME_STORAGE_FEE_POOLS",
+              "ascii": true
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/credit_pools/epochs/epochs_root_tree_key_constants.rs",
+            "book": "data-model/document-ttl.md",
+            "description": "Storage fees for storage that lives a known number of epochs (documents with a time to live), by the epoch they were collected in and that number, waiting for the next epoch change to spread them evenly over those epochs and remove them.",
+            "children": [
+              {
+                "id": "pools.lifetime_storage_fee_pools.pool",
+                "key": {
+                  "type": "dynamic",
+                  "name": "collected_epoch_and_lifetime_epochs",
+                  "matcher": {
+                    "type": "len",
+                    "len": 4
+                  },
+                  "encoding": "composite",
+                  "description": "The epoch the fees were collected in, u16 big endian without the epoch trees' offset of 256, then how many epochs their storage lives, at most one era, u16 big endian"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/credit_pools/epochs/epochs_root_tree_key_constants.rs",
+                "description": "The storage fees to spread over that many epochs.",
+                "children": []
+              }
+            ]
+          },
+          {
             "id": "pools.pending_epoch_refunds",
             "key": {
               "type": "fixed",
@@ -1941,7 +2180,7 @@
                     "len": 2
                   },
                   "encoding": "u16_be",
-                  "description": "The epoch the refund comes out of, offset by 256"
+                  "description": "The epoch the refunded storage was paid in, u16 big endian, without the epoch trees' offset of 256"
                 },
                 "kinds": [
                   "SumItem"
@@ -1997,13 +2236,13 @@
             "id": "pools.epoch",
             "key": {
               "type": "dynamic",
-              "name": "epoch_index",
+              "name": "epoch_index_plus_256",
               "matcher": {
                 "type": "len",
                 "len": 2
               },
               "encoding": "u16_be",
-              "description": "The epoch index offset by 256, so epoch keys sort after the one byte keys"
+              "description": "The epoch index plus 256 (`EPOCH_KEY_OFFSET`), u16 big endian"
             },
             "kinds": [
               "SumTree"
@@ -2708,7 +2947,7 @@
                               "EpochOwned",
                               "None"
                             ],
-                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes carry no flags.",
+                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                             "value": "serialized document",
                             "since": 1,
                             "presence": "always",
@@ -2770,24 +3009,26 @@
                             "type": "any"
                           },
                           "encoding": "utf8",
-                          "description": "The name of an index's next property; a time range property appends its grid as #range#step"
+                          "description": "The name of an index's next property; a time or integer range property appends its grid as #range#step"
                         },
                         "kinds": [
                           "Tree",
                           "CountTree",
                           "ProvableCountTree",
+                          "SumTree",
                           "ProvableSumTree",
+                          "CountSumTree",
                           "ProvableCountProvableSumTree",
                           "ProvableCountIndexedTree",
                           "ProvableSumIndexedTree",
                           "ProvableCountProvableSumIndexedTree"
                         ],
-                        "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                        "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                         "flags": [
                           "EpochOwned",
                           "None"
                         ],
-                        "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                        "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                         "since": 1,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -2803,7 +3044,7 @@
                                 "type": "any"
                               },
                               "encoding": "serialized_value",
-                              "description": "The property's value serialized for ordering; empty for null; a bucket start for a time range property"
+                              "description": "The property's value serialized for ordering; empty for null; a window start for a time or integer range property"
                             },
                             "kinds": [
                               "Tree",
@@ -2811,14 +3052,15 @@
                               "SumTree",
                               "CountSumTree",
                               "ProvableCountSumTree",
-                              "ProvableCountProvableSumTree"
+                              "ProvableCountProvableSumTree",
+                              "SumItem"
                             ],
-                            "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum.",
+                            "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum. At the last property of a summableOffCountIndex index, a sum item counting the source index's entries for the value, in place of the tree.",
                             "flags": [
                               "EpochOwned",
                               "None"
                             ],
-                            "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                            "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -2849,7 +3091,7 @@
                                   "EpochOwned",
                                   "None"
                                 ],
-                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                                 "reference": "contracts.contract.documents.document_type.primary_key.document",
                                 "since": 1,
                                 "presence": "lazy",
@@ -2879,7 +3121,7 @@
                                       "EpochOwned",
                                       "None"
                                     ],
-                                    "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes carry no flags.",
+                                    "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                                     "value": "for index only document types, a 32 byte row commitment",
                                     "reference": "contracts.contract.documents.document_type.primary_key.document",
                                     "since": 1,
@@ -2905,18 +3147,20 @@
                                   "Tree",
                                   "CountTree",
                                   "ProvableCountTree",
+                                  "SumTree",
                                   "ProvableSumTree",
+                                  "CountSumTree",
                                   "ProvableCountProvableSumTree",
                                   "ProvableCountIndexedTree",
                                   "ProvableSumIndexedTree",
                                   "ProvableCountProvableSumIndexedTree"
                                 ],
-                                "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                                "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                                 "flags": [
                                   "EpochOwned",
                                   "None"
                                 ],
-                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                                 "since": 1,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -2973,7 +3217,7 @@
                     "since": 14,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                    "description": "The records of the documents the contract's moderators deleted. Created with the first document type that sets canBeDeletedByModerators, by the contract's creation or by an update. Read by clients, never by a document transition, so it sorts below the rest.",
+                    "description": "The records of the documents the contract's moderators deleted. Created with the first document type whose moderators' deletions keep records, by the contract's creation or by an update. Read by clients, never by a document transition, so it sorts below the rest.",
                     "children": [
                       {
                         "id": "contracts.contract.other.document_removals.document_type",
@@ -2997,7 +3241,7 @@
                         "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                        "description": "The removed documents of one document type that sets canBeDeletedByModerators. Created with the document type, by the contract's creation or by the update that adds the type.",
+                        "description": "The removed documents of one document type whose moderators' deletions keep records. Created with the document type, by the contract's creation or by the update that adds the type.",
                         "children": [
                           {
                             "id": "contracts.contract.other.document_removals.document_type.document",
@@ -3017,13 +3261,258 @@
                             "flags": [
                               "EpochOwned"
                             ],
-                            "flags_note": "The owner is the moderator who deleted the document. They pay for the record, which nothing deletes or replaces.",
-                            "value": "the document owner's id, the moderator's id, the block time in milliseconds of the removal as a u64 big endian, then the moderator's reason as in a banlist entry",
+                            "flags_note": "The owner is the moderator who deleted the document, restored it, or deleted it again once restored, as GroveDB's flag merge passes the record on: a longer rewrite passes to its writer, who pays for the added bytes; a shorter one refunds the bytes it frees to the moderator the record named, and passes to its writer only within the epoch the record was paid in (or once the record spans epochs), keeping the earlier moderator otherwise; a rewrite of the same size keeps the earlier moderator. Nothing deletes it.",
+                            "value": "the document owner's id, the moderator's id, the block time in milliseconds of the removal as a u64 big endian, the hash of the removed document, a tag byte (bit 0: restored, bit 1: kept fields), the restoring moderator's id and the restoration time when restored, the kept fields when any (their length as a u32 big endian, then the bytes), then the moderator's reason as in a banlist entry",
                             "since": 14,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                            "description": "One removal: whose document it was, who removed it, when and why. Never deleted and never replaced: a document id is produced at most once.",
+                            "description": "One removal: whose document it was, who removed it, when and why, what it was, and who restored it. Never deleted: replaced in place by the restore that marks it and by the deletion of a restored document, which writes a fresh record over it.",
                             "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "contracts.contract.other.team_actions",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "18",
+                      "label": "TeamActions",
+                      "constant": "CONTRACT_TEAM_ACTIONS_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "flags": [
+                      "EpochOwned",
+                      "None"
+                    ],
+                    "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                    "since": 14,
+                    "presence": "lazy",
+                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                    "description": "The actions the contract's seated moderation team votes on, shaped like a token group's: one member proposes, the others approve by the action's id, and the action runs once the approvals meet its rule. Today the deletion of a settled document, past its type's `deleteWithin`. Created with the contract when one of its document types sets `moderatorAbilities.deleteSettled`: no update can add such a type, since the elected declaration fixed at creation must give the team `deleteDocuments` on it. Read by the team and by clients, never by a document transition, so it sorts below the rest.",
+                    "children": [
+                      {
+                        "id": "contracts.contract.other.team_actions.active",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "4d",
+                          "label": "ActiveTeamActions",
+                          "constant": "CONTRACT_TEAM_ACTIVE_ACTIONS_KEY",
+                          "ascii": true
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "Team actions still gathering approvals. Nothing lapses: an action that never gets there stays.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.other.team_actions.active.team_action",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "action_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The action id"
+                            },
+                            "kinds": [
+                              "Tree"
+                            ],
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                            "description": "One action in progress. Moved to the closed actions when the approvals meet its rule.",
+                            "children": [
+                              {
+                                "id": "contracts.contract.other.team_actions.active.team_action.info",
+                                "key": {
+                                  "type": "fixed",
+                                  "hex": "49",
+                                  "label": "TeamActionInfo",
+                                  "constant": "CONTRACT_TEAM_ACTION_INFO_KEY",
+                                  "ascii": true
+                                },
+                                "kinds": [
+                                  "Item"
+                                ],
+                                "flags": [
+                                  "EpochOwned"
+                                ],
+                                "flags_note": "The owner is the member who proposed (the action) or approved (an approval), in the epoch they did, refunded when the action closes and moves.",
+                                "value": "a tag byte (0: delete a settled document), the proposer's id, the block time of the proposal as a u64 big endian, the document type name's length in one byte and the name, the document id, the document's last modification and its revision then (0: none), each a u64 big endian, then the reason as in a banlist entry",
+                                "since": 14,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                                "description": "What the action does and why, written by its proposer.",
+                                "children": []
+                              },
+                              {
+                                "id": "contracts.contract.other.team_actions.active.team_action.signers",
+                                "key": {
+                                  "type": "fixed",
+                                  "hex": "53",
+                                  "label": "TeamActionSigners",
+                                  "constant": "CONTRACT_TEAM_ACTION_SIGNERS_KEY",
+                                  "ascii": true
+                                },
+                                "kinds": [
+                                  "SumTree"
+                                ],
+                                "since": 14,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                                "description": "Who approved, the proposer first; the sum is the number of approvals.",
+                                "children": [
+                                  {
+                                    "id": "contracts.contract.other.team_actions.active.team_action.signers.signer",
+                                    "key": {
+                                      "type": "dynamic",
+                                      "name": "identity_id",
+                                      "matcher": {
+                                        "type": "len",
+                                        "len": 32
+                                      },
+                                      "encoding": "identifier32",
+                                      "description": "The member's identity id"
+                                    },
+                                    "kinds": [
+                                      "SumItem"
+                                    ],
+                                    "flags": [
+                                      "EpochOwned"
+                                    ],
+                                    "flags_note": "The owner is the member who proposed (the action) or approved (an approval), in the epoch they did, refunded when the action closes and moves.",
+                                    "value": "1",
+                                    "since": 14,
+                                    "presence": "always",
+                                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                                    "description": "One approval.",
+                                    "children": []
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "id": "contracts.contract.other.team_actions.closed",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "58",
+                          "label": "ClosedTeamActions",
+                          "constant": "CONTRACT_TEAM_CLOSED_ACTIONS_KEY",
+                          "ascii": true
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                        "description": "Team actions that ran, kept for good with the approvals that counted: those of members who left the team were dropped.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.other.team_actions.closed.team_action",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "action_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The action id"
+                            },
+                            "kinds": [
+                              "Tree"
+                            ],
+                            "since": 14,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                            "description": "One action that ran.",
+                            "children": [
+                              {
+                                "id": "contracts.contract.other.team_actions.closed.team_action.info",
+                                "key": {
+                                  "type": "fixed",
+                                  "hex": "49",
+                                  "label": "TeamActionInfo",
+                                  "constant": "CONTRACT_TEAM_ACTION_INFO_KEY",
+                                  "ascii": true
+                                },
+                                "kinds": [
+                                  "Item"
+                                ],
+                                "flags_note": "Entries moved or written when an action closes carry no flags: the member whose approval closed it pays for them.",
+                                "value": "a tag byte (0: delete a settled document), the proposer's id, the block time of the proposal as a u64 big endian, the document type name's length in one byte and the name, the document id, the document's last modification and its revision then (0: none), each a u64 big endian, then the reason as in a banlist entry",
+                                "since": 14,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                                "description": "What the action does and why, written by its proposer.",
+                                "children": []
+                              },
+                              {
+                                "id": "contracts.contract.other.team_actions.closed.team_action.signers",
+                                "key": {
+                                  "type": "fixed",
+                                  "hex": "53",
+                                  "label": "TeamActionSigners",
+                                  "constant": "CONTRACT_TEAM_ACTION_SIGNERS_KEY",
+                                  "ascii": true
+                                },
+                                "kinds": [
+                                  "SumTree"
+                                ],
+                                "since": 14,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                                "description": "Who approved, the proposer first; the sum is the number of approvals.",
+                                "children": [
+                                  {
+                                    "id": "contracts.contract.other.team_actions.closed.team_action.signers.signer",
+                                    "key": {
+                                      "type": "dynamic",
+                                      "name": "identity_id",
+                                      "matcher": {
+                                        "type": "len",
+                                        "len": 32
+                                      },
+                                      "encoding": "identifier32",
+                                      "description": "The member's identity id"
+                                    },
+                                    "kinds": [
+                                      "SumItem"
+                                    ],
+                                    "flags_note": "Entries moved or written when an action closes carry no flags: the member whose approval closed it pays for them.",
+                                    "value": "1",
+                                    "since": 14,
+                                    "presence": "always",
+                                    "source": "packages/rs-drive/src/drive/contract/paths.rs",
+                                    "description": "One approval.",
+                                    "children": []
+                                  }
+                                ]
+                              }
+                            ]
                           }
                         ]
                       }
@@ -3545,6 +4034,46 @@
                 "children": []
               }
             ]
+          },
+          {
+            "id": "withdrawals.core_credit_pool_balances",
+            "key": {
+              "type": "fixed",
+              "hex": "06",
+              "label": "CoreCreditPoolBalances",
+              "constant": "WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY"
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+            "description": "Core's credit pool balance after each Core block read, for the Core-anchored withdrawal limit.",
+            "children": [
+              {
+                "id": "withdrawals.core_credit_pool_balances.balance",
+                "key": {
+                  "type": "dynamic",
+                  "name": "core_height",
+                  "matcher": {
+                    "type": "len",
+                    "len": 4
+                  },
+                  "encoding": "u32_be",
+                  "description": "The Core block height"
+                },
+                "kinds": [
+                  "Item"
+                ],
+                "value": "credits, u64 big endian",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+                "description": "The credit pool balance after that Core block.",
+                "children": []
+              }
+            ]
           }
         ]
       },
@@ -3896,7 +4425,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Chain wide values: total credits, total token supplies, the genesis core height.",
+        "description": "Chain wide values: total credits, total token supplies, the genesis core height, and the documents waiting to expire.",
         "children": [
           {
             "id": "misc.genesis_core_height",
@@ -3935,6 +4464,70 @@
             "source": "packages/rs-drive/src/drive/balances/mod.rs",
             "description": "Every credit in Platform. Must equal the sum of all balance and pool trees.",
             "children": []
+          },
+          {
+            "id": "misc.documents_expirations",
+            "key": {
+              "type": "fixed",
+              "hex": "45",
+              "label": "DocumentsExpirations",
+              "constant": "DOCUMENTS_EXPIRATIONS_KEY",
+              "ascii": true
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
+            "book": "data-model/document-ttl.md",
+            "description": "Every document whose type declares a `ttl`, by the time it expires. After each block's state transitions the platform deletes the expired ones, oldest first, a versioned number per block.",
+            "children": [
+              {
+                "id": "misc.documents_expirations.expiry_time",
+                "key": {
+                  "type": "dynamic",
+                  "name": "expires_at",
+                  "matcher": {
+                    "type": "len",
+                    "len": 8
+                  },
+                  "encoding": "u64_be",
+                  "description": "When the documents under it expire, in ms"
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 14,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
+                "description": "The documents expiring at one time: created in one block by types of one time to live. Removed with its last entry.",
+                "children": [
+                  {
+                    "id": "misc.documents_expirations.expiry_time.document",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "document_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The document id"
+                    },
+                    "kinds": [
+                      "Item"
+                    ],
+                    "value": "contract id (32 bytes), then the document type name",
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
+                    "description": "Where the expiring document is. Removed with the document, whoever deletes it. No flags: the document's creation paid for the time it lives.",
+                    "children": []
+                  }
+                ]
+              }
+            ]
           },
           {
             "id": "misc.total_token_supplies",
@@ -4205,8 +4798,10 @@
                                   "description": "The value of the next index property; empty for null"
                                 },
                                 "kinds": [
-                                  "Tree"
+                                  "Tree",
+                                  "CountTree"
                                 ],
+                                "kinds_note": "A count tree for the last value of the index when the poll started at protocol version 14 or later, counting its contenders plus its stored info, abstain and lock entries, so a join reads how many contenders the poll has in one fetch. A tree otherwise.",
                                 "flags": [
                                   "EpochOwned",
                                   "None"
@@ -4478,8 +5073,10 @@
                                       "description": "The value of the next index property; empty for null"
                                     },
                                     "kinds": [
-                                      "Tree"
+                                      "Tree",
+                                      "CountTree"
                                     ],
+                                    "kinds_note": "A count tree for the last value of the index when the poll started at protocol version 14 or later, counting its contenders plus its stored info, abstain and lock entries, so a join reads how many contenders the poll has in one fetch. A tree otherwise.",
                                     "flags": [
                                       "EpochOwned",
                                       "None"
@@ -5161,6 +5758,33 @@
         }
       }
     },
+    "contracts.contract.other.team_actions": {
+      "origin": "fixture contract_with_team_actions@14",
+      "tree": {
+        "hex": "58",
+        "left": {
+          "hex": "4d"
+        }
+      }
+    },
+    "contracts.contract.other.team_actions.active.team_action": {
+      "origin": "fixture contract_with_team_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
+    "contracts.contract.other.team_actions.closed.team_action": {
+      "origin": "fixture contract_with_team_actions@14",
+      "tree": {
+        "hex": "53",
+        "left": {
+          "hex": "49"
+        }
+      }
+    },
     "group_actions.contract.group": {
       "origin": "fixture tokens_and_group_actions@14",
       "tree": {
@@ -5322,9 +5946,12 @@
     "misc": {
       "origin": "genesis@14",
       "tree": {
-        "hex": "54",
+        "hex": "45",
         "left": {
           "hex": "44"
+        },
+        "right": {
+          "hex": "54"
         }
       }
     },
@@ -5530,6 +6157,9 @@
           "hex": "c0",
           "left": {
             "hex": "a0"
+          },
+          "right": {
+            "hex": "e0"
           }
         }
       }
@@ -5567,6 +6197,24 @@
         },
         "right": {
           "hex": "c0"
+        }
+      }
+    },
+    "tokens.shielded_pools.token": {
+      "origin": "fixture token_shielded_pool@14",
+      "tree": {
+        "hex": "60",
+        "left": {
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          }
+        },
+        "right": {
+          "hex": "c0",
+          "left": {
+            "hex": "80"
+          }
         }
       }
     },
@@ -5621,20 +6269,23 @@
     "withdrawals": {
       "origin": "genesis@14",
       "tree": {
-        "hex": "03",
+        "hex": "02",
         "left": {
           "hex": "01",
           "left": {
             "hex": "00"
-          },
-          "right": {
-            "hex": "02"
           }
         },
         "right": {
-          "hex": "05",
+          "hex": "04",
           "left": {
-            "hex": "04"
+            "hex": "03"
+          },
+          "right": {
+            "hex": "05",
+            "right": {
+              "hex": "06"
+            }
           }
         }
       }

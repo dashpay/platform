@@ -1,8 +1,10 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
-    StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
+    validate_batch_token_pool_nullifiers_unspent, StateTransitionHasShieldedProofValidationV0,
+    StateTransitionShieldedProofValidationV0,
 };
 use crate::platform_types::check_tx_proof_verifier::IdentityProofVerification;
 
@@ -25,7 +27,6 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializableUntrusted;
-#[cfg(test)]
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
 use dpp::validation::ValidationResult;
@@ -193,26 +194,61 @@ where
 
             check_tx_result.fee_result = Some(estimated_fee_result);
 
+            // A batch that spends a token shielded pool note the pool already records can only
+            // fail: block validation refuses it on that record. Reading the record costs a few
+            // key lookups against a pool tree; verifying the bundles the batch carries costs a
+            // Halo 2 verification per bundle, which the node would otherwise pay for before
+            // discovering the free reason to refuse. A batch needed this read of its own: the
+            // pool-paid transitions check their bundles against state in their own transformer,
+            // which runs here, while a batch's pool checks live in per-action state validation,
+            // which does not.
+            //
+            // Both levels read it. The first check keeps such a batch out; the re-check after
+            // every block is what evicts one that was admitted while its note was still unspent,
+            // and without it that batch sits in the mempool until a proposer spends a block slot
+            // on it. A batch's pool checks are in its per-action state validation, which a
+            // re-check does not run.
+            if errors.is_empty() {
+                if let StateTransition::Batch(batch) = &state_transition {
+                    let result = validate_batch_token_pool_nullifiers_unspent(
+                        batch,
+                        platform_ref.drive,
+                        platform_version,
+                    )?;
+                    errors.extend(result.errors);
+                }
+            }
+
             // Orchard verification is intentionally last.
             // The preliminary balance floor includes an identity-write allowance;
             // the execution-event fee check remains the authoritative check
             // against actual metered writes before expensive proof work.
             if errors.is_empty() && matches!(check_tx_level, CheckTxLevel::FirstTimeCheck) {
-                if let Some((identity_id, nonce)) =
+                if let Some(admission_key) =
                     state_transition.shielded_proof_identity_nonce_admission_key()
                 {
-                    let committed_nonce = platform_ref.drive.fetch_identity_nonce(
-                        identity_id,
-                        true,
-                        None,
-                        platform_version,
-                    )?;
+                    let committed_nonce = match admission_key {
+                        ShieldedProofAdmissionKey::Identity { identity_id, .. } => platform_ref
+                            .drive
+                            .fetch_identity_nonce(identity_id, true, None, platform_version)?,
+                        ShieldedProofAdmissionKey::IdentityContract {
+                            identity_id,
+                            contract_id,
+                            ..
+                        } => platform_ref.drive.fetch_identity_contract_nonce(
+                            identity_id,
+                            contract_id,
+                            true,
+                            None,
+                            platform_version,
+                        )?,
+                    };
                     let verification = self
                         .check_tx_proof_verifier
                         .try_acquire_identity_nonce(
-                            identity_id,
+                            admission_key.cache_key(),
                             committed_nonce,
-                            nonce,
+                            admission_key.nonce(),
                             hash_single(raw_tx),
                             state_transition.shielded_proof_action_count(),
                             platform_version.protocol_version,

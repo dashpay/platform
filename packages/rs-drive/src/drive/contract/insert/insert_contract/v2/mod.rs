@@ -1,13 +1,19 @@
 use crate::drive::Drive;
+use crate::error::contract::DataContractError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
+use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -16,6 +22,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Generation 2 (protocol version 14): generation 1, and a contract whose config declares
     /// moderation also gets its banlist and suspension list trees under keys `128` and `192` of the contract's other tree (`[64, id, 2]`).
+    /// Each of the contract's tokens that opts into a shielded pool also gets its pool trees.
     #[inline(always)]
     pub(super) fn insert_contract_v2(
         &self,
@@ -88,7 +95,9 @@ impl Drive {
         Ok(())
     }
 
-    /// The generation 1 operations, then the moderation list trees the config declares.
+    /// The generation 1 operations, then the once-per-identity claims subtree of every token
+    /// that has a once-per-identity distribution, then the moderation list trees the config
+    /// declares and the shielded pool trees of the tokens that opt in.
     fn insert_contract_operations_v2(
         &self,
         contract_element: Element,
@@ -113,6 +122,32 @@ impl Drive {
             platform_version,
         )?;
 
+        // The claims subtree of every token whose rules carry a once-per-identity
+        // distribution. Only protocol version 14 admits those rules, so generation 1, which
+        // protocol versions 9-13 select, does not create it.
+        for (token_pos, token_config) in contract.tokens() {
+            if token_config
+                .distribution_rules()
+                .once_per_identity_distribution()
+                .is_none()
+            {
+                continue;
+            }
+            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
+                DataContractError::CorruptedDataContract(format!(
+                    "data contract has a token at position {}, but can not find it",
+                    token_pos
+                )),
+            ))?;
+            self.add_once_per_identity_distribution(
+                token_id.to_buffer(),
+                estimated_costs_only_with_layer_info,
+                &mut batch_operations,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         if let Some(moderation) = contract.config().moderation() {
             self.insert_contract_moderation_trees_operations(
                 contract.id().to_buffer(),
@@ -125,14 +160,14 @@ impl Drive {
             )?;
 
             // The records of the documents the moderators delete: one tree per document type
-            // moderators can delete documents of, and above them their common tree, which a
-            // contract without such a document type does not get. Its other tree then holds
+            // whose moderators' deletions keep records, and above them their common tree, which
+            // a contract without such a document type does not get. Its other tree then holds
             // what it would have held, in the shape it would have had; the update that adds
             // the first such document type creates the common tree.
             let document_type_names: Vec<&str> = contract
                 .document_types()
                 .values()
-                .filter(|document_type| document_type.documents_can_be_deleted_by_moderators())
+                .filter(|document_type| document_type.moderator_deletions_keep_records())
                 .map(|document_type| document_type.name().as_str())
                 .collect();
             if !document_type_names.is_empty() {
@@ -147,6 +182,49 @@ impl Drive {
                     platform_version,
                 )?;
             }
+
+            // The actions the seated team votes on, the deletions of settled documents among
+            // them: their tree, with the active and the closed actions under it, only when a
+            // document type sets `deleteSettled`. Only here: such a type needs the elected
+            // declaration, fixed at creation, to give its team `deleteDocuments` on it, so no
+            // update can add one.
+            if contract.keeps_team_actions() {
+                self.insert_contract_team_action_trees_operations(
+                    contract.id().to_buffer(),
+                    storage_flags.as_ref(),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+            }
+        }
+
+        for (position, configuration) in contract.tokens() {
+            if !configuration.has_shielded_pool() {
+                continue;
+            }
+            let token_id = calculate_token_id(contract.id().as_bytes(), *position);
+            // An update is estimated through the insert path (the stateless existence read
+            // reports nothing), so a pool the token already owns must not be priced as created
+            // again; a real insert never finds one.
+            if estimated_costs_only_with_layer_info.is_some()
+                && self.has_token_shielded_pool(
+                    token_id,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?
+            {
+                continue;
+            }
+            batch_operations.extend(self.create_token_shielded_pool_trees_operations(
+                token_id,
+                false,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            )?);
         }
 
         Ok(batch_operations)

@@ -94,7 +94,9 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
     }
 }
 
-fn check_ownership(
+/// A [`DocumentOwnerIdMismatchError`] unless `owner_id` owns `fetched_document`. Shared
+/// with state validation 1, which runs the same checks before the type's delete rules.
+pub(super) fn check_ownership(
     document_transition: &DocumentDeleteTransitionAction,
     fetched_document: &Document,
     owner_id: &Identifier,

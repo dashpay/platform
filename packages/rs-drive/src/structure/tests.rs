@@ -272,6 +272,7 @@ mod walker {
 mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
@@ -322,9 +323,10 @@ mod fixtures {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
     use dpp::data_contract::config::moderation::{
         ContractDocumentRemoval, ContractModerationConfig, ContractModerationReason,
-        ContractModerators, ContractWarning, ElectedModerators, InterimModerators,
-        ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+        ContractModerators, ContractTeamAction, ContractTeamActionEvent, ContractWarning, ElectedModerators,
+        InterimModerators, ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
     };
+    use crate::drive::contract::moderation::types::ContractTeamActionWrite;
     use dpp::data_contract::config::v0::{DataContractConfigSettersV0, DataContractConfigV0};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
@@ -335,7 +337,8 @@ mod fixtures {
     use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
-    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::Credits;
     use dpp::group::action_event::GroupActionEvent;
     use dpp::group::group_action::v0::GroupActionV0;
@@ -356,6 +359,7 @@ mod fixtures {
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
 
     /// Nodes no fixture below reaches, but the drive-abci strategy tests do:
@@ -693,7 +697,7 @@ mod fixtures {
                                 "text": { "type": "string", "maxLength": 50, "position": 0 },
                             },
                             "additionalProperties": false,
-                            "canBeDeletedByModerators": true,
+                            "moderatorAbilities": { "delete": true },
                         }),
                         true,
                         &mut vec![],
@@ -711,15 +715,17 @@ mod fixtures {
                         contract_id: contract.id(),
                         document_type_name: "post".to_string(),
                         document_id: Identifier::from([0x23; 32]),
-                        removal: ContractDocumentRemoval {
+                        removal: Box::new(ContractDocumentRemoval {
                             document_owner_id: Identifier::from([0x24; 32]),
                             moderator_id: contract.owner_id(),
                             reason: ContractModerationReason::from_text("spam"),
                             removed_at: 1_000,
                             document_hash: [0x25; 32],
                             restoration: None,
-                        },
-                        replaces_existing: false,
+                            kept_fields: Default::default(),
+                        }),
+                        replaced_record_size: None,
+                        estimated_kept_fields_size: 0,
                         moderator_id: contract.owner_id(),
                     },
                 )],
@@ -870,6 +876,134 @@ mod fixtures {
             )
             .expect("expected to count a moderation action");
         conformance_of(&drive, "elected_contract", run);
+    }
+
+    /// An elected contract whose team deletes settled posts once its leader approves, with one
+    /// team action still gathering approvals and one that ran. Kept apart from the elected
+    /// contract, whose other tree's shape is recorded.
+    fn contract_with_team_actions(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract.json",
+            Some([12; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.set_config(contract.config().clone().with_moderation(Some(
+                    ContractModerationConfig {
+                        banlist: false,
+                        suspensions: false,
+                        warnings: false,
+                        moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                            challenge_cool_down: None,
+                            election_delay: None,
+                            max_added_moderators: 0,
+                            moderated_document_types: BTreeMap::from([(
+                                "post".to_string(),
+                                BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                            )]),
+                            interim: InterimModerators::ContractOwner,
+                            owner_protected: false,
+                        })),
+                    },
+                )));
+                // After the config: the keyword needs an elected declaration.
+                contract
+                    .set_document_schema(
+                        "post",
+                        platform_value!({
+                            "type": "object",
+                            "properties": {
+                                "text": { "type": "string", "maxLength": 50, "position": 0 },
+                            },
+                            "required": ["$createdAt", "$updatedAt"],
+                            "additionalProperties": false,
+                            "moderatorAbilities": {
+                                "delete": true,
+                                "deleteWithin": 86400,
+                                "deleteSettled": { "leader": true },
+                            },
+                        }),
+                        true,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .expect("expected to add a document type whose settled posts a team deletes");
+            }),
+            None,
+            Some(platform_version),
+        );
+        let proposal = |document_id: [u8; 32]| ContractTeamAction {
+            proposer_id: Identifier::from([0x27; 32]),
+            proposed_at: 1_000,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from(document_id),
+                document_last_modified_at: 10,
+                document_revision: Some(1),
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
+        };
+        let signature =
+            |action_id: [u8; 32], signer_id: [u8; 32], write: ContractTeamActionWrite| {
+                DriveOperation::ContractModerationOperation(
+                    ContractModerationOperationType::AddTeamActionSignature {
+                        contract_id: contract.id(),
+                        action_id: Identifier::from(action_id),
+                        signer_id: Identifier::from(signer_id),
+                        write,
+                    },
+                )
+            };
+        drive
+            .apply_drive_operations(
+                vec![
+                    // Proposed and approved once more, still short of the rule
+                    signature(
+                        [0x30; 32],
+                        [0x27; 32],
+                        ContractTeamActionWrite::Propose {
+                            action: proposal([0x26; 32]),
+                            closes: false,
+                        },
+                    ),
+                    // Proposed by a member who meets the rule alone, so it ran at once
+                    signature(
+                        [0x31; 32],
+                        [0x27; 32],
+                        ContractTeamActionWrite::Propose {
+                            action: proposal([0x28; 32]),
+                            closes: true,
+                        },
+                    ),
+                ],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record the proposals of two team actions");
+        drive
+            .apply_drive_operations(
+                vec![signature(
+                    [0x30; 32],
+                    [0x29; 32],
+                    ContractTeamActionWrite::Approve {
+                        dropped_signers: vec![],
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to record an approval of a team action");
+        conformance_of(&drive, "contract_with_team_actions", run);
     }
 
     /// A contract that keeps the banlist and the warning list, with one identity carrying two
@@ -1087,6 +1221,16 @@ mod fixtures {
             )
             .expect("expected to set address balances");
         conformance_of(&drive, "address_balances", run);
+    }
+
+    /// The Core-anchored withdrawal accounting: a recorded Core credit pool balance.
+    fn core_anchored_withdrawal_accounting(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .record_core_credit_pool_blocks(&[(100, 5_000_000)], None, platform_version)
+            .expect("expected to record a Core block");
+        conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
     }
 
     /// An epoch while it runs, then after it was paid out: payout deletes the
@@ -1553,22 +1697,166 @@ mod fixtures {
         conformance_of(&drive, "spent_nullifiers", run);
     }
 
+    fn token_shielded_pool(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [7; 32];
+        let operations = drive
+            .create_token_shielded_pool_trees_operations(
+                token_id,
+                false,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("expected the token pool operations");
+        apply_operations(&drive, operations);
+        apply_operations(
+            &drive,
+            Drive::insert_token_pool_note_op(
+                token_id,
+                [1; 32],
+                [2; 32],
+                [3; 32],
+                vec![1; 216],
+                platform_version,
+            )
+            .expect("expected the token note operations"),
+        );
+        apply_operations(
+            &drive,
+            Drive::insert_token_pool_nullifiers(token_id, &[[4; 32]], platform_version)
+                .expect("expected the token nullifier operations"),
+        );
+        let transaction = drive.grove.start_transaction();
+        drive
+            .record_token_shielded_pool_anchor_if_changed(
+                token_id,
+                1,
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to record the token pool anchor");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the token anchor");
+        conformance_of(&drive, "token_shielded_pool", run);
+    }
+    /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
+    /// in the documents expirations tree under the time it expires, and a lifetime storage fee
+    /// pool. Two of them expire together, created in the same block.
+    fn expiring_documents(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a contract factory")
+            .create_with_value_config(
+                Identifier::from([31; 32]),
+                0,
+                platform_value!({ "note": {
+                    "type": "object",
+                    "documentsMutable": true,
+                    "ttl": 1_209_600,
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    },
+                    "indices": [
+                        { "name": "byText", "properties": [{ "text": "asc" }] },
+                    ],
+                    "required": ["$createdAt", "text"],
+                    "additionalProperties": false,
+                }}),
+                None,
+                None,
+            )
+            .expect("expected the contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        let document_type = contract
+            .document_type_for_name("note")
+            .expect("expected the note type");
+        for (seed, created_at) in [(1u8, 1_000_000u64), (2, 1_000_000), (3, 2_000_000)] {
+            let document = Document::V0(DocumentV0 {
+                id: Identifier::from([seed; 32]),
+                owner_id: Identifier::from([32; 32]),
+                properties: BTreeMap::from([(
+                    "text".to_string(),
+                    Value::Text(format!("note {seed}")),
+                )]),
+                revision: Some(1),
+                created_at: Some(created_at),
+                ..Default::default()
+            });
+            let owner_flags = StorageFlags::new_single_epoch(0, Some([32; 32]));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(owner_flags)),
+                            )),
+                            owner_id: Some([32; 32]),
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo {
+                        time_ms: created_at,
+                        ..Default::default()
+                    },
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to add the document");
+        }
+        // Their storage fees, waiting in the pool of the epochs they live for the next epoch
+        // change.
+        let mut batch = GroveDbOpBatch::new();
+        batch.push(
+            update_lifetime_storage_fee_pool_operation(0, 2, 1_000)
+                .expect("expected the lifetime pool operation"),
+        );
+        drive
+            .grove_apply_batch(batch, false, None, &platform_version.drive)
+            .expect("expected to fill a lifetime pool");
+        conformance_of(&drive, "expiring_documents", run);
+    }
+
     /// Runs every fixture
     pub(super) fn run_all() -> FixtureRun {
         let mut run = FixtureRun::default();
         identities(&mut run);
         contracts_with_documents(&mut run);
+        expiring_documents(&mut run);
         moderated_contract(&mut run);
         warned_contract(&mut run);
         elected_contract(&mut run);
         contract_with_document_removals(&mut run);
+        contract_with_team_actions(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
+        core_anchored_withdrawal_accounting(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
+        token_shielded_pool(&mut run);
         run
     }
 

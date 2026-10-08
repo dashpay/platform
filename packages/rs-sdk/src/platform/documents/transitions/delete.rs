@@ -3,6 +3,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, INITIAL_REVISION};
@@ -90,7 +91,10 @@ impl DocumentDeleteTransitionBuilder {
             document.id(),
             document.owner_id(),
         );
-        // Keep the full document: an indexOnly delete carries its values.
+        // Keep the full document: an indexOnly delete carries its values. A
+        // property only a `summableOffCountIndex` index's source fixes sits in
+        // no entry-keeping index, so a document read back lacks it: set it
+        // from the referenced document before passing the document here.
         builder.document = Some(document.clone());
         builder
     }
@@ -195,7 +199,6 @@ impl DocumentDeleteTransitionBuilder {
         ),
         Error,
     > {
-        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
         use dpp::document::DocumentV0Getters;
 
         let document_type = self
@@ -248,6 +251,8 @@ impl DocumentDeleteTransitionBuilder {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
         Ok((document_type, document))
     }
@@ -298,7 +303,7 @@ impl DocumentDeleteTransitionBuilder {
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),
-            self.token_payment_info,
+            self.token_payment_info.clone(),
             signer,
             platform_version,
             self.state_transition_creation_options,
@@ -320,7 +325,10 @@ impl Sdk {
     /// Deletes an existing document from the platform.
     ///
     /// This method broadcasts a document deletion transition to permanently remove
-    /// a document from the platform. The result confirms the deletion.
+    /// a document from the platform. The result confirms the deletion. For an
+    /// indexOnly document type the proof shows the document's entry gone at the
+    /// proof's block, not that this delete removed it: no stronger proof exists
+    /// for such a document.
     ///
     /// # Arguments
     ///
@@ -349,14 +357,32 @@ impl Sdk {
         let platform_version = self.version();
 
         let put_settings = delete_document_transition_builder.settings;
+        let index_only = delete_document_transition_builder
+            .data_contract
+            .document_type_for_name(&delete_document_transition_builder.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?
+            .index_only();
 
         let state_transition = delete_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
 
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
+        // An indexOnly document keeps no row: its proof shows the entry is gone, which it would
+        // also be had it never existed, so it cannot prove that this delete executed. That is the
+        // strongest proof such a document has, so it is accepted rather than failing a delete
+        // that landed.
+        let proof_result = if index_only {
+            state_transition
+                .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                    self,
+                    put_settings,
+                )
+                .await?
+        } else {
+            state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+                .await?
+        };
 
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {

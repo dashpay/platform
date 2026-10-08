@@ -57,7 +57,16 @@
 #[path = "batched_group_drain.rs"]
 mod batched_group_drain;
 
+use crate::config::DriveConfig;
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
+use crate::error::Error;
+use crate::query::drive_document_average_query::{AverageMode, DocumentAverageRequest};
+use crate::query::drive_document_count_query::{
+    CountMode, DocumentCountRequest, DocumentCountResponse,
+};
+use crate::query::drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, SumMode};
+use crate::query::{WhereClause, WhereOperator};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -66,13 +75,16 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::platform_value::Value;
+use dpp::identifier::Identifier;
+use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 use grovedb::Element;
+use std::collections::BTreeMap;
 
 /// The one index property every doctype in the fixture ranks by.
 const GROUP_PROPERTY: &str = "restaurantId";
@@ -301,7 +313,12 @@ fn axis_top_k_keys(
     }
 }
 
-fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
+pub(super) fn avg_top_k(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    k: u16,
+    descending: bool,
+) -> Vec<(i128, Vec<u8>)> {
     match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Avg, k, descending) {
         grovedb::AxisKeys::Avg(pairs) => pairs,
         other => panic!("expected avg keys, got {other:?}"),
@@ -718,8 +735,6 @@ const PROTOCOL_VERSION_V14: u32 = 14;
 fn try_build_dish_contract(
     standalone_prefix_index: bool,
 ) -> Result<DataContract, dpp::ProtocolError> {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
     use dpp::tests::utils::generate_random_identifier_struct;
 
     let factory =
@@ -800,12 +815,18 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         range_summable: true,
         ranked_countable: false,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: true,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
     };
     let index_structure =
         IndexLevel::try_from_indices([&compound_ranked_index], "dish", platform_version())
@@ -886,8 +907,6 @@ fn compound_ranked_index_contract_parses_unless_its_prefix_aggregates() {
 fn try_build_null_searchable_ranked_contract(
     null_searchable: Option<bool>,
 ) -> Result<DataContract, dpp::ProtocolError> {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
     use dpp::tests::utils::generate_random_identifier_struct;
 
     let factory =
@@ -1020,12 +1039,18 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         range_summable: false,
         ranked_countable: true,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
     };
 
     for null_searchable in [false, true] {
@@ -1070,9 +1095,6 @@ fn build_cafe_contract(
     owner_id: dpp::identifier::Identifier,
     with_ranked_doctype: bool,
 ) -> DataContract {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
-
     let factory =
         DataContractFactory::new(PROTOCOL_VERSION_V14).expect("expected to create factory");
 
@@ -1767,8 +1789,6 @@ fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_populatio
 /// multi-index fixture in `query::drive_document_ranked_query::tests` had to
 /// hang its compound sibling off a count-only index instead.
 fn build_shared_prefix_ranked_dish_contract() -> DataContract {
-    use dpp::data_contract::DataContractFactory;
-    use dpp::platform_value::platform_value;
     use dpp::tests::utils::generate_random_identifier_struct;
 
     let factory =
@@ -1996,4 +2016,322 @@ fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() 
     );
 
     assert_grovedb_is_consistent(&drive);
+}
+
+/// A contract whose `order` type ranks `restaurantId` by count
+/// (`byRestaurantOrders`) while the unranked `byRestaurantGuests` continues
+/// below it, so the second index's `restaurantId` level is the first's
+/// indexed tree; its `tab` type does the same with an unranked summable
+/// `byRestaurantDay` below the ranked `byRestaurantTabs`.
+fn build_order_contract_continuing_below_a_ranked_level() -> DataContract {
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("expected to create factory")
+        .create_with_value_config(
+            Identifier::from([7; 32]),
+            0,
+            platform_value!({
+                "order": {
+                    "type": "object",
+                    "properties": {
+                        "restaurantId": {"type": "string", "position": 0, "maxLength": 32},
+                        "guests": {"type": "integer", "minimum": 1, "maximum": 100, "position": 1},
+                    },
+                    "required": ["restaurantId", "guests"],
+                    "indices": [
+                        {
+                            "name": "byRestaurantOrders",
+                            "properties": [{"restaurantId": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "rankedCountable": true,
+                        },
+                        {
+                            "name": "byRestaurantGuests",
+                            "properties": [{"restaurantId": "asc"}, {"guests": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                        },
+                    ],
+                    "additionalProperties": false,
+                },
+                "tab": {
+                    "type": "object",
+                    "properties": {
+                        "restaurantId": {"type": "string", "position": 0, "maxLength": 32},
+                        "day": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 1},
+                        "amount": {"type": "integer", "minimum": 0, "maximum": 1000000, "position": 2},
+                    },
+                    "required": ["restaurantId", "day", "amount"],
+                    "indices": [
+                        {
+                            "name": "byRestaurantTabs",
+                            "properties": [{"restaurantId": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "rankedCountable": true,
+                        },
+                        {
+                            "name": "byRestaurantDay",
+                            "properties": [{"restaurantId": "asc"}, {"day": "asc"}],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                            "summable": "amount",
+                            "rangeSummable": true,
+                        },
+                    ],
+                    "additionalProperties": false,
+                },
+            }),
+            None,
+            None,
+        )
+        .expect("expected to create the order data contract")
+        .data_contract_owned()
+}
+
+/// A range total through an unranked index is refused, with and without a
+/// proof, when its path passes through a level another index ranks: grovedb
+/// cannot prove a range total through that indexed tree, and the unproven
+/// read refuses it too so the read, the proof and its verification agree
+/// (unproven, grovedb would total the unranked leaf). Grouped by the range's
+/// property, the same range still reads each value.
+#[test]
+fn should_refuse_a_range_total_through_another_index_s_ranked_level() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = build_order_contract_continuing_below_a_ranked_level();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the order contract");
+    insert_docs(
+        &drive,
+        &contract,
+        "order",
+        "guests",
+        &[("alpha", 2), ("alpha", 5), ("beta", 4)],
+    );
+
+    let document_type = contract
+        .document_type_for_name("order")
+        .expect("order doctype exists");
+    let drive_config = DriveConfig::default();
+    let count = |where_clauses: Vec<WhereClause>, mode: CountMode, prove: bool| {
+        drive.execute_document_count_request(
+            DocumentCountRequest {
+                contract: &contract,
+                document_type,
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode,
+                limit: None,
+                prove,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+    };
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let more_than_three = clause("guests", WhereOperator::GreaterThan, Value::I64(3));
+    let alpha = clause(
+        GROUP_PROPERTY,
+        WhereOperator::Equal,
+        Value::Text("alpha".to_string()),
+    );
+    let both = clause(
+        GROUP_PROPERTY,
+        WhereOperator::In,
+        Value::Array(vec![
+            Value::Text("alpha".to_string()),
+            Value::Text("beta".to_string()),
+        ]),
+    );
+    let refused = |result: Result<DocumentCountResponse, Error>| {
+        matches!(
+            result,
+            Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                if message.starts_with("a range total")
+        )
+    };
+
+    for prove in [false, true] {
+        assert!(
+            refused(count(
+                vec![alpha.clone(), more_than_three.clone()],
+                CountMode::Aggregate,
+                prove,
+            )),
+            "a range total (prove: {prove})"
+        );
+        assert!(
+            refused(count(
+                vec![both.clone(), more_than_three.clone()],
+                CountMode::GroupByIn,
+                prove,
+            )),
+            "a range total per restaurant (prove: {prove})"
+        );
+    }
+    match count(vec![alpha, more_than_three], CountMode::GroupByRange, false)
+        .expect("a range read per value answers")
+    {
+        DocumentCountResponse::Entries(entries) => {
+            assert_eq!(
+                entries.iter().map(|entry| entry.count).collect::<Vec<_>>(),
+                vec![Some(1)],
+                "alpha's one order of five guests"
+            )
+        }
+        other => panic!("expected entries, got {other:?}"),
+    }
+}
+
+/// The sum and average forms of the refusal above: a range sum or average
+/// total through the unranked `byRestaurantDay`, which continues below the
+/// ranked `byRestaurantTabs`, is refused with and without a proof, per
+/// restaurant across an `IN` too, while the range sums per day still answer.
+#[test]
+fn should_refuse_a_range_sum_or_average_total_through_another_index_s_ranked_level() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = build_order_contract_continuing_below_a_ranked_level();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the order contract");
+    let document_type = contract
+        .document_type_for_name("tab")
+        .expect("tab doctype exists");
+    for (i, (restaurant, day, amount)) in [("alpha", 1, 20), ("alpha", 5, 30), ("beta", 4, 10)]
+        .into_iter()
+        .enumerate()
+    {
+        let mut doc = document_type
+            .random_document(Some(100 + i as u64), pv)
+            .expect("random document");
+        doc.set_properties(BTreeMap::from([
+            (
+                GROUP_PROPERTY.to_string(),
+                Value::Text(restaurant.to_string()),
+            ),
+            ("day".to_string(), Value::I64(day)),
+            ("amount".to_string(), Value::I64(amount)),
+        ]));
+        insert_doc(&drive, &contract, "tab", &doc);
+    }
+
+    let drive_config = DriveConfig::default();
+    let clause = |field: &str, operator: WhereOperator, value: Value| WhereClause {
+        field: field.to_string(),
+        operator,
+        value,
+    };
+    let after_day_three = clause("day", WhereOperator::GreaterThan, Value::I64(3));
+    let alpha = clause(
+        GROUP_PROPERTY,
+        WhereOperator::Equal,
+        Value::Text("alpha".to_string()),
+    );
+    let both = clause(
+        GROUP_PROPERTY,
+        WhereOperator::In,
+        Value::Array(vec![
+            Value::Text("alpha".to_string()),
+            Value::Text("beta".to_string()),
+        ]),
+    );
+    let sum = |where_clauses: Vec<WhereClause>, mode: SumMode, prove: bool| {
+        drive.execute_document_sum_request(
+            DocumentSumRequest {
+                contract: &contract,
+                document_type,
+                sum_property: "amount".to_string(),
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode,
+                limit: None,
+                prove,
+                drive_config: &drive_config,
+            },
+            None,
+            pv,
+        )
+    };
+    let average = |where_clauses: Vec<WhereClause>, mode: AverageMode, prove: bool| {
+        drive
+            .execute_document_average_request(
+                DocumentAverageRequest {
+                    contract: &contract,
+                    document_type,
+                    sum_property: "amount".to_string(),
+                    where_clauses,
+                    resolved_time_ranges: vec![],
+                    order_clauses: vec![],
+                    mode,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                pv,
+            )
+            .map(|_| ())
+    };
+    let refused = |result: Result<(), Error>| {
+        matches!(
+            result,
+            Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                if message.starts_with("a range total")
+        )
+    };
+
+    for prove in [false, true] {
+        let alpha_range = vec![alpha.clone(), after_day_three.clone()];
+        let both_ranges = vec![both.clone(), after_day_three.clone()];
+        assert!(
+            refused(sum(alpha_range.clone(), SumMode::Aggregate, prove).map(|_| ())),
+            "a range sum total (prove: {prove})"
+        );
+        assert!(
+            refused(sum(both_ranges.clone(), SumMode::GroupByIn, prove).map(|_| ())),
+            "a range sum total per restaurant (prove: {prove})"
+        );
+        assert!(
+            refused(average(alpha_range, AverageMode::Aggregate, prove)),
+            "a range average total (prove: {prove})"
+        );
+        assert!(
+            refused(average(both_ranges, AverageMode::GroupByIn, prove)),
+            "a range average total per restaurant (prove: {prove})"
+        );
+    }
+    match sum(vec![alpha, after_day_three], SumMode::GroupByRange, false)
+        .expect("a range sum per value answers")
+    {
+        DocumentSumResponse::Entries(entries) => assert_eq!(
+            entries.iter().map(|entry| entry.sum).collect::<Vec<_>>(),
+            vec![Some(30)],
+            "alpha's tab after day three"
+        ),
+        other => panic!("expected entries, got {other:?}"),
+    }
 }

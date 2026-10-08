@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v0::DocumentDeleteTransitionActionStateValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::state_v1::DocumentDeleteTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v0::DocumentDeleteTransitionActionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::advanced_structure_v1::DocumentDeleteTransitionActionStructureValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
@@ -15,6 +16,7 @@ use crate::platform_types::platform::PlatformStateRef;
 mod advanced_structure_v0;
 mod advanced_structure_v1;
 mod state_v0;
+mod state_v1;
 
 pub trait DocumentDeleteTransitionActionValidation {
     fn validate_structure(
@@ -79,9 +81,17 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
                 transaction,
                 platform_version,
             ),
+            1 => self.validate_state_v1(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransitionAction::validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

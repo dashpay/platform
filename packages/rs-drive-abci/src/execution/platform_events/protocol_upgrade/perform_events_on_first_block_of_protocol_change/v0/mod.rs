@@ -19,8 +19,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-    WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
@@ -191,8 +190,15 @@ impl<C> Platform<C> {
                 .max()
                 .expect("there must be keys, we already checked");
 
+            let owner_address = masternode.state.owner_address.ok_or_else(|| {
+                Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                    "masternode {} has no owner address",
+                    masternode.pro_tx_hash
+                )))
+            })?;
+
             let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
+                owner_address,
                 last_key_id + 1,
                 platform_version,
             )?;
@@ -769,29 +775,6 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Total credits history under the withdrawals tree: the daily withdrawal limit becomes
-        // a share of the total credits Platform held a day ago, recorded here every block.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Credit inflows sum tree: every credit mint is recorded here so the daily withdrawal
-        // limit counts net outflow instead of gross — credits that entered Platform within the
-        // window may leave again without consuming the withdrawal budget of other users.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-            Element::empty_sum_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
         // Contract version items: from this version the storage writer stores every
         // contract's version as a four-byte item beside it, and
         // `getDataContractsLatestVersions` reads and proves that item instead of the
@@ -835,6 +818,38 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
+        // Token shielded pools root: the BigSumTree under the Tokens tree that holds one Orchard
+        // pool per token opting in (`TokenConfigurationV1::has_shielded_pool`).
+        // CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v4`) calls
+        // the same helper, so a chain born at this version and one upgraded to it build a
+        // byte-identical `[Tokens]` subtree.
+        //
+        // Earlier protocol versions select this generation too, directly or through the later
+        // ones that delegate to it, but they cannot reach this insert: the enclosing
+        // `transition_to_version_14` is called only under the
+        // `platform_version.protocol_version >= 14` guard in
+        // `perform_events_on_first_block_of_protocol_change_v0`.
+        self.drive
+            .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
+        // The document time to live trees: the documents expirations tree under `Misc`, which
+        // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
+        // introduces) by when it expires, and the lifetime storage fee pools sum tree under
+        // `Pools`, which holds their storage fees until an epoch change spreads them. Fresh
+        // chains call the same helper in `create_initial_state_structure` v4, in the same
+        // position: just before the withdrawal limit trees.
+        self.drive
+            .insert_document_ttl_trees(Some(transaction), platform_version)?;
+
+        // Withdrawal limit trees under the withdrawals tree: the total credits history (the
+        // daily withdrawal limit becomes a share of the total credits Platform held a day ago,
+        // recorded every block), the credit inflows sum tree (every credit mint, so the daily
+        // limit counts net outflow instead of gross) and Core's credit pool balance per Core
+        // block read (the Core-anchored withdrawal limit). Through the same helper as genesis,
+        // which also calls it last, so both build the withdrawals Merk by the same sequence of
+        // inserts.
+        self.drive
+            .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
+
         Ok(())
     }
 }
@@ -847,10 +862,21 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
+    use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
+    use drive::drive::credit_pools::pools_path;
+    use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
+    use drive::drive::identity::withdrawals::paths::{
+        WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+        WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+    };
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::drive::tokens::paths::TOKEN_SHIELDED_POOLS_KEY;
+    use drive::grovedb::operations::proof::{GroveDBProof, ProofBytes};
+    use drive::grovedb::{PathQuery, Query};
+    use drive::util::grove_operations::DirectQueryType;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -1022,6 +1048,138 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    /// Version 4 gives every owner identity the OWNER key of its masternode's owner address,
+    /// after the keys it has. A masternode without an owner identity is skipped before its
+    /// owner address is read. One with an owner identity but no owner address (a shared
+    /// masternode) has no key to give, so the transition fails with `DashCoreBadResponseError`
+    /// instead of leaving the identity without an OWNER key.
+    #[test]
+    fn should_fail_transition_to_version_4_for_an_owner_identity_whose_masternode_has_no_owner_address(
+    ) {
+        use dpp::dashcore::{ProTxHash, Txid};
+        use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::{Identity, KeyID, Purpose};
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::get(4).expect("expected protocol version 4");
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A masternode as Core lists it; a shared one has no owner, payout or collateral
+        // address.
+        let masternode =
+            |pro_tx_hash: [u8; 32], owner_address: Option<[u8; 20]>| MasternodeListItem {
+                node_type: MasternodeType::Regular,
+                pro_tx_hash: ProTxHash::from_byte_array(pro_tx_hash),
+                collateral_hash: Txid::from_byte_array([0x41; 32]),
+                collateral_index: 0,
+                collateral_address: owner_address.map(|_| [0x42; 20]),
+                operator_reward: 0.0,
+                state: DMNState {
+                    service: "1.2.3.4:9999".parse().expect("socket address"),
+                    registered_height: 0,
+                    pose_revived_height: None,
+                    pose_ban_height: None,
+                    revocation_reason: 0,
+                    owner_address,
+                    voting_address: [0x43; 20],
+                    payout_address: owner_address.map(|_| [0x44; 20]),
+                    payouts: None,
+                    pub_key_operator: vec![0x45; 48],
+                    operator_payout_address: None,
+                    platform_node_id: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
+                },
+            };
+        let owner_address = [0x46; 20];
+        let with_owner_address = [0x47; 32];
+        let shared_without_owner_identity = [0x48; 32];
+        let shared_with_owner_identity = [0x49; 32];
+
+        // Owner identities as created before version 4: only the TRANSFER key id 0.
+        for pro_tx_hash in [with_owner_address, shared_with_owner_identity] {
+            let mut identity =
+                Identity::create_basic_identity(pro_tx_hash.into(), platform_version)
+                    .expect("expected an identity");
+            identity.add_public_keys([
+                Platform::<MockCoreRPCLike>::get_owner_identity_withdrawal_key(
+                    [0x44; 20],
+                    0,
+                    platform_version,
+                )
+                .expect("expected a withdrawal key"),
+            ]);
+            platform
+                .drive
+                .add_new_identity(
+                    identity,
+                    true,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the owner identity");
+        }
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state_with = |masternodes: Vec<MasternodeListItem>| {
+            let mut platform_state = platform.state.load().as_ref().clone();
+            for masternode in masternodes {
+                platform_state.insert_masternode(masternode);
+            }
+            platform_state
+        };
+
+        platform
+            .transition_to_version_4(
+                &platform_state_with(vec![
+                    masternode(with_owner_address, Some(owner_address)),
+                    masternode(shared_without_owner_identity, None),
+                ]),
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected a masternode without an owner identity to be skipped");
+        assert_eq!(
+            platform
+                .drive
+                .fetch_full_identity(with_owner_address, Some(&transaction), platform_version)
+                .expect("expected to fetch the owner identity")
+                .expect("expected the owner identity to exist")
+                .public_keys()
+                .iter()
+                .map(|(key_id, key)| (*key_id, (key.purpose(), key.data().to_vec())))
+                .collect::<BTreeMap<KeyID, (Purpose, Vec<u8>)>>(),
+            BTreeMap::from([
+                (0, (Purpose::TRANSFER, vec![0x44; 20])),
+                (1, (Purpose::OWNER, owner_address.to_vec())),
+            ])
+        );
+
+        match platform.transition_to_version_4(
+            &platform_state_with(vec![masternode(shared_with_owner_identity, None)]),
+            &BlockInfo::default(),
+            &transaction,
+            platform_version,
+        ) {
+            Err(Error::Execution(ExecutionError::DashCoreBadResponseError(message))) => assert!(
+                message.ends_with("has no owner address"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("expected DashCoreBadResponseError, got {other:?}"),
+        }
     }
 
     #[test]
@@ -2130,6 +2288,76 @@ mod tests {
         );
     }
 
+    #[test]
+    fn should_create_the_document_ttl_trees_on_transition_to_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let trees_exist = |transaction: &Transaction| {
+            let has = |path: &[&[u8]], key: &[u8]| {
+                upgraded
+                    .drive
+                    .grove_has_raw(
+                        path.into(),
+                        key,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to query the tree")
+            };
+            (
+                has(&misc_path(), DOCUMENTS_EXPIRATIONS_KEY),
+                has(&pools_path(), KEY_LIFETIME_STORAGE_FEE_POOLS),
+            )
+        };
+        assert_eq!(
+            trees_exist(&transaction),
+            (false, false),
+            "protocol version 13 has neither the documents expirations tree nor the lifetime \
+             storage fee pools"
+        );
+
+        upgraded
+            .transition_to_version_14(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+        assert_eq!(
+            trees_exist(&transaction),
+            (true, true),
+            "both trees must exist after the transition"
+        );
+
+        let mut diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Misc as u8]],
+        );
+        diffs.extend(collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![
+                vec![RootTree::Pools as u8],
+                KEY_LIFETIME_STORAGE_FEE_POOLS.to_vec(),
+            ],
+        ));
+        assert!(
+            diffs.is_empty(),
+            "the trees differ between a chain born at version 14 and one upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
+    }
+
     /// The system contracts the upgrade to 14 registers are stored without storage flags, as a
     /// chain born at 14 stores them at genesis. The contract elements, every tree created with
     /// them and, for the moderation charters contract's contested index, its trees under the
@@ -2211,6 +2439,122 @@ mod tests {
         }
     }
 
+    /// Merk's shape depends on insertion order, and genesis builds the withdrawals tree's first
+    /// keys in its batch while the upgrade adds the trees of version 14 to an existing one:
+    /// both insert those trees one at a time through `insert_withdrawal_limit_trees`, so the
+    /// withdrawals tree element (its root key), every element below it and the shape of its
+    /// Merk are the same on a chain born at 14 and one upgraded to it. Batching them into
+    /// genesis again would root the Merk at another key.
+    #[test]
+    fn should_build_the_withdrawal_trees_as_a_chain_born_at_14_does() {
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        let withdrawals_element =
+            |platform: &Platform<MockCoreRPCLike>, transaction: Option<&Transaction>| {
+                platform
+                    .drive
+                    .grove_get_raw(
+                        (&[] as &[&[u8]; 0]).into(),
+                        &[RootTree::WithdrawalTransactions as u8],
+                        DirectQueryType::StatefulDirectQuery,
+                        transaction,
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to read the withdrawals tree")
+                    .expect("expected the withdrawals tree to exist")
+            };
+        assert_eq!(
+            withdrawals_element(&born_at_14, None),
+            withdrawals_element(&upgraded, Some(&transaction)),
+            "the withdrawals tree differs between a chain born at version 14 and one upgraded to it"
+        );
+
+        let diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::WithdrawalTransactions as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the withdrawal trees differ between a chain born at version 14 and one upgraded \
+             to it:\n{}",
+            diffs.join("\n"),
+        );
+
+        // Equal elements and an equal root key can still sit in differently shaped Merks (the
+        // same keys inserted in another order). A proof of the whole withdrawals tree encodes
+        // its Merk node by node, so it differs whenever the shape does.
+        upgraded
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+        let withdrawals_merk_proof = |platform: &Platform<MockCoreRPCLike>| {
+            let withdrawals_key = vec![RootTree::WithdrawalTransactions as u8];
+            let mut query = Query::new();
+            query.insert_all();
+            let proof = platform
+                .drive
+                .grove
+                .prove_query_non_serialized(
+                    &PathQuery::new_unsized(vec![withdrawals_key.clone()], query),
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to prove the withdrawals tree");
+            match proof {
+                GroveDBProof::V0(proof) => proof
+                    .root_layer
+                    .lower_layers
+                    .get(&withdrawals_key)
+                    .expect("expected the withdrawals layer")
+                    .merk_proof
+                    .clone(),
+                GroveDBProof::V1(proof) => {
+                    match &proof
+                        .root_layer
+                        .lower_layers
+                        .get(&withdrawals_key)
+                        .expect("expected the withdrawals layer")
+                        .merk_proof
+                    {
+                        ProofBytes::Merk(merk_proof) => merk_proof.clone(),
+                        _ => panic!("expected a Merk proof of the withdrawals tree"),
+                    }
+                }
+            }
+        };
+        assert_eq!(
+            withdrawals_merk_proof(&born_at_14),
+            withdrawals_merk_proof(&upgraded),
+            "the withdrawals Merk is shaped differently on a chain born at version 14 and one \
+             upgraded to it"
+        );
+    }
+
     #[test]
     fn test_transition_to_version_14_creates_total_credits_history_tree() {
         let platform_version = PlatformVersion::latest();
@@ -2227,6 +2571,7 @@ mod tests {
         for key in [
             &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
             &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+            &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
         ] {
             assert!(platform
                 .drive
@@ -2276,6 +2621,20 @@ mod tests {
             .value
             .expect("credit inflows sum tree should exist after the v14 transition");
         assert!(element.is_sum_tree());
+
+        let element = platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&get_withdrawal_root_path()),
+                &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("the Core credit pool balances tree should exist after the v14 transition");
+        assert!(element.is_any_tree());
+        assert!(!element.is_sum_tree());
 
         // Running it again is harmless and the tree stays usable
         platform
@@ -3244,6 +3603,87 @@ mod tests {
         );
     }
 
+    /// The token shielded pools root is built by two paths that must coincide byte for byte:
+    /// `Drive::create_initial_state_structure_v4` at a v14 genesis and
+    /// `transition_to_version_14` on a chain upgraded from v13.
+    #[test]
+    fn test_genesis_v14_and_upgrade_to_v14_build_identical_token_shielded_pools_root() {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected v14");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v13 genesis must not contain the pools root yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            let tokens_path: [&[u8]; 1] = [&[RootTree::Tokens as u8]];
+            let pools_root_pre = platform_b.drive.grove.get(
+                SubtreePath::from(&tokens_path[..]),
+                &[TOKEN_SHIELDED_POOLS_KEY],
+                Some(&txn),
+                &platform_version_14.drive.grove_version,
+            );
+            assert!(
+                pools_root_pre.value.is_err(),
+                "v13 genesis must not contain the token shielded pools root before the upgrade; got {:?}",
+                pools_root_pre.value
+            );
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_14(&BlockInfo::default(), &txn_b, platform_version_14)
+            .expect("upgrade: transition_to_version_14 should succeed");
+
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::Tokens as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] subtree differs between a fresh genesis-v14 node and an \
+             in-place-upgraded v14 node.\n{}",
+            diffs.join("\n"),
+        );
+
+        // `collect_subtree_diffs` walks the children AT `[Tokens]` and below, so it cannot see
+        // the shape of the `[Tokens]` Merk itself — and a new root-level key is inserted exactly
+        // there. Two lineages can therefore agree on every child and still carry different
+        // `root_key`s, which is a different app hash. Read the element that holds it.
+        let root_element = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            txn: drive::grovedb::TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get_raw(
+                    drive::grovedb_path::SubtreePath::empty(),
+                    &[RootTree::Tokens as u8],
+                    txn,
+                    &platform_version_14.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to read the [Tokens] root element")
+        };
+        assert_eq!(
+            root_element(&platform_a, None),
+            root_element(&platform_b, Some(&txn_b)),
+            "CONSENSUS FORK: the [Tokens] Merk itself is shaped differently on a fresh genesis-v14 \
+             node and an in-place-upgraded one, so their root hashes differ even though every \
+             child matches"
+        );
+    }
+
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
     ///
     /// The `[ShieldedBalances]` subtree is built two ways that MUST be
@@ -3254,12 +3694,12 @@ mod tests {
     ///  * UPGRADE path — a node already on v11 runs the real
     ///    `Platform::transition_to_version_12` at the activation block.
     ///
-    /// Before the fix these diverged: genesis built the pool via a sorted
-    /// `GroveDbOpBatch`, which roots the parent Merk at the batch's median key
-    /// `[160]`; the upgrade built it with sequential breadth-first inserts, which
-    /// root it at `[128]` (the intended NOTES-at-root layout). Two different
-    /// subtree shapes ⇒ a state-synced v12 node and an in-place-upgraded v12 node
-    /// would compute different app hashes at the boundary block and fork.
+    /// Genesis builds the pool through a sorted `GroveDbOpBatch`, which roots the parent
+    /// Merk at the batch's median key `[160]`; sequential breadth-first inserts root it at
+    /// `[128]`, the intended NOTES-at-root layout. Two different subtree shapes mean a
+    /// state-synced node and an in-place-upgraded node compute different app hashes at the
+    /// boundary block and fork, so both paths go through the shared
+    /// `Drive::insert_shielded_pool_structure`.
     ///
     /// This test drives the REAL production functions (not a hand-rebuilt batch)
     /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
@@ -3276,11 +3716,6 @@ mod tests {
     /// the shielded pool is constructed and would pollute a whole-DB comparison.
     /// The diagnostic that localized the original bug confirmed the shielded
     /// subtree was the ONLY construction-driven divergence.
-    ///
-    /// RED before the fix (genesis pool root `[160]` ≠ upgrade pool root `[128]`,
-    /// plus a cascade of differing child hashes), GREEN after (both `[128]`,
-    /// because both paths now call the shared
-    /// `Drive::insert_shielded_pool_structure`).
     #[test]
     fn test_genesis_v12_and_upgrade_to_v12_build_identical_shielded_pool() {
         let platform_version_12 = PlatformVersion::get(12).expect("expected v12");
@@ -3470,6 +3905,7 @@ mod tests {
 
 #[cfg(test)]
 mod shielded_profile_schema_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::platform_value::{platform_value, Value};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -3484,7 +3920,12 @@ mod shielded_profile_schema_tests {
                 let properties =
                     platform_value!({ "shieldedAddress": Value::Bytes(vec![0; length]) });
                 let result = contract
-                    .validate_document_properties("profile", properties, pv)
+                    .validate_document_properties(
+                        "profile",
+                        properties,
+                        &DocumentSystemValues::default(),
+                        pv,
+                    )
                     .unwrap();
                 assert_eq!(
                     result.is_valid(),
@@ -3496,6 +3937,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"shieldedAddress": "not bytes"}),
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();
@@ -3504,6 +3946,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"displayName": "Alice"}),
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();

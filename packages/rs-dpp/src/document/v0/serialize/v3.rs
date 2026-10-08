@@ -7,6 +7,13 @@
 //! layout (raw once the stamp reaches the annotation, presence-flagged
 //! before it), letting the latest contract alone decode every stored
 //! document.
+//!
+//! The timestamp flags also mark `$moderatedAt` (512) and `$moderatedBy` (1024), the block
+//! time and the identity of the last moderator to write the fields a document type keeps
+//! for its moderators. Only such a type is ever stamped, and it needs the contract's
+//! `moderation` config (config version 2, protocol version 14), whose documents are always
+//! written in this format; a document without the stamp sets neither bit, so its bytes are
+//! as they were before the bits were given a meaning.
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
@@ -206,6 +213,18 @@ impl DocumentV0 {
                     "transferred_at_core_block_height field is not present".to_string(),
                 ),
             ));
+        }
+
+        // $moderatedAt
+        if let Some(moderated_at) = &self.moderated_at {
+            bitwise_exists_flag |= 512;
+            time_fields_data_buffer.extend(moderated_at.to_be_bytes());
+        }
+
+        // $moderatedBy
+        if let Some(moderated_by) = &self.moderated_by {
+            bitwise_exists_flag |= 1024;
+            time_fields_data_buffer.extend(moderated_by.as_slice());
         }
 
         buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
@@ -456,6 +475,28 @@ impl DocumentV0 {
             None
         };
 
+        let moderated_at = if timestamp_flags & 512 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading moderated_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let moderated_by = if timestamp_flags & 1024 > 0 {
+            let mut moderated_by = [0; 32];
+            buf.read_exact(&mut moderated_by).map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading moderated_by from serialized document".to_string(),
+                )
+            })?;
+            Some(Identifier::new(moderated_by))
+        } else {
+            None
+        };
+
         // Now we deserialize the price which might not be necessary unless called for by the document type
 
         let price = if document_type.trade_mode().seller_sets_price() {
@@ -547,6 +588,8 @@ impl DocumentV0 {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            moderated_at,
+            moderated_by,
         })
     }
 }

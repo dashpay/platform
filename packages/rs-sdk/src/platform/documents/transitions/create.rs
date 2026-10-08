@@ -1,10 +1,13 @@
+use crate::platform::documents::contest_fund::with_contest_fund_to_join;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -146,6 +149,32 @@ impl DocumentCreateTransitionBuilder {
         self
     }
 
+    /// Names the most this create is willing to pay into the contest it joins, when its
+    /// document is contested. From protocol version 14 it is charged the fund to join the
+    /// contest, which doubles once the contest holds 250 contenders and again for every 50
+    /// more, and refused, paid, when that is more than this. Without it the create states the
+    /// fund to join read when it is signed, so it is refused if others join first and push the
+    /// fund up. The identity must hold what it states, since Platform checks its balance
+    /// against it before counting the contest. Before protocol version 14 a contender states
+    /// exactly the contest's fund.
+    ///
+    /// Call it after `with_state_transition_creation_options`, which replaces the options this
+    /// is kept in.
+    ///
+    /// # Arguments
+    ///
+    /// * `contest_fund` - The most the create pays into its contest
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_contest_fund(mut self, contest_fund: Credits) -> Self {
+        self.state_transition_creation_options
+            .get_or_insert_with(Default::default)
+            .contest_fund = Some(contest_fund);
+        self
+    }
+
     /// Signs the document create transition
     ///
     /// # Arguments
@@ -171,6 +200,20 @@ impl DocumentCreateTransitionBuilder {
             creation_options.validate_base_carries_action_fee_agreement(platform_version)?;
         }
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
+        // A contested create states the most it pays to join its contest
+        let state_transition_creation_options = with_contest_fund_to_join(
+            sdk,
+            document_type,
+            &self.document,
+            self.state_transition_creation_options,
+        )
+        .await?;
+
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.document.owner_id(),
@@ -180,11 +223,6 @@ impl DocumentCreateTransitionBuilder {
             )
             .await?;
 
-        let document_type = self
-            .data_contract
-            .document_type_for_name(&self.document_type_name)
-            .map_err(|e| Error::Protocol(e.into()))?;
-
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
             self.document.clone(),
             document_type,
@@ -192,10 +230,10 @@ impl DocumentCreateTransitionBuilder {
             identity_public_key,
             identity_contract_nonce,
             self.user_fee_increase.unwrap_or_default(),
-            self.token_payment_info,
+            self.token_payment_info.clone(),
             signer,
             platform_version,
-            self.state_transition_creation_options,
+            state_transition_creation_options,
         )
         .await?;
 
@@ -215,6 +253,9 @@ impl Sdk {
     ///
     /// This method broadcasts a document creation transition to add a new document
     /// to the specified data contract. The result contains the created document.
+    /// For an indexOnly document type the proof shows the document's entry at the
+    /// proof's block, not that this create wrote it: no stronger proof exists for
+    /// such a document.
     ///
     /// # Arguments
     ///
@@ -242,6 +283,11 @@ impl Sdk {
         let platform_version = self.version();
 
         let put_settings = create_document_transition_builder.settings;
+        let index_only = create_document_transition_builder
+            .data_contract
+            .document_type_for_name(&create_document_transition_builder.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?
+            .index_only();
 
         let state_transition = create_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
@@ -252,9 +298,22 @@ impl Sdk {
         trace!(hex = %hex::encode(state_transition.serialize_to_bytes()?), "document_create: transition bytes");
         trace!(transition = ?state_transition, "document_create: transition details");
 
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
+        // An indexOnly document keeps no row: its proof shows the entry the create leaves,
+        // which an earlier create with the same values would show too, so it cannot prove that
+        // this create executed. That is the strongest proof such a document has, so it is
+        // accepted rather than failing a create that landed.
+        let proof_result = if index_only {
+            state_transition
+                .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                    self,
+                    put_settings,
+                )
+                .await?
+        } else {
+            state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+                .await?
+        };
 
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {

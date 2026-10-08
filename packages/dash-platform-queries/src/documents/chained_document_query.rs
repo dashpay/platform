@@ -38,11 +38,14 @@ pub struct ChainedDocumentQuery {
     /// The inner query (the subselect).
     pub inner: DocumentQuery,
     /// The inner property whose proven values become the outer `$id`s.
-    /// Must carry a same-contract `refersTo: permanentDocument` or
-    /// `refersTo: deletableDocument` declaration targeting
-    /// `outer_document_type_name`. With the latter, a join value whose
-    /// document was deleted since has no outer document and is reported
-    /// among the result's missing outer ids.
+    /// Must carry a same-contract `refersTo: permanentDocument`,
+    /// `refersTo: moderatedDocument` or `refersTo: deletableDocument`
+    /// declaration targeting `outer_document_type_name`. With a moderated
+    /// one, a join value whose document a moderator removed has no outer
+    /// document and is reported with its proven removal record among the
+    /// result's removed outer documents; with a deletable one, a join value
+    /// whose document was deleted since is reported among the result's
+    /// missing outer ids.
     pub join_property: String,
     /// The outer (joined) document type — the `refersTo` target.
     pub outer_document_type_name: String,
@@ -88,13 +91,14 @@ impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetDocumentsRequest {
             ));
         }
         if !inner.time_range_clauses.is_empty()
+            || !inner.integer_range_clauses.is_empty()
             || inner.start.is_some()
             || inner.offset.is_some()
             || !inner.group_by.is_empty()
             || !inner.having.is_empty()
         {
             return Err(Error::Config(
-                "a chained inner query supports where/order_by/limit only: no time-range \
+                "a chained inner query supports where/order_by/limit only: no window \
                  selections, cursors, offsets, group_by, or having (paginate with a range \
                  clause on the join property)"
                     .to_string(),

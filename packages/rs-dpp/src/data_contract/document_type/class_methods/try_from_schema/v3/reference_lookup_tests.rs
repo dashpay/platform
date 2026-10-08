@@ -1,5 +1,5 @@
-//! Document references resolved through a unique index (`refersTo.lookup`,
-//! protocol version 14): the parse of the declaration, the checks of its
+//! Document references found by `findBy` through a unique index (protocol
+//! version 14): the parse of the declaration, the checks of its
 //! referring side on every parse, the checks of its referenced side at contract
 //! level for a document type of the same contract, the protocol version gate and
 //! the platform serialization round trip.
@@ -25,13 +25,11 @@ use platform_version::version::PlatformVersion;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-/// The lookup of the moderation charter's `members`: the member is the owner of
-/// a `joinRequest` for the same submitted charter.
-fn members_lookup() -> serde_json::Value {
-    json!({
-        "index": "bySubmittedCharter",
-        "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." }
-    })
+/// The `findBy` of the moderation charter's `members`: the member is the owner
+/// of a `joinRequest` for the same submitted charter, found through its unique
+/// index over (`submittedCharterId`, `$ownerId`).
+fn members_find_by() -> serde_json::Value {
+    json!({ "submittedCharterId": "submittedCharterId", "$ownerId": "." })
 }
 
 /// A contract with a permanent, immutable `joinRequest` type, unique on
@@ -64,8 +62,8 @@ fn charter_contract(refers_to: serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn permanent_join_request(lookup: serde_json::Value) -> serde_json::Value {
-    json!({ "type": "permanentDocument", "documentType": "joinRequest", "lookup": lookup })
+fn permanent_join_request(find_by: serde_json::Value) -> serde_json::Value {
+    json!({ "type": "permanentDocument", "documentType": "joinRequest", "findBy": find_by })
 }
 
 fn member_id_type(contract: &DataContract) -> DocumentPropertyType {
@@ -81,18 +79,19 @@ fn member_id_type(contract: &DataContract) -> DocumentPropertyType {
 
 fn expected_lookup(keys: &[(&str, LookupKeySource)]) -> DocumentReferenceLookup {
     DocumentReferenceLookup {
-        index: "bySubmittedCharter".to_string(),
         keys: keys
             .iter()
             .map(|(index_property, source)| (index_property.to_string(), source.clone()))
             .collect(),
+        minimum_age_blocks: None,
+        consume: false,
     }
 }
 
 #[test]
-fn should_parse_a_lookup_with_a_property_source_an_owner_source_and_the_reference_value() {
+fn should_parse_find_by_with_a_property_source_an_owner_source_and_the_reference_value() {
     let parsed =
-        contract(charter_contract(permanent_join_request(members_lookup()))).expect("parses");
+        contract(charter_contract(permanent_join_request(members_find_by()))).expect("parses");
     assert_eq!(
         member_id_type(&parsed),
         DocumentPropertyType::IdentifierWithReference(
@@ -114,8 +113,8 @@ fn should_parse_a_lookup_with_a_property_source_an_owner_source_and_the_referenc
     // The writer can fill a key part too, and the reference's own value can fill
     // a schema property of the index
     let parsed = contract(charter_contract(permanent_join_request(json!({
-        "index": "bySubmittedCharter",
-        "keys": { "submittedCharterId": ".", "$ownerId": "$ownerId" }
+        "submittedCharterId": ".",
+        "$ownerId": "$ownerId"
     }))))
     .expect("parses");
     let DocumentPropertyType::IdentifierWithReference(
@@ -134,12 +133,12 @@ fn should_parse_a_lookup_with_a_property_source_an_owner_source_and_the_referenc
 }
 
 #[test]
-fn should_parse_a_lookup_beside_a_property_agreement() {
+fn should_parse_find_by_beside_where_and_resolve_its_unique_index() {
     let parsed = contract(charter_contract(json!({
         "type": "permanentDocument",
         "documentType": "joinRequest",
-        "propertyAgreement": { "title": "message" },
-        "lookup": members_lookup()
+        "findBy": members_find_by(),
+        "where": { "message": "title" }
     })))
     .expect("parses");
     let DocumentPropertyType::IdentifierWithReference(
@@ -152,17 +151,25 @@ fn should_parse_a_lookup_beside_a_property_agreement() {
     else {
         panic!("expected a permanentDocument lookup reference");
     };
+    // The parsed model keys the comparison by the referring property
     assert_eq!(
         property_agreement,
         BTreeMap::from([("title".to_string(), "message".to_string())])
     );
-    assert_eq!(lookup.index, "bySubmittedCharter");
+    // The index is the unique one over exactly the properties findBy names
+    let join_request = parsed
+        .document_type_for_name("joinRequest")
+        .expect("the joinRequest document type");
+    assert_eq!(
+        lookup.resolve_index(join_request),
+        Ok("bySubmittedCharter".to_string())
+    );
 }
 
 #[test]
-fn should_refuse_a_lookup_on_any_reference_but_a_document_one() {
+fn should_refuse_find_by_on_any_reference_but_a_document_one() {
     for reference_type in ["identity", "contract", "token", "identityPublicKey"] {
-        let mut refers_to = json!({ "type": reference_type, "lookup": members_lookup() });
+        let mut refers_to = json!({ "type": reference_type, "findBy": members_find_by() });
         if reference_type == "identityPublicKey" {
             refers_to["keyIdProperty"] = json!("title");
         }
@@ -173,53 +180,41 @@ fn should_refuse_a_lookup_on_any_reference_but_a_document_one() {
         contract(schema.clone()).expect_err("the meta-schema should refuse it");
         assert_refused(
             contract_on(schema, false, PlatformVersion::latest()),
-            &format!("{reference_type} refersTo does not take lookup"),
+            &format!("{reference_type} refersTo does not take findBy"),
         );
     }
 }
 
 #[test]
-fn should_refuse_a_lookup_naming_a_missing_or_non_unique_index() {
-    for (lookup, fragment) in [
-        (
-            json!({ "index": "byNothing", "keys": { "submittedCharterId": "." } }),
-            "has no index named \"byNothing\"",
-        ),
-        (
-            json!({ "index": "byMessage", "keys": { "message": "." } }),
-            "is not unique",
-        ),
-    ] {
-        assert_refused(
-            contract(charter_contract(permanent_join_request(lookup))),
-            fragment,
-        );
-    }
-}
-
-#[test]
-fn should_refuse_lookup_keys_that_miss_or_add_an_index_property() {
-    for (keys, fragment) in [
+fn should_refuse_find_by_naming_no_unique_index_exactly() {
+    for (find_by, fragment) in [
+        // Fewer properties than the unique index, or more: no unique index is
+        // over exactly them, and the error lists the ones there are
         (
             json!({ "$ownerId": "." }),
-            "does not map \"submittedCharterId\"",
+            "\"joinRequest\" has no unique index over exactly ($ownerId): findBy must name \
+             every property of one of its unique indexes and nothing else (bySubmittedCharter \
+             (submittedCharterId, $ownerId))",
         ),
         (
             json!({ "submittedCharterId": "submittedCharterId", "$ownerId": ".", "message": "title" }),
-            "maps \"message\", which is not a property of index \"bySubmittedCharter\"",
+            "has no unique index over exactly ($ownerId, message, submittedCharterId)",
+        ),
+        // Exactly the properties of an index that is not unique
+        (
+            json!({ "message": "." }),
+            "index \"byMessage\" of \"joinRequest\" over (message) is not unique",
         ),
     ] {
         assert_refused(
-            contract(charter_contract(permanent_join_request(
-                json!({ "index": "bySubmittedCharter", "keys": keys }),
-            ))),
+            contract(charter_contract(permanent_join_request(find_by))),
             fragment,
         );
     }
 }
 
 #[test]
-fn should_refuse_lookup_keys_that_use_the_reference_value_twice_or_not_at_all() {
+fn should_refuse_find_by_reading_the_reference_value_twice_or_not_at_all() {
     for (keys, found) in [
         (json!({ "submittedCharterId": ".", "$ownerId": "." }), 2),
         (
@@ -227,36 +222,35 @@ fn should_refuse_lookup_keys_that_use_the_reference_value_twice_or_not_at_all() 
             0,
         ),
     ] {
-        let schema = charter_contract(permanent_join_request(
-            json!({ "index": "bySubmittedCharter", "keys": keys }),
-        ));
+        let schema = charter_contract(permanent_join_request(keys));
         for full_validation in [true, false] {
             assert_refused(
                 contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
-                &format!("exactly one index property from \".\", the reference's own value, found {found}"),
+                &format!(
+                    "findBy must read \".\", the reference's own value, exactly once, found \
+                     {found}"
+                ),
             );
         }
     }
 }
 
 #[test]
-fn should_refuse_a_lookup_source_of_the_wrong_value_kind() {
+fn should_refuse_a_find_by_source_of_the_wrong_value_kind() {
     assert_refused(
         contract(charter_contract(permanent_join_request(json!({
-            "index": "bySubmittedCharter",
-            "keys": { "submittedCharterId": "title", "$ownerId": "." }
+            "submittedCharterId": "title",
+            "$ownerId": "."
         })))),
-        "is filled from \"title\", which holds a different kind of value",
+        "findBy \"submittedCharterId\" is filled from \"title\", which holds a different kind \
+         of value",
     );
 }
 
 #[test]
-fn should_refuse_an_optional_transient_or_missing_lookup_source_property() {
+fn should_refuse_an_optional_transient_or_missing_find_by_source_property() {
     let lookup_reading = |source: &str| {
-        permanent_join_request(json!({
-            "index": "bySubmittedCharter",
-            "keys": { "submittedCharterId": source, "$ownerId": "." }
-        }))
+        permanent_join_request(json!({ "submittedCharterId": source, "$ownerId": "." }))
     };
 
     // Refused on every parse, validating or not: the rule belongs to the type
@@ -310,10 +304,10 @@ fn should_refuse_an_optional_transient_or_missing_lookup_source_property() {
 /// object is stripped before storage, so a reader could never reassemble the
 /// key from the stored document.
 #[test]
-fn should_refuse_a_lookup_source_inside_a_transient_required_object() {
+fn should_refuse_a_find_by_source_inside_a_transient_required_object() {
     let mut schema = charter_contract(permanent_join_request(json!({
-        "index": "bySubmittedCharter",
-        "keys": { "submittedCharterId": "meta.charterId", "$ownerId": "." }
+        "submittedCharterId": "meta.charterId",
+        "$ownerId": "."
     })));
     let elected_charter = &mut schema["documentSchemas"]["electedCharter"];
     elected_charter["properties"]["meta"] = json!({
@@ -330,7 +324,7 @@ fn should_refuse_a_lookup_source_inside_a_transient_required_object() {
     for full_validation in [true, false] {
         assert_refused(
             contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
-            "document type \"electedCharter\" property \"memberId\" refersTo lookup: key \
+            "document type \"electedCharter\" property \"memberId\" refersTo findBy: findBy \
              \"submittedCharterId\" reads \"meta.charterId\", which is transient or inside a \
              transient object",
         );
@@ -338,16 +332,16 @@ fn should_refuse_a_lookup_source_inside_a_transient_required_object() {
 }
 
 #[test]
-fn should_refuse_a_lookup_into_a_document_type_that_can_move_the_key() {
+fn should_refuse_find_by_into_a_document_type_that_can_move_the_key() {
     let mutable = |schema: &mut serde_json::Value| {
         schema["documentSchemas"]["joinRequest"]["documentsMutable"] = json!(true);
     };
 
-    let mut moving = charter_contract(permanent_join_request(members_lookup()));
+    let mut moving = charter_contract(permanent_join_request(members_find_by()));
     mutable(&mut moving);
     assert_refused(
         contract(moving.clone()),
-        "keys documents by \"submittedCharterId\", which a replace can change",
+        "findBy names \"submittedCharterId\" of \"joinRequest\", which a replace can change",
     );
 
     // Freezing the key's schema property is enough
@@ -356,36 +350,69 @@ fn should_refuse_a_lookup_into_a_document_type_that_can_move_the_key() {
     contract(frozen).expect("an immutable key property holds the key");
 }
 
+/// A key part that is an immutable `deletableDocument` reference by id moves
+/// when it is optional, since a replace may clear it once its document is
+/// deleted, and holds when it is required, since no replace can drop it.
 #[test]
-fn should_refuse_a_lookup_reading_the_writer_on_a_type_that_can_change_owner() {
+fn should_refuse_find_by_keyed_by_an_optional_deletable_reference_only() {
+    let mut required = charter_contract(permanent_join_request(members_find_by()));
+    required["documentSchemas"]["charter"] = json!({
+        "type": "object",
+        "canBeDeleted": true,
+        "properties": { "name": { "type": "string", "maxLength": 63, "position": 0 } },
+        "additionalProperties": false
+    });
+    let join_request = &mut required["documentSchemas"]["joinRequest"];
+    join_request["documentsMutable"] = json!(true);
+    join_request["immutable"] = json!(["submittedCharterId"]);
+    join_request["properties"]["submittedCharterId"]["refersTo"] =
+        json!({ "type": "deletableDocument", "documentType": "charter" });
+
+    let mut optional = required.clone();
+    optional["documentSchemas"]["joinRequest"]["required"] = json!(["message"]);
+    assert_refused(
+        contract(optional),
+        "findBy names \"submittedCharterId\" of \"joinRequest\", which a replace can clear once \
+         its document is deleted",
+    );
+
+    contract(required).expect("a required reference is never cleared, so the key holds");
+}
+
+#[test]
+fn should_refuse_find_by_reading_the_writer_on_a_type_that_can_change_owner() {
     let reads_the_writer = charter_contract(permanent_join_request(json!({
-        "index": "bySubmittedCharter",
-        "keys": { "submittedCharterId": ".", "$ownerId": "$ownerId" }
+        "submittedCharterId": ".",
+        "$ownerId": "$ownerId"
     })));
     for (keyword, value) in [("transferable", json!(1)), ("tradeMode", json!(1))] {
         let mut changes_owner = reads_the_writer.clone();
         changes_owner["documentSchemas"]["electedCharter"][keyword] = value;
         assert_refused(
             contract(changes_owner),
-            "key \"$ownerId\" reads \"$ownerId\", which a transfer or a purchase of the \
+            "findBy \"$ownerId\" reads \"$ownerId\", which a transfer or a purchase of the \
              referring document changes",
         );
     }
 
-    // A transferable type may still refer through a lookup whose key does not
-    // read the writer: its value and properties change only with a replace
-    let mut transferable = charter_contract(permanent_join_request(members_lookup()));
+    // A transferable type may still refer by a findBy that does not read the
+    // writer: its value and properties change only with a replace
+    let mut transferable = charter_contract(permanent_join_request(members_find_by()));
     transferable["documentSchemas"]["electedCharter"]["transferable"] = json!(1);
     contract(transferable).expect("a key that does not read the writer holds");
 }
 
-/// A `deletableDocument` reference may find its document through a lookup too: a key into a
+/// A `deletableDocument` reference may find its document by `findBy` too: a key into a
 /// deletable type may find a later document once the one it found is deleted, so the reference
 /// means a document with this key exists now, and every replace re-validates it. The
 /// referenced side is checked as it is for a permanent one.
 #[test]
-fn should_parse_a_lookup_on_a_deletable_document_reference_and_check_its_referenced_side() {
-    let deletable_join_request = json!({ "type": "deletableDocument", "documentType": "joinRequest", "lookup": members_lookup() });
+fn should_parse_find_by_on_a_deletable_document_reference_and_check_its_referenced_side() {
+    let deletable_join_request = json!({
+        "type": "deletableDocument",
+        "documentType": "joinRequest",
+        "findBy": members_find_by()
+    });
     let mut schema = charter_contract(deletable_join_request);
     refers_to_deletable_join_requests(&mut schema);
 
@@ -412,7 +439,7 @@ fn should_parse_a_lookup_on_a_deletable_document_reference_and_check_its_referen
     moving["documentSchemas"]["joinRequest"]["documentsMutable"] = json!(true);
     assert_refused(
         contract(moving),
-        "keys documents by \"submittedCharterId\", which a replace can change",
+        "findBy names \"submittedCharterId\" of \"joinRequest\", which a replace can change",
     );
 
     // Once its document is gone the property would have to change to pass again
@@ -420,7 +447,7 @@ fn should_parse_a_lookup_on_a_deletable_document_reference_and_check_its_referen
     immutable["documentSchemas"]["electedCharter"]["immutable"] = json!(["memberId"]);
     assert_refused(
         contract(immutable),
-        "\"memberId\" is a deletableDocument reference through a lookup",
+        "\"memberId\" is a deletableDocument reference found by findBy",
     );
 }
 
@@ -451,8 +478,8 @@ fn with_members(refers_to: serde_json::Value) -> serde_json::Value {
 }
 
 #[test]
-fn should_parse_a_lookup_on_the_elements_of_a_typed_array_as_the_charter_declares() {
-    let parsed = contract(with_members(permanent_join_request(members_lookup()))).expect("parses");
+fn should_parse_find_by_on_the_elements_of_a_typed_array_as_the_charter_declares() {
+    let parsed = contract(with_members(permanent_join_request(members_find_by()))).expect("parses");
     let members = parsed
         .document_type_for_name("electedCharter")
         .expect("the electedCharter document type")
@@ -482,32 +509,32 @@ fn should_parse_a_lookup_on_the_elements_of_a_typed_array_as_the_charter_declare
 }
 
 #[test]
-fn should_check_an_element_lookup_as_a_single_one_is_checked() {
+fn should_check_an_element_find_by_as_a_single_one_is_checked() {
     // The referring side, on every parse
     assert_refused(
         contract_on(
             with_members(permanent_join_request(json!({
-                "index": "bySubmittedCharter",
-                "keys": { "submittedCharterId": "alternateCharterId", "$ownerId": "." }
+                "submittedCharterId": "alternateCharterId",
+                "$ownerId": "."
             }))),
             false,
             PlatformVersion::latest(),
         ),
-        "document type \"electedCharter\" property \"members\" refersTo lookup: key \
+        "document type \"electedCharter\" property \"members\" refersTo findBy: findBy \
          \"submittedCharterId\" reads \"alternateCharterId\", which is not required",
     );
     // The referenced side, at contract level
     assert_refused(
         contract(with_members(permanent_join_request(
-            json!({ "index": "byMessage", "keys": { "message": "." } }),
+            json!({ "message": "." }),
         ))),
-        "index \"byMessage\" of \"joinRequest\" is not unique",
+        "index \"byMessage\" of \"joinRequest\" over (message) is not unique",
     );
     // And on a deletableDocument reference, whose elements every replace re-validates
     let mut deletable = with_members(json!({
         "type": "deletableDocument",
         "documentType": "joinRequest",
-        "lookup": members_lookup()
+        "findBy": members_find_by()
     }));
     refers_to_deletable_join_requests(&mut deletable);
     let parsed = contract(deletable).expect("parses");
@@ -528,14 +555,14 @@ fn should_check_an_element_lookup_as_a_single_one_is_checked() {
 }
 
 #[test]
-fn should_refuse_a_lookup_below_protocol_version_14_and_accept_it_at_14() {
-    let schema = charter_contract(permanent_join_request(members_lookup()));
+fn should_refuse_find_by_below_protocol_version_14_and_accept_it_at_14() {
+    let schema = charter_contract(permanent_join_request(members_find_by()));
     let platform_version_13 = PlatformVersion::get(13).expect("platform version 13 should exist");
 
     // Meta-schema v2 knows no refersTo, so a registering parse refuses it
     contract_on(schema.clone(), true, platform_version_13)
         .expect_err("protocol version 13 should refuse the declaration");
-    // A parse predating refersTo ignores the whole declaration, lookup and all
+    // A parse predating refersTo ignores the whole declaration, findBy and all
     let ignored = contract_on(schema.clone(), false, platform_version_13)
         .expect("protocol version 13 should parse it as a plain identifier");
     assert_eq!(member_id_type(&ignored), DocumentPropertyType::Identifier);
@@ -550,14 +577,14 @@ fn should_refuse_a_lookup_below_protocol_version_14_and_accept_it_at_14() {
 }
 
 #[test]
-fn should_leave_a_lookup_into_another_contract_to_registration() {
+fn should_leave_find_by_into_another_contract_to_registration() {
     // The referenced type is not in this contract, so the parse cannot see its
     // indexes: registration checks them against the other contract in state
     let parsed = contract(charter_contract(json!({
         "type": "permanentDocument",
         "contractId": Identifier::from([9; 32]).to_string(Encoding::Base58),
         "documentType": "joinRequest",
-        "lookup": { "index": "byAnything", "keys": { "anything": "." } }
+        "findBy": { "anything": "." }
     })))
     .expect("parses");
     assert!(matches!(
@@ -572,12 +599,12 @@ fn should_leave_a_lookup_into_another_contract_to_registration() {
 }
 
 #[test]
-fn should_round_trip_a_contract_through_platform_serialization_with_and_without_a_lookup() {
+fn should_round_trip_a_contract_through_platform_serialization_with_and_without_find_by() {
     let platform_version = PlatformVersion::latest();
 
     for refers_to in [
         json!({ "type": "permanentDocument", "documentType": "joinRequest" }),
-        permanent_join_request(members_lookup()),
+        permanent_join_request(members_find_by()),
     ] {
         let original = contract(charter_contract(refers_to.clone())).expect("parses");
         let bytes = original
@@ -591,7 +618,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_and_without_
         assert_eq!(member_id_type(&original), member_id_type(&recovered));
     }
 
-    // Without a lookup, the parsed reference is exactly the id reference it was
+    // Without findBy, the parsed reference is exactly the id reference it was
     let without = contract(charter_contract(
         json!({ "type": "permanentDocument", "documentType": "joinRequest" }),
     ))
@@ -609,34 +636,67 @@ fn should_round_trip_a_contract_through_platform_serialization_with_and_without_
 }
 
 #[test]
-fn should_refuse_malformed_lookup_declarations_in_the_parser() {
-    for (lookup, fragment) in [
+fn should_refuse_malformed_find_by_declarations_in_the_parser() {
+    for (find_by, fragment) in [
+        (json!({}), "findBy must name between 1 and 10 properties"),
         (
-            json!({ "index": "bySubmittedCharter" }),
-            "must declare keys",
+            json!({ "$ownerId": 1 }),
+            "findBy maps each property to \".\", \"$ownerId\", a property path",
         ),
         (
-            json!({ "index": "bySubmittedCharter", "keys": {} }),
-            "between 1 and 10 index properties",
-        ),
-        (
-            json!({ "index": "", "keys": { "$ownerId": "." } }),
-            "lookup index must be between 1 and 32 characters",
-        ),
-        (
-            json!({ "index": "bySubmittedCharter", "keys": { "$ownerId": 1 } }),
-            "must map each index property to a string",
-        ),
-        (
-            json!({ "index": "bySubmittedCharter", "keys": { "$ownerId": "." }, "extra": true }),
-            "lookup \"extra\" is unknown",
-        ),
-        (
-            json!({ "index": "bySubmittedCharter", "keys": { "submittedCharterId": "$createdAt", "$ownerId": "." } }),
+            json!({ "submittedCharterId": "$createdAt", "$ownerId": "." }),
             "not system property \"$createdAt\"",
         ),
+        // The value being the document's id is what leaving findBy out says
+        (json!({ "$id": "." }), "findBy $id names the document by id"),
     ] {
-        let schema = charter_contract(permanent_join_request(lookup.clone()));
+        let schema = charter_contract(permanent_join_request(find_by.clone()));
+        assert_refused(
+            contract_on(schema.clone(), false, PlatformVersion::latest()),
+            fragment,
+        );
+        contract(schema).expect_err("the meta-schema should refuse it too");
+    }
+}
+
+/// A protocol version 14 beta spelled these references with `lookup`,
+/// `propertyAgreement` and the `listElement` type. Every parse refuses them,
+/// validating or not, so a contract written with them never loads with another
+/// meaning, and the error names what replaced each.
+#[test]
+fn should_refuse_the_keywords_find_by_and_where_replaced() {
+    for (refers_to, fragment) in [
+        (
+            json!({
+                "type": "permanentDocument",
+                "documentType": "joinRequest",
+                "lookup": {
+                    "index": "bySubmittedCharter",
+                    "keys": { "submittedCharterId": "submittedCharterId", "$ownerId": "." }
+                }
+            }),
+            "refersTo lookup was replaced by findBy",
+        ),
+        (
+            json!({
+                "type": "permanentDocument",
+                "documentType": "joinRequest",
+                "propertyAgreement": { "title": "message" }
+            }),
+            "refersTo propertyAgreement was replaced by where, keyed by the referenced \
+             document's property",
+        ),
+        (
+            json!({
+                "type": "listElement",
+                "documentType": "joinRequest",
+                "propertyAgreement": { "submittedCharterId": "$id" },
+                "inList": "members"
+            }),
+            "refersTo type listElement was replaced",
+        ),
+    ] {
+        let schema = charter_contract(refers_to);
         assert_refused(
             contract_on(schema.clone(), false, PlatformVersion::latest()),
             fragment,
@@ -652,10 +712,7 @@ fn should_check_only_the_referring_side_when_a_document_type_is_parsed_alone() {
     let platform_version = PlatformVersion::latest();
     let config =
         DataContractConfig::default_for_version(platform_version).expect("config should build");
-    let schema = charter_contract(permanent_join_request(json!({
-        "index": "byNothing",
-        "keys": { "anything": "." }
-    })));
+    let schema = charter_contract(permanent_join_request(json!({ "anything": "." })));
     let elected_charter: Value =
         platform_value::to_value(schema["documentSchemas"]["electedCharter"].clone())
             .expect("the schema should convert");

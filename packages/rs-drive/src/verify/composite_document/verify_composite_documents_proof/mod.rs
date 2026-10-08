@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -33,6 +34,20 @@ impl DriveDocumentQuery<'_> {
     /// One proof means one root by construction; the caller combines the
     /// returned root hash with the surrounding tenderdash signature — see
     /// `rs-drive-proof-verifier` for the canonical composition.
+    ///
+    /// # Parameters
+    ///
+    /// * `proof`: The merged proof, as `query_composite_documents_with_proof` produced it.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, CompositeDocumentsResult))` with the proof's root hash, the proven page,
+    ///   one proven result per sub-query, and the ids each by-id join proved absent.
+    /// * `Err(Error)` when the method version is unknown, the query is not a valid composite
+    ///   query, or the proof is invalid: it fails verification, carries an entry no derivation
+    ///   asked for, lacks a referenced document that cannot be deleted, or its page derives
+    ///   values other than those the query was built from.
     pub fn verify_composite_documents_proof(
         &self,
         proof: &[u8],
@@ -46,9 +61,10 @@ impl DriveDocumentQuery<'_> {
             .verify_composite_documents_proof
         {
             0 => self.verify_composite_documents_proof_v0(proof, platform_version),
+            1 => self.verify_composite_documents_proof_v1(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentQuery::verify_composite_documents_proof".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

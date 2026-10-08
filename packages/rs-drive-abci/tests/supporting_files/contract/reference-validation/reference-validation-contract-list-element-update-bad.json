@@ -88,10 +88,10 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "position": 1,
           "refersTo": {
-            "type": "listElement",
+            "type": "permanentDocument",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "electedCharterId": "$id"
+            "findBy": {
+              "$id": "electedCharterId"
             },
             "inList": "members"
           }
@@ -108,10 +108,10 @@
             "maxItems": 32,
             "contentMediaType": "application/x.dash.dpp.identifier",
             "refersTo": {
-              "type": "listElement",
+              "type": "permanentDocument",
               "documentType": "electedCharter",
-              "propertyAgreement": {
-                "electedCharterId": "$id"
+              "findBy": {
+                "$id": "electedCharterId"
               },
               "inList": "members"
             }
@@ -134,10 +134,10 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "position": 4,
           "refersTo": {
-            "type": "listElement",
+            "type": "permanentDocument",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "plainCharterId": "$id"
+            "findBy": {
+              "$id": "plainCharterId"
             },
             "inList": "members"
           }
@@ -155,11 +155,13 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "position": 6,
           "refersTo": {
-            "type": "listElement",
+            "type": "permanentDocument",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "electedCharterId": "$id",
-              "charterTitle": "title"
+            "findBy": {
+              "$id": "electedCharterId"
+            },
+            "where": {
+              "title": "charterTitle"
             },
             "inList": "members"
           }
@@ -191,10 +193,10 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "position": 8,
           "refersTo": {
-            "type": "listElement",
+            "type": "permanentDocument",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "meta.charterId": "$id"
+            "findBy": {
+              "$id": "meta.charterId"
             },
             "inList": "seats.members"
           }
@@ -209,10 +211,10 @@
           "refersTo": {
             "anyOf": [
               {
-                "type": "listElement",
+                "type": "permanentDocument",
                 "documentType": "electedCharter",
-                "propertyAgreement": {
-                  "electedCharterId": "$id"
+                "findBy": {
+                  "$id": "electedCharterId"
                 },
                 "inList": "members"
               },
@@ -246,8 +248,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "echoCharterId": "$id"
+            "where": {
+              "$id": "echoCharterId"
             }
           }
         }
@@ -277,10 +279,10 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "position": 1,
           "refersTo": {
-            "type": "listElement",
+            "type": "permanentDocument",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "electedCharterId": "$id"
+            "findBy": {
+              "$id": "electedCharterId"
             },
             "inList": "title"
           }
@@ -294,10 +296,10 @@
     "seatedNote": {
       "type": "object",
       "ownerRefersTo": {
-        "type": "listElement",
+        "type": "permanentDocument",
         "documentType": "electedCharter",
-        "propertyAgreement": {
-          "electedCharterId": "$id"
+        "findBy": {
+          "$id": "electedCharterId"
         },
         "inList": "members"
       },

@@ -11,7 +11,7 @@ use crate::util::type_constants::{
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
@@ -68,6 +68,44 @@ pub trait DocumentInfoV0Methods {
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
 }
 
+/// The type of the value an index keys `key_path` by: the document type's property at that
+/// path, or the field a derived index property reads on the referenced document (protocol
+/// version 14), which no property of the type carries.
+fn indexed_property_type<'a>(
+    document_type: &'a DocumentTypeRef<'a>,
+    key_path: &str,
+) -> Option<&'a DocumentPropertyType> {
+    match document_type.flattened_properties().get(key_path) {
+        Some(property) => Some(&property.property_type),
+        None => document_type.derived_index_property_type(key_path),
+    }
+}
+
+impl DocumentInfo<'_> {
+    /// The same document without storage flags: how the document of a type declaring a
+    /// `ttl` is written, since such a document refunds nothing. A worst-case size passes
+    /// through unchanged.
+    pub fn without_storage_flags(self) -> Self {
+        match self {
+            DocumentInfo::DocumentOwnedInfo((document, _)) => {
+                DocumentInfo::DocumentOwnedInfo((document, None))
+            }
+            DocumentInfo::DocumentRefInfo((document, _)) => {
+                DocumentInfo::DocumentRefInfo((document, None))
+            }
+            DocumentInfo::DocumentRefAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentRefAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(size) => {
+                DocumentInfo::DocumentEstimatedAverageSize(size)
+            }
+        }
+    }
+}
+
 impl DocumentInfoV0Methods for DocumentInfo<'_> {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool {
@@ -115,8 +153,8 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
-            "$ownerId" | "$id" | "$creatorId" => Ok(DEFAULT_HASH_SIZE_U16),
-            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => Ok(U64_SIZE_U16),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
                 Ok(U64_SIZE_U16)
             }
@@ -124,14 +162,13 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
             | "$updatedAtCoreBlockHeight"
             | "$transferredAtCoreBlockHeight" => Ok(U32_SIZE_U16),
             key_path => {
-                let property = document_type.flattened_properties().get(key_path).ok_or({
+                let property_type = indexed_property_type(&document_type, key_path).ok_or({
                     Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
                         "incorrect key path [{}] for document type for estimated sizes",
                         key_path
                     )))
                 })?;
-                let estimated_size = property
-                    .property_type
+                let estimated_size = property_type
                     .middle_byte_size_ceil(platform_version)?
                     .ok_or({
                         Error::Drive(DriveError::CorruptedCodeExecution(
@@ -184,13 +221,15 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
                 ))?;
                 match key_path {
-                    "$ownerId" | "$id" | "$creatorId" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
-                        unique_id: document_type
-                            .unique_id_for_document_field(index_level, base_event)
-                            .to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    }))),
-                    "$createdAt" | "$updatedAt" | "$transferredAt" => {
+                    "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
+                        Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                            unique_id: document_type
+                                .unique_id_for_document_field(index_level, base_event)
+                                .to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        })))
+                    }
+                    "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                         Ok(Some(KeySize(KeyInfo::MaxKeySize {
                             unique_id: document_type
                                 .unique_id_for_document_field(index_level, base_event)
@@ -215,15 +254,14 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                         max_size: U32_SIZE_U8,
                     }))),
                     key_path => {
-                        let property =
-                            document_type.flattened_properties().get(key_path).ok_or({
+                        let property_type = indexed_property_type(&document_type, key_path)
+                            .ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     format!("incorrect key path [{}] for document type for get_raw_for_document_type", key_path)
                                 ))
                             })?;
 
-                        let estimated_middle_size = property
-                            .property_type
+                        let estimated_middle_size = property_type
                             .middle_byte_size_ceil(platform_version)?
                             .ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
@@ -319,6 +357,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 

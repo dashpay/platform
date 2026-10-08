@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, SystemChange};
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -51,10 +52,33 @@ impl DocumentTransferTransitionActionStructureValidationV0 for DocumentTransferT
         // document must differ from the new owner, which the action already carries on the
         // document. The data was schema-validated when it was written, so every value
         // compared is a 32-byte identifier.
-        document_type
+        let distinct_from_result = document_type
             .validate_distinct_from_properties(
                 self.document().properties(),
                 self.document().owner_id(),
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !distinct_from_result.is_valid() {
+            return Ok(distinct_from_result);
+        }
+
+        // Added in place at protocol version 14, inert for every earlier version this
+        // generation serves: `validate_property_constraints` is `None` there, so the call
+        // returns an empty result. From 14, the document as it changes hands (its new owner,
+        // and the transfer's time and heights) is judged against the rules of
+        // `propertyConstraints` that read them: the stored properties met every rule when
+        // they were written, and these are all this action changes that a rule reads. A
+        // `countOf` or `sumOf` that depends on the owner reads the total the action read
+        // from state, as it will be once the document changes hands.
+        document_type
+            .validate_property_constraints_for_system_change(
+                self.document().properties(),
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..DocumentSystemValues::of_document(self.document())
+                },
+                SystemChange::Transfer,
                 platform_version,
             )
             .map_err(Error::Protocol)

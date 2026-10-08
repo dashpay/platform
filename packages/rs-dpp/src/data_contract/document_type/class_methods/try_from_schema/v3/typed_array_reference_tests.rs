@@ -6,7 +6,7 @@
 //! The declaration is read by `apply_property_reference`, the function a
 //! scalar identifier goes through, from `parse_typed_array` 0 (protocol
 //! version 14). The checks that need other contracts (the referenced
-//! document type, the `propertyAgreement` sides and value kinds) run at
+//! document type, the `where` sides and value kinds) run at
 //! registration in drive-abci and are tested there.
 
 use super::typed_array_test_helpers::{
@@ -59,8 +59,7 @@ fn reasons_with_items(items: Value) -> Value {
     })
 }
 
-/// A document type with `reasons` and a string `topic` a propertyAgreement
-/// can name.
+/// A document type with `reasons` and a string `topic` a `where` can name.
 fn schema_with_reasons(reasons: Value) -> Value {
     platform_value!({
         "type": "object",
@@ -113,7 +112,10 @@ fn should_parse_an_element_reference_of_each_target_type() {
             platform_value!({
                 "type": "permanentDocument",
                 "documentType": "reason",
-                "propertyAgreement": { "topic": "topic", "$ownerId": "$ownerId" }
+                "where": {
+                    "topic": "topic",
+                    "$ownerId": "$ownerId"
+                }
             }),
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
@@ -134,6 +136,19 @@ fn should_parse_an_element_reference_of_each_target_type() {
                 contract_id: Some(foreign_contract),
                 document_type_name: "draft".to_string(),
                 property_agreement: BTreeMap::new(),
+            },
+        ),
+        (
+            platform_value!({
+                "type": "moderatedDocument",
+                "contractId": foreign_contract.to_string(Encoding::Base58),
+                "documentType": "post",
+                "where": { "topic": "topic" }
+            }),
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id: Some(foreign_contract),
+                document_type_name: "post".to_string(),
+                property_agreement: BTreeMap::from([("topic".to_string(), "topic".to_string())]),
             },
         ),
     ] {
@@ -287,28 +302,29 @@ fn should_refuse_refers_to_on_the_typed_array_itself() {
     );
 }
 
-/// The rules the parse itself holds for a `propertyAgreement`, identical for
-/// an element declaration: only `$ownerId` among the referring document's
-/// system properties, only `$ownerId`, `$creatorId` and `$id` among the
-/// referenced document's. Whether a named schema property exists on either side is
+/// The rules the parse itself holds for a `where`, identical for an element
+/// declaration: only `$ownerId` among the referring document's system
+/// properties, only `$ownerId`, `$creatorId` and `$id` among the referenced
+/// document's. Whether a named schema property exists on either side is
 /// checked at registration against the referenced contract (drive-abci).
 #[test]
-fn should_refuse_an_element_property_agreement_naming_an_unusable_system_property() {
-    for (agreement, fragment) in [
-        (
-            platform_value!({ "$createdAt": "topic" }),
-            "propertyAgreement keys must name a schema property",
-        ),
+fn should_refuse_an_element_where_naming_an_unusable_system_property() {
+    for (comparisons, fragment) in [
         (
             platform_value!({ "topic": "$createdAt" }),
-            "propertyAgreement values must name a schema property",
+            "where values must name a property of the referring document type or its $ownerId",
+        ),
+        (
+            platform_value!({ "$createdAt": "topic" }),
+            "where keys must name a property of the referenced document type or one of its \
+             $ownerId, $creatorId and $id system properties",
         ),
     ] {
         let schema = schema_with_reasons(reasons_with_items(identifier_items(Some(
             platform_value!({
                 "type": "permanentDocument",
                 "documentType": "reason",
-                "propertyAgreement": agreement.clone()
+                "where": comparisons.clone()
             }),
         ))));
         expect_structure_error(
@@ -551,7 +567,9 @@ fn charter_contract(platform_version: &PlatformVersion) -> DataContract {
         platform_value!({
             "type": "permanentDocument",
             "documentType": "reason",
-            "propertyAgreement": { "topic": "topic" }
+            "where": {
+                "topic": "topic"
+            }
         }),
     ))));
 
