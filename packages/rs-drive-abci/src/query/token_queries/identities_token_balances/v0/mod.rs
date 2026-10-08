@@ -34,10 +34,12 @@ impl<C> Platform<C> {
                 )),
             )));
         }
-        if identity_ids.is_empty() {
+        // GroveDB cannot prove an empty query; without a proof the answer is just empty.
+        if prove && identity_ids.is_empty() {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(
-                    "identity_ids must contain at least one identifier".to_string(),
+                    "identity_ids must contain at least one identifier when requesting a proof"
+                        .to_string(),
                 ),
             ));
         }
@@ -316,22 +318,26 @@ mod tests {
         ));
     }
 
-    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
-    /// modes refuse it as the request's fault rather than answer differently.
+    /// GroveDB cannot prove an empty query, so asking a proof of an empty list is refused as
+    /// the request's fault. Without a proof the answer is just empty.
     #[test]
-    fn should_refuse_an_empty_identity_id_list_as_invalid_argument() {
+    fn should_refuse_a_proof_of_an_empty_identity_id_list_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let request = |prove| GetIdentitiesTokenBalancesRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: vec![],
+            prove,
+        };
 
-        for prove in [false, true] {
-            let request = GetIdentitiesTokenBalancesRequestV0 {
-                token_id: vec![0; 32],
-                identity_ids: vec![],
-                prove,
-            };
+        let unproved = platform
+            .query_identities_token_balances_v0(request(false), &state, version)
+            .expect("expected query to succeed");
+        assert!(unproved.is_valid(), "{:?}", unproved.errors);
 
-            assert_invalid_argument_status(
-                platform.query_identities_token_balances_v0(request, &state, version),
-            );
-        }
+        assert_invalid_argument_status(platform.query_identities_token_balances_v0(
+            request(true),
+            &state,
+            version,
+        ));
     }
 }

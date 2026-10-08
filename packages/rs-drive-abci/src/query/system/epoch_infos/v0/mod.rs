@@ -46,9 +46,12 @@ impl<C> Platform<C> {
             ));
         }
 
-        if count == 0 {
+        // GroveDB refuses to prove a query with a limit of 0. Without a proof it is served.
+        if count == 0 && prove {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::InvalidArgument("count must be at least 1".to_string()),
+                QueryError::InvalidArgument(
+                    "count must be at least 1 when requesting a proof".to_string(),
+                ),
             ));
         }
 
@@ -228,20 +231,28 @@ mod tests {
         ));
     }
 
+    /// GroveDB refuses to prove a query with a limit of 0, so a proof of 0 epochs is refused as
+    /// the request's fault. Without a proof the answer is just empty.
     #[test]
-    fn should_refuse_a_zero_count_as_invalid_argument() {
+    fn should_refuse_a_proof_of_zero_epochs_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let request = |prove| GetEpochsInfoRequestV0 {
+            start_epoch: None,
+            count: 0,
+            ascending: true,
+            prove,
+        };
 
-        for prove in [false, true] {
-            let request = GetEpochsInfoRequestV0 {
-                start_epoch: None,
-                count: 0,
-                ascending: true,
-                prove,
-            };
+        let unproved = platform
+            .query_epoch_infos_v0(request(false), &state, version)
+            .expect("expected query to succeed");
+        assert!(unproved.is_valid(), "{:?}", unproved.errors);
 
-            assert_invalid_argument_status(platform.query_epoch_infos_v0(request, &state, version));
-        }
+        assert_invalid_argument_status(platform.query_epoch_infos_v0(
+            request(true),
+            &state,
+            version,
+        ));
     }
 
     /// `start_epoch + count` past `u32::MAX` is refused as too high instead of overflowing.
