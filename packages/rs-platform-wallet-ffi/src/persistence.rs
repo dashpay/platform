@@ -5355,28 +5355,22 @@ fn decode_dashpay_backfill(
                 )
             }
         };
-    let mut covered: Vec<DashPayBackfillCoveredContact> = covered
-        .iter()
-        .map(|c| DashPayBackfillCoveredContact {
-            owner: Identifier::from(c.owner_identity_id),
-            contact: Identifier::from(c.contact_identity_id),
-            account_index: c.account_index,
-            covered_from: c.covered_from,
-        })
-        .collect();
-    // Canonical order and one entry per account, whatever the host stored.
-    // A duplicated account keeps its HIGHEST `covered_from`, so an ambiguous
-    // record fails closed.
-    covered.sort_by_key(|entry| (entry.key(), std::cmp::Reverse(entry.covered_from)));
-    covered.dedup_by(|a, b| a.key() == b.key());
-    DashPayBackfillRecord {
-        floor: entry.dashpay_backfill_floor,
-        rewound_from: entry.dashpay_backfill_rewound_from,
-        covered,
-        unpersisted_cursor: None,
-        unpersisted_cursor_epoch: None,
-        unpersisted_extent: None,
-    }
+    // `from_entries` puts the cover set in canonical form whatever the host
+    // stored: one entry per account, a duplicate keeping its HIGHEST
+    // `covered_from`, so an ambiguous record fails closed.
+    DashPayBackfillRecord::from_entries(
+        entry.dashpay_backfill_floor,
+        entry.dashpay_backfill_rewound_from,
+        covered
+            .iter()
+            .map(|c| DashPayBackfillCoveredContact {
+                owner: Identifier::from(c.owner_identity_id),
+                contact: Identifier::from(c.contact_identity_id),
+                account_index: c.account_index,
+                covered_from: c.covered_from,
+            })
+            .collect(),
+    )
 }
 
 fn build_wallet_start_state(

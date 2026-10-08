@@ -99,8 +99,14 @@ impl DashPayBackfillCoveredContact {
 /// A later rewind folds into the existing record ([`record_pass`](Self::record_pass)):
 /// the floor can only go down, `rewound_from` can only go up, and a contact's
 /// entry is replaced by the new checkpoint it was covered from.
+///
+/// Every way in — [`from_entries`](Self::from_entries), [`from_parts`](Self::from_parts)
+/// and serde deserialization — canonicalizes [`covered`](Self::covered), so a
+/// restored record never carries an order or a duplicate the lookups would
+/// misread.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(from = "DashPayBackfillRecordSerde"))]
 pub struct DashPayBackfillRecord {
     /// Lowest height a backfill rewound the cursor to. Meaningless while
     /// [`has_extent`](Self::has_extent) is false.
@@ -135,7 +141,49 @@ pub struct DashPayBackfillRecord {
     pub unpersisted_extent: Option<(u32, u32)>,
 }
 
+/// The persisted fields of a [`DashPayBackfillRecord`] as serde reads them,
+/// before [`DashPayBackfillRecord::from_entries`] canonicalizes the cover set.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct DashPayBackfillRecordSerde {
+    floor: u32,
+    rewound_from: u32,
+    covered: Vec<DashPayBackfillCoveredContact>,
+}
+
+#[cfg(feature = "serde")]
+impl From<DashPayBackfillRecordSerde> for DashPayBackfillRecord {
+    fn from(record: DashPayBackfillRecordSerde) -> Self {
+        Self::from_entries(record.floor, record.rewound_from, record.covered)
+    }
+}
+
 impl DashPayBackfillRecord {
+    /// A restored record from its persisted parts, with the cover set put in
+    /// canonical form whatever order or duplicates the source held: sorted by
+    /// receival-account key, one entry per account. A duplicated account
+    /// keeps its HIGHEST `covered_from` — an ambiguous record must fail
+    /// closed, and the higher height is the one that re-arms more
+    /// checkpoints. Every decoder of a stored record goes through here, so
+    /// [`covered_from`](Self::covered_from)'s binary search never lands on a
+    /// lower duplicate.
+    pub fn from_entries(
+        floor: u32,
+        rewound_from: u32,
+        mut covered: Vec<DashPayBackfillCoveredContact>,
+    ) -> Self {
+        covered.sort_by_key(|entry| (entry.key(), std::cmp::Reverse(entry.covered_from)));
+        covered.dedup_by(|a, b| a.key() == b.key());
+        Self {
+            floor,
+            rewound_from,
+            covered,
+            unpersisted_cursor: None,
+            unpersisted_cursor_epoch: None,
+            unpersisted_extent: None,
+        }
+    }
+
     /// Owe the host `cursor`, lowered in memory during rewind epoch `epoch`.
     /// Folds into any debt already owed: the lower cursor, and the later
     /// epoch — the debt is paid only by an advance the host accepts after the
@@ -330,7 +378,7 @@ impl DashPayBackfillRecord {
             return None;
         }
         let (chunks, _) = covered_bytes.as_chunks::<{ Self::COVERED_ENTRY_LEN }>();
-        let mut covered: Vec<DashPayBackfillCoveredContact> = chunks
+        let covered: Vec<DashPayBackfillCoveredContact> = chunks
             .iter()
             .map(|chunk| {
                 let mut owner = [0u8; 32];
@@ -349,20 +397,7 @@ impl DashPayBackfillRecord {
                 }
             })
             .collect();
-        // Canonical order and one entry per account, whatever the host stored.
-        // A duplicated account keeps its HIGHEST `covered_from`: an ambiguous
-        // record must fail closed, and the higher height is the one that
-        // re-arms more checkpoints.
-        covered.sort_by_key(|entry| (entry.key(), std::cmp::Reverse(entry.covered_from)));
-        covered.dedup_by(|a, b| a.key() == b.key());
-        Some(Self {
-            floor,
-            rewound_from,
-            covered,
-            unpersisted_cursor: None,
-            unpersisted_cursor_epoch: None,
-            unpersisted_extent: None,
-        })
+        Some(Self::from_entries(floor, rewound_from, covered))
     }
 }
 
@@ -501,6 +536,46 @@ mod tests {
             "a duplicated account keeps its highest height, re-arming more"
         );
         assert!(!record.covers(&id(5), &id(6), 0, 800));
+    }
+
+    /// Serde is a restore path too: a record serialized with its cover set
+    /// out of order and holding a conflicting duplicate must come back in
+    /// canonical form, the duplicate at its highest height — not left for
+    /// the binary search to land on the lower one and suppress a rewind.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn a_serde_restored_record_is_canonicalised_on_the_way_in() {
+        let entry = |owner: u8, contact: u8, covered_from: u32| DashPayBackfillCoveredContact {
+            owner: id(owner),
+            contact: id(contact),
+            account_index: 0,
+            covered_from,
+        };
+        let stored = DashPayBackfillRecord {
+            floor: 100,
+            rewound_from: 1_000,
+            covered: vec![entry(5, 6, 700), entry(1, 2, 100), entry(5, 6, 900)],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&stored).expect("serializes");
+        let restored: DashPayBackfillRecord = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(
+            restored,
+            DashPayBackfillRecord::from_entries(
+                100,
+                1_000,
+                vec![entry(1, 2, 100), entry(5, 6, 900)]
+            )
+        );
+        assert_eq!(
+            restored.covered,
+            vec![entry(1, 2, 100), entry(5, 6, 900)],
+            "sorted by account, one entry each"
+        );
+        assert!(
+            !restored.covers(&id(5), &id(6), 0, 800),
+            "the duplicate keeps its highest height, re-arming a checkpoint below it"
+        );
     }
 
     #[test]
