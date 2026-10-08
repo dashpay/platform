@@ -13,6 +13,15 @@ use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
+    get_addresses_infos_request, get_data_contract_history_request, get_data_contracts_request,
+    get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request,
+    get_identities_balances_request, get_identities_contract_keys_request,
+    get_identities_token_balances_request, get_identities_token_infos_request,
+    get_identity_keys_request, get_identity_token_balances_request,
+    get_identity_token_infos_request, get_protocol_version_upgrade_vote_status_request,
+    get_token_statuses_request,
+};
+use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
     GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
     GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
@@ -74,6 +83,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use drive::error::Error as StorageError;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -299,6 +309,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentitiesContractKeysRequest>,
     ) -> Result<Response<GetIdentitiesContractKeysResponse>, Status> {
+        if let Some(get_identities_contract_keys_request::Version::V0(v0)) =
+            &request.get_ref().version
+        {
+            validate_proof_items(&v0.identities_ids, v0.prove, "identities_ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_contract_keys,
@@ -311,6 +326,13 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentityKeysRequest>,
     ) -> Result<Response<GetIdentityKeysResponse>, Status> {
+        if let Some(get_identity_keys_request::Version::V0(v0)) = &request.get_ref().version {
+            if v0.prove {
+                if let Some(limit) = v0.limit {
+                    validate_nonzero_query_cap(limit, "limit")?;
+                }
+            }
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_keys,
@@ -395,6 +417,12 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetDataContractHistoryRequest>,
     ) -> Result<Response<GetDataContractHistoryResponse>, Status> {
+        if let Some(get_data_contract_history_request::Version::V0(v0)) = &request.get_ref().version
+        {
+            if let Some(limit) = v0.limit {
+                validate_nonzero_query_cap(limit, "limit")?;
+            }
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contract_history,
@@ -407,6 +435,9 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetDataContractsRequest>,
     ) -> Result<Response<GetDataContractsResponse>, Status> {
+        if let Some(get_data_contracts_request::Version::V0(v0)) = &request.get_ref().version {
+            validate_proof_items(&v0.ids, v0.prove, "ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts,
@@ -637,6 +668,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetProtocolVersionUpgradeVoteStatusRequest>,
     ) -> Result<Response<GetProtocolVersionUpgradeVoteStatusResponse>, Status> {
+        if let Some(get_protocol_version_upgrade_vote_status_request::Version::V0(v0)) =
+            &request.get_ref().version
+        {
+            validate_nonzero_query_cap(v0.count, "count")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_version_upgrade_vote_status,
@@ -649,6 +685,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetEpochsInfoRequest>,
     ) -> Result<Response<GetEpochsInfoResponse>, Status> {
+        if let Some(get_epochs_info_request::Version::V0(v0)) = &request.get_ref().version {
+            if v0.prove {
+                validate_nonzero_query_cap(v0.count, "count")?;
+            }
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_epoch_infos,
@@ -758,6 +799,9 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentitiesBalancesRequest>,
     ) -> Result<Response<GetIdentitiesBalancesResponse>, Status> {
+        if let Some(get_identities_balances_request::Version::V0(v0)) = &request.get_ref().version {
+            validate_proof_items(&v0.ids, v0.prove, "ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_balances,
@@ -782,6 +826,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetEvonodesProposedEpochBlocksByIdsRequest>,
     ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
+        if let Some(get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0)) =
+            &request.get_ref().version
+        {
+            validate_proof_items(&v0.ids, v0.prove, "ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_evonode_ids,
@@ -818,6 +867,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentityTokenBalancesRequest>,
     ) -> Result<Response<GetIdentityTokenBalancesResponse>, Status> {
+        if let Some(get_identity_token_balances_request::Version::V0(v0)) =
+            &request.get_ref().version
+        {
+            validate_proof_items(&v0.token_ids, v0.prove, "token_ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity_token_balances,
@@ -830,6 +884,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentitiesTokenBalancesRequest>,
     ) -> Result<Response<GetIdentitiesTokenBalancesResponse>, Status> {
+        if let Some(get_identities_token_balances_request::Version::V0(v0)) =
+            &request.get_ref().version
+        {
+            validate_proof_items(&v0.identity_ids, v0.prove, "identity_ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_token_balances,
@@ -842,6 +901,10 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentityTokenInfosRequest>,
     ) -> Result<Response<GetIdentityTokenInfosResponse>, Status> {
+        if let Some(get_identity_token_infos_request::Version::V0(v0)) = &request.get_ref().version
+        {
+            validate_proof_items(&v0.token_ids, v0.prove, "token_ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identity_token_infos,
@@ -854,6 +917,11 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetIdentitiesTokenInfosRequest>,
     ) -> Result<Response<GetIdentitiesTokenInfosResponse>, Status> {
+        if let Some(get_identities_token_infos_request::Version::V0(v0)) =
+            &request.get_ref().version
+        {
+            validate_proof_items(&v0.identity_ids, v0.prove, "identity_ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_identities_token_infos,
@@ -866,6 +934,9 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetTokenStatusesRequest>,
     ) -> Result<Response<GetTokenStatusesResponse>, Status> {
+        if let Some(get_token_statuses_request::Version::V0(v0)) = &request.get_ref().version {
+            validate_proof_items(&v0.token_ids, v0.prove, "token_ids")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_token_statuses,
@@ -1010,6 +1081,9 @@ impl PlatformService for QueryService {
         &self,
         request: Request<GetAddressesInfosRequest>,
     ) -> Result<Response<GetAddressesInfosResponse>, Status> {
+        if let Some(get_addresses_infos_request::Version::V0(v0)) = &request.get_ref().version {
+            validate_proof_items(&v0.addresses, v0.prove, "addresses")?;
+        }
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_addresses_infos,
@@ -1158,7 +1232,9 @@ fn query_error_into_status(error: QueryError) -> Status {
     match error {
         QueryError::NotFound(message) => Status::not_found(message),
         QueryError::InvalidArgument(message) => Status::invalid_argument(message),
-        QueryError::Query(error) => Status::invalid_argument(error.to_string()),
+        QueryError::Query(error) | QueryError::Drive(StorageError::Query(error)) => {
+            Status::invalid_argument(error.to_string())
+        }
         QueryError::TooManyElements(message) => Status::invalid_argument(message),
         QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
         _ => {
@@ -1170,7 +1246,29 @@ fn query_error_into_status(error: QueryError) -> Status {
 }
 
 fn error_into_status(error: Error) -> Status {
-    Status::internal(format!("query: {}", error))
+    match error {
+        Error::Drive(StorageError::Query(error)) => Status::invalid_argument(error.to_string()),
+        error => Status::internal(format!("query: {}", error)),
+    }
+}
+
+fn validate_proof_items(items: &[Vec<u8>], prove: bool, field: &str) -> Result<(), Status> {
+    // An empty selection cannot produce a proof these endpoints' clients can verify.
+    if prove && items.is_empty() {
+        return Err(Status::invalid_argument(format!(
+            "{field} must contain at least one item when requesting a proof"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_nonzero_query_cap(value: u32, field: &str) -> Result<(), Status> {
+    if value == 0 {
+        return Err(Status::invalid_argument(format!(
+            "{field} must be greater than zero"
+        )));
+    }
+    Ok(())
 }
 
 fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
@@ -1238,6 +1336,43 @@ mod tests {
 #[cfg(test)]
 mod query_error_status_tests {
     use super::*;
+    use drive::error::drive::DriveError;
+    use drive::error::query::QuerySyntaxError;
+    use drive::error::Error as StorageError;
+
+    #[test]
+    fn should_classify_query_syntax_errors_consistently_through_drive_wrappers() {
+        let syntax = || QuerySyntaxError::InvalidLimit("limit must be positive".to_owned());
+        assert_eq!(
+            query_error_into_status(QueryError::Query(syntax())).code(),
+            Code::InvalidArgument
+        );
+        assert_eq!(
+            query_error_into_status(QueryError::Drive(StorageError::Query(syntax()))).code(),
+            Code::InvalidArgument
+        );
+        assert_eq!(
+            error_into_status(Error::Drive(StorageError::Query(syntax()))).code(),
+            Code::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn should_keep_internal_storage_failures_classified_as_node_errors() {
+        let storage = || {
+            StorageError::Drive(DriveError::CorruptedCodeExecution(
+                "missing storage invariant",
+            ))
+        };
+        assert_eq!(
+            query_error_into_status(QueryError::Drive(storage())).code(),
+            Code::Unknown
+        );
+        assert_eq!(
+            error_into_status(Error::Drive(storage())).code(),
+            Code::Internal
+        );
+    }
 
     #[test]
     fn resource_exhausted_query_error_maps_to_retryable_grpc_status() {

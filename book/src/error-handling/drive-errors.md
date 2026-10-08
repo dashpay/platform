@@ -1,8 +1,43 @@
 # Drive Errors
 
-The previous two chapters covered consensus errors -- the carefully serialized, code-stable errors that get sent across the network. Drive errors are a different beast entirely. They are **internal** errors that arise from the storage layer, the database, and the logic that sits between state transitions and GroveDB. They never leave the node. They are not serialized. And they do not need stable numeric codes.
+The previous two chapters covered consensus errors -- the carefully serialized, code-stable errors that get sent across the network. Drive errors are a different beast entirely. They are **internal** errors that arise from the storage layer, the database, and the logic that sits between state transitions and GroveDB. Their Rust enum is not serialized as a public consensus error and does not need stable numeric codes. Public queries map selected errors to transport statuses, as described below.
 
 But they do need to be well-organized, because Drive is where most of the platform's complexity lives. When something goes wrong in Drive, you need to know immediately whether it is a corrupted database, a protocol-level validation failure, a fee calculation error, or a bug in your own code.
+
+## Public query errors
+
+The gRPC `QueryService` classifies a typed `QuerySyntaxError` as
+`InvalidArgument`, including when it is wrapped in Drive or ABCI errors.
+Database corruption, execution failures, and arbitrary GroveDB or proof errors
+retain their server-error classification. This distinction lets the existing
+client reject a caller's invalid request without retrying it or banning the
+responding node. Internal node failures and invalid cryptographic proofs still
+trigger the existing retry and ban policy.
+
+Some request shapes must be checked before constructing a storage proof:
+
+| Request | Public contract |
+|---|---|
+| Empty contract, identity-balance, contract-key, token-balance/info/status, evonode-ID, or address-info selections | Unproved empty results are retained; proved empty selections return `InvalidArgument`. |
+| Identity keys with explicit limit zero, or epoch information with count zero | The unproved behavior is retained; requesting a zero-limit proof returns `InvalidArgument`. |
+| Contract history with explicit limit zero, or protocol-version vote status with count zero | Both proof modes return `InvalidArgument`. |
+| Document request V0 limit zero, or shielded encrypted-note count zero | Zero retains its existing default meaning. |
+| Root path-element query with no keys, or specific identity keys with no IDs and no limit | Successful empty results and verifiable proofs are retained. |
+
+An empty proved identity-balance selection previously returned a proof whose
+query could not be verified by the client. Rejecting that request avoids treating
+an unusable success as a proof failure from an honest node. These checks belong
+to the public request boundary; they do not change persisted data, consensus
+execution, fees, or proof generations. Clients connected to older servers still
+receive those servers' previous statuses or unusable proofs.
+
+The unproved identity `SpecificKeys` query currently fails inside query lowering
+when an explicit limit is smaller than the number of distinct requested keys,
+including missing keys and a zero limit. Its return-cap contract permits that
+request. The proved form does not take this lowering path, and its proofs for
+an identity with no keys verify successfully. This remains a separate query
+defect that can produce `Internal` and a node ban for raw unproved callers; it
+is not reclassified as invalid caller input.
 
 ## The Drive `Error` enum
 

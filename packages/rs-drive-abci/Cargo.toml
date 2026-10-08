@@ -90,6 +90,11 @@ rocksdb = "0.25.0"
 blake3 = "1.5"
 
 [dev-dependencies]
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = { version = "0.5", features = ["util"] }
+tokio-stream = "0.1"
+tokio = { version = "1.40", features = ["io-util"] }
 dash-platform-queries = { path = "../dash-platform-queries" }
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
