@@ -6,10 +6,7 @@ mod common;
 
 use common::ScriptedRequest;
 use dapi_grpc::platform::v0::get_data_contracts_request::{self, GetDataContractsRequestV0};
-use dapi_grpc::platform::v0::get_identity_keys_request::{self, GetIdentityKeysRequestV0};
-use dapi_grpc::platform::v0::{
-    key_request_type, GetDataContractsRequest, GetIdentityKeysRequest, KeyRequestType, SpecificKeys,
-};
+use dapi_grpc::platform::v0::GetDataContractsRequest;
 use dapi_grpc::tonic::{Code, Status};
 use rs_dapi_client::transport::{TransportError, TransportRequest};
 use rs_dapi_client::{
@@ -124,8 +121,8 @@ async fn should_still_ban_and_retry_a_node_that_fails_on_its_own() {
     ));
 }
 
-/// A request that names nothing is refused without a node: no node is asked, so none can
-/// answer it with an error that gets it banned.
+/// A proof of nothing is refused without a node: no node is asked, so none can answer it
+/// with an error, or a proof the client cannot verify, that gets it banned.
 #[tokio::test]
 async fn should_refuse_a_request_that_names_nothing_without_sending_it() {
     let client = DapiClient::new(two_nodes(), RequestSettings::default());
@@ -149,7 +146,10 @@ async fn should_refuse_a_request_that_names_nothing_without_sending_it() {
     match error.inner {
         DapiClientError::Transport(TransportError::Grpc(status)) => {
             assert_eq!(status.code(), Code::InvalidArgument);
-            assert_eq!(status.message(), "ids must contain at least one identifier");
+            assert_eq!(
+                status.message(),
+                "ids must contain at least one identifier when requesting a proof"
+            );
         }
         other => panic!("expected an INVALID_ARGUMENT status, got {other:?}"),
     }
@@ -160,35 +160,22 @@ async fn should_refuse_a_request_that_names_nothing_without_sending_it() {
         .all(|info| !info.banned));
 }
 
+/// Without a proof, nodes answer an empty list with an empty result, so only a proof of
+/// nothing is refused.
 #[test]
-fn should_name_nothing_only_when_the_selection_is_empty() {
-    let keys = |key_ids: Vec<u32>| GetIdentityKeysRequest {
-        version: Some(get_identity_keys_request::Version::V0(
-            GetIdentityKeysRequestV0 {
-                identity_id: vec![1; 32],
-                request_type: Some(KeyRequestType {
-                    request: Some(key_request_type::Request::SpecificKeys(SpecificKeys {
-                        key_ids,
-                    })),
-                }),
-                limit: None,
-                offset: None,
-                prove: true,
-            },
-        )),
-    };
-    assert_eq!(
-        keys(vec![]).names_nothing(),
-        Some("key_ids must name at least one key")
-    );
-    assert_eq!(keys(vec![0]).names_nothing(), None);
-
-    let contracts = |ids: Vec<Vec<u8>>| GetDataContractsRequest {
+fn should_name_nothing_only_for_a_proof_of_an_empty_list() {
+    let contracts = |ids: Vec<Vec<u8>>, prove: bool| GetDataContractsRequest {
         version: Some(get_data_contracts_request::Version::V0(
-            GetDataContractsRequestV0 { ids, prove: true },
+            GetDataContractsRequestV0 { ids, prove },
         )),
     };
-    assert_eq!(contracts(vec![vec![1; 32]]).names_nothing(), None);
+
+    assert_eq!(
+        contracts(vec![], true).names_nothing(),
+        Some("ids must contain at least one identifier when requesting a proof")
+    );
+    assert_eq!(contracts(vec![], false).names_nothing(), None);
+    assert_eq!(contracts(vec![vec![1; 32]], true).names_nothing(), None);
     assert_eq!(
         GetDataContractsRequest { version: None }.names_nothing(),
         None

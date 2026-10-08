@@ -1067,8 +1067,8 @@ impl DapiRequestExecutor for DapiClient {
         R::Response: Mockable,
         TransportError: Mockable,
     {
-        // Every node refuses a request that names nothing, so it is refused here, without a
-        // node, the same way; see `TransportRequest::names_nothing`.
+        // Every node refuses a proof of nothing, so it is refused here, without a node, the
+        // same way; see `TransportRequest::names_nothing`.
         if let Some(refusal) = request.names_nothing() {
             return Err(ExecutionError {
                 inner: DapiClientError::Transport(TransportError::Grpc(Status::invalid_argument(

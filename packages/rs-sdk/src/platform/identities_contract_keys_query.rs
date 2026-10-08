@@ -140,11 +140,11 @@ mod tests {
 
         assert_eq!(
             query(vec![], vec![Purpose::AUTHENTICATION]).names_nothing(),
-            Some("identities_ids must contain at least one identifier")
+            Some("identities_ids must contain at least one identifier when requesting a proof")
         );
         assert_eq!(
             query(vec![Identifier::from([1; 32])], vec![]).names_nothing(),
-            Some("purposes must contain at least one purpose")
+            Some("purposes must contain at least one purpose when requesting a proof")
         );
         assert_eq!(
             query(

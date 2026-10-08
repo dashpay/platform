@@ -498,8 +498,8 @@ impl_transport_request_grpc!(
 
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_identities_balances_request::Version::V0(v0)) if v0.ids.is_empty() => Some(
-            "ids must contain at least one identifier",
+        Some(platform_proto::get_identities_balances_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -544,16 +544,16 @@ impl_transport_request_grpc!(
 
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_identities_contract_keys_request::Version::V0(v0)) => {
+        Some(platform_proto::get_identities_contract_keys_request::Version::V0(v0)) if v0.prove => {
             if v0.identities_ids.is_empty() {
-                Some("identities_ids must contain at least one identifier")
+                Some("identities_ids must contain at least one identifier when requesting a proof")
             } else if v0.purposes.is_empty() {
-                Some("purposes must contain at least one purpose")
+                Some("purposes must contain at least one purpose when requesting a proof")
             } else {
                 None
             }
         }
-        None => None,
+        _ => None,
     };
     platform_proto::GetIdentitiesContractKeysRequest,
     platform_proto::GetIdentitiesContractKeysResponse,
@@ -563,22 +563,6 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    names_nothing: |request| {
-        use platform_proto::key_request_type::Request;
-        let Some(platform_proto::get_identity_keys_request::Version::V0(v0)) = &request.version
-        else {
-            return None;
-        };
-        match v0.request_type.as_ref().and_then(|kind| kind.request.as_ref()) {
-            Some(Request::SpecificKeys(keys)) if keys.key_ids.is_empty() => {
-                Some("key_ids must name at least one key")
-            }
-            Some(Request::SearchKey(search)) if search.purpose_map.is_empty() => {
-                Some("purpose_map must name at least one purpose")
-            }
-            _ => None,
-        }
-    };
     platform_proto::GetIdentityKeysRequest,
     platform_proto::GetIdentityKeysResponse,
     PlatformGrpcClient,
@@ -620,8 +604,8 @@ impl_transport_request_grpc!(
 
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_data_contracts_request::Version::V0(v0)) if v0.ids.is_empty() => Some(
-            "ids must contain at least one identifier",
+        Some(platform_proto::get_data_contracts_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -678,8 +662,8 @@ impl_transport_request_grpc!(
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0)) if v0.ids.is_empty() => Some(
-            "ids must contain at least one identifier",
+        Some(platform_proto::get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -874,8 +858,8 @@ impl_transport_request_grpc!(
 // rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_identity_token_balances_request::Version::V0(v0)) if v0.token_ids.is_empty() => Some(
-            "token_ids must contain at least one identifier",
+        Some(platform_proto::get_identity_token_balances_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -889,8 +873,8 @@ impl_transport_request_grpc!(
 // rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_identities_token_balances_request::Version::V0(v0)) if v0.identity_ids.is_empty() => Some(
-            "identity_ids must contain at least one identifier",
+        Some(platform_proto::get_identities_token_balances_request::Version::V0(v0)) if v0.prove && v0.identity_ids.is_empty() => Some(
+            "identity_ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -904,8 +888,8 @@ impl_transport_request_grpc!(
 // rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_identity_token_infos_request::Version::V0(v0)) if v0.token_ids.is_empty() => Some(
-            "token_ids must contain at least one identifier",
+        Some(platform_proto::get_identity_token_infos_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -919,8 +903,8 @@ impl_transport_request_grpc!(
 // rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_identities_token_infos_request::Version::V0(v0)) if v0.identity_ids.is_empty() => Some(
-            "identity_ids must contain at least one identifier",
+        Some(platform_proto::get_identities_token_infos_request::Version::V0(v0)) if v0.prove && v0.identity_ids.is_empty() => Some(
+            "identity_ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -934,8 +918,8 @@ impl_transport_request_grpc!(
 // rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_token_statuses_request::Version::V0(v0)) if v0.token_ids.is_empty() => Some(
-            "token_ids must contain at least one identifier",
+        Some(platform_proto::get_token_statuses_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
         ),
         _ => None,
     };
@@ -1039,8 +1023,8 @@ impl_transport_request_grpc!(
 // rpc getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
-        Some(platform_proto::get_addresses_infos_request::Version::V0(v0)) if v0.addresses.is_empty() => Some(
-            "addresses must contain at least one address",
+        Some(platform_proto::get_addresses_infos_request::Version::V0(v0)) if v0.prove && v0.addresses.is_empty() => Some(
+            "addresses must contain at least one address when requesting a proof",
         ),
         _ => None,
     };
