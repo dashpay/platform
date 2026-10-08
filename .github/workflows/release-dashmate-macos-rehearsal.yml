@@ -1,8 +1,8 @@
 name: Rehearse Dashmate macOS notarization
 
 # Signs and notarizes the macOS packages of an earlier release run, with the
-# release secrets, and publishes nothing. It shows whether the certificate,
-# the notary key and the packages are in order before the next release does.
+# release secrets, and publishes nothing. It shows whether Apple accepts them
+# with the release certificate and notary key before the next release does.
 on:
   workflow_dispatch:
     inputs:
@@ -17,14 +17,20 @@ permissions:
 jobs:
   rehearse:
     name: Sign and notarize without publishing
-    # The release secrets go only to reviewed code: a protected branch or a
-    # tag, as in release-npm-build.yml.
-    if: >-
-      github.repository == 'dashpay/platform'
-      && (github.ref_protected || startsWith(github.ref, 'refs/tags/'))
+    # The image of the macOS leg of release-dashmate-packages in release.yml.
     runs-on: macos-14
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
+      # The release secrets go only to reviewed code, so the workflow and its
+      # action must come from a protected branch.
+      - name: Require a protected branch
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REPOSITORY" != dashpay/platform ] || [ "${GITHUB_REF_PROTECTED:-}" != true ]; then
+            echo "::error::Dispatch the rehearsal from a protected branch of dashpay/platform; this is $GITHUB_REF of $GITHUB_REPOSITORY."
+            exit 1
+          fi
+
       - name: Check out the signing action
         uses: actions/checkout@v4
         with:
@@ -42,14 +48,21 @@ jobs:
           set -euo pipefail
           [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo '::error::run_id must be a number.'; exit 1; }
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")" \
-            || { echo "::error::Run $RUN_ID was not found in $GITHUB_REPOSITORY."; exit 1; }
+            || { echo "::error::Could not read run $RUN_ID in $GITHUB_REPOSITORY; see the error above."; exit 1; }
           path="$(jq -r '.path' <<< "$run")"
           event="$(jq -r '.event' <<< "$run")"
           if [ "$path" != '.github/workflows/release.yml' ] || [ "$event" != 'release' ]; then
             echo "::error::Run $RUN_ID is not a Release Platform run that a release started ($path, $event)."
             exit 1
           fi
-          echo "head_sha=$(jq -r '.head_sha' <<< "$run")" >> "$GITHUB_OUTPUT"
+          head_sha="$(jq -r '.head_sha' <<< "$run")"
+          artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?name=dashmate-macos-$head_sha")" \
+            || { echo "::error::Could not list the artifacts of run $RUN_ID; see the error above."; exit 1; }
+          if [ "$(jq -r '.artifacts[0].expired' <<< "$artifacts")" != false ]; then
+            echo "::error::Run $RUN_ID has no macOS packages to download: its macOS build did not finish, or they expired (a release run keeps them for 7 days)."
+            exit 1
+          fi
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
 
       - name: Download the macOS packages
         uses: actions/download-artifact@v4
