@@ -7,6 +7,7 @@ use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
+use dpp::bls_signatures::{Bls12381G2Impl, PublicKey};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
@@ -813,26 +814,36 @@ impl TrustedHttpContextProvider {
 
     /// Parse a BLS quorum public key from its hex representation.
     ///
-    /// Accepts an optional `0x` prefix. Returns `ContextProviderError::Generic`
-    /// on invalid hex, wrong length (must be 48 bytes), or conversion failure.
+    /// Accepts an optional `0x` prefix. An unusable key is a trusted-source
+    /// failure, so the responding node is not blamed for it.
     fn parse_quorum_public_key(key: &str) -> Result<[u8; 48], ContextProviderError> {
         let pubkey_hex = key
             .strip_prefix("0x")
             .or_else(|| key.strip_prefix("0X"))
             .unwrap_or(key);
         let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+            ContextProviderError::QuorumSourceUnavailable(format!(
+                "Invalid hex in public key: {}",
+                e
+            ))
         })?;
 
         if pubkey_bytes.len() != 48 {
-            return Err(ContextProviderError::Generic(format!(
+            return Err(ContextProviderError::QuorumSourceUnavailable(format!(
                 "Invalid public key length: {} bytes, expected 48",
                 pubkey_bytes.len()
             )));
         }
 
+        PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice()).map_err(|error| {
+            ContextProviderError::QuorumSourceUnavailable(format!(
+                "Invalid BLS public key: {error}"
+            ))
+        })?;
         pubkey_bytes.try_into().map_err(|_| {
-            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+            ContextProviderError::QuorumSourceUnavailable(
+                "Failed to convert public key to array".to_string(),
+            )
         })
     }
 }
@@ -1164,6 +1175,14 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    fn quorum_key(seed: u8) -> [u8; 48] {
+        use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+
+        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
+        let bytes: Vec<u8> = (&key).into();
+        bytes.try_into().expect("BLS public key is 48 bytes")
+    }
+
     fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
         loop {
             match listener.accept() {
@@ -1192,7 +1211,7 @@ mod tests {
             "success": true,
             "data": [{
                 "quorum_hash": hex::encode([hash; 32]),
-                "key": hex::encode([key; 48]),
+                "key": hex::encode(quorum_key(key)),
                 "height": 1,
                 "valid_members_count": 3
             }]
@@ -1215,7 +1234,7 @@ mod tests {
                 "height": 1,
                 "quorums": [{
                     "quorum_hash": hex::encode([hash; 32]),
-                    "key": hex::encode([key; 48]),
+                    "key": hex::encode(quorum_key(key)),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -1372,13 +1391,13 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x11; 32], 1)
                 .expect("current quorum must be cached"),
-            [0x41; 48]
+            quorum_key(0x41)
         );
         assert_eq!(
             provider
                 .get_quorum_public_key(1, [0x12; 32], 1)
                 .expect("previous quorum must be cached"),
-            [0x42; 48]
+            quorum_key(0x42)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1400,13 +1419,13 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x51; 32], 1)
                 .expect("current quorum must be cached"),
-            [0x61; 48]
+            quorum_key(0x61)
         );
         assert_eq!(
             provider
                 .get_quorum_public_key(1, [0x52; 32], 1)
                 .expect("previous quorum must be cached"),
-            [0x62; 48]
+            quorum_key(0x62)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1441,7 +1460,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x22; 32], 1)
                 .expect("previous quorum must be cached"),
-            [0x42; 48]
+            quorum_key(0x42)
         );
         server.join().expect("mock quorum server must finish");
 
@@ -1456,7 +1475,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x33; 32], 1)
                 .expect("current quorum must be cached"),
-            [0x43; 48]
+            quorum_key(0x43)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1472,7 +1491,7 @@ mod tests {
             [0x44; 32],
             QuorumData {
                 quorum_hash: hex::encode([0x44; 32]),
-                key: hex::encode([0x54; 48]),
+                key: hex::encode(quorum_key(0x54)),
                 height: 1,
                 valid_members_count: 3,
             },
@@ -1483,7 +1502,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x44; 32], 1)
                 .expect("known cached quorum must remain usable"),
-            [0x54; 48]
+            quorum_key(0x54)
         );
         assert!(matches!(
             provider
@@ -1500,7 +1519,7 @@ mod tests {
             "success": false,
             "data": [{
                 "quorum_hash": hex::encode([0x55; 32]),
-                "key": hex::encode([0x65; 48]),
+                "key": hex::encode(quorum_key(0x65)),
                 "height": 1,
                 "valid_members_count": 3
             }]
@@ -1527,7 +1546,7 @@ mod tests {
                 "height": 1,
                 "quorums": [{
                     "quorum_hash": hex::encode([0x56; 32]),
-                    "key": hex::encode([0x76; 48]),
+                    "key": hex::encode(quorum_key(0x76)),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -1543,7 +1562,7 @@ mod tests {
             [0x56; 32],
             QuorumData {
                 quorum_hash: hex::encode([0x56; 32]),
-                key: hex::encode([0x66; 48]),
+                key: hex::encode(quorum_key(0x66)),
                 height: 1,
                 valid_members_count: 3,
             },
@@ -1554,7 +1573,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x56; 32], 1)
                 .expect("unsuccessful response must not overwrite cached quorum"),
-            [0x66; 48]
+            quorum_key(0x66)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1570,7 +1589,7 @@ mod tests {
             [0x57; 32],
             QuorumData {
                 quorum_hash: hex::encode([0x57; 32]),
-                key: hex::encode([0x67; 48]),
+                key: hex::encode(quorum_key(0x67)),
                 height: 1,
                 valid_members_count: 3,
             },
@@ -1584,7 +1603,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x57; 32], 1)
                 .expect("empty refresh must not clear cached quorum"),
-            [0x67; 48]
+            quorum_key(0x67)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1599,6 +1618,37 @@ mod tests {
             .fetch_quorum_public_key(6, [quorum_hash; 32], 1)
             .expect("a provider that cannot refetch synchronously must fetch asynchronously")
             .await
+    }
+
+    #[tokio::test]
+    async fn should_reject_an_invalid_bls_key_from_the_trusted_source() {
+        let (base_url, server) = spawn_http_responses(vec![
+            (
+                "/quorums",
+                200,
+                current_response(0x11, 0).replace(&hex::encode(quorum_key(0)), &"00".repeat(48)),
+            ),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        let fetched = fetch_missing(&provider, 0x11).await;
+        assert!(
+            matches!(
+                fetched,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "an unusable source key must not be reported as fetched: {fetched:?}"
+        );
+        let cached = provider.get_quorum_public_key(6, [0x11; 32], 1);
+        assert!(
+            matches!(
+                cached,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "a cached unusable key is still a source failure: {cached:?}"
+        );
+        server.join().expect("mock quorum server must finish");
     }
 
     /// A provider built without synchronous refetching, as wasm builds it,
@@ -1617,13 +1667,13 @@ mod tests {
             fetch_missing(&provider, 0x11)
                 .await
                 .expect("the quorum service lists the key"),
-            Some([0x41; 48])
+            Some(quorum_key(0x41))
         );
         assert_eq!(
             provider
                 .get_quorum_public_key(6, [0x11; 32], 1)
                 .expect("the fetched key must serve the second verification"),
-            [0x41; 48]
+            quorum_key(0x41)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1648,7 +1698,7 @@ mod tests {
         for result in futures::future::join_all(misses).await {
             assert_eq!(
                 result.expect("every miss must get the key"),
-                Some([0x41; 48])
+                Some(quorum_key(0x41))
             );
         }
         server.join().expect("mock quorum server must finish");
@@ -1698,7 +1748,7 @@ mod tests {
         );
         assert_eq!(
             listed.expect("the arrived list holds the key"),
-            Some([0x42; 48])
+            Some(quorum_key(0x42))
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1720,7 +1770,7 @@ mod tests {
         refreshed.expect("explicit refresh must succeed");
         assert_eq!(
             fetched.expect("the miss must get the key"),
-            Some([0x41; 48])
+            Some(quorum_key(0x41))
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1747,7 +1797,7 @@ mod tests {
             fetch_missing(&provider, 0x99)
                 .await
                 .expect("a newer refresh answers"),
-            Some([0x49; 48])
+            Some(quorum_key(0x49))
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1801,7 +1851,7 @@ mod tests {
             fetch_missing(&provider, 0x11)
                 .await
                 .expect("the service recovered"),
-            Some([0x41; 48])
+            Some(quorum_key(0x41))
         );
         server.join().expect("mock quorum server must finish");
     }

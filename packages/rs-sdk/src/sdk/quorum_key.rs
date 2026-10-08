@@ -616,28 +616,33 @@ mod tests {
 
     /// A key the trusted service sends that cannot be parsed is the service's
     /// fault, not the node's: no ban.
+    #[test_case::test_case("zz"; "invalid_hex")]
+    #[test_case::test_case(&"00".repeat(47); "wrong_length")]
+    #[test_case::test_case(&"00".repeat(48); "invalid_bls_point")]
     #[tokio::test]
-    async fn should_not_hold_a_malformed_key_from_the_quorum_service_against_the_node() {
+    async fn should_not_hold_a_malformed_key_from_the_quorum_service_against_the_node(key: &str) {
         let (base_url, service) = quorum_service(vec![
-            ("/quorums", 200, current_list(SIGNING_QUORUM_HASH, "zz")),
+            ("/quorums", 200, current_list(SIGNING_QUORUM_HASH, key)),
             ("/previous", 200, empty_previous_list()),
         ]);
         let provider = Counting::new(trusted_provider(base_url));
         let sdk = network_sdk(Arc::clone(&provider));
         let (request, response) = recorded_epoch_fetch();
 
-        let error = verify(&sdk, request, response)
-            .await
-            .expect_err("a malformed key verifies nothing");
+        for _ in 0..2 {
+            let error = verify(&sdk, request.clone(), response.clone())
+                .await
+                .expect_err("a malformed key verifies nothing");
 
-        assert!(
-            matches!(
-                error,
-                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
-            ),
-            "got {error:?}"
-        );
-        assert!(!error.can_retry());
+            assert!(
+                matches!(
+                    error,
+                    Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+                ),
+                "got {error:?}"
+            );
+            assert!(!error.can_retry());
+        }
         service.join().expect("quorum service");
     }
 

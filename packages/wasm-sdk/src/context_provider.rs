@@ -402,12 +402,20 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    fn quorum_key(seed: u8) -> [u8; 48] {
+        use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+
+        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
+        let bytes: Vec<u8> = (&key).into();
+        bytes.try_into().expect("BLS public key is 48 bytes")
+    }
+
     fn quorums_body(hash: u8, key: u8) -> String {
         serde_json::json!({
             "success": true,
             "data": [{
                 "quorum_hash": hex::encode([hash; 32]),
-                "key": hex::encode([key; 48]),
+                "key": hex::encode(quorum_key(key)),
                 "height": 1,
                 "valid_members_count": 3
             }]
@@ -422,7 +430,7 @@ mod tests {
                 "height": 1,
                 "quorums": [{
                     "quorum_hash": hex::encode([hash; 32]),
-                    "key": hex::encode([key; 48]),
+                    "key": hex::encode(quorum_key(key)),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -574,13 +582,13 @@ mod tests {
             context
                 .get_quorum_public_key(1, [0x11; 32], 1)
                 .expect("current quorum key must be cached"),
-            [0x41; 48]
+            quorum_key(0x41)
         );
         assert_eq!(
             context
                 .get_quorum_public_key(1, [0x12; 32], 1)
                 .expect("previous quorum key must be cached"),
-            [0x42; 48]
+            quorum_key(0x42)
         );
         server
             .join()
@@ -613,7 +621,7 @@ mod tests {
             context
                 .get_quorum_public_key(1, [0x21; 32], 1)
                 .expect("current quorum key must be cached"),
-            [0x51; 48]
+            quorum_key(0x51)
         );
         server
             .join()
@@ -654,7 +662,7 @@ mod tests {
             .await
             .expect("the quorum service answered");
 
-        assert_eq!(key, Some([0x43; 48]));
+        assert_eq!(key, Some(quorum_key(0x43)));
         server.join().expect("the endpoint served both refreshes");
     }
 }
