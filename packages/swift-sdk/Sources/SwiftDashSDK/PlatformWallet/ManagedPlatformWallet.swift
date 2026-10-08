@@ -4152,6 +4152,76 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Delete + broadcast a document by its values, signed with the
+    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
+    /// deleted document's 32-byte id once Platform confirms the transition.
+    ///
+    /// The delete an `indexOnly` document type needs: it keeps no document
+    /// row, so the transition carries the values that identify its entries
+    /// and `deleteDocument(...)` (ids only) is refused for it. Any other
+    /// document type is refused here before anything is signed.
+    /// `documentId` is the id `createDocument` returned and `propertiesJSON`
+    /// the document's own properties as it was created with them, in
+    /// `createDocument`'s format. A type whose entries commit to
+    /// `$createdAt` also needs that timestamp as a `"$createdAt"` number of
+    /// milliseconds in the same object; no other `$` field and no property
+    /// the type does not declare is accepted. Routes through
+    /// `IdentityWallet::delete_document_by_values_with_signer` (via
+    /// `platform_wallet_document_delete_by_values`).
+    public func deleteDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        propertiesJSON: String,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                propertiesJSON.withCString { propsPtr in
+                                    documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                        platform_wallet_document_delete_by_values(
+                                            handle,
+                                            ownerBp.baseAddress!,
+                                            contractBp.baseAddress!,
+                                            typePtr,
+                                            docBp.baseAddress!,
+                                            propsPtr,
+                                            signingKeyId,
+                                            signerHandle,
+                                            outBp.baseAddress!
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(documentIdBytes)
+        }.value
+    }
+
     /// Transfer + broadcast `documentId` on `contractId`'s
     /// `documentType`, from `ownerIdentityId` to `recipientId`, signed
     /// with the explicit AUTHENTICATION + ECDSA key `signingKeyId`.
