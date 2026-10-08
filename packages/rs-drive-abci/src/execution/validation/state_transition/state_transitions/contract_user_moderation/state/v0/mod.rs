@@ -1914,18 +1914,20 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
     // The rules not reading a total held when the document was last written and still do: it
     // comes back byte for byte, and the rules are fixed with the type.
     if !document_type.property_constraints().is_empty() {
+        let data = Value::from(document.properties().clone());
         let aggregates = read_property_constraint_aggregates_for_restore(
             platform.drive,
             contract,
             document_type_name,
             &document,
+            &data,
             block_info,
             execution_context,
             tx,
             platform_version,
         )?;
         let result = document_type.validate_property_constraints(
-            &Value::from(document.properties().clone()),
+            &data,
             &DocumentSystemValues {
                 aggregates: Some(aggregates),
                 ..DocumentSystemValues::of_document(&document)

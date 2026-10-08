@@ -170,26 +170,46 @@ pub(crate) fn read_property_constraint_aggregates_for_moderator_change(
 }
 
 /// Reads the `countOf` and `sumOf` totals the `propertyConstraints` rules of the document type
-/// `document_type_name` read for a moderator's restore of `restored`, which puts the document
-/// back into every count and sum tree its deletion took it out of: judged as a create is, by
-/// every rule, under its own owner.
+/// `document_type_name` read for a moderator's restore of `restored`, whose properties are
+/// `restored_data` (one map value, which the caller judges the rules on too), each as it will
+/// be once the document is back: the total the count or sum tree keeps now, plus what
+/// `restored` adds to it, as for a create under its own owner. A filter reads its values (its
+/// id, its owner, its properties) from `restored`. The reads are billed to
+/// `execution_context`.
+///
+/// Only the restore transform of `ContractUserModeration` calls it (protocol version 14); a
+/// type whose rules read no total reads nothing. Every state transition of a block is applied
+/// before the next is validated, so no earlier write of the block is missing from the totals.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn read_property_constraint_aggregates_for_restore(
     drive: &Drive,
     contract: &DataContract,
     document_type_name: &str,
     restored: &Document,
+    restored_data: &Value,
     block_info: &BlockInfo,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<AggregateRead, i128>, Error> {
-    read_property_constraint_aggregates(
+    let Some(document_type) = contract.document_type_optional_for_name(document_type_name) else {
+        // The restore refuses a document type the contract lacks
+        return Ok(BTreeMap::new());
+    };
+    let reads = document_type
+        .property_constraints()
+        .values()
+        .flat_map(|rule| rule.aggregate_reads())
+        .collect::<BTreeSet<_>>();
+    read_aggregates(
         drive,
         contract,
-        document_type_name,
-        DocumentVersion::of(restored),
-        None,
+        reads,
+        Some(VersionData {
+            id: restored.id(),
+            data: restored_data,
+            owner_id: restored.owner_id(),
+        }),
         None,
         block_info,
         execution_context,
