@@ -88,6 +88,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// no state was wiped — and the caller should retry once sync is idle.
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: stop SPV again.
     case errorShutdownIncomplete = 27
     /// Asset-lock coin selection came up short over the *permitted* funding
     /// set (dashpay/platform#4073). Nothing was built or broadcast and no
@@ -258,6 +260,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedRecoveryKeysRequired = 57
     /// Platform returned no balance. Retrying the read is safe; ownership is unchanged.
     case errorIdentityBalanceUnavailable = 58
+    /// SPV startup or teardown panicked. Not retryable: restart the app.
+    case errorSpvProcessRestartRequired = 59
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -385,6 +389,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedRecoveryKeysRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_BALANCE_UNAVAILABLE:
             self = .errorIdentityBalanceUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SPV_PROCESS_RESTART_REQUIRED:
+            self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -626,8 +632,13 @@ public enum PlatformWalletError: LocalizedError {
     case addressNonceMismatch(String)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once
-    /// sync is idle.
+    /// sync is idle. SPV start, stop and storage clear also throw it while an
+    /// SPV teardown is still running: call `stopSpv()` again.
     case shutdownIncomplete(String)
+    /// SPV startup or teardown panicked. Not retryable: restart the app.
+    /// `errorDescription` is fixed user text; the panic detail is on
+    /// `failureReason`.
+    case spvProcessRestartRequired(String)
     /// The signer has no usable private key for the requested public key
     /// (missing / stranded scalar) — the operation itself did not fail.
     /// Restored from the structured signer completion code
@@ -822,6 +833,8 @@ public enum PlatformWalletError: LocalizedError {
             return "The wallet data could not be read and may need to be restored."
         case .persisterStoreFatal, .persisterStoreConstraint:
             return "The wallet data could not be saved and may need to be restored."
+        case .spvProcessRestartRequired:
+            return "Sync could not be stopped cleanly. Restart the app to use it again."
         // The three value-carrying marketplace rejections compose their
         // description from the typed values, because their FFI message is
         // the machine-readable JSON detail — showing that raw would be
@@ -848,7 +861,8 @@ public enum PlatformWalletError: LocalizedError {
         switch self {
         case .persisterLoadTransient(let m), .persisterLoadFatal(let m),
              .persisterStoreTransient(let m), .persisterStoreFatal(let m),
-             .persisterStoreConstraint(let m), .persisterRestore(let m):
+             .persisterStoreConstraint(let m), .persisterRestore(let m),
+             .spvProcessRestartRequired(let m):
             return m
         default:
             return nil
@@ -920,6 +934,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .addressNonceMismatch(detail)
         case .errorShutdownIncomplete:
             self = .shutdownIncomplete(detail)
+        case .errorSpvProcessRestartRequired:
+            self = .spvProcessRestartRequired(detail)
         case .errorSigningKeyUnavailable:
             self = .signingKeyUnavailable(detail)
         case .errorStaleReservationToken:

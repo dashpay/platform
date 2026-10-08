@@ -344,7 +344,8 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_connected_peers_free(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
-/// Whether the SPV client is currently running.
+/// Whether SPV sync is running or starting. `false` once background sync has
+/// failed. Never blocks, so an event callback may call it.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     handle: Handle,
@@ -352,7 +353,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
     let option =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_started());
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv().is_running());
     *out_running = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
@@ -579,6 +580,9 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
 }
 
 /// Stop the SPV client.
+///
+/// `ErrorShutdownIncomplete`: teardown is still running; call stop again.
+/// `ErrorSpvProcessRestartRequired`: restart the host process.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     handle: Handle,
