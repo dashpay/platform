@@ -16,18 +16,18 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::consensus::basic::document::PropertyConstraintViolation;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::property_constraints::{
     AggregateKind, DocumentSystemValues, PropertyRead,
 };
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, Reflect};
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
