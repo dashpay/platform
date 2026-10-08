@@ -10,8 +10,12 @@ mod transformer;
 // document's own deletion does, billed the same.
 pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
 // A moderator's field change judges the changed document by its type's `propertyConstraints`
-// as a replace does, with the totals they read.
-pub(in crate::execution::validation::state_transition) use transformer::v0::property_constraint_aggregates::read_property_constraint_aggregates_for_moderator_change;
+// as a replace does, and a moderator's restore judges the restored document as a create does,
+// with the totals they read.
+pub(in crate::execution::validation::state_transition) use transformer::v0::property_constraint_aggregates::{
+    read_property_constraint_aggregates_for_moderator_change,
+    read_property_constraint_aggregates_for_restore,
+};
 
 #[cfg(test)]
 mod tests;

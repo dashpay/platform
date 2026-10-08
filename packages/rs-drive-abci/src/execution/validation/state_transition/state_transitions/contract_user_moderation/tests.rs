@@ -80,6 +80,7 @@ mod duplicate_keys;
 mod moderated_document_reference;
 mod moderator_fields;
 mod preallocated_through_moderated_reference;
+mod restore_property_constraints;
 mod retraction;
 mod seated_team;
 

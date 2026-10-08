@@ -14,6 +14,7 @@ use crate::execution::validation::state_transition::common::validate_document_no
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::{
     fetch_document_with_id, read_property_constraint_aggregates_for_moderator_change,
+    read_property_constraint_aggregates_for_restore,
 };
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -1665,8 +1666,11 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// under the type, the type keeps removal records and the document has one that is not yet
 /// restored, block time is within the restore window after the removal, the bytes hash to what
 /// the record holds, the removal is no deletion the seated team approved together (those
-/// stand), and no other document holds a value of one of the type's unique indexes. Every refusal is paid
-/// for by bumping the signer's contract nonce.
+/// stand), the document meets the type's `propertyConstraints` as a create would, with the
+/// `countOf` and `sumOf` totals as they will be once it is back
+/// (`DocumentPropertyConstraintViolatedError`, 10422), and no other document holds a value of
+/// one of the type's unique indexes. Every refusal is paid for by bumping the signer's contract
+/// nonce.
 ///
 /// The action carries the contract, the decoded document and the record marked restored, so
 /// Drive puts the document back and marks the record without reading again. Nothing the
@@ -1902,7 +1906,41 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
         return refuse(error);
     }
 
-    // What the hash does not pin: another document may have taken a value of one of the
+    // The hash does not pin the `countOf` and `sumOf` totals the type's `propertyConstraints` read:
+    // the restore puts the document back into every count and sum its deletion took it out
+    // of, and other documents may have taken the room it left meanwhile. So the document is
+    // judged as a create judges one, by every rule, under its own owner and with the times and
+    // heights it comes back with, the totals read, billed, as they will be once it is back.
+    // The rules not reading a total held when the document was last written and still do: it
+    // comes back byte for byte, and the rules are fixed with the type.
+    if !document_type.property_constraints().is_empty() {
+        let aggregates = read_property_constraint_aggregates_for_restore(
+            platform.drive,
+            contract,
+            document_type_name,
+            &document,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        let result = document_type.validate_property_constraints(
+            &Value::from(document.properties().clone()),
+            &DocumentSystemValues {
+                aggregates: Some(aggregates),
+                ..DocumentSystemValues::of_document(&document)
+            },
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action(),
+                result.errors,
+            ));
+        }
+    }
+
+    // What the hash does not pin either: another document may have taken a value of one of the
     // type's unique indexes while the document was gone, and would clash with it.
     if document_type.indexes().values().any(|index| index.unique) {
         let uniqueness = platform.drive.validate_moderated_document_uniqueness(

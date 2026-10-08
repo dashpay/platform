@@ -494,7 +494,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     record holds; refused otherwise, or without a record (41119), past the
 ///     window (41120), on a hash mismatch (41121), once restored (41122), or
 ///     when another document took a value of one of the type's unique indexes
-///     meanwhile (40105). The document goes back through the ordinary insert,
+///     meanwhile (40105) or the document breaks one of the type's
+///     `propertyConstraints` rules, its totals as they will be once it is back
+///     (10422, 87). The document goes back through the ordinary insert,
 ///     its storage flags naming its owner (the signer pays, the owner keeps
 ///     the refund of a later deletion), and the record is marked restored in
 ///     place (`ContractDocumentRemoval::restoration`: who, when) rather than
@@ -2211,6 +2213,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     execution, exponential. Verdict, depth and size are unchanged for
 ///     schemas without a scalar `$ref` target; earlier versions replay
 ///     through generation 0.
+///
+/// 87. **A moderator's restore keeps the type's totals within its rules**:
+///     the restore transform (21), in place, judges the restored document by
+///     every rule of its type's `propertyConstraints`, as a create judges one:
+///     under its own owner, with the times and heights it comes back with, and
+///     the `countOf` and `sumOf` totals read, billed, as they will be once it is
+///     back (`read_property_constraint_aggregates_for_restore`, the shared batch
+///     transformer's read with no stored version). Before, the restore checked
+///     the type's unique indexes but none of its rules, so a cap or a budget
+///     that other documents filled while the document was gone was exceeded
+///     once it came back, and the owner's later replaces were refused. A broken
+///     rule refuses the restore with `DocumentPropertyConstraintViolatedError`
+///     (10422), paid by bumping the signer's contract nonce like every restore
+///     refusal, in the mempool too. Inert before this version: no earlier
+///     version admits a `ContractUserModeration` transition.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
