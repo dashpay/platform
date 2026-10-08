@@ -160,6 +160,33 @@ pub(crate) fn read_property_constraint_aggregates_for_moderator_change(
     )
 }
 
+/// Reads the `propertyConstraints` totals after restoring `document`, an insertion into the
+/// live trees under its original id and owner. Its removal record contributes nothing.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_property_constraint_aggregates_for_restore(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &Document,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<AggregateRead, i128>, Error> {
+    read_property_constraint_aggregates(
+        drive,
+        contract,
+        document_type_name,
+        DocumentVersion::of(document),
+        None,
+        None,
+        block_info,
+        execution_context,
+        transaction,
+        platform_version,
+    )
+}
+
 /// Reads from state the `countOf` and `sumOf` totals the `propertyConstraints` rules of
 /// the document type `document_type_name` read, for a write storing `written` in place of
 /// `stored` (`None` for a create), each as it will be once the write is done: the total the
