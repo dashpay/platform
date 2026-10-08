@@ -450,14 +450,21 @@ jobs:
           NOTARY_API_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
         run: |
           set -euo pipefail
+          : "${NOTARY_API_KEY_BASE64:?MACOS_NOTARY_API_KEY_BASE64 is not set}"
+          : "${NOTARY_API_KEY_ID:?MACOS_NOTARY_API_KEY_ID is not set}"
+          : "${NOTARY_API_ISSUER_ID:?MACOS_NOTARY_API_ISSUER_ID is not set}"
           NOTARY_API_KEY_PATH="$RUNNER_TEMP/notary_api_key.p8"
-          printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH"
+          trap 'rm -f "$NOTARY_API_KEY_PATH"' EXIT
+          (umask 077; printf '%s' "$NOTARY_API_KEY_BASE64" | base64 --decode -o "$NOTARY_API_KEY_PATH")
           while IFS= read -r -d '' pkg; do
             xcrun notarytool submit "$pkg" \
               --key "$NOTARY_API_KEY_PATH" \
               --key-id "$NOTARY_API_KEY_ID" \
               --issuer "$NOTARY_API_ISSUER_ID" \
-              --wait
+              --wait --timeout 1h
+            # Attaches the ticket for offline installs, and fails when the
+            # submission was not accepted: notarytool exits 0 on a rejection.
+            xcrun stapler staple "$pkg"
           done < <(find release-artifacts -type f -name '*.pkg' -print0)
 
       - name: Delete the Apple keychain
@@ -465,7 +472,6 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
           rm -f "$RUNNER_TEMP/build_certificate.p12"
-          rm -f "$RUNNER_TEMP/notary_api_key.p8"
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
