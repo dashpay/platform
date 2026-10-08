@@ -21,8 +21,9 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 180
     steps:
-      # The release secrets go only to reviewed code, so the workflow and its
-      # action must come from a protected branch.
+      # Stops a dispatch from an unreviewed ref by mistake. It cannot stop a
+      # copy of this workflow edited on a branch: that takes an environment
+      # that holds the secrets.
       - name: Require a protected branch
         run: |
           set -euo pipefail
@@ -61,7 +62,7 @@ jobs:
           head_sha="$(jq -r '.head_sha' <<< "$run")"
           artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?name=dashmate-macos-$head_sha")" \
             || { echo "::error::Could not list the artifacts of run $RUN_ID; see the error above."; exit 1; }
-          if [ "$(jq -r '.artifacts[0].expired' <<< "$artifacts")" != false ]; then
+          if [ "$(jq -r 'any(.artifacts[]; .expired == false)' <<< "$artifacts")" != true ]; then
             echo "::error::Run $RUN_ID has no macOS packages to download: its macOS build did not finish, or they expired (a release run keeps them for 7 days)."
             exit 1
           fi
@@ -86,3 +87,13 @@ jobs:
           notary_api_key_base64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
           notary_api_key_id: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
           notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
+
+      # The release only warns when it cannot staple, because an accepted
+      # package still verifies online. A rehearsal reports it.
+      - name: Check that the tickets are stapled
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' pkg; do
+            xcrun stapler validate "$pkg" < /dev/null \
+              || { echo "::error::$pkg has no stapled notarization ticket."; exit 1; }
+          done < <(find release-artifacts -type f -name '*.pkg' -print0)

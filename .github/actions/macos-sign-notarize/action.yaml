@@ -44,9 +44,13 @@ runs:
         NOTARY_API_ISSUER_ID: ${{ inputs.notary_api_issuer_id }}
       run: |
         set -euo pipefail
+        missing=false
         for name in BUILD_CERTIFICATE_BASE64 NOTARY_API_KEY_BASE64 NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID; do
-          [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
+          [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; missing=true; }
         done
+        if "$missing"; then
+          exit 1
+        fi
 
     - name: Install the Apple certificate
       shell: bash

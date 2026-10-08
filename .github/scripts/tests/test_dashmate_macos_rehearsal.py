@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -10,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / '.github/workflows/release-dashmate-macos-rehearsal.yml'
+RELEASE = ROOT / '.github/workflows/release.yml'
 ACTION = ROOT / '.github/actions/macos-sign-notarize/action.yaml'
 SHA = 'bb78fa2220ae0d58f5a9b5c0f6b0027a292cc3d0'
 
@@ -36,7 +38,16 @@ STUBS = {
             printf 'Submission ID received\\n  id: abc-123\\nProcessing complete\\n  id: abc-123\\n  status: %s\\n' "${NOTARY_STATUS:-Accepted}"
             ;;
           'stapler staple') exit "${STAPLE_EXIT:-0}" ;;
+          'stapler validate') exit "${VALIDATE_EXIT:-0}" ;;
         esac
+    ''',
+    'security': '''
+        echo "$1" >> "$SECURITY_LOG"
+        [ "$1" != delete-keychain ] || rm -f "${@: -1}"
+    ''',
+    'productsign': '''
+        cp "$5" "$6"
+        printf signed >> "$6"
     ''',
     'sleep': '',
 }
@@ -73,6 +84,14 @@ class StepTestCase(unittest.TestCase):
     def log(self, name):
         path = self.tmp / name
         return path.read_text().splitlines() if path.exists() else []
+
+    def packages(self):
+        directory = self.tmp / 'release-artifacts' / 'macos'
+        directory.mkdir(parents=True)
+        paths = [directory / name for name in ['dashmate-arm64.pkg', 'dashmate-x64.pkg']]
+        for path in paths:
+            path.write_text('pkg')
+        return paths
 
 
 class RehearsalWorkflowTests(StepTestCase):
@@ -111,6 +130,29 @@ class RehearsalWorkflowTests(StepTestCase):
                 self.assertIn('::error::', result.stdout)
                 self.assertEqual(self.log('output'), [])
 
+    def test_should_take_a_run_with_one_live_copy_of_the_packages(self):
+        result = self.run_source_check(artifacts=({'expired': True}, {'expired': False}))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_should_fail_when_a_ticket_is_not_stapled(self):
+        self.packages()
+        for exit_code, expected in [('0', 0), ('65', 1)]:
+            with self.subTest(exit_code=exit_code):
+                result = self.run_step(WORKFLOW, 'Check that the tickets are stapled', 6,
+                                       XCRUN_LOG=str(self.tmp / 'xcrun.log'), VALIDATE_EXIT=exit_code)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+
+    def test_should_run_the_steps_the_release_runs(self):
+        release, rehearsal = RELEASE.read_text(), WORKFLOW.read_text()
+        # The checkout cleans the workspace, so the packages come after it.
+        for text, download in [(release, 'Download Dashmate packages'), (rehearsal, 'Download the macOS packages')]:
+            self.assertLess(text.index('- name: Check out the signing action'), text.index('- name: ' + download))
+        inputs = [re.search(r'uses: \./\.github/actions/macos-sign-notarize\n +with:\n((?: {10}\S.*\n)+)', text).group(1)
+                  for text in (release, rehearsal)]
+        self.assertEqual(inputs[0], inputs[1])
+        runner = re.search(r'runs-on: (\S+)', rehearsal).group(1)
+        self.assertIn(f'- package_type: macos\n            os: {runner}\n', release)
+
 
 class SignNotarizeActionTests(StepTestCase):
     SECRETS = {'BUILD_CERTIFICATE_BASE64': 'cert', 'NOTARY_API_KEY_BASE64': 'key',
@@ -123,12 +165,33 @@ class SignNotarizeActionTests(StepTestCase):
                 result = self.run_step(ACTION, 'Check the inputs', 4, **dict(self.SECRETS, **{name: ''}))
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(f'The MACOS_{name} secret is not set.', result.stdout)
+        result = self.run_step(ACTION, 'Check the inputs', 4, **dict.fromkeys(self.SECRETS, ''))
+        self.assertEqual(result.stdout.count('::error::'), len(self.SECRETS))
+
+    def test_should_sign_every_package_and_fail_without_one(self):
+        env = {'PACKAGES_PATH': 'release-artifacts', 'RUNNER_TEMP': str(self.tmp)}
+        result = self.run_step(ACTION, 'Sign macOS installers', 4, **env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('::error::No .pkg files found', result.stdout)
+        shutil.rmtree(self.tmp / 'release-artifacts', ignore_errors=True)
+        packages = self.packages()
+        self.assertEqual(self.run_step(ACTION, 'Sign macOS installers', 4, **env).returncode, 0)
+        self.assertEqual([path.read_text() for path in packages], ['pkgsigned'] * 2)
+
+    def test_should_clean_up_with_or_without_a_keychain(self):
+        env = {'RUNNER_TEMP': str(self.tmp), 'SECURITY_LOG': str(self.tmp / 'security.log')}
+        for keychain, calls in [(False, []), (True, ['delete-keychain'])]:
+            with self.subTest(keychain=keychain):
+                (self.tmp / 'build_certificate.p12').write_text('p12')
+                if keychain:
+                    (self.tmp / 'app-signing.keychain-db').write_text('keychain')
+                self.assertEqual(self.run_step(ACTION, 'Delete the Apple keychain', 4, **env).returncode, 0)
+                self.assertEqual(self.log('security.log'), calls)
+                self.assertEqual([path.name for path in self.tmp.glob('*.p12')] +
+                                 [path.name for path in self.tmp.glob('*.keychain-db')], [])
 
     def notarize(self, **env):
-        packages = self.tmp / 'release-artifacts' / 'macos'
-        packages.mkdir(parents=True)
-        for name in ['dashmate-arm64.pkg', 'dashmate-x64.pkg']:
-            (packages / name).write_text('pkg')
+        self.packages()
         result = self.run_step(ACTION, 'Notarize MacOS Release Build', 4, PACKAGES_PATH='release-artifacts',
                                RUNNER_TEMP=str(self.tmp), XCRUN_LOG=str(self.tmp / 'xcrun.log'),
                                **dict(self.SECRETS, **env))
