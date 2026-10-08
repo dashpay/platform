@@ -33,6 +33,21 @@ inputs:
 runs:
   using: composite
   steps:
+    # Before anything is signed. The two passwords may be empty, because
+    # GitHub stores no empty secret.
+    - name: Check the inputs
+      shell: bash
+      env:
+        BUILD_CERTIFICATE_BASE64: ${{ inputs.certificate_base64 }}
+        NOTARY_API_KEY_BASE64: ${{ inputs.notary_api_key_base64 }}
+        NOTARY_API_KEY_ID: ${{ inputs.notary_api_key_id }}
+        NOTARY_API_ISSUER_ID: ${{ inputs.notary_api_issuer_id }}
+      run: |
+        set -euo pipefail
+        for name in BUILD_CERTIFICATE_BASE64 NOTARY_API_KEY_BASE64 NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID; do
+          [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
+        done
+
     - name: Install the Apple certificate
       shell: bash
       env:
@@ -41,9 +56,6 @@ runs:
         KEYCHAIN_PASSWORD: ${{ inputs.keychain_password }}
       run: |
         set -euo pipefail
-        for name in BUILD_CERTIFICATE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD; do
-          [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
-        done
         CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
         KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
         printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
@@ -80,9 +92,6 @@ runs:
         NOTARY_API_ISSUER_ID: ${{ inputs.notary_api_issuer_id }}
       run: |
         set -euo pipefail
-        for name in NOTARY_API_KEY_BASE64 NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID; do
-          [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
-        done
         NOTARY_API_KEY_PATH="$RUNNER_TEMP/notary_api_key.p8"
         trap 'rm -f "$NOTARY_API_KEY_PATH"' EXIT
         # macOS base64 exits 0 on input that is not base64, so check the result too.

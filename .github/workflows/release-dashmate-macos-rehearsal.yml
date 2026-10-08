@@ -26,10 +26,13 @@ jobs:
       - name: Require a protected branch
         run: |
           set -euo pipefail
-          if [ "$GITHUB_REPOSITORY" != dashpay/platform ] || [ "${GITHUB_REF_PROTECTED:-}" != true ]; then
-            echo "::error::Dispatch the rehearsal from a protected branch of dashpay/platform; this is $GITHUB_REF of $GITHUB_REPOSITORY."
-            exit 1
-          fi
+          case "$GITHUB_REPOSITORY:$GITHUB_REF:${GITHUB_REF_PROTECTED:-}" in
+            dashpay/platform:refs/heads/*:true) ;;
+            *)
+              echo "::error::Dispatch the rehearsal from a protected branch of dashpay/platform; this is $GITHUB_REF of $GITHUB_REPOSITORY."
+              exit 1
+              ;;
+          esac
 
       - name: Check out the signing action
         uses: actions/checkout@v4
