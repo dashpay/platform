@@ -74,6 +74,7 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod delete_constraints;
 mod deletion_options;
 mod derived_index_properties;
 mod duplicate_keys;

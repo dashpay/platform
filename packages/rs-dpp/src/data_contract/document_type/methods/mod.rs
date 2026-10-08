@@ -1091,20 +1091,20 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     }
 
     /// Judges the owner's delete of a stored document, with id `document_id` and properties
-    /// `data`, against every rule of the document type's `deleteConstraints`, in name order:
+    /// `data` (a map), against every rule of the document type's `deleteConstraints`, in name
+    /// order:
     /// the first rule the stored document breaks fails with
     /// `DocumentDeleteConstraintViolatedError` (40147), naming the document, the rule and
     /// why, as `propertyConstraints` would. `system` holds the stored document's owner and
     /// its times and heights, and the `countOf` and `sumOf` totals consensus read as they
-    /// will be once the document is gone. A type with no rule costs nothing, and its data
-    /// is not copied.
+    /// will be once the document is gone. A type with no rule costs nothing.
     ///
     /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
     /// version 14, where no parsed document type carries a rule.
     fn validate_delete_constraints(
         &self,
         document_id: Identifier,
-        data: &BTreeMap<String, Value>,
+        data: &Value,
         system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>

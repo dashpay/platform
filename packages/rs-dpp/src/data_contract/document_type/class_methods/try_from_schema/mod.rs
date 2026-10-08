@@ -2650,9 +2650,10 @@ pub(super) fn validate_generated_from_declarations(
 ///
 /// Only parser generation 3 calls it, once the core parse has run the
 /// meta-schema, so under full validation a malformed declaration is the
-/// meta-schema's to report. Versioned on `parse_property_constraints` in the
-/// platform version's document type schema versions: `None` selects the
-/// behavior of the versions that predate the keyword, which ignore it
+/// meta-schema's to report. Version 0 also reads `deleteConstraints`
+/// ([`apply_delete_constraints_v0`]). Versioned on `parse_property_constraints`
+/// in the platform version's document type schema versions: `None` selects the
+/// behavior of the versions that predate the keywords, which ignore them
 /// entirely.
 pub(super) fn apply_property_constraints(
     document_type: &mut DocumentTypeV2,
@@ -2715,7 +2716,14 @@ fn apply_property_constraints_v0(
     }
 
     document_type.property_constraints = constraints;
-    Ok(())
+    // The rules gating the owner's delete, in the same grammar and under the same version
+    apply_delete_constraints_v0(
+        document_type,
+        schema_defs,
+        document_type_name,
+        full_validation,
+        platform_version,
+    )
 }
 
 /// Checks one keyword's rules against the limits of `SystemLimits`: at most
@@ -2779,37 +2787,10 @@ fn validate_rule_limits(
 /// `canBeDeleted: false` or `"onlyWhenConsumed"`, where there is no delete to
 /// gate, and not indexOnly, whose delete carries the row's values instead of
 /// naming a stored document. The keyword arrives with meta-schema v3 and
-/// protocol version 14, so no stored contract breaks either rule. Versioned
-/// with [`apply_property_constraints`], on `parse_property_constraints`:
-/// `None` ignores the keyword, which no earlier meta-schema admits.
-pub(super) fn apply_delete_constraints(
-    document_type: &mut DocumentTypeV2,
-    schema_defs: Option<&BTreeMap<String, Value>>,
-    document_type_name: &str,
-    full_validation: bool,
-    platform_version: &PlatformVersion,
-) -> Result<(), DataContractError> {
-    match platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .parse_property_constraints
-    {
-        None => Ok(()),
-        Some(0) => apply_delete_constraints_v0(
-            document_type,
-            schema_defs,
-            document_type_name,
-            full_validation,
-            platform_version,
-        ),
-        Some(version) => Err(DataContractError::Unsupported(format!(
-            "parse_property_constraints version {version} is not supported"
-        ))),
-    }
-}
-
+/// protocol version 14, so no stored contract breaks either rule. Called by
+/// `apply_property_constraints_v0`, so one dispatch on `parse_property_constraints`
+/// parses both keywords: `None` ignores this one too, which no earlier
+/// meta-schema admits.
 fn apply_delete_constraints_v0(
     document_type: &mut DocumentTypeV2,
     schema_defs: Option<&BTreeMap<String, Value>>,

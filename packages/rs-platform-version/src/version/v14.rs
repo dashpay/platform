@@ -2180,7 +2180,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     in a total's filter**: a document type of meta-schema v3 and parser
 ///     generation 3, in place, may declare `deleteConstraints`, named rules in
 ///     the `propertyConstraints` grammar (`parse_delete_constraints`,
-///     `apply_delete_constraints`, versioned with `apply_property_constraints`
+///     `apply_delete_constraints_v0`, run by `apply_property_constraints` 0
 ///     on `parse_property_constraints`; `DocumentTypeV2Getters::delete_constraints`).
 ///     Document delete state validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
 ///     runs the checks of version 0, then reads the totals the rules read
