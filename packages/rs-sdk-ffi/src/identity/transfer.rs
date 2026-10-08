@@ -93,7 +93,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         signer_handle
     );
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // SAFETY: Null check was performed above. Caller must guarantee the pointer is valid
     // and points to a live Identity. We cannot detect dangling pointers without a handle

@@ -51,7 +51,7 @@ pub unsafe extern "C" fn dash_sdk_token_freeze(
     }
 
     // SAFETY: We've verified all pointers are non-null above
-    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
+    let wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
 
     // Convert transition_owner_id from bytes to Identifier (32 bytes)
     let transition_owner_id = {
