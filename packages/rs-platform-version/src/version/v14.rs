@@ -1616,7 +1616,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     function the reference may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
-///     40142; a found document recording none counts as old enough, 87), and
+///     40142; a found document recording none meets a minimum of 1 only, 87), and
 ///     `consume`, which deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
 ///     it elsewhere refused with 40120). The hash is computed once per key and
@@ -2239,12 +2239,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     rule. Data trigger bindings 2, in place, drop the `domain` Replace and
 ///     Delete rejects; `documentsMutable` and `canBeDeleted` false refuse both
 ///     (`InvalidDocumentTransitionActionError`, 10404). The reference
-///     validation 0, in place, counts a found document recording no
-///     `$createdAtBlockHeight` as old enough for `minimumAgeBlocks`: an update
-///     can not make a system field required, so only a system contract a
-///     protocol upgrade re-stored holds such documents, all written before the
-///     upgrade's block, and the preorders made before this version stay
-///     revealable. Inert before this version: only the version 14 parser
+///     validation 0, in place, lets a found document recording no
+///     `$createdAtBlockHeight` meet `minimumAgeBlocks: 1` and no larger
+///     minimum: an update can not make a system field required, so only a
+///     system contract a protocol upgrade re-stored holds such documents, all
+///     written in some block before the upgrade's, and the preorders made
+///     before this version stay revealable. Inert before this version: only the version 14 parser
 ///     produces a `minimumAgeBlocks`, and the earlier tables select DPNS v1 or
 ///     v2, trigger 0 or 1 and bindings 0 or 1.
 ///

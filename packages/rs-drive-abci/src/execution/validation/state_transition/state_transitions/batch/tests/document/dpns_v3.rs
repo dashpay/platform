@@ -20,11 +20,13 @@ mod dpns_v3_tests {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::state::data_trigger::DataTriggerError;
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::prelude::{Identifier, IdentityNonce};
     use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
     use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -35,6 +37,7 @@ mod dpns_v3_tests {
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
     use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+    use drive::util::storage_flags::StorageFlags;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use simple_signer::signer::SimpleSigner;
@@ -189,10 +192,24 @@ mod dpns_v3_tests {
             absent: &[&str],
             height: u64,
         ) -> (Document, StateTransitionExecutionResult) {
+            let dpns = self.dpns();
+            self.create_in(&dpns, who, type_name, values, absent, height)
+                .await
+        }
+
+        /// [`Self::create`] of a document of `contract`.
+        async fn create_in(
+            &mut self,
+            contract: &DataContract,
+            who: Who,
+            type_name: &str,
+            values: &[(&str, Value)],
+            absent: &[&str],
+            height: u64,
+        ) -> (Document, StateTransitionExecutionResult) {
             let platform_version = self.platform_version;
             let owner_id = self.id(who);
-            let dpns = self.dpns();
-            let document_type = dpns
+            let document_type = contract
                 .document_type_for_name(type_name)
                 .expect("expected the document type");
             let entropy = Bytes32::random_with_rng(&mut self.rng);
@@ -470,6 +487,68 @@ mod dpns_v3_tests {
             .documents_owned()
     }
 
+    /// Registers a contract, owned by Alice, whose `claim` reveals a DPNS preorder
+    /// (`preorderSalt` refers to it, found by the same hash) at least
+    /// `minimum_age_blocks` old, and returns it.
+    fn register_preorder_claims_contract(
+        fixture: &DpnsFixture,
+        minimum_age_blocks: u32,
+    ) -> DataContract {
+        let contract_json = serde_json::json!({
+            "$formatVersion": "1",
+            "id": Identifier::new([0x5C; 32]).to_string(Encoding::Base58),
+            "ownerId": fixture.id(Who::Alice).to_string(Encoding::Base58),
+            "version": 1,
+            "documentSchemas": {
+                "claim": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "properties": {
+                        "label": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+                        "parent": { "type": "string", "maxLength": 63, "position": 1 },
+                        "preorderSalt": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "position": 2,
+                            "refersTo": {
+                                "type": "deletableDocument",
+                                "contractId": SystemDataContract::DPNS.id().to_string(Encoding::Base58),
+                                "documentType": "preorder",
+                                "findBy": {
+                                    "saltedDomainHash": {
+                                        "function": "sys.hash.sha256d",
+                                        "params": ["preorderSalt", "label", { "const": "." }, "parent"]
+                                    }
+                                },
+                                "minimumAgeBlocks": minimum_age_blocks
+                            }
+                        }
+                    },
+                    "required": ["label", "parent", "preorderSalt"],
+                    "additionalProperties": false
+                }
+            }
+        });
+        let contract = DataContract::from_json(contract_json, true, fixture.platform_version)
+            .expect("expected to parse the claims contract");
+        fixture
+            .platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                fixture.platform_version,
+            )
+            .expect("expected to apply the claims contract");
+        contract
+    }
+
     /// The commitment a preorder stores, as every client computes it:
     /// `sha256d(salt ++ normalizedLabel ++ "." ++ parentDomainName)`.
     fn salted_domain_hash(salt: &[u8; 32], label: &str, parent: &str) -> [u8; 32] {
@@ -692,9 +771,10 @@ mod dpns_v3_tests {
             .await;
         assert_data_trigger_refusal(&result, "Parent domain is not present");
 
-        // A name under `dash` opening subdomains
+        // A name under `dash` opening subdomains: the references found and collected the
+        // preorder for consumption before the trigger refused, and the refusal keeps it
         let salt: [u8; 32] = fixture.rng.gen();
-        fixture
+        let preorder = fixture
             .preorder(Who::Alice, salt, "quantum8", "dash", PREORDER_HEIGHT)
             .await;
         let (_, result) = fixture
@@ -712,6 +792,27 @@ mod dpns_v3_tests {
             &result,
             "Allowing subdomains registration is forbidden for this domain",
         );
+        assert!(fixture.stored_preorder(&preorder).is_some());
+        assert!(fixture.name("quantum8").is_none());
+
+        // The same salt, without subdomains, then reveals and consumes it
+        let (_, result) = fixture
+            .domain(
+                Who::Alice,
+                salt,
+                "quantum8",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT + 1,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.stored_preorder(&preorder).is_none());
+        assert!(fixture.name("quantum8").is_some());
 
         // A top-level domain by anyone but the DPNS contract owner
         let salt: [u8; 32] = fixture.rng.gen();
@@ -892,6 +993,31 @@ mod dpns_v3_tests {
             "a preorder written under v2 decodes unchanged under v3"
         );
 
+        // Another contract revealing DPNS preorders, three blocks old at least: the upgrade
+        // shows only that a preorder recording no height is from an earlier block, so
+        // Alice's, made a block before the upgrade, meets no minimum above 1
+        let claims = register_preorder_claims_contract(&fixture, 3);
+        let (_, result) = fixture
+            .create_in(
+                &claims,
+                Who::Alice,
+                "claim",
+                &[
+                    ("label", Value::Text("quantum8".into())),
+                    ("parent", Value::Text("dash".into())),
+                    ("preorderSalt", salt.into()),
+                ],
+                &[],
+                21,
+            )
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedDocumentRequirementNotMetError(e))
+                if e.field() == "minimumAgeBlocks" && e.required() == "3"
+        );
+
+        // DPNS asks for one block, which it is
         let (_, result) = fixture
             .domain(Who::Alice, salt, "quantum8", "dash", &[], &[], 21)
             .await;

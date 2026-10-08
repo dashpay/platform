@@ -12,7 +12,7 @@ use thiserror::Error;
 /// reveals, exists but does not meet what the reference requires of it: `minimumAgeBlocks`,
 /// its recorded creation block height at least that many blocks below the height of the
 /// create (a document recording none, written before a protocol upgrade re-stored its system
-/// contract, counts as old enough).
+/// contract, meets a minimum of 1 and no larger one).
 #[derive(
     Error,
     Debug,

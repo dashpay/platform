@@ -1427,12 +1427,12 @@ fn validate_reference_target_v0(
             // deletes it when the reference consumes it. Its age is judged in blocks, from its
             // `$createdAtBlockHeight` (registration demands the type record one) to the
             // block of the create, so 1 means an earlier block. A document recording none
-            // counts as old enough: a contract update cannot make a system field required,
-            // so it was written before a protocol upgrade re-stored a system contract whose
-            // type now records one (DPNS v3's preorder at protocol version 14), and the
-            // upgrade runs before the first transition of its block, so the document is from
-            // an earlier block. Only a lookup the protocol version 14 parser produced has
-            // either, so no earlier protocol version reaches this
+            // meets a minimum of 1 and no larger one: a contract update cannot make a system
+            // field required, so it was written before a protocol upgrade re-stored a system
+            // contract whose type now records one (DPNS v3's preorder at protocol version 14),
+            // and the upgrade runs before the first transition of its block, so the document
+            // is from an earlier block, how much earlier unknown. Only a lookup the protocol
+            // version 14 parser produced has either, so no earlier protocol version reaches this
             if let (Some(lookup), Some(found)) = (lookup, referenced_document) {
                 if let Some(blocks) = lookup.minimum_age_blocks {
                     let old_enough = match found.created_at_block_height() {
@@ -1440,7 +1440,7 @@ fn validate_reference_target_v0(
                             .height
                             .checked_sub(created_at)
                             .is_some_and(|age| age >= u64::from(blocks)),
-                        None => true,
+                        None => blocks == 1,
                     };
                     if !old_enough {
                         return Ok(SimpleConsensusValidationResult::new_with_error(

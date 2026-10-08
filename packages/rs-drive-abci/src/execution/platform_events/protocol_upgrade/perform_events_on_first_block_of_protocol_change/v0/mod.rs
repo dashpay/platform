@@ -744,8 +744,8 @@ impl<C> Platform<C> {
         // deletes the writer's own preorder from an earlier block, and holds its identity
         // record to its owner, all by schema keywords; the create data trigger keeps only
         // the parent domain checks. Preorders made before this block record no
-        // `$createdAtBlockHeight` and stay revealable: a document recording none counts as
-        // old enough for `minimumAgeBlocks`.
+        // `$createdAtBlockHeight` and stay revealable: a document recording none meets
+        // `minimumAgeBlocks: 1`, the preorder reveal's.
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
 
         self.drive.apply_contract(
