@@ -3,10 +3,11 @@
 # Fails when a macOS installer holds a native binary that is not signed with a
 # Developer ID certificate. Apple does not notarize such a package.
 #
-# This catches the certain rejections early. It does not look inside nested
-# archives (zip files, static libraries), and it leaves the hardened runtime
-# and the timestamp alone, because what Apple asks there depends on the kind
-# of binary. The notary service still has the last word.
+# This catches the certain rejections early. It skips object files, which the
+# notary service does not judge, does not look inside nested archives (zip
+# files, static libraries), and leaves the hardened runtime and the timestamp
+# alone, because what Apple asks there depends on the kind of binary. The
+# notary service still has the last word.
 #
 # Usage: check_dashmate_macos_pkg.sh PKG_OR_DIRECTORY...
 
@@ -56,6 +57,7 @@ for pkg in "${packages[@]}"; do
 
   while IFS= read -r line; do
     case "$line" in
+      *"$separator"*Mach-O*' object '*) continue ;;
       *"$separator"*Mach-O*) ;;
       *) continue ;;
     esac
