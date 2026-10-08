@@ -47,11 +47,14 @@ failed=false
 for pkg in "${packages[@]}"; do
   expanded="$work_dir/expanded"
   listing="$work_dir/listing.txt"
-  unsigned="$work_dir/unsigned.txt"
+  report="$work_dir/report.txt"
   rm -rf "$expanded"
-  : > "$unsigned"
+  : > "$report"
   binaries=0
+  unsigned=0
   pkgutil --expand-full "$pkg" "$expanded"
+  # `file` reports a file it cannot read and still exits 0.
+  chmod -R u+r "$expanded"
   # Written to a file first, so that a failing scan stops the script.
   find "$expanded" -type f -exec file -F "$separator" {} + > "$listing"
 
@@ -64,8 +67,14 @@ for pkg in "${packages[@]}"; do
     path="${line%%"$separator"*}"
     binaries=$((binaries + 1))
     # stdin is the listing, so keep it away from codesign.
-    if ! codesign --verify --strict -R="$developer_id" "$path" > /dev/null 2>&1 < /dev/null; then
-      echo "${path#"$expanded"/}" >> "$unsigned"
+    if ! reason="$(codesign --verify --strict -R="$developer_id" "$path" 2>&1 < /dev/null)"; then
+      unsigned=$((unsigned + 1))
+      {
+        echo "${path#"$expanded"/}"
+        while IFS= read -r reason_line; do
+          echo "    ${reason_line#"$path": }"
+        done <<< "$reason"
+      } >> "$report"
     fi
   done < "$listing"
 
@@ -73,11 +82,10 @@ for pkg in "${packages[@]}"; do
   if [ "$binaries" -eq 0 ]; then
     failed=true
     echo "::error::Found no native binary in $(basename "$pkg"), not even node: the scan did not work."
-  elif [ -s "$unsigned" ]; then
+  elif [ "$unsigned" -gt 0 ]; then
     failed=true
-    count="$(wc -l < "$unsigned" | tr -d ' ')"
-    echo "::error::$(basename "$pkg") holds $count native binaries without a valid Developer ID signature, so Apple will not notarize it."
-    cat "$unsigned"
+    echo "::error::$(basename "$pkg") holds $unsigned native binaries without a valid Developer ID signature, so Apple will not notarize it."
+    cat "$report"
   else
     echo "$(basename "$pkg"): native binaries checked: $binaries, each with a valid Developer ID signature."
   fi

@@ -29,27 +29,29 @@ class PackDashmateTests(unittest.TestCase):
         self.assertEqual(dashmate, workspace)
 
     def test_should_keep_the_package_resolutions_when_packing_from_tarballs(self):
-        tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, tmp)
-        package = tmp / 'package'
-        tarballs = tmp / 'npm-packages'
-        package.mkdir()
-        tarballs.mkdir()
-        (package / 'package.json').write_text(json.dumps({'name': 'dashmate', 'resolutions': {'cpu-features': 'skip'}}))
-        for name in ['dashmate', '@dashevo/wallet-lib']:
-            manifest = json.dumps({'name': name}).encode()
-            with tarfile.open(tarballs / (name.replace('/', '-') + '-1.0.0.tgz'), 'w:gz') as archive:
-                info = tarfile.TarInfo('package/package.json')
-                info.size = len(manifest)
-                archive.addfile(info, io.BytesIO(manifest))
+        for own in [{'cpu-features': 'skip'}, None]:
+            with self.subTest(own=own):
+                tmp = Path(tempfile.mkdtemp())
+                self.addCleanup(shutil.rmtree, tmp)
+                package = tmp / 'package'
+                tarballs = tmp / 'npm-packages'
+                package.mkdir()
+                tarballs.mkdir()
+                manifest = {'name': 'dashmate'} if own is None else {'name': 'dashmate', 'resolutions': own}
+                (package / 'package.json').write_text(json.dumps(manifest))
+                for name in ['dashmate', '@dashevo/wallet-lib']:
+                    packed = json.dumps({'name': name}).encode()
+                    with tarfile.open(tarballs / (name.replace('/', '-') + '-1.0.0.tgz'), 'w:gz') as archive:
+                        info = tarfile.TarInfo('package/package.json')
+                        info.size = len(packed)
+                        archive.addfile(info, io.BytesIO(packed))
 
-        subprocess.run(['bash', '-c', tarball_resolutions_script()], check=True, cwd=package,
-                       env=dict(os.environ, DASHMATE_NPM_TARBALLS_DIR=str(tarballs)))
+                subprocess.run(['bash', '-c', tarball_resolutions_script()], check=True, cwd=package,
+                               env=dict(os.environ, DASHMATE_NPM_TARBALLS_DIR=str(tarballs)))
 
-        wallet_lib = (tarballs / '@dashevo-wallet-lib-1.0.0.tgz').resolve()
-        self.assertEqual(json.loads((package / 'package.json').read_text())['resolutions'],
-                         {'cpu-features': 'skip', '@dashevo/wallet-lib': f'file:{wallet_lib}'})
-
+                wallet_lib = (tarballs / '@dashevo-wallet-lib-1.0.0.tgz').resolve()
+                self.assertEqual(json.loads((package / 'package.json').read_text())['resolutions'],
+                                 dict(own or {}, **{'@dashevo/wallet-lib': f'file:{wallet_lib}'}))
 
 if __name__ == '__main__':
     unittest.main()
