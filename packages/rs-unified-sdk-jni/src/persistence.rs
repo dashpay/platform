@@ -218,8 +218,18 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// never delivered and every launch re-runs the backfill: slow, never lossy.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
     extension_for(BridgeOverrides {
-        sweeps: bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept"),
-        header: bridge_overrides(env, bridge, "onWalletChangesetHeader"),
+        sweeps: bridge_overrides(
+            env,
+            bridge,
+            "onWalletChangesetTransactionsSwept",
+            WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
+        ),
+        header: bridge_overrides(
+            env,
+            bridge,
+            "onWalletChangesetHeader",
+            WALLET_CHANGESET_HEADER_DESCRIPTOR,
+        ),
     })
 }
 
@@ -256,15 +266,31 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
 }
 
 /// Whether `bridge`'s concrete class — or any superclass strictly below
-/// `NativePersistenceBridge` — declares a method named `name`. A Kotlin
-/// `override fun` is a declared method of the overriding class, so walking
-/// `getDeclaredMethods()` up the hierarchy until the abstract bridge answers
-/// "did a subclass supply its own body". Any JNI failure counts as "not
-/// overridden" (the pending exception is cleared): the consequence is a
-/// slot left unwired, which Rust turns into a stripped capability — the
-/// safe direction, never a silently swallowed removal.
-fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
-    fn probe(env: &mut JNIEnv, bridge: &JObject, name: &str) -> Result<bool, jni::errors::Error> {
+/// `NativePersistenceBridge` — declares the method `name` with the JNI
+/// `descriptor` the trampoline calls. A Kotlin `override fun` is a declared
+/// method of the overriding class, so walking `getDeclaredMethods()` up the
+/// hierarchy until the abstract bridge answers "did a subclass supply its own
+/// body". The descriptor has to match, not just the name: an overload such
+/// as `onWalletChangesetHeader(walletId, height)` leaves the callback the
+/// trampoline invokes inherited, and must not count. Any JNI failure counts
+/// as "not overridden" (the pending exception is cleared): the consequence is
+/// a slot left unwired, which Rust turns into a stripped capability — the
+/// safe direction, never a silently swallowed write.
+fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str, descriptor: &str) -> bool {
+    fn class_name(env: &mut JNIEnv, class: &JObject) -> Result<String, jni::errors::Error> {
+        let name: JString = env
+            .call_method(class, "getName", "()Ljava/lang/String;", &[])?
+            .l()?
+            .into();
+        let name = env.get_string(&name)?.to_str().map(str::to_owned);
+        Ok(name.unwrap_or_default())
+    }
+    fn probe(
+        env: &mut JNIEnv,
+        bridge: &JObject,
+        name: &str,
+        descriptor: &str,
+    ) -> Result<bool, jni::errors::Error> {
         let base = env.find_class("org/dashfoundation/dashsdk/ffi/NativePersistenceBridge")?;
         let mut class = env.get_object_class(bridge)?;
         loop {
@@ -287,12 +313,28 @@ fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
                     .call_method(&method, "getName", "()Ljava/lang/String;", &[])?
                     .l()?
                     .into();
-                let matches = env
+                let same_name = env
                     .get_string(&method_name)?
                     .to_str()
                     .map(|s| s == name)
                     .unwrap_or(false);
-                if matches {
+                if !same_name {
+                    continue;
+                }
+                let params: JObjectArray = env
+                    .call_method(&method, "getParameterTypes", "()[Ljava/lang/Class;", &[])?
+                    .l()?
+                    .into();
+                let mut param_names = Vec::new();
+                for p in 0..env.get_array_length(&params)? {
+                    let param = env.get_object_array_element(&params, p)?;
+                    param_names.push(class_name(env, &param)?);
+                }
+                let return_type = env
+                    .call_method(&method, "getReturnType", "()Ljava/lang/Class;", &[])?
+                    .l()?;
+                let return_name = class_name(env, &return_type)?;
+                if method_descriptor(&param_names, &return_name) == descriptor {
                     return Ok(true);
                 }
             }
@@ -305,13 +347,41 @@ fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
             class = superclass.into();
         }
     }
-    match probe(env, bridge, name) {
+    match probe(env, bridge, name, descriptor) {
         Ok(overridden) => overridden,
         Err(_) => {
             let _ = env.exception_clear();
             false
         }
     }
+}
+
+/// The JNI descriptor of a method whose parameter and return types
+/// `Class.getName()` reports as `params` and `return_type` — `int`, `[B`,
+/// `java.lang.String`, `[Ljava.lang.String;` and so on.
+fn method_descriptor(params: &[String], return_type: &str) -> String {
+    fn type_descriptor(name: &str) -> String {
+        match name {
+            "boolean" => "Z".to_owned(),
+            "byte" => "B".to_owned(),
+            "char" => "C".to_owned(),
+            "short" => "S".to_owned(),
+            "int" => "I".to_owned(),
+            "long" => "J".to_owned(),
+            "float" => "F".to_owned(),
+            "double" => "D".to_owned(),
+            "void" => "V".to_owned(),
+            array if array.starts_with('[') => array.replace('.', "/"),
+            class => format!("L{};", class.replace('.', "/")),
+        }
+    }
+    let mut descriptor = String::from("(");
+    for param in params {
+        descriptor.push_str(&type_descriptor(param));
+    }
+    descriptor.push(')');
+    descriptor.push_str(&type_descriptor(return_type));
+    descriptor
 }
 
 /// `release_fn` for the persistence vtable: frees the boxed
@@ -724,7 +794,7 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
             .call_method(
                 bridge,
                 "onWalletChangesetHeader",
-                "([BZIZJJJJ[B)I",
+                WALLET_CHANGESET_HEADER_DESCRIPTOR,
                 &[
                     (&wid).into(),
                     JValue::Bool(has_synced as u8),
@@ -809,6 +879,11 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
 /// 32-byte array, and the winner's mined height as a `(Z, I)` pair like the
 /// header's `(hasSyncedHeight, syncedHeight)`, not a sentinel.
 const WALLET_CHANGESET_SWEEPS_DESCRIPTOR: &str = "([B[BI[B[BIZI)I";
+
+/// `onWalletChangesetHeader`'s descriptor, shared by the `call_method` site,
+/// the descriptor table and the override probe that gates the DashPay
+/// backfill slot on it, so the three cannot drift apart.
+const WALLET_CHANGESET_HEADER_DESCRIPTOR: &str = "([BZIZJJJJ[B)I";
 
 unsafe fn persist_changeset_sweep_batch(
     env: &mut JNIEnv,
@@ -4726,7 +4801,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onPersistAccountAddressPoolEntry",
         "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
     ),
-    ("onWalletChangesetHeader", "([BZIZJJJJ[B)I"),
+    (
+        "onWalletChangesetHeader",
+        WALLET_CHANGESET_HEADER_DESCRIPTOR,
+    ),
     ("onWalletChangesetAccountBegin", "([BIBBII[B[BIZIZ)I"),
     ("onWalletChangesetAccountEnd", "([BI)I"),
     (
@@ -4925,6 +5003,36 @@ mod tests {
     /// A height past `i32::MAX` must refuse the call, never wrap into a
     /// negative `Int` the handler would read as absent or as a bogus
     /// collection boundary.
+    /// The override probe compares the reflected descriptor, not the name: an
+    /// overload of `onWalletChangesetHeader` leaves the callback the
+    /// trampoline invokes inherited, so it must not wire the backfill slot.
+    #[test]
+    fn the_override_probe_matches_the_called_descriptor_not_an_overload() {
+        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        let header = names(&[
+            "[B", "boolean", "int", "boolean", "long", "long", "long", "long", "[B",
+        ]);
+        assert_eq!(
+            method_descriptor(&header, "int"),
+            WALLET_CHANGESET_HEADER_DESCRIPTOR,
+            "the real override resolves to the descriptor the trampoline calls"
+        );
+        assert_ne!(
+            method_descriptor(&names(&["[B", "int"]), "int"),
+            WALLET_CHANGESET_HEADER_DESCRIPTOR,
+            "an overload is not the callback"
+        );
+        let sweeps = names(&["[B", "[B", "int", "[B", "[B", "int", "boolean", "int"]);
+        assert_eq!(
+            method_descriptor(&sweeps, "int"),
+            WALLET_CHANGESET_SWEEPS_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(&names(&["java.lang.String", "[Ljava.lang.String;"]), "void"),
+            "(Ljava/lang/String;[Ljava/lang/String;)V"
+        );
+    }
+
     /// A bridge that inherits the no-op `onWalletChangesetHeader` stores no
     /// cursor, so it must not be handed the DashPay backfill record either:
     /// coverage committed beside a cursor that was never lowered would
