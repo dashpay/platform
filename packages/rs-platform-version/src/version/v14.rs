@@ -2215,6 +2215,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     schemas without a scalar `$ref` target; earlier versions replay
 ///     through generation 0.
 ///
+/// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
+///     validation 0, in place, judges every rule of the restored type after uniqueness
+///     and before constructing restoration operations. The retained document supplies
+///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     adds it to the live totals as an insertion, with no contribution from its removal
+///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
+///     (10422) in a block, charging the moderator and consuming its nonce while leaving
+///     the document absent and the removal record unrestored. Mempool admission refuses
+///     it without persisting fees or a nonce change. Types without rules retain their fees.
+///     Full property schema validation and `deleteConstraints` are not added to restore.
+///     Earlier versions are unchanged: contract moderation is inactive before version 14.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
