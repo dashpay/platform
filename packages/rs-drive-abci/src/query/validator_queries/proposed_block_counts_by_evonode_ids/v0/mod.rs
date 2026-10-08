@@ -31,6 +31,11 @@ impl<C> Platform<C> {
                 )),
             ));
         }
+        if ids.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument("ids must contain at least one identifier".to_string()),
+            ));
+        }
         let evonode_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|evonode_id_vec| {
@@ -113,7 +118,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::dashcore::Network;
 
     #[test]
@@ -209,34 +214,22 @@ mod tests {
         ));
     }
 
+    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
+    /// modes refuse it as the request's fault rather than answer differently.
     #[test]
-    fn test_query_empty_ids_non_prove() {
+    fn should_refuse_an_empty_id_list_as_invalid_argument() {
         let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let request = GetEvonodesProposedEpochBlocksByIdsRequestV0 {
-            epoch: Some(0),
-            ids: vec![],
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+                epoch: Some(0),
+                ids: vec![],
+                prove,
+            };
 
-        let result = platform
-            .query_proposed_block_counts_by_evonode_ids_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(result.errors.is_empty());
-        if let Some(GetEvonodesProposedEpochBlocksResponseV0 {
-            result:
-                Some(
-                    get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(
-                        info,
-                    ),
-                ),
-            metadata: Some(_),
-        }) = result.data
-        {
-            assert!(info.evonodes_proposed_block_counts.is_empty());
-        } else {
-            panic!("expected EvonodesProposedBlockCountsInfo result");
+            assert_invalid_argument_status(
+                platform.query_proposed_block_counts_by_evonode_ids_v0(request, &state, version),
+            );
         }
     }
 

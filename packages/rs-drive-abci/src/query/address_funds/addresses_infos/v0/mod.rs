@@ -33,6 +33,13 @@ impl<C> Platform<C> {
                 )),
             )));
         }
+        if addresses.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "addresses must contain at least one address".to_string(),
+                ),
+            ));
+        }
         // Parse all keys of type
         let addresses: Vec<PlatformAddress> = check_validation_result_with_data!(addresses
             .into_iter()
@@ -87,7 +94,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
@@ -202,31 +209,22 @@ mod tests {
         );
     }
 
+    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
+    /// modes refuse it as the request's fault rather than answer differently.
     #[test]
-    fn test_empty_addresses_list() {
+    fn should_refuse_an_empty_address_list_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetAddressesInfosRequestV0 {
-            addresses: vec![],
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetAddressesInfosRequestV0 {
+                addresses: vec![],
+                prove,
+            };
 
-        let result = platform
-            .query_addresses_infos_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(result.errors.is_empty(), "expected no errors");
-        let response = result.data.expect("expected response data");
-        match response.result {
-            Some(get_addresses_infos_response_v0::Result::AddressInfoEntries(entries)) => {
-                assert!(
-                    entries.address_info_entries.is_empty(),
-                    "expected empty entries"
-                );
-            }
-            other => panic!("expected AddressInfoEntries result, got {:?}", other),
+            assert_invalid_argument_status(
+                platform.query_addresses_infos_v0(request, &state, version),
+            );
         }
-        assert!(response.metadata.is_some());
     }
 
     #[test]
@@ -345,27 +343,6 @@ mod tests {
             Some(get_addresses_infos_response_v0::Result::Proof(_))
         ));
         assert!(response.metadata.is_some());
-    }
-
-    #[test]
-    fn test_addresses_infos_proof_empty_list() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetAddressesInfosRequestV0 {
-            addresses: vec![],
-            prove: true,
-        };
-
-        let result = platform
-            .query_addresses_infos_v0(request, &state, version)
-            .expect("should return validation result");
-
-        // Proving with an empty list of addresses returns a validation error
-        // because GroveDB cannot generate a proof for an empty query
-        assert!(
-            !result.errors.is_empty(),
-            "expected validation errors for empty address list proof"
-        );
     }
 
     #[test]

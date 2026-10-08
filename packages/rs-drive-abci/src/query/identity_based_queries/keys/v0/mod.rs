@@ -48,6 +48,11 @@ fn convert_key_request_type(
             Ok(KeyRequestType::AllKeys)
         }
         dapi_grpc::platform::v0::key_request_type::Request::SpecificKeys(specific_keys) => {
+            if specific_keys.key_ids.is_empty() {
+                return Err(QueryError::InvalidArgument(
+                    "key_ids must name at least one key".to_string(),
+                ));
+            }
             let mut key_ids = BTreeSet::new();
             for key_id in specific_keys.key_ids {
                 key_ids.insert(key_id);
@@ -61,6 +66,11 @@ fn convert_key_request_type(
             Ok(KeyRequestType::SpecificKeys(key_ids.into_iter().collect()))
         }
         dapi_grpc::platform::v0::key_request_type::Request::SearchKey(search_key) => {
+            if search_key.purpose_map.is_empty() {
+                return Err(QueryError::InvalidArgument(
+                    "purpose_map must name at least one purpose".to_string(),
+                ));
+            }
             let purpose_map = search_key.purpose_map.into_iter().map(|(purpose, security_level_map)| {
                 let security_level_map = security_level_map.security_level_map.into_iter().map(|(security_level, key_kind_request_type)| {
                     if security_level > u8::MAX as u32 {
@@ -107,6 +117,14 @@ impl<C> Platform<C> {
             )));
 
         if let Some(limit) = limit {
+            if limit == 0 {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::InvalidLimit(format!(
+                        "limit 0 out of bounds of [1, {}]",
+                        self.config.drive.max_query_limit
+                    )),
+                )));
+            }
             if limit > u16::MAX as u32 {
                 return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                     QuerySyntaxError::InvalidParameter("limit out of bounds".to_string()),
@@ -174,8 +192,20 @@ impl<C> Platform<C> {
             // proof matches what the client verifies against.
             let mut key_request = key_request;
             if key_request.limit.is_none() {
-                if let KeyRequestType::SpecificKeys(key_ids) = &key_request.request_type {
-                    key_request.limit = key_ids.len().try_into().ok();
+                match &key_request.request_type {
+                    KeyRequestType::SpecificKeys(key_ids) => {
+                        key_request.limit = key_ids.len().try_into().ok();
+                    }
+                    // A search can match any number of keys, so nothing bounds it but the
+                    // limit, and GroveDB refuses an unbounded fetch with an internal error.
+                    KeyRequestType::SearchKey(_) => {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::InvalidLimit(
+                                "a search key request without a proof must set a limit".to_string(),
+                            ),
+                        )));
+                    }
+                    _ => {}
                 }
             }
 
@@ -198,9 +228,13 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use crate::query::tests::{
+        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+    };
     use dapi_grpc::platform::v0::key_request_type::Request;
-    use dapi_grpc::platform::v0::{AllKeys, KeyRequestType, SearchKey, SecurityLevelMap};
+    use dapi_grpc::platform::v0::{
+        AllKeys, KeyRequestType, SearchKey, SecurityLevelMap, SpecificKeys,
+    };
     use dpp::dashcore::Network;
 
     #[test]
@@ -931,5 +965,78 @@ mod tests {
             let proved = verify_specific_keys_proof(&proof, identity_id, key_ids, version);
             assert_eq!(proved, fetched);
         }
+    }
+
+    fn keys_request(request: Request, limit: Option<u32>, prove: bool) -> GetIdentityKeysRequestV0 {
+        GetIdentityKeysRequestV0 {
+            identity_id: vec![0; 32],
+            request_type: Some(KeyRequestType {
+                request: Some(request),
+            }),
+            limit,
+            offset: None,
+            prove,
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_zero_limit_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            let request = keys_request(Request::AllKeys(AllKeys {}), Some(0), prove);
+
+            assert_invalid_argument_status(platform.query_keys_v0(request, &state, version));
+        }
+    }
+
+    /// No key id, or no purpose to search, selects no key: an empty query, which GroveDB cannot
+    /// prove, so both modes refuse it.
+    #[test]
+    fn should_refuse_a_request_that_selects_no_key_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            for request in [
+                Request::SpecificKeys(SpecificKeys { key_ids: vec![] }),
+                Request::SearchKey(SearchKey {
+                    purpose_map: Default::default(),
+                }),
+            ] {
+                let request = keys_request(request, None, prove);
+
+                assert_invalid_argument_status(platform.query_keys_v0(request, &state, version));
+            }
+        }
+    }
+
+    /// A search without a proof needs a limit: nothing else bounds what it matches. With a
+    /// proof it is served as before.
+    #[test]
+    fn should_refuse_an_unproved_search_without_a_limit_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let search = || {
+            Request::SearchKey(SearchKey {
+                purpose_map: [(
+                    0, // AUTHENTICATION
+                    SecurityLevelMap {
+                        security_level_map: [(0, 0)].into_iter().collect(), // MASTER, current key
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            })
+        };
+
+        assert_invalid_argument_status(platform.query_keys_v0(
+            keys_request(search(), None, false),
+            &state,
+            version,
+        ));
+
+        let proved = platform
+            .query_keys_v0(keys_request(search(), None, true), &state, version)
+            .expect("expected query to succeed");
+        assert!(proved.is_valid(), "{:?}", proved.errors);
     }
 }

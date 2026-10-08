@@ -31,6 +31,11 @@ impl<C> Platform<C> {
                 )),
             )));
         }
+        if ids.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument("ids must contain at least one identifier".to_string()),
+            ));
+        }
         let identifiers = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id| {
@@ -91,7 +96,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_identities_balances_response::get_identities_balances_response_v0;
     use dpp::dashcore::Network;
 
@@ -114,27 +119,18 @@ mod tests {
         ));
     }
 
+    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
+    /// modes refuse it as the request's fault rather than answer differently.
     #[test]
-    fn test_empty_identifiers_list() {
+    fn should_refuse_an_empty_id_list_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetIdentitiesBalancesRequestV0 {
-            ids: vec![],
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetIdentitiesBalancesRequestV0 { ids: vec![], prove };
 
-        let result = platform
-            .query_identities_balances_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(result.is_valid());
-
-        let response = result.data.expect("expected response data");
-        match response.result {
-            Some(get_identities_balances_response_v0::Result::IdentitiesBalances(balances)) => {
-                assert!(balances.entries.is_empty());
-            }
-            other => panic!("expected IdentitiesBalances, got {:?}", other),
+            assert_invalid_argument_status(
+                platform.query_identities_balances_v0(request, &state, version),
+            );
         }
     }
 
@@ -282,29 +278,5 @@ mod tests {
             )),
             "should not be rejected at exactly the max limit"
         );
-    }
-
-    #[test]
-    fn test_empty_identifiers_list_with_prove() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetIdentitiesBalancesRequestV0 {
-            ids: vec![],
-            prove: true,
-        };
-
-        let result = platform
-            .query_identities_balances_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(result.is_valid());
-
-        assert!(matches!(
-            result.data,
-            Some(GetIdentitiesBalancesResponseV0 {
-                result: Some(get_identities_balances_response_v0::Result::Proof(_)),
-                metadata: Some(_),
-            })
-        ));
     }
 }

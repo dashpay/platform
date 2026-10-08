@@ -39,6 +39,13 @@ impl<C> Platform<C> {
                 )),
             )));
         }
+        if identities_ids.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "identities_ids must contain at least one identifier".to_string(),
+                ),
+            ));
+        }
         let identities_ids = check_validation_result_with_data!(identities_ids
             .into_iter()
             .map(|identity_id| {
@@ -61,6 +68,14 @@ impl<C> Platform<C> {
                     "contract_id must be a valid identifier (32 bytes long)".to_string(),
                 )
             }));
+
+        if purposes.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "purposes must contain at least one purpose".to_string(),
+                ),
+            ));
+        }
 
         let purposes = check_validation_result_with_data!(purposes
             .into_iter()
@@ -143,7 +158,7 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
     use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
         GetIdentitiesContractKeysResponseV0,
@@ -1349,5 +1364,46 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![None, None]
         );
+    }
+
+    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
+    /// modes refuse it as the request's fault rather than answer differently.
+    #[test]
+    fn should_refuse_an_empty_identity_id_list_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            let request = GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![],
+                contract_id: vec![0; 32],
+                document_type_name: None,
+                purposes: vec![Purpose::AUTHENTICATION as i32],
+                prove,
+            };
+
+            assert_invalid_argument_status(
+                platform.query_identities_contract_keys_v0(request, &state, version),
+            );
+        }
+    }
+
+    /// No purpose selects no key: the same empty query as an empty id list.
+    #[test]
+    fn should_refuse_an_empty_purpose_list_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            let request = GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![vec![1; 32]],
+                contract_id: vec![0; 32],
+                document_type_name: None,
+                purposes: vec![],
+                prove,
+            };
+
+            assert_invalid_argument_status(
+                platform.query_identities_contract_keys_v0(request, &state, version),
+            );
+        }
     }
 }

@@ -35,6 +35,13 @@ impl<C> Platform<C> {
                 )),
             )));
         }
+        if identity_ids.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "identity_ids must contain at least one identifier".to_string(),
+                ),
+            ));
+        }
         let token_id: Identifier =
             check_validation_result_with_data!(token_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -109,8 +116,8 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
     use crate::query::tests::setup_platform_with_token_state;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_identities_token_infos_response::get_identities_token_infos_response_v0;
     use dpp::dashcore::Network;
 
@@ -375,29 +382,22 @@ mod tests {
         ));
     }
 
+    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
+    /// modes refuse it as the request's fault rather than answer differently.
     #[test]
-    fn test_empty_identity_ids_list() {
-        // Empty list is accepted (len 0 does not exceed max) and yields empty
-        // token_infos.
+    fn should_refuse_an_empty_identity_id_list_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetIdentitiesTokenInfosRequestV0 {
-            token_id: vec![0; 32],
-            identity_ids: vec![],
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetIdentitiesTokenInfosRequestV0 {
+                token_id: vec![0; 32],
+                identity_ids: vec![],
+                prove,
+            };
 
-        let result = platform
-            .query_identities_token_infos_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(result.errors.is_empty(), "{:?}", result.errors);
-        let data = result.data.unwrap();
-        match data.result {
-            Some(get_identities_token_infos_response_v0::Result::IdentityTokenInfos(infos)) => {
-                assert!(infos.token_infos.is_empty());
-            }
-            _ => panic!("expected IdentityTokenInfos result"),
+            assert_invalid_argument_status(
+                platform.query_identities_token_infos_v0(request, &state, version),
+            );
         }
     }
 

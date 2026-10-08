@@ -40,20 +40,24 @@ impl<C> Platform<C> {
                 )
             }));
 
-        let limit = limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
+        // A refused limit is a request error: returned through `?` it would reach the client as
+        // an internal error, which clients retry on every other node.
+        let limit = check_validation_result_with_data!(limit.map_or(
+            Ok(config.default_query_limit),
+            |limit_value| {
                 if limit_value == 0
                     || limit_value > u16::MAX as u32
                     || limit_value as u16 > config.default_query_limit
                 {
-                    None
+                    Err(QueryError::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit_value, config.default_query_limit
+                    ))))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit_value as u16)
                 }
-            })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!("limit greater than max limit {}", config.max_query_limit),
-            )))?;
+            }
+        ));
 
         let offset = check_validation_result_with_data!(offset
             .map(|offset| {
@@ -203,7 +207,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::dashcore::Network;
 
     #[test]
@@ -314,54 +318,43 @@ mod tests {
     }
 
     #[test]
-    fn test_query_contested_resource_identity_votes_limit_above_max_is_error() {
-        // `limit` that overflows u16 takes the `.ok_or(...)?` path and surfaces
-        // a Drive(Query(InvalidLimit)) error via `Err(_)` rather than as a
-        // validation error in the response.
+    fn should_refuse_a_limit_over_u16_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetContestedResourceIdentityVotesRequestV0 {
-            identity_id: vec![0; 32],
-            limit: Some((u16::MAX as u32) + 1),
-            offset: None,
-            order_ascending: true,
-            start_at_vote_poll_id_info: None,
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![0; 32],
+                limit: Some((u16::MAX as u32) + 1),
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove,
+            };
 
-        let err = platform
-            .query_contested_resource_identity_votes_v0(request, &state, version)
-            .expect_err("oversized limit should propagate an Err");
-
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("InvalidLimit") || msg.contains("limit"),
-            "unexpected error: {msg}"
-        );
+            assert_invalid_argument_status(
+                platform.query_contested_resource_identity_votes_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]
-    fn test_query_contested_resource_identity_votes_limit_zero_is_error() {
+    fn should_refuse_a_zero_limit_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetContestedResourceIdentityVotesRequestV0 {
-            identity_id: vec![0; 32],
-            limit: Some(0),
-            offset: None,
-            order_ascending: true,
-            start_at_vote_poll_id_info: None,
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![0; 32],
+                limit: Some(0),
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove,
+            };
 
-        let err = platform
-            .query_contested_resource_identity_votes_v0(request, &state, version)
-            .expect_err("limit=0 should propagate an Err");
-
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("InvalidLimit") || msg.contains("limit"),
-            "unexpected error: {msg}"
-        );
+            assert_invalid_argument_status(
+                platform.query_contested_resource_identity_votes_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]

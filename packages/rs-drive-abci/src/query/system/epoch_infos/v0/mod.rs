@@ -46,7 +46,13 @@ impl<C> Platform<C> {
             ));
         }
 
-        if start_epoch + count >= u16::MAX as u32 {
+        if count == 0 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument("count must be at least 1".to_string()),
+            ));
+        }
+
+        if start_epoch.saturating_add(count) >= u16::MAX as u32 {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("count too high, received {}", count)),
             ));
@@ -104,7 +110,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::dashcore::Network;
 
     #[test]
@@ -220,5 +226,42 @@ mod tests {
                 metadata: Some(_),
             })
         ));
+    }
+
+    #[test]
+    fn should_refuse_a_zero_count_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            let request = GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 0,
+                ascending: true,
+                prove,
+            };
+
+            assert_invalid_argument_status(platform.query_epoch_infos_v0(request, &state, version));
+        }
+    }
+
+    /// `start_epoch + count` past `u32::MAX` is refused as too high instead of overflowing.
+    #[test]
+    fn should_refuse_a_count_that_overflows_the_end_epoch_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetEpochsInfoRequestV0 {
+            start_epoch: Some(10),
+            count: u32::MAX,
+            ascending: true,
+            prove: false,
+        };
+
+        let status =
+            assert_invalid_argument_status(platform.query_epoch_infos_v0(request, &state, version));
+        assert!(
+            status.message().contains("count too high"),
+            "{}",
+            status.message()
+        );
     }
 }

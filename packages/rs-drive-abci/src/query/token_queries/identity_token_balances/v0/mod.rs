@@ -34,6 +34,13 @@ impl<C> Platform<C> {
                 )),
             )));
         }
+        if token_ids.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "token_ids must contain at least one identifier".to_string(),
+                ),
+            ));
+        }
         let identity_id: Identifier =
             check_validation_result_with_data!(identity_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -101,8 +108,8 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
     use crate::query::tests::setup_platform_with_token_state;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dapi_grpc::platform::v0::get_identity_token_balances_response::get_identity_token_balances_response_v0;
     use dpp::dashcore::Network;
 
@@ -305,5 +312,24 @@ mod tests {
                 metadata: Some(_),
             })
         ));
+    }
+
+    /// An empty list asks for nothing, and GroveDB cannot prove an empty query, so both
+    /// modes refuse it as the request's fault rather than answer differently.
+    #[test]
+    fn should_refuse_an_empty_token_id_list_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            let request = GetIdentityTokenBalancesRequestV0 {
+                identity_id: vec![0; 32],
+                token_ids: vec![],
+                prove,
+            };
+
+            assert_invalid_argument_status(
+                platform.query_identity_token_balances_v0(request, &state, version),
+            );
+        }
     }
 }
