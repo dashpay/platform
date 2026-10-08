@@ -28,12 +28,15 @@ pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::error::query::QueryError;
+    use crate::error::Error;
     use crate::platform_types::platform::Platform;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::query::service::query_result_into_response;
     use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dapi_grpc::tonic::{Code, Status};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
 
@@ -271,6 +274,18 @@ pub(crate) mod tests {
                 None,
             )
             .expect("expected to apply drive operations");
+    }
+
+    /// Asserts the service refuses `result` with INVALID_ARGUMENT, the code that tells a client
+    /// the request itself is wrong, so it neither tries another node nor stops using this one.
+    pub fn assert_invalid_argument_status<TData: Clone>(
+        result: Result<QueryValidationResult<TData>, Error>,
+    ) -> Status {
+        let status = query_result_into_response(result)
+            .err()
+            .expect("expected the request to be refused");
+        assert_eq!(status.code(), Code::InvalidArgument, "{}", status.message());
+        status
     }
 
     pub fn assert_invalid_identifier<TData: Clone>(

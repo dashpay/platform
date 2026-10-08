@@ -91,6 +91,7 @@ blake3 = "1.5"
 
 [dev-dependencies]
 dash-platform-queries = { path = "../dash-platform-queries" }
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
