@@ -397,14 +397,13 @@ impl WasmTrustedContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
     use std::time::{Duration, Instant};
 
     fn quorum_key(seed: u8) -> [u8; 48] {
-        use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
-
         let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
         let bytes: Vec<u8> = (&key).into();
         bytes.try_into().expect("BLS public key is 48 bytes")
@@ -685,6 +684,12 @@ mod wasm_tests {
         assert!(
             context.refresh_quorums().await.is_err(),
             "nothing listens on the quorum URL"
+        );
+        let initial_elapsed = started.elapsed();
+        wasm_bindgen_test::console_log!("initial quorum refresh took {initial_elapsed:?}");
+        assert!(
+            initial_elapsed < std::time::Duration::from_millis(500),
+            "the initial refresh must leave most of the gap for the timer: {initial_elapsed:?}"
         );
 
         let result = context

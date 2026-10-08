@@ -995,6 +995,8 @@ mod tests {
         );
     }
 
+    /// Source outages must retain their attribution even when the provider
+    /// uses only the synchronous hook, so honest responses incur no health ban.
     #[tokio::test]
     async fn should_not_ban_a_node_when_a_synchronous_quorum_source_is_unavailable() {
         let provider = Counting::new(SynchronousSourceUnavailable);
@@ -1015,6 +1017,8 @@ mod tests {
         assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
     }
 
+    /// Fresh trusted absence supersedes an earlier cache error: the node
+    /// named an unknown quorum and remains answerable for that response.
     #[tokio::test]
     async fn should_blame_the_node_for_authoritative_absence_after_a_cached_source_failure() {
         let (base_url, service) = quorum_service(vec![
@@ -1044,10 +1048,31 @@ mod tests {
         );
         assert!(error.can_retry());
         assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
-        service.join().expect("quorum service");
+        assert_eq!(service.join().expect("quorum service").len(), 4);
     }
 
     struct SynchronousSourceUnavailable;
+
+    #[test]
+    fn should_keep_quorum_context_when_normalizing_a_source_failure() {
+        let error = Error::from(drive_proof_verifier::Error::QuorumKeyUnavailable {
+            quorum_type: 106,
+            quorum_hash: [0x11; 32],
+            core_chain_locked_height: 2000,
+            error: ContextProviderError::QuorumSourceUnavailable("offline".to_string()),
+        });
+        let Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(reason)) =
+            error
+        else {
+            panic!("source error must retain its category");
+        };
+        assert!(reason.contains("106"), "missing quorum type: {reason}");
+        assert!(
+            reason.contains(&hex::encode([0x11; 32])),
+            "missing quorum hash: {reason}"
+        );
+        assert!(reason.contains("2000"), "missing Core height: {reason}");
+    }
 
     impl ContextProvider for SynchronousSourceUnavailable {
         fn get_data_contract(
@@ -1195,7 +1220,8 @@ mod tests {
         assert_eq!(forgetful.lookups.load(Ordering::SeqCst), 2);
     }
 
-    /// A provider whose fetch reports a key that its lookup never returns.
+    /// A provider that reports a key without a usable matching lookup, or
+    /// fails its trusted source fetch.
     #[derive(Default)]
     struct Forgetful {
         fetch_error: bool,
@@ -1267,7 +1293,7 @@ mod tests {
 
         assert!(
             matches!(error, Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(ref reason))
-                if reason == "Context provider error: source offline"),
+                if reason == &ContextProviderError::Generic("source offline".to_string()).to_string()),
             "got {error:?}"
         );
         assert!(!error.can_retry());

@@ -138,13 +138,20 @@ pub enum Error {
     EncryptedFor(#[from] EncryptedForError),
 }
 
+/// A trusted source outage is not the responding node's fault. Preserve that
+/// attribution and quorum context; every other verifier failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
             drive_proof_verifier::Error::QuorumKeyUnavailable {
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
                 error: ContextProviderError::QuorumSourceUnavailable(reason),
-                ..
-            } => Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(reason)),
+            } => Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(format!(
+                "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
+                hex::encode(quorum_hash)
+            ))),
             error => Self::Proof(error),
         }
     }

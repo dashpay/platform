@@ -486,11 +486,15 @@ impl TrustedHttpContextProvider {
         quorum_hash: QuorumHash,
         seen: u64,
     ) -> Result<Option<[u8; 48]>, ContextProviderError> {
-        if let Some(key) = self
-            .cached_quorum(&quorum_hash)
-            .and_then(|quorum| Self::parse_quorum_public_key(&quorum.key).ok())
-        {
-            return Ok(Some(key));
+        if let Some(quorum) = self.cached_quorum(&quorum_hash) {
+            match Self::parse_quorum_public_key(&quorum.key) {
+                Ok(key) => return Ok(Some(key)),
+                Err(error) => debug!(
+                    quorum_hash = %hex::encode(quorum_hash),
+                    %error,
+                    "cached quorum key is unusable; checking the trusted source"
+                ),
+            }
         }
 
         let (refresh, generation) = self
@@ -1190,14 +1194,13 @@ impl ContextProvider for TrustedHttpContextProvider {
 mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
+    use dpp::bls_signatures::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
     use std::time::{Duration, Instant};
 
     fn quorum_key(seed: u8) -> [u8; 48] {
-        use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
-
         let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
         let bytes: Vec<u8> = (&key).into();
         bytes.try_into().expect("BLS public key is 48 bytes")
@@ -1709,8 +1712,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_recover_when_the_previous_list_repairs_a_malformed_current_key() {
-        let malformed = current_response(0x11, 0x41)
-            .replace(&hex::encode(quorum_key(0x41)), "zz");
+        let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
         let (base_url, server) = spawn_http_responses(vec![
             ("/quorums", 200, malformed),
             ("/previous", 200, empty_previous_response()),
@@ -1718,11 +1720,24 @@ mod tests {
             ("/previous", 200, previous_response(0x11, 0x41)),
         ]);
         let provider = provider_for(base_url);
-        assert!(matches!(fetch_missing(&provider, 0x11).await, Err(ContextProviderError::QuorumSourceUnavailable(_))));
+        assert!(matches!(
+            fetch_missing(&provider, 0x11).await,
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
         provider.quorum_refreshes.age_latest(MIN_GAP);
 
-        assert_eq!(fetch_missing(&provider, 0x11).await.expect("the previous list repaired the key"), Some(quorum_key(0x41)));
-        assert_eq!(provider.get_quorum_public_key(6, [0x11; 32], 1).expect("the repaired key must not be shadowed"), quorum_key(0x41));
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the previous list repaired the key"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("the repaired key must not be shadowed"),
+            quorum_key(0x41)
+        );
         server.join().expect("mock quorum server must finish");
     }
 

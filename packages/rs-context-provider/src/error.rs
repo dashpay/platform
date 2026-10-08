@@ -23,7 +23,8 @@ pub enum ContextProviderError {
 
     /// The provider's trusted quorum source gave no answer about a quorum: it
     /// was unreachable, answered only in part, or was asked too recently to be
-    /// asked again. Says nothing about whether the quorum exists.
+    /// asked again, or returned an unusable key. Says nothing about whether
+    /// the quorum exists.
     #[error("quorum source unavailable: {0}")]
     QuorumSourceUnavailable(String),
 
