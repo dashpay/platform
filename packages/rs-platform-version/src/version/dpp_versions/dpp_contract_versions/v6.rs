@@ -88,7 +88,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
             parse_property_constraints: Some(0), // changed: the meta-schema v3 `propertyConstraints` doctype keyword (named comparisons between integer expressions over the document's properties) is parsed onto the document type and the properties it reads are checked; None before this version means the keyword is ignored, as it was before it existed
             apply_generated_from: Some(0), // changed: the meta-schema v3 `generatedFrom` keyword (a string property whose value a built-in function generates from other properties of the same document) is parsed onto the property and the properties it reads are checked at registration; None before this version means the keyword is ignored, as it was before it existed
-            validate_max_depth: 0,
+            validate_max_depth: 1, // changed: a scalar `$ref` target is not walked and the visited set is never cleared, so the depth check is bounded; v0 was exponential on a crafted `$defs` chain
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                 traversal_validator: 0,

@@ -2202,6 +2202,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     meta-schemas refuse the keyword and the `$id` filter value, and their
 ///     tables select delete state validation 0.
 ///
+/// 86. **Bounded schema depth check**: `validate_max_depth` 1
+///     (`CONTRACT_VERSIONS_V6`) no longer walks a `$ref` whose target is a
+///     scalar and never clears its visited set, so every ref target is
+///     expanded at most once and the check is bounded in schema size. Before
+///     this a crafted `$defs` chain with `$ref`s to scalars cleared the cycle
+///     guard and made the check, run during contract registration in block
+///     execution, exponential. Verdict, depth and size are unchanged for
+///     schemas without a scalar `$ref` target; earlier versions replay
+///     through generation 0.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

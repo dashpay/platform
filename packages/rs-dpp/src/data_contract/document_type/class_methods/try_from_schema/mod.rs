@@ -161,10 +161,12 @@ fn insert_values(
     config: &DataContractConfig,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
-    let mut to_visit: Vec<(Option<String>, String, &Value)> =
-        vec![(prefix, property_key, property_value)];
+    // Each item carries the `$ref` targets resolved on its path from the root,
+    // so a cyclic `$ref` errors instead of expanding forever.
+    let mut to_visit: Vec<(Option<String>, String, &Value, Vec<*const Value>)> =
+        vec![(prefix, property_key, property_value, Vec::new())];
 
-    while let Some((prefix, property_key, property_value)) = to_visit.pop() {
+    while let Some((prefix, property_key, property_value, mut ref_path)) = to_visit.pop() {
         let is_top_level = prefix.is_none();
         let prefixed_property_key = match prefix {
             None => property_key,
@@ -175,6 +177,7 @@ fn insert_values(
 
         if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
             let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
+            enter_ref(&mut ref_path, schema_ref, referenced_sub_schema)?;
 
             inner_properties = referenced_sub_schema.to_btree_ref_string_map()?
         }
@@ -217,6 +220,7 @@ fn insert_values(
                             Some(prefixed_property_key.clone()),
                             object_property_string,
                             object_property_value,
+                            ref_path.clone(),
                         ));
                     }
                 }
@@ -254,7 +258,33 @@ fn insert_values(
     Ok(())
 }
 
+/// Records `target`, the schema `schema_ref` resolved to, on the path of
+/// `$ref` targets from the root, refusing one already on it: expanding it
+/// again would never end.
+///
+/// Shared by every parser generation without a version gate. Under full
+/// validation the depth check runs first and refuses such a cycle in every
+/// generation, so this fires only on input the parse never finished before:
+/// accepted contracts, their fees and stored contracts parse as they did.
+fn enter_ref(
+    ref_path: &mut Vec<*const Value>,
+    schema_ref: &str,
+    target: &Value,
+) -> Result<(), DataContractError> {
+    let target = target as *const Value;
+    if ref_path.contains(&target) {
+        return Err(DataContractError::InvalidURI(format!(
+            "the ref '{}' contains cycles",
+            schema_ref
+        )));
+    }
+    ref_path.push(target);
+    Ok(())
+}
+
 // TODO: This is quite big
+/// `ref_path` holds the `$ref` targets resolved on the path from the root to
+/// this property; it is left as it was found on success.
 #[allow(clippy::too_many_arguments)]
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
@@ -264,13 +294,16 @@ fn insert_values_nested(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
+    ref_path: &mut Vec<*const Value>,
     config: &DataContractConfig,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
+    let ref_path_len = ref_path.len();
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
     if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
         let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
+        enter_ref(ref_path, schema_ref, referenced_sub_schema)?;
 
         inner_properties = referenced_sub_schema.to_btree_ref_string_map()?;
     }
@@ -359,6 +392,7 @@ fn insert_values_nested(
                         object_property_string,
                         object_property_value,
                         root_schema,
+                        ref_path,
                         config,
                         platform_version,
                     )?;
@@ -369,6 +403,7 @@ fn insert_values_nested(
         }
         property_type => property_type,
     };
+    ref_path.truncate(ref_path_len);
 
     let property_type =
         apply_property_reference(&inner_properties, property_type, platform_version)?;
@@ -6486,6 +6521,163 @@ mod tests {
             &mut vec![],
             platform_version,
         )
+    }
+
+    /// The contract's `$defs` from a JSON object of definitions.
+    fn schema_defs_from(defs: serde_json::Value) -> BTreeMap<String, Value> {
+        platform_value::to_value(defs)
+            .expect("the definitions convert")
+            .into_btree_string_map()
+            .expect("the definitions are a map")
+    }
+
+    /// A document type with one property `p` that is a `$ref` to `target`.
+    fn schema_with_ref_property(target: &str) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": { "p": { "$ref": target, "position": 0 } },
+            "additionalProperties": false
+        })
+    }
+
+    fn assert_ref_cycle_refused(defs: serde_json::Value) {
+        let started = std::time::Instant::now();
+        let err = try_document_type_from_schema_with_defs(
+            schema_with_ref_property("#/$defs/a"),
+            &schema_defs_from(defs),
+            false,
+        )
+        .expect_err("a cyclic $ref should be refused");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "took {:?}",
+            started.elapsed()
+        );
+        assert!(
+            err.to_string()
+                .contains("the ref '#/$defs/a' contains cycles"),
+            "got {err}"
+        );
+    }
+
+    /// An object whose two members both `$ref` it back would expand without
+    /// end on the non-validating parse; it is refused instead.
+    #[test]
+    fn should_refuse_a_branching_ref_cycle_without_full_validation() {
+        assert_ref_cycle_refused(json!({
+            "a": {
+                "type": "object",
+                "properties": {
+                    "b": { "$ref": "#/$defs/a", "position": 0 },
+                    "c": { "$ref": "#/$defs/a", "position": 1 }
+                },
+                "additionalProperties": false
+            }
+        }));
+    }
+
+    #[test]
+    fn should_refuse_a_self_ref_without_full_validation() {
+        assert_ref_cycle_refused(json!({
+            "a": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/$defs/a", "position": 0 } },
+                "additionalProperties": false
+            }
+        }));
+    }
+
+    /// Only a `$ref` back to a target on the property's own path is a cycle:
+    /// two siblings may name the same definition.
+    #[test]
+    fn should_parse_sibling_refs_to_one_definition_without_full_validation() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "x": { "$ref": "#/$defs/leaf", "position": 0 },
+                "y": { "$ref": "#/$defs/leaf", "position": 1 }
+            },
+            "additionalProperties": false
+        });
+        let defs = schema_defs_from(json!({
+            "leaf": {
+                "type": "object",
+                "properties": { "v": { "type": "integer", "position": 0 } },
+                "additionalProperties": false
+            }
+        }));
+        let document_type = try_document_type_from_schema_with_defs(schema, &defs, false)
+            .expect("sibling refs should parse");
+        let flattened = document_type.flattened_properties();
+        assert!(flattened.contains_key("x.v"), "got {:?}", flattened.keys());
+        assert!(flattened.contains_key("y.v"), "got {:?}", flattened.keys());
+        let properties = document_type.properties();
+        assert!(properties.contains_key("x") && properties.contains_key("y"));
+    }
+
+    #[test]
+    fn should_parse_a_chain_of_distinct_refs_without_full_validation() {
+        let defs = schema_defs_from(json!({
+            "a": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/$defs/b", "position": 0 } },
+                "additionalProperties": false
+            },
+            "b": {
+                "type": "object",
+                "properties": { "c": { "$ref": "#/$defs/c", "position": 0 } },
+                "additionalProperties": false
+            },
+            "c": {
+                "type": "object",
+                "properties": { "v": { "type": "integer", "position": 0 } },
+                "additionalProperties": false
+            }
+        }));
+        let document_type = try_document_type_from_schema_with_defs(
+            schema_with_ref_property("#/$defs/a"),
+            &defs,
+            false,
+        )
+        .expect("a chain of distinct refs should parse");
+        assert!(
+            document_type.flattened_properties().contains_key("p.b.c.v"),
+            "got {:?}",
+            document_type.flattened_properties().keys()
+        );
+    }
+
+    /// An acyclic `$defs` graph reaching one definition along many paths is no
+    /// cycle, so the non-validating parse expands it in full: here into 2^12
+    /// properties. Refusing such a graph is left to the schema depth check,
+    /// which `check_tx` runs first; keep the size small.
+    #[test]
+    fn should_expand_an_acyclic_ref_dag_without_full_validation() {
+        const LEVELS: usize = 12;
+        let mut defs = serde_json::Map::new();
+        for i in 0..LEVELS {
+            let next = format!("#/$defs/d{}", i + 1);
+            defs.insert(
+                format!("d{i}"),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "b": { "$ref": next, "position": 0 },
+                        "c": { "$ref": next, "position": 1 }
+                    },
+                    "additionalProperties": false
+                }),
+            );
+        }
+        defs.insert(format!("d{LEVELS}"), json!({ "type": "integer" }));
+
+        let document_type = try_document_type_from_schema_with_defs(
+            schema_with_ref_property("#/$defs/d0"),
+            &schema_defs_from(serde_json::Value::Object(defs)),
+            false,
+        )
+        .expect("an acyclic ref graph should parse");
+        assert_eq!(document_type.flattened_properties().len(), 1 << LEVELS);
     }
 
     /// A key id property whose schema is a `$ref` to one of the contract's

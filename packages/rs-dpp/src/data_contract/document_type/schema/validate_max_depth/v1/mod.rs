@@ -9,11 +9,12 @@ use crate::data_contract::document_type::schema::MaxDepthValidationResult;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::ConsensusValidationResult;
 
-/// Kept unchanged for replay of protocol versions before 14. Exponential on a
-/// crafted `$defs` chain: a scalar `$ref` target is pushed and, when popped,
-/// clears `visited`, so the cycle guard never fires. See v1.
+/// Same walk as v0, except a `$ref` whose target is not a map or array is not
+/// walked and `visited` is never cleared. Every ref target is therefore
+/// expanded at most once, so the walk is bounded by the schema size times its
+/// depth. For schemas without a scalar `$ref` target the result equals v0's.
 #[inline(always)]
-pub(super) fn validate_max_depth_v0(
+pub(super) fn validate_max_depth_v1(
     platform_value: &Value,
     platform_version: &PlatformVersion,
 ) -> ConsensusValidationResult<MaxDepthValidationResult> {
@@ -70,6 +71,11 @@ pub(super) fn validate_max_depth_v0(
                                 }
                             };
 
+                            // A scalar target adds no depth, so it is not walked.
+                            if !resolved.is_map() && !resolved.is_array() {
+                                continue;
+                            }
+
                             if visited.contains(&(resolved as *const Value)) {
                                 return ConsensusValidationResult::new_with_data_and_errors(
                                     MaxDepthValidationResult {
@@ -109,7 +115,7 @@ pub(super) fn validate_max_depth_v0(
                     }
                 }
             }
-            _ => visited.clear(),
+            _ => {}
         }
     }
 
@@ -121,11 +127,99 @@ pub(super) fn validate_max_depth_v0(
 
 #[cfg(test)]
 mod test {
-    use crate::consensus::basic::BasicError;
+    use super::super::v0::validate_max_depth_v0;
+    use super::*;
     use crate::consensus::ConsensusError;
     use serde_json::json;
+    use std::time::{Duration, Instant};
 
-    use super::*;
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::get(14).expect("expected protocol version 14")
+    }
+
+    /// `$defs` chain whose scalar `$ref`s made v0 expand every level twice.
+    fn exponential_chain_schema(levels: usize) -> Value {
+        let mut defs = serde_json::Map::new();
+        for i in 0..levels {
+            let next = format!("#/$defs/d{}", i + 1);
+            defs.insert(
+                format!("d{}", i),
+                json!({
+                    "a": { "$ref": next },
+                    "m": { "$ref": "#/$schema" },
+                    "y": { "$ref": next },
+                    "zz": { "$ref": "#/$schema" },
+                }),
+            );
+        }
+        defs.insert(format!("d{}", levels), json!({}));
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": defs,
+            "type": "object",
+            "properties": { "foo": { "type": "integer" } },
+            "additionalProperties": false,
+        })
+        .into()
+    }
+
+    #[test]
+    fn should_reject_exponential_ref_chain_in_bounded_time() {
+        let schema = exponential_chain_schema(30);
+
+        let start = Instant::now();
+        let result = validate_max_depth_v1(&schema, platform_version());
+        assert!(start.elapsed() < Duration::from_secs(1));
+
+        let Some(ConsensusError::BasicError(BasicError::InvalidJsonSchemaRefError(e))) =
+            result.errors.first()
+        else {
+            panic!(
+                "expected InvalidJsonSchemaRefError, got {:?}",
+                result.errors
+            );
+        };
+        assert!(e.to_string().contains("contains cycles"));
+    }
+
+    #[test]
+    fn should_match_v0_for_schema_without_scalar_ref() {
+        let schema: Value = json!(
+             {
+                "$defs" : {
+                    "object": {
+                        "nested":   {
+                            "type" : "string"
+                        }
+                    }
+                },
+                "type": "object",
+                "properties": {
+                  "foo": { "type": "integer" },
+                  "bar": {
+                    "type": "object",
+                    "properties": {
+                        "baz": { "type": "array", "items": [{ "type": "string" }] },
+                    },
+                  },
+                  "fooWithRef": {
+                    "$ref" : "#/$defs/object"
+                  },
+                },
+                "required": ["foo"],
+                "additionalProperties": false,
+              }
+        )
+        .into();
+
+        let v0 = validate_max_depth_v0(&schema, platform_version())
+            .data
+            .expect("expected data");
+        let v1 = validate_max_depth_v1(&schema, platform_version())
+            .data
+            .expect("expected data");
+        assert_eq!(v0, v1);
+    }
 
     #[test]
     fn should_return_error_when_cycle_is_spotted() {
@@ -142,10 +236,6 @@ mod test {
                 "type": "object",
                 "properties": {
                   "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
                   "fooWithRef": {
                     "$ref" : "#/$defs/object"
                   },
@@ -156,7 +246,7 @@ mod test {
         )
         .into();
 
-        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
+        let result = validate_max_depth_v1(&schema, platform_version());
 
         let err = result.errors.first().expect("expected an error");
         assert_eq!(
@@ -166,209 +256,25 @@ mod test {
     }
 
     #[test]
-    fn should_calculate_valid_depth_with_included_ref() {
+    fn should_not_walk_scalar_ref_target() {
         let schema: Value = json!(
              {
-                "$defs" : {
-                    "object": {
-                        "nested":   {
-                            "type" : "string"
-                        }
-                    }
-                },
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
                   "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
-                  "fooWithRef": {
-                    "$ref" : "#/$defs/object"
-                  },
+                  "scalarRef": { "$ref": "#/$schema" },
                 },
-                "required": ["foo"],
                 "additionalProperties": false,
               }
         )
         .into();
-        let result = validate_max_depth_v0(&schema, PlatformVersion::first())
+
+        let v0 = validate_max_depth_v0(&schema, platform_version())
             .data
             .expect("expected data");
-        assert_eq!(result, MaxDepthValidationResult { depth: 5, size: 19 });
-    }
-
-    #[test]
-    fn should_return_error_with_non_existing_ref() {
-        let schema: Value = json!(
-             {
-                "type": "object",
-                "properties": {
-                  "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
-                  "fooWithRef": {
-                    "$ref" : "#/$defs/object"
-                  },
-                },
-                "required": ["foo"],
-                "additionalProperties": false,
-              }
-        )
-        .into();
-        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
-
-        let err = result.errors.first().expect("expected an error");
-        assert_eq!(
-            err.to_string(),
-            "Invalid JSON Schema $ref: invalid ref for max depth '#/$defs/object': value decoding error: StructureError(\"unable to get property $defs in $defs.object\")"
-                .to_string()
-        );
-    }
-
-    #[test]
-    fn should_return_error_with_external_ref() {
-        let schema: Value = json!(
-             {
-                "type": "object",
-                "properties": {
-                  "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
-                  "fooWithRef": {
-                    "$ref" : "https://json-schema.org/some"
-                  },
-                },
-                "required": ["foo"],
-                "additionalProperties": false,
-              }
-        )
-        .into();
-        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
-
-        let err = result.errors.first().expect("expected an error");
-        assert_eq!(
-            err.to_string(),
-            "Invalid JSON Schema $ref: invalid ref for max depth 'https://json-schema.org/some': invalid uri error: only local uri references are allowed"
-                .to_string()
-        );
-    }
-
-    #[test]
-    fn should_return_error_with_empty_ref() {
-        let schema: Value = json!(
-             {
-                "type": "object",
-                "properties": {
-                  "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
-                  "fooWithRef": {
-                    "$ref" : ""
-                  },
-                },
-                "required": ["foo"],
-                "additionalProperties": false,
-              }
-        )
-        .into();
-        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
-
-        let err = result.errors.first().expect("expected an error");
-        assert_eq!(
-            err.to_string(),
-            "Invalid JSON Schema $ref: invalid ref for max depth '': invalid uri error: only local uri references are allowed"
-                .to_string()
-        );
-    }
-
-    #[test]
-    fn should_calculate_valid_depth() {
-        let schema: Value = json!(
-             {
-                "type": "object",
-                "properties": {
-                  "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
-                },
-                "required": ["foo"],
-                "additionalProperties": false,
-              }
-        )
-        .into();
-        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
-            .data
-            .expect("expected data")
-            .depth;
-        assert_eq!(found_depth, 3);
-    }
-
-    #[test]
-    fn should_calculate_valid_depth_for_empty_json() {
-        let schema: Value = json!({}).into();
-        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
-            .data
-            .expect("expected data")
-            .depth;
-        assert_eq!(found_depth, 1);
-    }
-
-    #[test]
-    fn should_calculate_valid_depth_for_schema_containing_array() {
-        let schema: Value = json!({
-                "type": "object",
-                "properties": {
-                  "foo": { "type": "integer" },
-                  "bar": {
-                    "type": "string",
-                    "pattern": "([a-z]+)+$",
-                  },
-                },
-                "required": [ { "alpha": "value_alpha"}, { "bravo" : { "a" :  "b"} }],
-
-        })
-        .into();
-
-        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
-            .data
-            .expect("expected data")
-            .depth;
-
-        assert_eq!(found_depth, 4);
-    }
-
-    #[test]
-    fn should_return_error_when_max_depth_exceeded() {
-        let platform_version = PlatformVersion::first();
-        let max_depth = platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .max_depth as usize;
-
-        let mut inner = json!({ "type": "string" });
-        for _ in 0..max_depth {
-            inner = json!({ "a": inner });
-        }
-        let schema: Value = inner.into();
-
-        let result = validate_max_depth_v0(&schema, platform_version);
-
-        let Some(ConsensusError::BasicError(BasicError::DataContractMaxDepthExceedError(e))) =
-            result.errors.first()
-        else {
-            panic!("expected DataContractMaxDepthExceedError");
-        };
-        assert_eq!(e.max_depth(), max_depth);
+        let v1 = validate_max_depth_v1(&schema, platform_version());
+        assert!(v1.is_valid());
+        assert_eq!(v1.data.expect("expected data"), v0);
     }
 }
