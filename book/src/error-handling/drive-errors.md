@@ -16,14 +16,14 @@ The mapping lives in `packages/rs-drive-abci/src/query/service.rs`:
 | A `QuerySyntaxError`, whether the handler reports it (`QueryError::Query`, `QueryError::Drive(Error::Query)`) or returns it (`Error::Drive(Error::Query)`) | `INVALID_ARGUMENT` |
 | `QueryError::NotFound` | `NOT_FOUND` |
 | `QueryError::ResourceExhausted` | `RESOURCE_EXHAUSTED` |
-| A request without a version, or with a version the node does not serve | `UNKNOWN`: a newer node may serve it |
-| Any other error a handler returns | `INTERNAL` |
+| A decoding error, an unsupported request version, or another unexpected `QueryError` | `UNKNOWN`; undecodable or newer requests may succeed on another node |
+| Any other `Err` a handler returns | `INTERNAL` |
 
-A status message is cut at 1024 bytes, because it travels in the `grpc-message` HTTP/2 header and may echo a request field of any length.
+A long status message retains at most a 1024-byte UTF-8 prefix, followed by `... (N bytes truncated)`. The complete message is therefore longer than 1024 bytes. Tonic percent-encodes it in the `grpc-message` HTTP/2 header; bounding the prefix prevents an echoed request field from exceeding the peer's header-list limit. Otherwise the client may see a retryable transport error instead of the original validation status.
 
 A handler checks the request before Drive sees it, and refuses what no node can answer with a validation error, never with `?`. Two rules decide what it refuses:
 
-- **Refuse only what fails.** A request that has an answer keeps it, even an empty one, so no caller that depends on it breaks.
+- **Preserve usable answers.** Empty unproved selections and documented defaults remain supported. Some unusable proved selections and out-of-range inputs require refusal, even if an older node returned a response.
 - **GroveDB cannot prove an empty query, or one with a limit of 0.** When a proof is asked, an empty id list or a limit of 0 is refused; without a proof, the answer is empty.
 
 | Request | Without a proof | With a proof |
@@ -32,12 +32,14 @@ A handler checks the request before Drive sees it, and refuses what no node can 
 | Identity keys with limit 0, epochs info with count 0 | Empty answer | `INVALID_ARGUMENT` |
 | Limit or count 0 on contract history (or above 10), protocol upgrade vote status, evonode blocks by range, identity votes, pre-programmed distributions, group infos, group actions | `INVALID_ARGUMENT` | `INVALID_ARGUMENT` |
 | Identity keys search without a limit | `INVALID_ARGUMENT` | Served |
-| Specific identity keys with a limit below their number of ids | The first keys that exist, in id order | The same keys, proved |
+| Specific identity keys with a limit below their number of ids | The first keys that exist, in encoded-key order | The same keys, proved |
 | Documents v0 with limit 0, shielded encrypted notes with count 0 | 0 means the default | 0 means the default |
 
-An empty identities balances request with a proof used to get a proof the client could not verify. A proof that fails to verify is treated as a node fault too, so refusing that request matters as much as the status codes.
+An empty identities balances request with a proof changes from `OK` with an unusable proof to `INVALID_ARGUMENT`. A proof that fails to verify is treated as a node fault too, so refusing that request matters as much as the status codes. Address branch depths are checked before narrowing the wire `u32`: a value such as 263 is refused rather than wrapping to the previously accepted depth 7. Status text and validation priority can also change.
 
-Nodes released before these rules answer the same requests with `UNKNOWN`, `INTERNAL`, or that unverifiable proof.
+These are query API changes, shared by the protocol versions selecting the affected query generations. They do not change block execution, persisted state or proof formats. The composite by-ID page validation also serves protocol versions 12 and 13; older schemas support value-bounded lookup joins, but predate the property-reference declarations needed for by-ID joins. Ordinary capped composite pages at those versions can still return `INTERNAL` because their GroveDB version does not support per-instance query limits.
+
+Nodes released before these rules answer the same requests with `UNKNOWN`, `INTERNAL`, or that unusable proof. Client-side protection against those nodes is separate from server classification. Offset validation remains incomplete: an unproved key search with offset 1 and proved key, contract-history, document-history and identity-vote queries with offset 1 can still surface GroveDB errors as `INTERNAL`. GroveDB rejects these offsets before producing a usable response.
 
 ## The Drive `Error` enum
 
