@@ -43,12 +43,15 @@
 //! `length` and `byteLength`, the characters and the UTF-8 bytes of a string
 //! property, and `count`, the items of an array or byte array property. A
 //! property named on its own takes 0 when absent, and so does the size of one
-//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`). `byteAt`
-//! reads one byte of a byte array property, 0 to 255, at a literal index
-//! (`{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }`), and a byte the array
-//! does not hold, or one of an array the document leaves out, reads as 0, as
-//! a property left out does. A string
-//! constant is written
+//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`).
+//! `countPresent` is how many of two or more properties the document holds,
+//! each as `present` tests it, so a rule bounds how many of a group are set:
+//! `{ "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }` holds
+//! a document to exactly one, and an `in` listing `[1, 2]` to one or two.
+//! `byteAt` reads one byte of a byte array property, 0 to 255, at a literal
+//! index (`{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }`), and a byte the
+//! array does not hold, or one of an array the document leaves out, reads as
+//! 0, as a property left out does. A string constant is written
 //! `{ "const": "closed" }`, since a string on its own is a path; `equal` and
 //! `notEqual` compare one with a string property, or two bare paths naming
 //! string properties with each other, and an `in` whose values are strings
@@ -139,13 +142,15 @@ const ENDS_WITH: &str = "endsWith";
 const LENGTH: &str = "length";
 const BYTE_LENGTH: &str = "byteLength";
 const COUNT: &str = "count";
+const COUNT_PRESENT: &str = "countPresent";
 const BYTE_AT: &str = "byteAt";
 /// The operand key of a string constant: `{ "const": "closed" }`.
 const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
-                            ifAbsent, length, byteLength, count, byteAt, countOf or sumOf";
+                            ifAbsent, length, byteLength, count, countPresent, byteAt, countOf or \
+                            sumOf";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -541,6 +546,10 @@ pub enum ConstraintExpression {
     /// dotted `path`, as `measure` counts it, or 0 when the document leaves it
     /// out.
     Size { measure: SizeMeasure, path: String },
+    /// `countPresent`: how many of the properties at the dotted `paths`, two
+    /// or more and no two alike, the document holds, each as
+    /// [`PropertyConstraint::Present`] tests it.
+    CountPresent(Vec<String>),
     /// `byteAt`: the byte, 0 to 255, at `index` (counted from 0) of the byte
     /// array property at the dotted `path`, `{ "byteAt": ["address", 0] }`, or
     /// 0 when the array does not hold that byte or the document leaves it out.
@@ -588,6 +597,8 @@ impl ConstraintExpression {
     /// * a size is never a fault: a property the document leaves out, or sets
     ///   to null, has size 0, and so does a value of another type than the
     ///   one measured, which the schema validation reported first refuses;
+    /// * a `countPresent` is never a fault: it counts the properties that are
+    ///   present, whatever their type;
     /// * nor is a byte: one the array does not hold, of an array the document
     ///   leaves out or sets to null, reads as 0, and so does one of a value
     ///   that is no byte array, which the schema validation refuses first;
@@ -630,10 +641,13 @@ impl ConstraintExpression {
                 i128::try_from(property_size(data, path, *measure))
                     .map_err(|_| PropertyConstraintViolation::Overflow)
             }
+            ConstraintExpression::CountPresent(paths) => {
+                // At most the number of paths, which always fits an `i128`
+                i128::try_from(paths.iter().filter(|path| is_present(data, path)).count())
+                    .map_err(|_| PropertyConstraintViolation::Overflow)
+            }
             ConstraintExpression::ByteAt { path, index } => Ok(i128::from(
-                byte_array_value(data, path)
-                    .and_then(|bytes| bytes.get(usize::from(*index)).copied())
-                    .unwrap_or(0),
+                byte_at(data, path, usize::from(*index)).unwrap_or(0),
             )),
             ConstraintExpression::Add(operands) => {
                 operands.iter().try_fold(0i128, |sum, operand| {
@@ -711,6 +725,8 @@ impl ConstraintExpression {
             | ConstraintExpression::System(_) => 0,
             // One for each key and the value it takes
             ConstraintExpression::Aggregate(read) => read.filter.len(),
+            // One for each property it tests, as a `present` is one
+            ConstraintExpression::CountPresent(paths) => paths.len(),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -732,6 +748,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_) => false,
             ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_)
             | ConstraintExpression::Aggregate(_) => true,
@@ -773,6 +790,11 @@ impl ConstraintExpression {
                 }
             }
             ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
+            ConstraintExpression::CountPresent(paths) => reads.extend(
+                paths
+                    .iter()
+                    .map(|path| (path.as_str(), PropertyRead::Presence)),
+            ),
             // Byte `index` is there only in an array of `index + 1` bytes or more
             ConstraintExpression::ByteAt { path, index } => reads.push((
                 path,
@@ -807,6 +829,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::Aggregate(_) => {}
             ConstraintExpression::Add(operands)
@@ -836,6 +859,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_) => {}
             ConstraintExpression::Add(operands)
@@ -868,6 +892,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_) => None,
             ConstraintExpression::Add(operands)
@@ -898,8 +923,8 @@ impl ConstraintExpression {
 pub enum PropertyRead {
     /// By its value, as an operand: an integer or boolean property.
     Value,
-    /// Only whether the document holds it, in a `present` or `absent`: a
-    /// property of any type, an object included.
+    /// Only whether the document holds it, in a `present`, `absent` or
+    /// `countPresent`: a property of any type, an object included.
     Presence,
     /// By its value, compared with string constants: a string property.
     Text,
@@ -1412,7 +1437,8 @@ impl PropertyConstraint {
     /// constant, every `contains` with its array and what it looks for, every
     /// `present` or `absent` with the property it names, every
     /// arithmetic operator and every operand (an integer value, a property with
-    /// or without `ifAbsent`, a size or a system property).
+    /// or without `ifAbsent`, a size or a system property), and every
+    /// `countPresent` with one more for each property it tests.
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
@@ -2098,14 +2124,15 @@ struct ParseContext<'a> {
 /// flat list says), or `not` with one condition that is not directly another
 /// `not`. An operand is an integer value, a property path, or an object with
 /// one key: `ifAbsent` with a path and an integer value, `add` or `multiply`
-/// with two or more operands, or `subtract`, `divide`, `modulo` or `power`
-/// with exactly two, or `byteAt` with a path and the index of a byte, an
-/// integer from 0 to 65535; a string property may take an `ifAbsent` with a
-/// string default instead. A `startsWith` or `endsWith` with a bare path naming
-/// a byte array property on either side tests byte arrays: each side such a
-/// path or a `const` of hex digits, two a byte. An integer value may be
-/// spelled as a float with no fractional part, as the meta-schema's `integer`
-/// type admits one. A literal
+/// with two or more operands, `subtract`, `divide`, `modulo` or `power`
+/// with exactly two, `countPresent` with two or more distinct property paths,
+/// or `byteAt` with a path and the index of a byte, an integer from 0 to
+/// 65535; a string property may take an `ifAbsent` with a string default
+/// instead. A `startsWith` or `endsWith` with a bare path naming a byte array
+/// property on either side tests byte arrays: each side such a path or a
+/// `const` of hex digits, two a byte. An integer value may be spelled as a
+/// float with no fractional part, as the meta-schema's `integer` type admits
+/// one. A literal
 /// 0 divisor, a literal negative exponent, a comparison or `in` that reads no
 /// property, which would hold for every document or for none, an ordering
 /// comparison of strings or identifiers, and a condition or operand deeper
@@ -3093,6 +3120,8 @@ fn parse_expression(
                 path: path.to_string(),
             }
         }
+        // What the paths name is checked against the parsed document type
+        COUNT_PRESENT => ConstraintExpression::CountPresent(count_present_paths(operands, at)?),
         // What the path names, and that the index is inside its maxItems, is
         // checked against the parsed document type
         BYTE_AT => {
@@ -3151,6 +3180,35 @@ fn parse_expression(
     };
     at.truncate(parent);
     Ok(expression)
+}
+
+/// The paths a `countPresent` lists at `at`: two or more property paths, no
+/// two alike, in declared order. A repeat is refused on every parse, as a
+/// value an `in` lists twice is: it would count one property twice.
+fn count_present_paths(paths: &Value, at: &mut String) -> Result<Vec<String>, String> {
+    let Some(paths) = paths.as_array().filter(|paths| paths.len() >= 2) else {
+        return Err(format!("at {at} must list two or more property paths"));
+    };
+    let base = at.len();
+    let mut parsed = Vec::with_capacity(paths.len());
+    // Each path with the index it first appears at, for the errors
+    let mut seen = BTreeMap::new();
+    for (index, path) in paths.iter().enumerate() {
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{index}]");
+        let Some(path) = path.as_text() else {
+            return Err(format!("at {at} must name a property path"));
+        };
+        if let Some(earlier) = seen.insert(path, index) {
+            return Err(format!(
+                "at {at} repeats the path at {}[{earlier}]",
+                &at[..base]
+            ));
+        }
+        parsed.push(path.to_string());
+        at.truncate(base);
+    }
+    Ok(parsed)
 }
 
 /// A `countOf` (`sum` false) or `sumOf` at `at`, listing a document type,
@@ -3440,20 +3498,59 @@ fn byte_array_value<'a>(data: &'a Value, path: &'a str) -> Option<Cow<'a, [u8]>>
         return None;
     };
     match value {
-        Value::Bytes(bytes) => Some(Cow::Borrowed(bytes)),
-        Value::Bytes20(bytes) => Some(Cow::Borrowed(bytes)),
-        Value::Bytes32(bytes) | Value::Identifier(bytes) => Some(Cow::Borrowed(bytes)),
-        Value::Bytes36(bytes) => Some(Cow::Borrowed(bytes)),
         Value::Array(items) => items
             .iter()
-            .map(|item| {
-                item.is_integer()
-                    .then(|| item.to_integer::<u8>().ok())
-                    .flatten()
-            })
+            .map(byte_item)
             .collect::<Option<Vec<u8>>>()
             .map(Cow::Owned),
+        value => byte_slice(value).map(Cow::Borrowed),
+    }
+}
+
+/// The byte at `index` of the byte array property at `path` in `data`, as
+/// [`byte_array_value`] reads the array, without collecting an array of
+/// integers into bytes: `None` when the array does not hold that byte, and
+/// when [`byte_array_value`] reads no array. Every element of an array of
+/// integers is checked, not only the one at `index`, so that an array holding
+/// anything but bytes reads no byte whichever one is asked for.
+fn byte_at(data: &Value, path: &str, index: usize) -> Option<u8> {
+    let Ok(Some(value)) = data.get_optional_value_at_path(path) else {
+        return None;
+    };
+    match value {
+        Value::Array(items) => {
+            let mut found = None;
+            for (position, item) in items.iter().enumerate() {
+                let byte = byte_item(item)?;
+                if position == index {
+                    found = Some(byte);
+                }
+            }
+            found
+        }
+        value => byte_slice(value)?.get(index).copied(),
+    }
+}
+
+/// The bytes a value holding them directly holds: `Value::Bytes` and the
+/// fixed-size forms; `None` for any other value.
+fn byte_slice(value: &Value) -> Option<&[u8]> {
+    match value {
+        Value::Bytes(bytes) => Some(bytes),
+        Value::Bytes20(bytes) => Some(bytes),
+        Value::Bytes32(bytes) | Value::Identifier(bytes) => Some(bytes),
+        Value::Bytes36(bytes) => Some(bytes),
         _ => None,
+    }
+}
+
+/// The byte an element of an array of integers is: `None` for an element
+/// that is not an integer from 0 to 255.
+fn byte_item(item: &Value) -> Option<u8> {
+    if item.is_integer() {
+        item.to_integer::<u8>().ok()
+    } else {
+        None
     }
 }
 

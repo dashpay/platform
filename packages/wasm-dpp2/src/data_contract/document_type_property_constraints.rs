@@ -52,6 +52,10 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  *   and the UTF-8 bytes of a string property; `count`: the items of an array
  *   property, or the bytes of a byte array property. Each is 0 when the
  *   document leaves the property out;
+ * - `countPresent`: how many of two or more properties, no two alike, the
+ *   document holds, each as `present` tests it, so
+ *   `{ equal: [{ countPresent: ['email', 'phone', 'handle'] }, 1] }` asks
+ *   for exactly one of them;
  * - `byteAt`: the byte, 0 to 255, at an index (counted from 0, up to 65535)
  *   of a byte array property, 0 when the array does not hold it or the
  *   document leaves the array out;
@@ -78,6 +82,7 @@ export type PropertyConstraintExpression =
   | { length: string }
   | { byteLength: string }
   | { count: string }
+  | { countPresent: string[] }
   | { byteAt: [path: string, index: number] }
   | { countOf: [documentType: string] | [documentType: string, filter: PropertyConstraintAggregateFilter] }
   | {
@@ -160,11 +165,11 @@ export type PropertyConstraintCondition =
 
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in
- * `present` or `absent`, `text` compared with strings, `identifier` compared
- * with identifiers, `length` by the size of a string (`length` or
- * `byteLength`), `count` by the items of an array or byte array, `elements`
- * by the elements a `contains` looks among, `bytes` by the bytes of a byte
- * array (`byteAt`, or a `startsWith` or `endsWith` of byte arrays).
+ * `present`, `absent` or `countPresent`, `text` compared with strings,
+ * `identifier` compared with identifiers, `length` by the size of a string
+ * (`length` or `byteLength`), `count` by the items of an array or byte array,
+ * `elements` by the elements a `contains` looks among, `bytes` by the bytes of
+ * a byte array (`byteAt`, or a `startsWith` or `endsWith` of byte arrays).
  */
 export type PropertyConstraintReadKind =
   | 'value'

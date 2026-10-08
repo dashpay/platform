@@ -1,8 +1,43 @@
 # Drive Errors
 
-The previous two chapters covered consensus errors -- the carefully serialized, code-stable errors that get sent across the network. Drive errors are a different beast entirely. They are **internal** errors that arise from the storage layer, the database, and the logic that sits between state transitions and GroveDB. They never leave the node. They are not serialized. And they do not need stable numeric codes.
+The previous two chapters covered consensus errors -- the carefully serialized, code-stable errors that get sent across the network. Drive errors are a different beast entirely. They are **internal** errors that arise from the storage layer, the database, and the logic that sits between state transitions and GroveDB. They are not serialized as consensus errors, and they do not need stable numeric codes. The one place they reach a client is a query's gRPC status, described in [Query errors on the wire](#query-errors-on-the-wire).
 
 But they do need to be well-organized, because Drive is where most of the platform's complexity lives. When something goes wrong in Drive, you need to know immediately whether it is a corrupted database, a protocol-level validation failure, a fee calculation error, or a bug in your own code.
+
+## Query errors on the wire
+
+A gRPC query answers a failed request with a status code, and clients read that code to decide whose fault the failure is. `rs-dapi-client` takes `INVALID_ARGUMENT` as the caller's mistake: the error goes back to the caller, and nothing else happens. It takes `UNKNOWN` and `INTERNAL` as a fault of the node: the client stops using that node for a while (a ban) and sends the request to the next one. A request error answered as `INTERNAL` therefore gets every node banned in turn, since every node refuses the request the same way.
+
+The mapping lives in `packages/rs-drive-abci/src/query/service.rs`:
+
+| Error | Status |
+|---|---|
+| `QueryError::InvalidArgument`, `QueryError::TooManyElements` | `INVALID_ARGUMENT` |
+| A `QuerySyntaxError`, whether the handler reports it (`QueryError::Query`, `QueryError::Drive(Error::Query)`) or returns it (`Error::Drive(Error::Query)`) | `INVALID_ARGUMENT` |
+| `QueryError::NotFound` | `NOT_FOUND` |
+| `QueryError::ResourceExhausted` | `RESOURCE_EXHAUSTED` |
+| A request without a version, or with a version the node does not serve | `UNKNOWN`: a newer node may serve it |
+| Any other error a handler returns | `INTERNAL` |
+
+A status message is cut at 1024 bytes, because it travels in the `grpc-message` HTTP/2 header and may echo a request field of any length.
+
+A handler checks the request before Drive sees it, and refuses what no node can answer with a validation error, never with `?`. Two rules decide what it refuses:
+
+- **Refuse only what fails.** A request that has an answer keeps it, even an empty one, so no caller that depends on it breaks.
+- **GroveDB cannot prove an empty query, or one with a limit of 0.** When a proof is asked, an empty id list or a limit of 0 is refused; without a proof, the answer is empty.
+
+| Request | Without a proof | With a proof |
+|---|---|---|
+| Empty id list: data contracts, identities balances, identities contract keys (ids or purposes), evonode blocks by ids, identity and identities token balances and infos, token statuses, addresses infos | Empty answer | `INVALID_ARGUMENT` |
+| Identity keys with limit 0, epochs info with count 0 | Empty answer | `INVALID_ARGUMENT` |
+| Limit or count 0 on contract history (or above 10), protocol upgrade vote status, evonode blocks by range, identity votes, pre-programmed distributions, group infos, group actions | `INVALID_ARGUMENT` | `INVALID_ARGUMENT` |
+| Identity keys search without a limit | `INVALID_ARGUMENT` | Served |
+| Specific identity keys with a limit below their number of ids | The first keys that exist, in id order | The same keys, proved |
+| Documents v0 with limit 0, shielded encrypted notes with count 0 | 0 means the default | 0 means the default |
+
+An empty identities balances request with a proof used to get a proof the client could not verify. A proof that fails to verify is treated as a node fault too, so refusing that request matters as much as the status codes.
+
+Nodes released before these rules answer the same requests with `UNKNOWN`, `INTERNAL`, or that unverifiable proof.
 
 ## The Drive `Error` enum
 

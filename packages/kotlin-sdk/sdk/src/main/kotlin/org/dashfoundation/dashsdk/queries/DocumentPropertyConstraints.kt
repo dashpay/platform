@@ -34,8 +34,9 @@ data class DocumentPropertyConstraint(
      * JSON text with sorted keys (every operator object has a single key, so
      * sorting changes nothing a reader would notice). Among its operators:
      * sizes (`{ "length": path }`, `{ "byteLength": path }`,
-     * `{ "count": path }`), system times and heights as bare operands
-     * (`"$createdAt"`), `{ "contains": [arrayPath, value] }`,
+     * `{ "count": path }`), `{ "countPresent": [path, path, ...] }`, system
+     * times and heights as bare operands (`"$createdAt"`),
+     * `{ "contains": [arrayPath, value] }`,
      * `{ "startsWith": [a, b] }`, `{ "endsWith": [a, b] }`,
      * `{ "notIn": [operand, [values]] }`, `{ "min": [a, b, ...] }`,
      * `{ "max": [a, b, ...] }`, `{ "abs": a }`, `{ "ifThen": [if, then] }`
@@ -236,7 +237,10 @@ data class PropertyConstraintRead(
             override val name: String get() = "value"
         }
 
-        /** Only whether the document holds it, in `present` or `absent`. */
+        /**
+         * Only whether the document holds it, in `present`, `absent` or
+         * `countPresent`.
+         */
         data object Presence : Kind {
             override val name: String get() = "presence"
         }
