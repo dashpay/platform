@@ -113,7 +113,9 @@ impl Sdk {
                     core_chain_locked_height,
                     "proof names a quorum the trusted quorum source does not list"
                 );
-                Err(missing.into())
+                // A fresh trusted answer supersedes the initial lookup's
+                // failure: the node named a quorum the source does not know.
+                Err(Error::Proof(missing))
             }
             Err(ContextProviderError::QuorumSourceUnavailable(reason)) => unavailable(reason),
             Err(error) => unavailable(format!("{error:?}")),
@@ -554,6 +556,93 @@ mod tests {
         );
         assert_eq!(cannot_fetch.fetches.load(Ordering::SeqCst), 1);
         assert_eq!(cannot_fetch.lookups.load(Ordering::SeqCst), 1);
+        assert!(
+            error.can_retry(),
+            "a missing quorum remains node-attributed"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_ban_a_node_when_a_synchronous_quorum_source_is_unavailable() {
+        let provider = Counting::new(SynchronousSourceUnavailable);
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response).await.unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "a synchronous source outage must retain its attribution: {error:?}"
+        );
+        assert!(!error.can_retry());
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 1);
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn should_blame_the_node_for_authoritative_absence_after_a_cached_source_failure() {
+        let (base_url, service) = quorum_service(vec![
+            ("/quorums", 200, current_list(SIGNING_QUORUM_HASH, "zz")),
+            ("/previous", 200, empty_previous_list()),
+            ("/quorums", 200, r#"{"success":true,"data":[]}"#.to_string()),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let trusted = trusted_provider(base_url);
+        trusted.refresh_quorum_caches().await.unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let provider = Counting::new(trusted);
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response).await.unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
+            ),
+            "fresh authoritative absence must blame the node: {error:?}"
+        );
+        assert!(error.can_retry());
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        service.join().expect("quorum service");
+    }
+
+    struct SynchronousSourceUnavailable;
+
+    impl ContextProvider for SynchronousSourceUnavailable {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::QuorumSourceUnavailable(
+                "synchronous quorum source is offline".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
     }
 
     /// A provider with no quorum keys and no way to fetch them.

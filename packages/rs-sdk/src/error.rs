@@ -38,7 +38,7 @@ pub enum Error {
     Protocol(#[from] ProtocolError),
     /// Proof verification error
     #[error("Proof verification error: {0}")]
-    Proof(#[from] drive_proof_verifier::Error),
+    Proof(#[source] drive_proof_verifier::Error),
     /// Invalid Proved Response error
     #[error("Invalid Proved Response error: {0}")]
     InvalidProvedResponse(String),
@@ -136,6 +136,18 @@ pub enum Error {
     /// A property declared `encryptedFor` could not be encrypted or decrypted
     #[error(transparent)]
     EncryptedFor(#[from] EncryptedForError),
+}
+
+impl From<drive_proof_verifier::Error> for Error {
+    fn from(value: drive_proof_verifier::Error) -> Self {
+        match value {
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                error: ContextProviderError::QuorumSourceUnavailable(reason),
+                ..
+            } => Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(reason)),
+            error => Self::Proof(error),
+        }
+    }
 }
 
 impl From<dash_platform_queries::Error> for Error {
