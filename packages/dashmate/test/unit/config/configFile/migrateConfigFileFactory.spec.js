@@ -342,6 +342,40 @@ describe('migrateConfigFileFactory', () => {
     });
   });
 
+  it('should render a migrated legacy config before and after enabling Tor', async () => {
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+    const renderServiceTemplates = container.resolve('renderServiceTemplates');
+
+    for (const fromVersion of ['4.1.0', '4.1.1', '4.2.0-dev.1']) {
+      const configFileData = createConfigFile().toObject();
+      configFileData.configFormatVersion = fromVersion;
+      const devnetConfig = new Config('devnet', baseConfig.getStoredOptions());
+      devnetConfig.set('network', 'devnet');
+      configFileData.configs.devnet = devnetConfig.getStoredOptions();
+      for (const options of Object.values(configFileData.configs)) {
+        delete options.core.tor;
+      }
+
+      const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+      for (const [name, options] of Object.entries(migrated.configs)) {
+        const config = new Config(name, options);
+        const disabledConf = renderServiceTemplates(config)['core/dash.conf'];
+        expect(disabledConf).to.match(/^listenonion=0$/m);
+        expect(disabledConf.match(/^bind=.*$/gm)).to.deep.equal(['bind=0.0.0.0']);
+
+        config.set('core.tor.enabled', true);
+        const enabledConf = renderServiceTemplates(config)['core/dash.conf'];
+        expect(enabledConf).to.match(/^listenonion=1$/m);
+        expect(enabledConf.match(/^bind=.*$/gm)).to.deep.equal([
+          'bind=0.0.0.0',
+          'bind=127.0.0.1=onion',
+        ]);
+      }
+    }
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It
