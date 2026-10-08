@@ -378,26 +378,27 @@ async fn should_classify_empty_proof_requests_as_caller_errors() {
                 else {
                     panic!("missing response version")
                 };
-                if let Some(get_path_elements_response_v0::Result::Proof(proof)) = &v0.result {
-                    let (root, elements) = Drive::verify_elements(
-                        &proof.grovedb_proof,
-                        vec![],
-                        vec![],
-                        PlatformVersion::latest(),
-                    )
-                    .expect("an empty root-path proof remains usable");
-                    assert!(elements.is_empty());
-                    assert_eq!(
-                        root,
-                        fixture
-                            .platform
-                            .drive
-                            .grove
-                            .root_hash(None, &PlatformVersion::latest().drive.grove_version)
-                            .unwrap()
-                            .expect("state root")
-                    );
-                }
+                let Some(get_path_elements_response_v0::Result::Proof(proof)) = &v0.result else {
+                    panic!("proved root-path response must contain a proof")
+                };
+                let (root, elements) = Drive::verify_elements(
+                    &proof.grovedb_proof,
+                    vec![],
+                    vec![],
+                    PlatformVersion::latest(),
+                )
+                .expect("an empty root-path proof remains usable");
+                assert!(elements.is_empty());
+                assert_eq!(
+                    root,
+                    fixture
+                        .platform
+                        .drive
+                        .grove
+                        .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+                        .unwrap()
+                        .expect("state root")
+                );
             }
         }
         record(
@@ -977,42 +978,43 @@ async fn should_preserve_zero_defaults_optional_caps_and_key_selection() {
                     else {
                         panic!("identity keys response version")
                     };
-                    if let Some(get_identity_keys_response_v0::Result::Proof(proof)) = &v0.result {
-                        let verified = Drive::verify_identity_keys_by_identity_id(
-                            &proof.grovedb_proof,
-                            IdentityKeysRequest {
-                                identity_id: [1; 32],
-                                request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
-                                limit: limit.map(|value| {
-                                    u16::try_from(value)
-                                        .expect("fixture limit fits the Drive request")
-                                }),
-                                offset: None,
-                            },
-                            false,
-                            false,
-                            false,
-                            PlatformVersion::latest(),
-                        );
-                        println!("SpecificKeys {key_ids:?} limit={limit:?} actual Drive verifier: {verified:?}");
-                        let (root, partial_identity) =
-                            verified.expect("successful specific-key proofs remain verifiable");
-                        assert!(
-                            partial_identity
-                                .is_none_or(|identity| identity.loaded_public_keys.is_empty()),
-                            "absence proof must not return public keys"
-                        );
-                        assert_eq!(
-                            root,
-                            fixture
-                                .platform
-                                .drive
-                                .grove
-                                .root_hash(None, &PlatformVersion::latest().drive.grove_version)
-                                .unwrap()
-                                .expect("state root")
-                        );
-                    }
+                    let Some(get_identity_keys_response_v0::Result::Proof(proof)) = &v0.result
+                    else {
+                        panic!("proved identity-key response must contain a proof")
+                    };
+                    let verified = Drive::verify_identity_keys_by_identity_id(
+                        &proof.grovedb_proof,
+                        IdentityKeysRequest {
+                            identity_id: [1; 32],
+                            request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
+                            limit: limit.map(|value| {
+                                u16::try_from(value).expect("fixture limit fits the Drive request")
+                            }),
+                            offset: None,
+                        },
+                        false,
+                        false,
+                        false,
+                        PlatformVersion::latest(),
+                    );
+                    println!("SpecificKeys {key_ids:?} limit={limit:?} actual Drive verifier: {verified:?}");
+                    let (root, partial_identity) =
+                        verified.expect("successful specific-key proofs remain verifiable");
+                    assert!(
+                        partial_identity
+                            .is_none_or(|identity| identity.loaded_public_keys.is_empty()),
+                        "absence proof must not return public keys"
+                    );
+                    assert_eq!(
+                        root,
+                        fixture
+                            .platform
+                            .drive
+                            .grove
+                            .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+                            .unwrap()
+                            .expect("state root")
+                    );
                 }
             }
             let expected = if prove && limit == Some(0) {
