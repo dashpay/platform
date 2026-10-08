@@ -890,8 +890,8 @@ impl ConstraintExpression {
 pub enum PropertyRead {
     /// By its value, as an operand: an integer or boolean property.
     Value,
-    /// Only whether the document holds it, in a `present` or `absent`: a
-    /// property of any type, an object included.
+    /// Only whether the document holds it, in a `present`, `absent` or
+    /// `countPresent`: a property of any type, an object included.
     Presence,
     /// By its value, compared with string constants: a string property.
     Text,
