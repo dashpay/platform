@@ -978,7 +978,7 @@ mod tests {
         let (request, response) = recorded_epoch_fetch();
 
         for _ in 0..2 {
-            let error = verify(&sdk, request.clone(), response.clone())
+            let error = verify(&sdk, request, response.clone())
                 .await
                 .expect_err("a malformed key verifies nothing");
 
