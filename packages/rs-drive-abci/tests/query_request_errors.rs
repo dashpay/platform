@@ -6,11 +6,14 @@ use dapi_grpc::platform::v0::get_addresses_branch_state_request::GetAddressesBra
 use dapi_grpc::platform::v0::get_addresses_infos_request::GetAddressesInfosRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0;
 use dapi_grpc::platform::v0::get_data_contracts_by_range_request::GetDataContractsByRangeRequestV0;
 use dapi_grpc::platform::v0::get_data_contracts_latest_versions_request::GetDataContractsLatestVersionsRequestV0;
 use dapi_grpc::platform::v0::get_data_contracts_request::GetDataContractsRequestV0;
+use dapi_grpc::platform::v0::get_data_contracts_response::get_data_contracts_response_v0;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
 use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+use dapi_grpc::platform::v0::get_epochs_info_response::get_epochs_info_response_v0;
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::GetEvonodesProposedEpochBlocksByIdsRequestV0;
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0;
 use dapi_grpc::platform::v0::get_group_actions_request::GetGroupActionsRequestV0;
@@ -34,7 +37,8 @@ use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::GetVotePollsByE
 use dapi_grpc::platform::v0::key_request_type::Request as KeyRequestKind;
 use dapi_grpc::platform::v0::{self as wire, platform_server::PlatformServer};
 use dapi_grpc::platform::v0::{
-    get_data_contracts_request, get_epochs_info_request, get_identity_keys_response,
+    get_data_contract_history_response, get_data_contracts_request, get_data_contracts_response,
+    get_epochs_info_request, get_epochs_info_response, get_identity_keys_response,
     get_path_elements_response,
 };
 use dapi_grpc::tonic::body::Body;
@@ -47,11 +51,13 @@ use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 use dpp::identifier::Identifier;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER;
 use drive::drive::Drive;
+use drive::grovedb::Element;
 use drive::query::DriveDocumentQuery;
 use drive_abci::config::PlatformConfig;
 use drive_abci::error::query::QueryError;
@@ -764,6 +770,14 @@ async fn should_retain_existing_request_error_and_valid_batch_contracts() {
     let fixture = QueryFixture::new();
     let (mut client, server) = fixture.client();
     let mut failures = Vec::new();
+    let version = PlatformVersion::latest();
+    let stored_root = fixture
+        .platform
+        .drive
+        .grove
+        .root_hash(None, &version.drive.grove_version)
+        .value
+        .expect("stored root");
     for prove in [false, true] {
         record(
             "get_data_contracts_latest_versions",
@@ -830,20 +844,39 @@ async fn should_retain_existing_request_error_and_valid_batch_contracts() {
             Code::InvalidArgument,
             &mut failures,
         );
-        record(
-            "get_data_contracts nonempty",
-            prove,
-            client
-                .get_data_contracts(wire::GetDataContractsRequest::from(
-                    GetDataContractsRequestV0 {
-                        ids: vec![vec![1; 32]],
-                        prove,
-                    },
-                ))
-                .await,
-            Code::Ok,
-            &mut failures,
-        );
+        let requested_id = [1; 32];
+        let response = client
+            .get_data_contracts(wire::GetDataContractsRequest::from(
+                GetDataContractsRequestV0 {
+                    ids: vec![requested_id.to_vec()],
+                    prove,
+                },
+            ))
+            .await
+            .expect("nonempty contract batch succeeds")
+            .into_inner();
+        let Some(get_data_contracts_response::Version::V0(v0)) = response.version else {
+            panic!("expected the V0 contract batch response");
+        };
+        if prove {
+            let Some(get_data_contracts_response_v0::Result::Proof(proof)) = v0.result else {
+                panic!("a proved contract batch must contain a proof");
+            };
+            let (root, contracts) =
+                Drive::verify_contracts(&proof.grovedb_proof, false, &[requested_id], version)
+                    .expect("the original contract batch query verifies");
+            assert_eq!(root, stored_root);
+            assert_eq!(contracts.len(), 1);
+            assert!(matches!(contracts.get(&requested_id), Some(None)));
+        } else {
+            let Some(get_data_contracts_response_v0::Result::DataContracts(contracts)) = v0.result
+            else {
+                panic!("an unproved contract batch must contain contract entries");
+            };
+            assert_eq!(contracts.data_contract_entries.len(), 1);
+            assert_eq!(contracts.data_contract_entries[0].identifier, requested_id);
+            assert!(contracts.data_contract_entries[0].data_contract.is_none());
+        }
     }
     server.abort();
     assert!(
@@ -1177,7 +1210,9 @@ async fn should_preserve_zero_defaults_optional_caps_and_key_selection() {
             assert!(notes.entries.is_empty());
         }
         for limit in [None, Some(1)] {
-            client
+            let drive_limit = limit
+                .map(|value| u16::try_from(value).expect("fixture limit fits the Drive request"));
+            let history = client
                 .get_data_contract_history(wire::GetDataContractHistoryRequest::from(
                     GetDataContractHistoryRequestV0 {
                         id: contract_id.to_vec(),
@@ -1188,8 +1223,47 @@ async fn should_preserve_zero_defaults_optional_caps_and_key_selection() {
                     },
                 ))
                 .await
-                .expect("positive and absent historical contract caps remain valid");
-            client
+                .expect("positive and absent historical contract caps remain valid")
+                .into_inner();
+            let Some(get_data_contract_history_response::Version::V0(v0)) = history.version else {
+                panic!("expected the V0 contract history response");
+            };
+            if prove {
+                let Some(get_data_contract_history_response_v0::Result::Proof(proof)) = v0.result
+                else {
+                    panic!("a proved contract history must contain a proof");
+                };
+                let (root, history) = Drive::verify_contract_history(
+                    &proof.grovedb_proof,
+                    contract_id.to_buffer(),
+                    0,
+                    drive_limit,
+                    None,
+                    version,
+                )
+                .expect("the original optional-cap contract history query verifies");
+                assert_eq!(root, stored_root);
+                let history = history.expect("stored contract has history");
+                assert_eq!(history.len(), 1);
+                assert_eq!(history.get(&1000), Some(&contract.contract));
+            } else {
+                let Some(get_data_contract_history_response_v0::Result::DataContractHistory(
+                    history,
+                )) = v0.result
+                else {
+                    panic!("an unproved contract history must contain history entries");
+                };
+                assert_eq!(history.data_contract_entries.len(), 1);
+                assert_eq!(history.data_contract_entries[0].date, 1000);
+                assert_eq!(
+                    history.data_contract_entries[0].value,
+                    contract
+                        .contract
+                        .serialize_to_bytes_with_platform_version(version)
+                        .expect("serialize the stored contract")
+                );
+            }
+            let keys = client
                 .get_identity_keys(wire::GetIdentityKeysRequest::from(
                     GetIdentityKeysRequestV0 {
                         identity_id: vec![1; 32],
@@ -1202,41 +1276,116 @@ async fn should_preserve_zero_defaults_optional_caps_and_key_selection() {
                     },
                 ))
                 .await
-                .expect("positive and absent key caps remain valid");
+                .expect("positive and absent key caps remain valid")
+                .into_inner();
+            let Some(get_identity_keys_response::Version::V0(v0)) = keys.version else {
+                panic!("expected the V0 identity keys response");
+            };
+            if prove {
+                let Some(get_identity_keys_response_v0::Result::Proof(proof)) = v0.result else {
+                    panic!("a proved AllKeys selection must contain a proof");
+                };
+                let (root, identity) = Drive::verify_identity_keys_by_identity_id(
+                    &proof.grovedb_proof,
+                    IdentityKeysRequest {
+                        identity_id: [1; 32],
+                        request_type: KeyRequestType::AllKeys,
+                        limit: drive_limit,
+                        offset: None,
+                    },
+                    false,
+                    false,
+                    false,
+                    version,
+                )
+                .expect("the original optional-cap AllKeys query verifies");
+                assert_eq!(root, stored_root);
+                assert!(identity.is_none_or(|identity| identity.loaded_public_keys.is_empty()));
+            } else {
+                let Some(get_identity_keys_response_v0::Result::Keys(keys)) = v0.result else {
+                    panic!("an unproved AllKeys selection must contain keys");
+                };
+                assert!(keys.keys_bytes.is_empty());
+            }
         }
-        record(
-            "epochs count=1",
-            prove,
-            client
-                .get_epochs_info(wire::GetEpochsInfoRequest {
-                    version: Some(get_epochs_info_request::Version::V0(
-                        GetEpochsInfoRequestV0 {
-                            start_epoch: Some(0),
-                            count: 1,
-                            ascending: true,
-                            prove,
-                        },
-                    )),
-                })
-                .await,
-            Code::Ok,
-            &mut failures,
-        );
-        record(
-            "root path nonempty keys",
-            prove,
-            client
-                .get_path_elements(wire::GetPathElementsRequest::from(
-                    GetPathElementsRequestV0 {
-                        path: vec![],
-                        keys: vec![vec![96]],
+        let epochs = client
+            .get_epochs_info(wire::GetEpochsInfoRequest {
+                version: Some(get_epochs_info_request::Version::V0(
+                    GetEpochsInfoRequestV0 {
+                        start_epoch: Some(0),
+                        count: 1,
+                        ascending: true,
                         prove,
                     },
-                ))
-                .await,
-            Code::Ok,
-            &mut failures,
-        );
+                )),
+            })
+            .await
+            .expect("a positive epoch count remains valid")
+            .into_inner();
+        let Some(get_epochs_info_response::Version::V0(v0)) = epochs.version else {
+            panic!("expected the V0 epoch response");
+        };
+        if prove {
+            let Some(get_epochs_info_response_v0::Result::Proof(proof)) = v0.result else {
+                panic!("a proved epoch query must contain a proof");
+            };
+            let current_epoch = u16::try_from(v0.metadata.expect("epoch metadata").epoch)
+                .expect("fixture epoch fits the Drive request");
+            let (root, epochs) = Drive::verify_epoch_infos(
+                &proof.grovedb_proof,
+                current_epoch,
+                Some(0),
+                1,
+                true,
+                version,
+            )
+            .expect("the original positive-count epoch query verifies");
+            assert_eq!(root, stored_root);
+            assert!(epochs.is_empty());
+        } else {
+            let Some(get_epochs_info_response_v0::Result::Epochs(epochs)) = v0.result else {
+                panic!("an unproved epoch query must contain epochs");
+            };
+            assert!(epochs.epoch_infos.is_empty());
+        }
+        let elements = client
+            .get_path_elements(wire::GetPathElementsRequest::from(
+                GetPathElementsRequestV0 {
+                    path: vec![],
+                    keys: vec![vec![96]],
+                    prove,
+                },
+            ))
+            .await
+            .expect("a root-path key selection remains valid")
+            .into_inner();
+        let Some(get_path_elements_response::Version::V0(v0)) = elements.version else {
+            panic!("expected the V0 path response");
+        };
+        if prove {
+            let Some(get_path_elements_response_v0::Result::Proof(proof)) = v0.result else {
+                panic!("a proved root-path key selection must contain a proof");
+            };
+            let (root, elements) =
+                Drive::verify_elements(&proof.grovedb_proof, vec![], vec![vec![96]], version)
+                    .expect("the original root-path key query verifies");
+            assert_eq!(root, stored_root);
+            assert_eq!(elements.len(), 1);
+            assert_eq!(
+                elements.get(&vec![96]),
+                Some(&Some(Element::empty_sum_tree()))
+            );
+        } else {
+            let Some(get_path_elements_response_v0::Result::Elements(elements)) = v0.result else {
+                panic!("an unproved root-path key selection must contain elements");
+            };
+            assert_eq!(
+                elements.elements,
+                vec![Element::empty_sum_tree()
+                    .serialize(&version.drive.grove_version)
+                    .expect("serialize the initial balances tree")]
+            );
+        }
         let mut selections = vec![(vec![], None), (vec![], Some(0)), (vec![0, 0], Some(1))];
         selections.extend([(vec![0], Some(0)), (vec![0, 1], Some(1))]);
         for (key_ids, limit) in selections {
