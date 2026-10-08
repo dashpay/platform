@@ -100,6 +100,9 @@ impl Sdk {
                         "the provider fetched the key but its lookup still misses it: {error}"
                     ))
                 }
+                Err(error @ drive_proof_verifier::Error::InvalidPublicKey { .. }) => unavailable(
+                    format!("the provider supplied an unusable quorum key: {error}"),
+                ),
                 Ok(verified) => {
                     self.accept_verified_metadata(method_name, &verified.1, Some(seen_height))?;
                     Ok(verified)
@@ -716,6 +719,10 @@ mod tests {
             ),
             "got {error:?}"
         );
+        assert!(
+            error.can_retry(),
+            "a forged signature remains attributable to the node"
+        );
         assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
         service.join().expect("quorum service");
     }
@@ -999,7 +1006,7 @@ mod tests {
     /// its contract; the node that sent the proof is not banned for that.
     #[tokio::test]
     async fn should_not_hold_a_provider_that_forgets_a_fetched_key_against_the_node() {
-        let forgetful = Counting::new(Forgetful { fetch_error: false });
+        let forgetful = Counting::new(Forgetful::default());
         let sdk = network_sdk(Arc::clone(&forgetful));
         let (request, response) = recorded_epoch_fetch();
 
@@ -1019,8 +1026,11 @@ mod tests {
     }
 
     /// A provider whose fetch reports a key that its lookup never returns.
+    #[derive(Default)]
     struct Forgetful {
         fetch_error: bool,
+        invalid_key: bool,
+        fetched: AtomicBool,
     }
 
     impl ContextProvider for Forgetful {
@@ -1045,6 +1055,9 @@ mod tests {
             _quorum_hash: [u8; 32],
             _core_chain_locked_height: u32,
         ) -> Result<[u8; 48], ContextProviderError> {
+            if self.invalid_key && self.fetched.load(Ordering::SeqCst) {
+                return Ok([0; 48]);
+            }
             Err(ContextProviderError::InvalidQuorum(
                 "not cached".to_string(),
             ))
@@ -1061,6 +1074,7 @@ mod tests {
                     Err(ContextProviderError::Generic("source offline".to_string()))
                 }))
             } else {
+                self.fetched.store(true, Ordering::SeqCst);
                 Some(Box::pin(async { Ok(Some([7u8; 48])) }))
             }
         }
@@ -1072,7 +1086,10 @@ mod tests {
 
     #[tokio::test]
     async fn should_display_provider_fetch_failures_without_debug_variant_formatting() {
-        let provider = Counting::new(Forgetful { fetch_error: true });
+        let provider = Counting::new(Forgetful {
+            fetch_error: true,
+            ..Default::default()
+        });
         let sdk = network_sdk(provider);
         let (request, response) = recorded_epoch_fetch();
 
@@ -1084,6 +1101,34 @@ mod tests {
             "got {error:?}"
         );
         assert!(!error.can_retry());
+    }
+
+    #[tokio::test]
+    async fn should_not_blame_a_node_for_an_invalid_key_on_the_second_verification() {
+        let provider = Counting::new(Forgetful {
+            invalid_key: true,
+            ..Default::default()
+        });
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("the fetched key is unusable");
+
+        assert!(
+            matches!(
+                error,
+                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {error:?}"
+        );
+        assert!(
+            !error.can_retry(),
+            "an unusable provider key must not ban the responding node"
+        );
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
     }
 
     fn recorded_height(response: &GetEpochsInfoResponse) -> u64 {
