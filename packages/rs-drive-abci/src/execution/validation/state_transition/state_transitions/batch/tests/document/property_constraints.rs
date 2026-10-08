@@ -285,6 +285,30 @@ mod property_constraints_tests {
         })
     }
 
+    /// A mutable `offer` type with the integers [`set_valid_offer`] fills and
+    /// three optional ways to reach its seller, `email`, `phone` and `handle`,
+    /// of which `oneContact` requires exactly one.
+    fn contact_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "email": { "type": "string", "maxLength": 64, "position": 4 },
+                "phone": { "type": "string", "maxLength": 20, "position": 5 },
+                "handle": { "type": "string", "maxLength": 30, "position": 6 }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "oneContact": { "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// A mutable, transferable and purchasable `offer` type with the integers
     /// [`set_valid_offer`] fills and an `endsAt` time, recording the time of its
     /// creation, last update and last transfer and the block height of its
@@ -1813,6 +1837,55 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// `countPresent` read by real writes: an offer giving none of its three
+    /// contacts, or two, is refused, one giving exactly one is stored, a replace
+    /// adding a second is refused, and one trading the contact for another is
+    /// accepted.
+    #[tokio::test]
+    async fn should_hold_a_document_to_exactly_one_of_a_group_of_properties() {
+        let mut fixture = OfferFixture::with_schema(contact_offer_schema());
+
+        let result = fixture.create(|_| {}).await;
+        expect_violated(result, "oneContact", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| {
+                document.set("email", Value::from("seller@example.com"));
+                document.set("phone", Value::from("555-0100"));
+            })
+            .await;
+        expect_violated(result, "oneContact", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("email", Value::from("seller@example.com")))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(|document| document.set("handle", Value::from("@seller")))
+            .await;
+        expect_violated(result, "oneContact", PropertyConstraintViolation::NotMet);
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].get("handle"), None);
+
+        assert_matches!(
+            fixture
+                .replace(|document| {
+                    document.remove("email");
+                    document.set("handle", Value::from("@seller"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let stored = fixture.stored_offers();
+        assert_eq!(stored[0].get("email"), None);
+        assert_eq!(stored[0].get("handle"), Some(&Value::from("@seller")));
     }
 
     /// The times and heights a create records are its block's: an offer must end

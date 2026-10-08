@@ -74,6 +74,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use drive::error::Error as DriveError;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -83,6 +84,12 @@ use tracing::Instrument;
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
 const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
+/// Longest part of a status message the service keeps; a longer message is cut there and gets
+/// a short note with the number of bytes dropped. Tonic sends the message in the
+/// `grpc-message` header, and an HTTP/2 peer refuses an oversized header list, which its client
+/// then reports as an internal error. A message can echo a request field of any length, such
+/// as a document type name.
+const MAX_STATUS_MESSAGE_BYTES: usize = 1024;
 
 /// Service to handle platform queries
 pub struct QueryService {
@@ -195,19 +202,7 @@ impl QueryService {
                 }
             }
 
-            let mut query_result = result.map_err(error_into_status)?;
-
-            if query_result.is_valid() {
-                let response = query_result
-                    .into_data()
-                    .map_err(|error| error_into_status(error.into()))?;
-
-                Ok(Response::new(response))
-            } else {
-                let error = query_result.errors.swap_remove(0);
-
-                Err(query_error_into_status(error))
-            }
+            query_result_into_response(result).map(Response::new)
         })?
         .instrument(tracing::trace_span!("query", endpoint_name))
         .await
@@ -1156,21 +1151,65 @@ impl DriveInternal for QueryService {
 
 fn query_error_into_status(error: QueryError) -> Status {
     match error {
-        QueryError::NotFound(message) => Status::not_found(message),
-        QueryError::InvalidArgument(message) => Status::invalid_argument(message),
-        QueryError::Query(error) => Status::invalid_argument(error.to_string()),
-        QueryError::TooManyElements(message) => Status::invalid_argument(message),
-        QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
+        QueryError::NotFound(message) => Status::not_found(bounded_message(message)),
+        QueryError::InvalidArgument(message) => Status::invalid_argument(bounded_message(message)),
+        QueryError::Query(error) | QueryError::Drive(DriveError::Query(error)) => {
+            Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        QueryError::TooManyElements(message) => Status::invalid_argument(bounded_message(message)),
+        QueryError::ResourceExhausted(message) => {
+            Status::resource_exhausted(bounded_message(message))
+        }
+        // A request this node cannot decode, or a request version it does not serve, may be
+        // one a newer node serves, so these stay retryable on another node.
         _ => {
             tracing::error!("unexpected query error: {:?}", error);
 
-            Status::unknown(error.to_string())
+            Status::unknown(bounded_message(error.to_string()))
         }
     }
 }
 
+/// The response, or the status, the service answers for a query method's result.
+pub(super) fn query_result_into_response<T: Clone>(
+    result: Result<QueryValidationResult<T>, Error>,
+) -> Result<T, Status> {
+    let mut query_result = result.map_err(error_into_status)?;
+
+    if query_result.is_valid() {
+        query_result
+            .into_data()
+            .map_err(|error| error_into_status(error.into()))
+    } else {
+        let error = query_result.errors.swap_remove(0);
+
+        Err(query_error_into_status(error))
+    }
+}
+
 fn error_into_status(error: Error) -> Status {
-    Status::internal(format!("query: {}", error))
+    match error {
+        // A query syntax error is the request's fault whichever layer finds it. As an internal
+        // error, clients would retry it on every other node and stop using each one.
+        Error::Drive(DriveError::Query(error)) => {
+            Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        error => Status::internal(bounded_message(format!("query: {}", error))),
+    }
+}
+
+fn bounded_message(mut message: String) -> String {
+    if message.len() <= MAX_STATUS_MESSAGE_BYTES {
+        return message;
+    }
+    let mut end = MAX_STATUS_MESSAGE_BYTES;
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    let truncated = message.len() - end;
+    message.truncate(end);
+    message.push_str(&format!("... ({} bytes truncated)", truncated));
+    message
 }
 
 fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
@@ -1238,6 +1277,13 @@ mod tests {
 #[cfg(test)]
 mod query_error_status_tests {
     use super::*;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
+    use dapi_grpc::platform::v0::get_documents_request;
+    use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
+    use dpp::dashcore::Network;
+    use dpp::system_data_contracts::dpns_contract;
+    use drive::error::drive::DriveError as DriveInternalError;
+    use drive::error::query::QuerySyntaxError;
 
     #[test]
     fn resource_exhausted_query_error_maps_to_retryable_grpc_status() {
@@ -1246,5 +1292,87 @@ mod query_error_status_tests {
         ));
 
         assert_eq!(status.code(), Code::ResourceExhausted);
+    }
+
+    /// A query syntax error is the request's fault whether the handler or Drive found it.
+    #[test]
+    fn should_answer_a_query_syntax_error_from_drive_with_invalid_argument() {
+        let syntax_error = || QuerySyntaxError::InvalidLimit("limit 0".to_string());
+
+        let from_result = error_into_status(Error::Drive(DriveError::Query(syntax_error())));
+        assert_eq!(from_result.code(), Code::InvalidArgument);
+        assert!(from_result.message().contains("limit 0"));
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Query(syntax_error())));
+        assert_eq!(from_validation.code(), Code::InvalidArgument);
+    }
+
+    /// What the request did not cause stays retryable on another node: a fault inside the node,
+    /// or a request this node cannot decode, which a newer node may serve.
+    #[test]
+    fn should_keep_node_faults_and_undecodable_requests_retryable() {
+        let internal = error_into_status(Error::Drive(DriveError::Drive(
+            DriveInternalError::CorruptedCodeExecution("broken"),
+        )));
+        assert_eq!(internal.code(), Code::Internal);
+
+        let undecodable = query_error_into_status(QueryError::DecodingError(
+            "could not decode data contracts query".to_string(),
+        ));
+        assert_eq!(undecodable.code(), Code::Unknown);
+    }
+
+    #[test]
+    fn should_bound_a_long_status_message_at_a_char_boundary() {
+        // A two-byte character straddles the bound, so the cut falls one byte short of it.
+        let message = format!(
+            "{}{}",
+            "a".repeat(MAX_STATUS_MESSAGE_BYTES - 1),
+            "é".repeat(100)
+        );
+
+        let status = query_error_into_status(QueryError::InvalidArgument(message.clone()));
+
+        assert_eq!(status.code(), Code::InvalidArgument);
+        let kept = &message[..MAX_STATUS_MESSAGE_BYTES - 1];
+        assert_eq!(
+            status.message(),
+            format!(
+                "{}... ({} bytes truncated)",
+                kept,
+                message.len() - kept.len()
+            )
+        );
+
+        let short = query_error_into_status(QueryError::NotFound("absent".to_string()));
+        assert_eq!(short.message(), "absent");
+    }
+
+    /// An error echoing a 100 KB document type name used to go out whole in the
+    /// `grpc-message` header, past what HTTP/2 peers accept.
+    #[test]
+    fn should_bound_an_error_that_echoes_an_oversized_document_type_name() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetDocumentsRequest {
+            version: Some(get_documents_request::Version::V0(GetDocumentsRequestV0 {
+                data_contract_id: dpns_contract::ID.to_vec(),
+                document_type: "x".repeat(100_000),
+                r#where: vec![],
+                order_by: vec![],
+                limit: 0,
+                start: None,
+                prove: false,
+            })),
+        };
+
+        let status =
+            assert_invalid_argument_status(platform.query_documents(request, &state, version));
+        assert!(
+            status.message().len() < MAX_STATUS_MESSAGE_BYTES + 64,
+            "message is {} bytes",
+            status.message().len()
+        );
     }
 }
