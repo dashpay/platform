@@ -61,6 +61,15 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// gRPC method name
     fn method_name(&self) -> &'static str;
 
+    /// When the request names nothing to fetch (an empty id list), the INVALID_ARGUMENT
+    /// message every node refuses it with. [DapiClient](crate::DapiClient) then refuses it
+    /// the same way without sending it: a node released before that refusal answers with an
+    /// internal error, or with a proof of nothing the client cannot verify, and either one
+    /// gets the node banned and the request sent to the next.
+    fn names_nothing(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Perform transport request asynchronously.
     fn execute_transport<'c>(
         self,

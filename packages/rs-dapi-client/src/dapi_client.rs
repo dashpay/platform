@@ -4,7 +4,6 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
-#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::Status;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
@@ -1068,6 +1067,18 @@ impl DapiRequestExecutor for DapiClient {
         R::Response: Mockable,
         TransportError: Mockable,
     {
+        // Every node refuses a request that names nothing, so it is refused here, without a
+        // node, the same way; see `TransportRequest::names_nothing`.
+        if let Some(refusal) = request.names_nothing() {
+            return Err(ExecutionError {
+                inner: DapiClientError::Transport(TransportError::Grpc(Status::invalid_argument(
+                    refusal,
+                ))),
+                retries: 0,
+                address: None,
+            });
+        }
+
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
             .settings
