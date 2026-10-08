@@ -118,7 +118,7 @@ impl Sdk {
                 Err(Error::Proof(missing))
             }
             Err(ContextProviderError::QuorumSourceUnavailable(reason)) => unavailable(reason),
-            Err(error) => unavailable(format!("{error:?}")),
+            Err(error) => unavailable(error.to_string()),
         }
     }
 }
@@ -998,7 +998,7 @@ mod tests {
     /// its contract; the node that sent the proof is not banned for that.
     #[tokio::test]
     async fn should_not_hold_a_provider_that_forgets_a_fetched_key_against_the_node() {
-        let forgetful = Counting::new(Forgetful);
+        let forgetful = Counting::new(Forgetful { fetch_error: false });
         let sdk = network_sdk(Arc::clone(&forgetful));
         let (request, response) = recorded_epoch_fetch();
 
@@ -1018,7 +1018,9 @@ mod tests {
     }
 
     /// A provider whose fetch reports a key that its lookup never returns.
-    struct Forgetful;
+    struct Forgetful {
+        fetch_error: bool,
+    }
 
     impl ContextProvider for Forgetful {
         fn get_data_contract(
@@ -1053,12 +1055,34 @@ mod tests {
             _quorum_hash: [u8; 32],
             _core_chain_locked_height: u32,
         ) -> Option<QuorumKeyFuture> {
-            Some(Box::pin(async { Ok(Some([7u8; 48])) }))
+            if self.fetch_error {
+                Some(Box::pin(async {
+                    Err(ContextProviderError::Generic("source offline".to_string()))
+                }))
+            } else {
+                Some(Box::pin(async { Ok(Some([7u8; 48])) }))
+            }
         }
 
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
         }
+    }
+
+    #[tokio::test]
+    async fn should_display_provider_fetch_failures_without_debug_variant_formatting() {
+        let provider = Counting::new(Forgetful { fetch_error: true });
+        let sdk = network_sdk(provider);
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response).await.unwrap_err();
+
+        assert!(
+            matches!(error, Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(ref reason))
+                if reason == "Context provider error: source offline"),
+            "got {error:?}"
+        );
+        assert!(!error.can_retry());
     }
 
     fn recorded_height(response: &GetEpochsInfoResponse) -> u64 {
