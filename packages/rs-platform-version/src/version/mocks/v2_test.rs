@@ -152,6 +152,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
             address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
             shielded: DriveShieldedMethodVersions {
+            backfill_historical_credit_pool_nullifiers: None,
                 insert_note: 0,
                 insert_nullifiers: 0,
                 update_total_balance: 0,
@@ -579,6 +580,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
     fee_version: FEE_VERSION1,
     system_limits: SystemLimits {
+    credit_pool_nullifier_backfill_page_size: 0,
+    credit_pool_nullifier_backfill_batch_size: 0,
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
         max_document_value_depth: None,

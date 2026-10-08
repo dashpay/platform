@@ -850,6 +850,11 @@ impl<C> Platform<C> {
         self.drive
             .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
 
+        // This helper is reachable only when the upgrade ladder crosses into protocol 14;
+        // earlier versions selecting this generation cannot execute the backfill.
+        self.drive
+            .backfill_historical_credit_pool_nullifiers(transaction, platform_version)?;
+
         Ok(())
     }
 }
