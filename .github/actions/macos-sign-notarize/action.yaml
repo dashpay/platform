@@ -41,6 +41,9 @@ runs:
         KEYCHAIN_PASSWORD: ${{ inputs.keychain_password }}
       run: |
         set -euo pipefail
+        for name in BUILD_CERTIFICATE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD; do
+          [ -n "${!name}" ] || { echo "::error::The MACOS_$name secret is not set."; exit 1; }
+        done
         CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
         KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
         printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
@@ -64,7 +67,7 @@ runs:
             "$pkg" "$RUNNER_TEMP/signed.pkg"
           mv "$RUNNER_TEMP/signed.pkg" "$pkg"
         done < <(find "$PACKAGES_PATH" -type f -name '*.pkg' -print0)
-        "$found" || { echo '::error::No macOS installers were uploaded.'; exit 1; }
+        "$found" || { echo "::error::No .pkg files found under $PACKAGES_PATH."; exit 1; }
 
     - name: Notarize MacOS Release Build
       shell: bash
@@ -120,5 +123,8 @@ runs:
       if: always()
       shell: bash
       run: |
-        security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
         rm -f "$RUNNER_TEMP/build_certificate.p12"
+        # The keychain is missing when the first step failed before creating it.
+        if [ -e "$RUNNER_TEMP/app-signing.keychain-db" ]; then
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
+        fi
