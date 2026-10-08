@@ -245,7 +245,7 @@ pub struct DocumentTypeV2 {
     /// protocol version 14), in the grammar of `property_constraints`: a rule
     /// reads the stored document, and a `countOf` or `sumOf` total as it will
     /// be once the document is gone. Empty on document types that declare
-    /// none. The parser (`apply_delete_constraints`) admits them only on a type
+    /// none. The parser (`apply_delete_constraints_v0`) admits them only on a type
     /// whose owner may delete its documents, holds what they read to what a
     /// `propertyConstraints` rule may read, and refuses a `refersTo` with
     /// `consume` at such a type, since a consume would delete without them.

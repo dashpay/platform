@@ -65,9 +65,9 @@ use super::common;
 #[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
-    apply_delete_constraints, apply_property_constraints, parse_doctype_reference,
-    validate_encrypted_for_declarations, validate_generated_from_declarations,
-    validate_list_element_sources, validate_reference_lookup_sources,
+    apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
+    validate_generated_from_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -586,19 +586,11 @@ fn parse_generation_3(
     // integer properties they read and their transient flags are known; their
     // limits are checked under full validation only. The `enum`s their string
     // constants are checked against are read through `$ref`s into the
-    // contract's `$defs` too.
+    // contract's `$defs` too. The `deleteConstraints` rules with them, once
+    // `canBeDeleted` is resolved against the contract default and `indexOnly`
+    // and `"onlyWhenConsumed"` are applied: only a type whose owner deletes its
+    // stored documents declares them.
     apply_property_constraints(
-        &mut v2,
-        schema_defs,
-        name,
-        full_validation,
-        platform_version,
-    )
-    .map_err(consensus_or_protocol_data_contract_error)?;
-    // The `deleteConstraints` rules the same way, once `canBeDeleted` is resolved
-    // against the contract default and `indexOnly` and `"onlyWhenConsumed"` are
-    // applied: only a type whose owner deletes its stored documents declares them.
-    apply_delete_constraints(
         &mut v2,
         schema_defs,
         name,

@@ -292,7 +292,7 @@ The "every replace" rows exist because something the reference depends on can ch
 ### Transfers, purchases, deletes and restores
 
 - A transfer or a purchase checks no reference. A reference governs writing, not holding: a new owner meets the writer gates (a `where` entry valued `"$ownerId"`, `identityProperty: "$ownerId"`, an `owner` requirement) on their first replace.
-- Deleting a referring document checks nothing. Deleting a referenced document does not look for documents referring to it: a `permanentDocument` target cannot be deleted at all, a `moderatedDocument` target is removed by a moderator on the record the reference then resolves to, and a `deletableDocument` reference meets its missing target on the referring document's next replace.
+- Deleting a referring document checks nothing. Deleting a referenced document does not look for documents referring to it: a `permanentDocument` target cannot be deleted at all, a `moderatedDocument` target is removed by a moderator on the record the reference then resolves to, and a `deletableDocument` reference meets its missing target on the referring document's next replace. A `deletableDocument` target can still refuse its owner's delete while documents refer to it: a [`deleteConstraints`](deletion.md#deleteconstraints) rule counting them by the target's own id, `{ "equal": [{ "countOf": ["vote", { "pollId": "$id" }] }, 0] }`, needs a countable index on the referring property, and holds the target in place until the last of them is gone.
 - A document a moderator removed and later restores comes back as it was, without its references being checked again (see [Restoring Documents](../data-model/contract-moderation.md#restoring-documents)).
 
 ## The reference budget

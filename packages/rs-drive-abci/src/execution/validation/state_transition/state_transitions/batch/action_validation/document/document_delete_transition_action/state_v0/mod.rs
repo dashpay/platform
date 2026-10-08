@@ -41,62 +41,94 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let validation_result = self.base().validate_state(
+        let owned = fetch_owned_document(
+            self,
             platform,
             owner_id,
             block_info,
-            "delete",
             execution_context,
             transaction,
             platform_version,
         )?;
-        if !validation_result.is_valid() {
-            return Ok(validation_result);
-        }
-
-        let contract_fetch_info = self.base().data_contract_fetch_info();
-
-        let contract = &contract_fetch_info.contract;
-
-        let document_type_name = self.base().document_type_name();
-
-        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
-        else {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
-            ));
-        };
-
-        // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
-        // `fetch_document_with_id` bills internally on transform_into_action: 1+.
-        // PV11 byte-safe: v0 forces epoch=None inside, no add_operation,
-        // same net effect as pre-PR's explicit zero-fee add_operation call.
-        let original_document = fetch_document_with_id(
-            platform.drive,
-            contract,
-            document_type,
-            self.base().id(),
-            &block_info.epoch,
-            execution_context,
-            transaction,
-            platform_version,
-        )?;
-
-        let Some(document) = original_document else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::StateError(StateError::DocumentNotFoundError(
-                    DocumentNotFoundError::new(self.base().id()),
-                )),
-            ));
-        };
-
-        Ok(check_ownership(self, &document, &owner_id))
+        Ok(SimpleConsensusValidationResult::new_with_errors(
+            owned.errors,
+        ))
     }
 }
 
-/// A [`DocumentOwnerIdMismatchError`] unless `owner_id` owns `fetched_document`. Shared
-/// with state validation 1, which runs the same checks before the type's delete rules.
-pub(super) fn check_ownership(
+/// The checks of state validation 0, in its order: the base transition, the document type, the
+/// stored document (a billed fetch) and its owner. The stored document when every check passes,
+/// the first refusal otherwise. Shared with state validation 1, which judges the type's delete
+/// rules on the document it returns; split out of version 0 with its outcome and its billing
+/// unchanged.
+pub(super) fn fetch_owned_document(
+    action: &DocumentDeleteTransitionAction,
+    platform: &PlatformStateRef,
+    owner_id: Identifier,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<Document>, Error> {
+    let validation_result = action.base().validate_state(
+        platform,
+        owner_id,
+        block_info,
+        "delete",
+        execution_context,
+        transaction,
+        platform_version,
+    )?;
+    if !validation_result.is_valid() {
+        return Ok(ConsensusValidationResult::new_with_errors(
+            validation_result.errors,
+        ));
+    }
+
+    let contract_fetch_info = action.base().data_contract_fetch_info();
+
+    let contract = &contract_fetch_info.contract;
+
+    let document_type_name = action.base().document_type_name();
+
+    let Some(document_type) = contract.document_type_optional_for_name(document_type_name) else {
+        return Ok(ConsensusValidationResult::new_with_error(
+            InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
+        ));
+    };
+
+    // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
+    // `fetch_document_with_id` bills internally on transform_into_action: 1+.
+    // PV11 byte-safe: v0 forces epoch=None inside, no add_operation,
+    // same net effect as pre-PR's explicit zero-fee add_operation call.
+    let original_document = fetch_document_with_id(
+        platform.drive,
+        contract,
+        document_type,
+        action.base().id(),
+        &block_info.epoch,
+        execution_context,
+        transaction,
+        platform_version,
+    )?;
+
+    let Some(document) = original_document else {
+        return Ok(ConsensusValidationResult::new_with_error(
+            ConsensusError::StateError(StateError::DocumentNotFoundError(
+                DocumentNotFoundError::new(action.base().id()),
+            )),
+        ));
+    };
+
+    let ownership = check_ownership(action, &document, &owner_id);
+    if !ownership.is_valid() {
+        return Ok(ConsensusValidationResult::new_with_errors(ownership.errors));
+    }
+    Ok(ConsensusValidationResult::new_with_data(document))
+}
+
+/// A [`DocumentOwnerIdMismatchError`] unless `owner_id` owns `fetched_document`.
+fn check_ownership(
     document_transition: &DocumentDeleteTransitionAction,
     fetched_document: &Document,
     owner_id: &Identifier,
