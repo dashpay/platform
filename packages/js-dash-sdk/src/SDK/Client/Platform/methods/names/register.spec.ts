@@ -114,6 +114,39 @@ describe('Platform', () => {
         ]);
       });
 
+      it('should hash the parent domain name as sent', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+
+        await register.call(platformMock, 'User.DASH', {
+          identity: identityId,
+        }, identityMock);
+
+        // sha256d(salt ++ 'user' ++ '.' ++ 'DASH'): the platform hashes the parent as sent,
+        // not its normalized form
+        expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.deep.equal(
+          '803f9eba5277949b7dcc60c0b2f0e99fcc4e4c26dfb44b2108c6704328a9c4a7',
+        );
+
+        expect(platformMock.documents.create.getCall(1).args).to.have.deep.members([
+          'dpns.domain',
+          identityMock,
+          {
+            label: 'User',
+            normalizedLabel: 'user',
+            parentDomainName: 'DASH',
+            normalizedParentDomainName: 'dash',
+            preorderSalt: Buffer.alloc(32),
+            records: {
+              identity: identityId,
+            },
+            subdomainRules: {
+              allowSubdomains: false,
+            },
+          },
+        ]);
+      });
+
       it('should fail if DPNS app have no contract set up', async () => {
         delete platformMock.client.getApps().get('dpns').contractId;
 
