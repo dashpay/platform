@@ -16,18 +16,18 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::consensus::basic::document::PropertyConstraintViolation;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::property_constraints::{
     AggregateKind, DocumentSystemValues, PropertyRead,
 };
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, Reflect};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
@@ -50,6 +50,10 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  *   and the UTF-8 bytes of a string property; `count`: the items of an array
  *   property, or the bytes of a byte array property. Each is 0 when the
  *   document leaves the property out;
+ * - `countPresent`: how many of two or more properties, no two alike, the
+ *   document holds, each as `present` tests it, so
+ *   `{ equal: [{ countPresent: ['email', 'phone', 'handle'] }, 1] }` asks
+ *   for exactly one of them;
  * - `countOf` and `sumOf`: a total read from state, how many documents of a
  *   type of the same contract match a filter, or the total of an integer
  *   property over them, as the type's count or sum trees keep it once the
@@ -73,6 +77,7 @@ export type PropertyConstraintExpression =
   | { length: string }
   | { byteLength: string }
   | { count: string }
+  | { countPresent: string[] }
   | { countOf: [documentType: string] | [documentType: string, filter: PropertyConstraintAggregateFilter] }
   | {
     sumOf:
@@ -150,10 +155,10 @@ export type PropertyConstraintCondition =
 
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in
- * `present` or `absent`, `text` compared with strings, `identifier` compared
- * with identifiers, `length` by the size of a string (`length` or
- * `byteLength`), `count` by the items of an array or byte array, `elements`
- * by the elements a `contains` looks among.
+ * `present`, `absent` or `countPresent`, `text` compared with strings,
+ * `identifier` compared with identifiers, `length` by the size of a string
+ * (`length` or `byteLength`), `count` by the items of an array or byte array,
+ * `elements` by the elements a `contains` looks among.
  */
 export type PropertyConstraintReadKind =
   | 'value'

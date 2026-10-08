@@ -43,8 +43,12 @@
 //! `length` and `byteLength`, the characters and the UTF-8 bytes of a string
 //! property, and `count`, the items of an array or byte array property. A
 //! property named on its own takes 0 when absent, and so does the size of one
-//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`). A string
-//! constant is written
+//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`).
+//! `countPresent` is how many of two or more properties the document holds,
+//! each as `present` tests it, so a rule bounds how many of a group are set:
+//! `{ "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }` holds
+//! a document to exactly one, and an `in` listing `[1, 2]` to one or two. A
+//! string constant is written
 //! `{ "const": "closed" }`, since a string on its own is a path; `equal` and
 //! `notEqual` compare one with a string property, or two bare paths naming
 //! string properties with each other, and an `in` whose values are strings
@@ -131,12 +135,13 @@ const ENDS_WITH: &str = "endsWith";
 const LENGTH: &str = "length";
 const BYTE_LENGTH: &str = "byteLength";
 const COUNT: &str = "count";
+const COUNT_PRESENT: &str = "countPresent";
 /// The operand key of a string constant: `{ "const": "closed" }`.
 const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
-                            ifAbsent, length, byteLength, count, countOf or sumOf";
+                            ifAbsent, length, byteLength, count, countPresent, countOf or sumOf";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -532,6 +537,10 @@ pub enum ConstraintExpression {
     /// dotted `path`, as `measure` counts it, or 0 when the document leaves it
     /// out.
     Size { measure: SizeMeasure, path: String },
+    /// `countPresent`: how many of the properties at the dotted `paths`, two
+    /// or more and no two alike, the document holds, each as
+    /// [`PropertyConstraint::Present`] tests it.
+    CountPresent(Vec<String>),
     /// A system property, `"$createdAt"` say: its value in the
     /// [`DocumentSystemValues`] the rule is judged with.
     System(SystemProperty),
@@ -575,6 +584,8 @@ impl ConstraintExpression {
     /// * a size is never a fault: a property the document leaves out, or sets
     ///   to null, has size 0, and so does a value of another type than the
     ///   one measured, which the schema validation reported first refuses;
+    /// * a `countPresent` is never a fault: it counts the properties that are
+    ///   present, whatever their type;
     /// * a system property takes its value in `system`, 0 when not given
     ///   ([`PropertyConstraint::violation`] does not judge a rule reading one it
     ///   is not given), and so does an aggregate;
@@ -612,6 +623,11 @@ impl ConstraintExpression {
             ConstraintExpression::Size { measure, path } => {
                 // A size fits a `usize`, which always fits an `i128`
                 i128::try_from(property_size(data, path, *measure))
+                    .map_err(|_| PropertyConstraintViolation::Overflow)
+            }
+            ConstraintExpression::CountPresent(paths) => {
+                // At most the number of paths, which always fits an `i128`
+                i128::try_from(paths.iter().filter(|path| is_present(data, path)).count())
                     .map_err(|_| PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::Add(operands) => {
@@ -689,6 +705,8 @@ impl ConstraintExpression {
             | ConstraintExpression::System(_) => 0,
             // One for each key and the value it takes
             ConstraintExpression::Aggregate(read) => read.filter.len(),
+            // One for each property it tests, as a `present` is one
+            ConstraintExpression::CountPresent(paths) => paths.len(),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -710,6 +728,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_) => false,
             ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::System(_)
             | ConstraintExpression::Aggregate(_) => true,
             ConstraintExpression::Add(operands)
@@ -748,6 +767,11 @@ impl ConstraintExpression {
                 }
             }
             ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
+            ConstraintExpression::CountPresent(paths) => reads.extend(
+                paths
+                    .iter()
+                    .map(|path| (path.as_str(), PropertyRead::Presence)),
+            ),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -775,6 +799,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::Aggregate(_) => {}
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -803,6 +828,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::System(_) => {}
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -834,6 +860,7 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
             | ConstraintExpression::System(_) => None,
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -1319,7 +1346,8 @@ impl PropertyConstraint {
     /// constant, every `contains` with its array and what it looks for, every
     /// `present` or `absent` with the property it names, every
     /// arithmetic operator and every operand (an integer value, a property with
-    /// or without `ifAbsent`, a size or a system property).
+    /// or without `ifAbsent`, a size or a system property), and every
+    /// `countPresent` with one more for each property it tests.
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
@@ -1983,9 +2011,10 @@ struct ParseContext<'a> {
 /// flat list says), or `not` with one condition that is not directly another
 /// `not`. An operand is an integer value, a property path, or an object with
 /// one key: `ifAbsent` with a path and an integer value, `add` or `multiply`
-/// with two or more operands, or `subtract`, `divide`, `modulo` or `power`
-/// with exactly two; a string property may take an `ifAbsent` with a string
-/// default instead. An integer value may be spelled as a float with no
+/// with two or more operands, `subtract`, `divide`, `modulo` or `power`
+/// with exactly two, or `countPresent` with two or more distinct property
+/// paths; a string property may take an `ifAbsent` with a string default
+/// instead. An integer value may be spelled as a float with no
 /// fractional part, as the meta-schema's `integer` type admits one. A literal
 /// 0 divisor, a literal negative exponent, a comparison or `in` that reads no
 /// property, which would hold for every document or for none, an ordering
@@ -2896,6 +2925,8 @@ fn parse_expression(
                 path: path.to_string(),
             }
         }
+        // What the paths name is checked against the parsed document type
+        COUNT_PRESENT => ConstraintExpression::CountPresent(count_present_paths(operands, at)?),
         // Which document type it names, and what its keys name, is checked
         // once every document type of the contract is parsed
         COUNT_OF | SUM_OF => {
@@ -2917,6 +2948,35 @@ fn parse_expression(
     };
     at.truncate(parent);
     Ok(expression)
+}
+
+/// The paths a `countPresent` lists at `at`: two or more property paths, no
+/// two alike, in declared order. A repeat is refused on every parse, as a
+/// value an `in` lists twice is: it would count one property twice.
+fn count_present_paths(paths: &Value, at: &mut String) -> Result<Vec<String>, String> {
+    let Some(paths) = paths.as_array().filter(|paths| paths.len() >= 2) else {
+        return Err(format!("at {at} must list two or more property paths"));
+    };
+    let base = at.len();
+    let mut parsed = Vec::with_capacity(paths.len());
+    // Each path with the index it first appears at, for the errors
+    let mut seen = BTreeMap::new();
+    for (index, path) in paths.iter().enumerate() {
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{index}]");
+        let Some(path) = path.as_text() else {
+            return Err(format!("at {at} must name a property path"));
+        };
+        if let Some(earlier) = seen.insert(path, index) {
+            return Err(format!(
+                "at {at} repeats the path at {}[{earlier}]",
+                &at[..base]
+            ));
+        }
+        parsed.push(path.to_string());
+        at.truncate(base);
+    }
+    Ok(parsed)
 }
 
 /// A `countOf` (`sum` false) or `sumOf` at `at`, listing a document type,
