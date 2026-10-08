@@ -3192,6 +3192,7 @@ fn should_read_a_byte_or_zero_where_there_is_none() {
             "mixed",
             Value::Array(vec![Value::U8(5), Value::Text("x".to_string())]),
         ),
+        ("float", Value::Array(vec![Value::Float(1.0), Value::U8(2)])),
         ("large", Value::Array(vec![Value::U64(256)])),
         ("fixed", Value::Bytes32([9; 32])),
         ("id", Value::Identifier([3; 32])),
@@ -3216,7 +3217,9 @@ fn should_read_a_byte_or_zero_where_there_is_none() {
         ("missing", 0, 0),
         ("meta.missing", 0, 0),
         ("title", 0, 0),
+        // An array holding anything but bytes reads no byte, even where it holds one
         ("mixed", 0, 0),
+        ("float", 1, 0),
         ("large", 0, 0),
     ] {
         assert_eq!(

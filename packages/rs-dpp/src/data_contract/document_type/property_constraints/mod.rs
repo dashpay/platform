@@ -631,9 +631,7 @@ impl ConstraintExpression {
                     .map_err(|_| PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::ByteAt { path, index } => Ok(i128::from(
-                byte_array_value(data, path)
-                    .and_then(|bytes| bytes.get(usize::from(*index)).copied())
-                    .unwrap_or(0),
+                byte_at(data, path, usize::from(*index)).unwrap_or(0),
             )),
             ConstraintExpression::Add(operands) => {
                 operands.iter().try_fold(0i128, |sum, operand| {
@@ -3440,20 +3438,59 @@ fn byte_array_value<'a>(data: &'a Value, path: &'a str) -> Option<Cow<'a, [u8]>>
         return None;
     };
     match value {
-        Value::Bytes(bytes) => Some(Cow::Borrowed(bytes)),
-        Value::Bytes20(bytes) => Some(Cow::Borrowed(bytes)),
-        Value::Bytes32(bytes) | Value::Identifier(bytes) => Some(Cow::Borrowed(bytes)),
-        Value::Bytes36(bytes) => Some(Cow::Borrowed(bytes)),
         Value::Array(items) => items
             .iter()
-            .map(|item| {
-                item.is_integer()
-                    .then(|| item.to_integer::<u8>().ok())
-                    .flatten()
-            })
+            .map(byte_item)
             .collect::<Option<Vec<u8>>>()
             .map(Cow::Owned),
+        value => byte_slice(value).map(Cow::Borrowed),
+    }
+}
+
+/// The byte at `index` of the byte array property at `path` in `data`, as
+/// [`byte_array_value`] reads the array, without collecting an array of
+/// integers into bytes: `None` when the array does not hold that byte, and
+/// when [`byte_array_value`] reads no array. Every element of an array of
+/// integers is checked, not only the one at `index`, so that an array holding
+/// anything but bytes reads no byte whichever one is asked for.
+fn byte_at(data: &Value, path: &str, index: usize) -> Option<u8> {
+    let Ok(Some(value)) = data.get_optional_value_at_path(path) else {
+        return None;
+    };
+    match value {
+        Value::Array(items) => {
+            let mut found = None;
+            for (position, item) in items.iter().enumerate() {
+                let byte = byte_item(item)?;
+                if position == index {
+                    found = Some(byte);
+                }
+            }
+            found
+        }
+        value => byte_slice(value)?.get(index).copied(),
+    }
+}
+
+/// The bytes a value holding them directly holds: `Value::Bytes` and the
+/// fixed-size forms; `None` for any other value.
+fn byte_slice(value: &Value) -> Option<&[u8]> {
+    match value {
+        Value::Bytes(bytes) => Some(bytes),
+        Value::Bytes20(bytes) => Some(bytes),
+        Value::Bytes32(bytes) | Value::Identifier(bytes) => Some(bytes),
+        Value::Bytes36(bytes) => Some(bytes),
         _ => None,
+    }
+}
+
+/// The byte an element of an array of integers is: `None` for an element
+/// that is not an integer from 0 to 255.
+fn byte_item(item: &Value) -> Option<u8> {
+    if item.is_integer() {
+        item.to_integer::<u8>().ok()
+    } else {
+        None
     }
 }
 
