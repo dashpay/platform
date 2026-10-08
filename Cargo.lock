@@ -2140,7 +2140,6 @@ dependencies = [
  "libm",
  "log",
  "nohash-hasher",
- "nonempty",
  "num_enum 0.7.6",
  "once_cell",
  "platform-serialization",

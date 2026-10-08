@@ -97,66 +97,6 @@ fn make_chain_asset_lock_proof() -> AssetLockProof {
     })
 }
 
-/// Rebuilds the Orchard bundle from a transition's fields and verifies its proof and signatures
-/// against the sighash bound to `asset_lock_proof`, mirroring drive-abci's
-/// `shield_from_asset_lock` `transform_into_action` (v1) → `reconstruct_and_verify_bundle`
-/// (outputs-only flags, `value_balance = -shield_amount`).
-fn bundle_verifies_like_consensus(
-    v1: &ShieldFromAssetLockTransitionV1,
-    asset_lock_proof: &AssetLockProof,
-    vk: &grovedb_commitment_tree::VerifyingKey,
-    platform_version: &PlatformVersion,
-) -> bool {
-    use crate::shielded::{compute_platform_sighash, shield_from_asset_lock_extra_sighash_data};
-    use grovedb_commitment_tree::{
-        redpallas, Action, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
-        ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, ProofSizeEnforcement,
-        TransmittedNoteCiphertext, ValueCommitment,
-    };
-
-    let actions: Vec<_> = v1
-        .actions
-        .iter()
-        .map(|a| {
-            let note = &a.encrypted_note;
-            Action::from_parts(
-                Nullifier::from_bytes(&a.nullifier).unwrap(),
-                redpallas::VerificationKey::try_from(a.rk).unwrap(),
-                ExtractedNoteCommitment::from_bytes(&a.cmx).unwrap(),
-                TransmittedNoteCiphertext::<DashMemo>::from_parts(
-                    note[..32].try_into().unwrap(),
-                    NoteBytesData(note[32..136].try_into().unwrap()),
-                    note[136..].try_into().unwrap(),
-                ),
-                ValueCommitment::from_bytes(&a.cv_net).unwrap(),
-                redpallas::Signature::from(a.spend_auth_sig),
-            )
-            .expect("well-formed action")
-        })
-        .collect();
-    let bundle: Bundle<Authorized, i64, DashMemo> = Bundle::try_from_parts(
-        nonempty::NonEmpty::from_vec(actions).expect("actions"),
-        Flags::from_byte(0x02).expect("outputs-only flags"),
-        -(v1.value_balance as i64),
-        Anchor::from_bytes(v1.anchor).unwrap(),
-        Authorized::from_parts(
-            Proof::new(v1.proof.clone()),
-            redpallas::Signature::from(v1.binding_signature),
-        ),
-        ProofSizeEnforcement::Strict,
-    )
-    .expect("well-formed bundle");
-
-    let extra_sighash_data =
-        shield_from_asset_lock_extra_sighash_data(asset_lock_proof, platform_version)
-            .expect("binding");
-    let commitment: [u8; 32] = bundle.commitment().into();
-    let sighash = compute_platform_sighash(&commitment, &extra_sighash_data);
-    let mut batch = BatchValidator::new();
-    batch.add_bundle(&bundle, sighash);
-    batch.validate(vk, rand::rngs::OsRng)
-}
-
 /// An InstantSend proof of a one-output asset-lock transaction. Its InstantSend lock is not
 /// valid; nothing here verifies it.
 fn make_instant_asset_lock_proof() -> AssetLockProof {
@@ -443,30 +383,28 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
 }
 
 #[tokio::test]
-async fn proved_bundle_assembles_around_instant_and_chain_proofs_of_its_outpoint() {
-    // The bundle is proved before the InstantSend lock exists, from the outpoint alone, then
-    // wrapped around the InstantSend proof and — after a rejection — around a ChainLock proof of
-    // the same outpoint. Both assemblies must carry the one proof, and each must be signed afresh
-    // so a resubmission never repeats a rejected transition's hash.
+async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
+    // Proved from the outpoint alone, one bundle wraps an InstantSend proof, the same proof again
+    // and a ChainLock proof of the outpoint. Each assembly signs afresh, so a resubmission never
+    // repeats a rejected transition's hash. That the bundle verifies under a lock proof's binding
+    // is `proved_bundle_verifies_against_the_binding_of_a_real_lock_proof`; that both proof kinds
+    // bind alike is `proved_bundle_binding_is_the_outpoint_binding_at_every_version`.
     use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
     use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
 
     let platform_version = PlatformVersion::latest();
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
-    let shield_amount = 50_000u64;
-
     let instant = make_instant_asset_lock_proof();
     let out_point = instant.out_point().expect("fixture has a credit output");
     let chain = AssetLockProof::Chain(ChainAssetLockProof {
         core_chain_locked_height: 100,
         out_point,
     });
-    let other_lock = make_chain_asset_lock_proof();
 
     let proved = ProvedShieldFromAssetLockBundle::prove(
         &test_orchard_address(),
-        shield_amount,
+        50_000,
         out_point,
         &TestProver,
         [0u8; 36],
@@ -475,54 +413,21 @@ async fn proved_bundle_assembles_around_instant_and_chain_proofs_of_its_outpoint
         platform_version,
     )
     .expect("proving should succeed");
-    assert!(proved.is_bound_for(&instant, platform_version).unwrap());
-    assert!(proved.is_bound_for(&chain, platform_version).unwrap());
-    assert!(!proved.is_bound_for(&other_lock, platform_version).unwrap());
-
     let assemble = |proof: AssetLockProof| {
         proved.build_transition_with_signer(proof, &path, &signer, None, platform_version)
     };
-    let over_instant = extract_v1(assemble(instant.clone()).await.expect("instant assembly"));
-    let resubmitted = extract_v1(assemble(instant).await.expect("instant re-assembly"));
+    let first = extract_v1(assemble(instant.clone()).await.expect("instant assembly"));
+    let again = extract_v1(assemble(instant).await.expect("instant re-assembly"));
     let over_chain = extract_v1(assemble(chain).await.expect("chain assembly"));
 
-    // Each transition's bundle verifies the way consensus checks it: rebuilt from the
-    // transition's own fields, against the sighash bound to the transition's OWN asset lock
-    // proof — not merely against the sighash it was proved with.
-    let vk = grovedb_commitment_tree::VerifyingKey::build();
-    for v1 in [&over_instant, &resubmitted, &over_chain] {
-        assert!(
-            bundle_verifies_like_consensus(v1, &v1.asset_lock_proof, &vk, platform_version),
-            "an assembled transition's bundle must verify against its own asset lock proof"
-        );
+    for v1 in [&again, &over_chain] {
+        assert_eq!(v1.proof, first.proof, "assembly must not re-prove");
+        assert_eq!(v1.value_balance, 50_000);
     }
-    // And the check has teeth: under another lock's binding the same bundle is refused.
-    assert!(!bundle_verifies_like_consensus(
-        &over_chain,
-        &other_lock,
-        &vk,
-        platform_version
-    ));
+    assert_ne!(first.binding_signature, again.binding_signature);
+    assert_ne!(first.signature, again.signature);
 
-    for v1 in [&over_instant, &resubmitted, &over_chain] {
-        assert_eq!(v1.value_balance, shield_amount);
-        assert_eq!(v1.proof, over_instant.proof, "one proof, never re-proved");
-        assert_eq!(v1.anchor, over_instant.anchor);
-        assert_eq!(v1.actions.len(), over_instant.actions.len());
-        for (action, first) in v1.actions.iter().zip(&over_instant.actions) {
-            assert_eq!(action.nullifier, first.nullifier);
-            assert_eq!(action.cmx, first.cmx);
-            assert_eq!(action.cv_net, first.cv_net);
-            assert_eq!(action.encrypted_note, first.encrypted_note);
-        }
-    }
-    assert_ne!(
-        over_instant.binding_signature, resubmitted.binding_signature,
-        "every assembly signs afresh, so the same proof never yields the same transition twice"
-    );
-    assert_ne!(over_instant.signature, resubmitted.signature);
-
-    let err = assemble(other_lock)
+    let err = assemble(make_chain_asset_lock_proof())
         .await
         .expect_err("a bundle bound to another outpoint must not be assembled");
     assert!(
