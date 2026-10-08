@@ -6,11 +6,11 @@
 //! property); its proven values are reinjected as the OUTER query's
 //! primary keys. Both halves are proven as ONE merged grovedb proof —
 //! `prove_query_many` merges the limited inner query with the derived
-//! outer by-ids query (grovedb merge slot 2 lifts the inner limit into
-//! a per-instance branch limit), so a single root binds the whole
-//! composition by construction; the surrounding tenderdash layer then
-//! binds that root to the quorum-signed app hash (see
-//! `rs-drive-proof-verifier`).
+//! outer by-ids query, the inner limit carried as a per-instance cap on
+//! its root query (the form grovedb's merge lifts a global limit into),
+//! so a single root binds the whole composition by construction; the
+//! surrounding tenderdash layer then binds that root to the
+//! quorum-signed app hash (see `rs-drive-proof-verifier`).
 //!
 //! There is no separate chained query type: a chained query is a
 //! [`DriveDocumentQuery`] — the inner half — whose
@@ -553,10 +553,20 @@ impl<'a> DriveDocumentQuery<'a> {
     /// the prover (`prove_query_many` merges these) and the verifier
     /// (`PathQuery::merge` on the same inputs at the same grove
     /// version) call, so the merged query is byte-identical on both
-    /// sides. Grovedb's merge lifts the inner query's global
-    /// `SizedQuery::limit` into its branch's per-instance
-    /// `Query::limit`, which is exact here: the branch instance
-    /// executes once.
+    /// sides.
+    ///
+    /// The inner component is the composite page
+    /// ([`Self::page_path_query`]): a chained query is that shape with one
+    /// by-id join, and the page carries its limit as its root query's
+    /// per-instance cap, exactly what grovedb's merge lifts a global limit
+    /// into (exact here: the branch instance executes once). Authoring the
+    /// cap up front gives the inner half one form whether or not anything
+    /// merges with it, so the server's read of the inner page, the proof
+    /// and the verifier's bootstrap pass select the same rows. Under a
+    /// global limit they would not: grovedb cuts a layer that fans out
+    /// across an index's prefix values to that many branches and charges
+    /// an empty branch against it, while the cap budgets only the rows
+    /// below.
     pub fn chained_proof_path_queries(
         &self,
         join_values: &[Identifier],
@@ -575,7 +585,10 @@ impl<'a> DriveDocumentQuery<'a> {
                 MAX_CHAINED_JOIN_VALUES,
             ))));
         }
-        let inner = self.construct_path_query(None, platform_version)?;
+        // Edited in place, as are the inner page reads of both executors
+        // below: a chained query needs an indexOnly inner type
+        // (`validate_chained`), which only protocol version 14 parses.
+        let inner = self.page_path_query(platform_version)?;
         if join_values.is_empty() {
             return Ok(vec![inner]);
         }
@@ -606,7 +619,11 @@ impl DriveDocumentQuery<'_> {
         // are: refused before any read when the inner index lacks a property.
         self.refuse_an_uncovered_index_only_projection(platform_version)?;
 
-        let (inner_documents, _skipped) = self.execute_index_only_documents_no_proof_internal(
+        // Read from the inner component the proof covers, so a read with and
+        // without a proof return the same page (see `chained_proof_path_queries`)
+        let inner_documents = Self::materialize_component(
+            self,
+            &self.page_path_query(platform_version)?,
             drive,
             transaction,
             drive_operations,
@@ -669,14 +686,14 @@ impl DriveDocumentQuery<'_> {
     ///
     /// The inner page and the derived outer by-ids fetch are proven as
     /// ONE grovedb proof: [`Self::chained_proof_path_queries`] builds the
-    /// component path queries and `prove_query_many` merges them
-    /// (grovedb merge slot 2 LIFTS the inner query's global limit into
-    /// its merged branch's per-instance `Query::limit` — semantically
-    /// exact, since the branch executes once). One proof means one root
-    /// by construction.
+    /// component path queries and `prove_query_many` merges them, the
+    /// inner query's limit riding as its branch's per-instance
+    /// `Query::limit`. One proof means one root by construction.
     ///
-    /// The materialize pass (which produces the join values the outer
-    /// component derives from) and the prove pass still both read
+    /// The materialize pass reads the inner page from that very inner
+    /// component, so the join values the outer component derives from
+    /// are the ones the proof's inner branch shows. The materialize pass
+    /// and the prove pass still both read
     /// committed state — grovedb proves committed state only — so the
     /// sequence is BRACKETED by root-hash reads and retried if a block
     /// commit interleaved; otherwise the proof's inner branch could
@@ -697,6 +714,7 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
         self.validate_chained(platform_version)?;
+        let inner_path_query = self.page_path_query(platform_version)?;
 
         // Block commits are seconds apart while an attempt is
         // milliseconds, so a bracket collision is rare and two in a row
@@ -710,7 +728,9 @@ impl DriveDocumentQuery<'_> {
 
             // Materialize the INNER half only — the join values the
             // outer component derives from live in its projections.
-            let (inner_documents, _skipped) = self.execute_index_only_documents_no_proof_internal(
+            let inner_documents = Self::materialize_component(
+                self,
+                &inner_path_query,
                 drive,
                 None,
                 drive_operations,
