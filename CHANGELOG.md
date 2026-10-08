@@ -2,6 +2,12 @@
 
 ### Changed
 
+- **Rust dependencies:** pin rust-dashcore to PR #1145 (`40e7b24c`) to accept
+  legacy BLS public-key encodings through binary Serde. PlatformNodeId storage
+  compatibility is not covered by this update.
+- **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
+  `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
+
 - **dpp (Rust API migration):** BLS types now live under `dpp::bls::{PublicKey,
   SecretKey, Signature, BlsError}`; the generic `dpp::bls_signatures` re-export
   is removed. Use `PublicKey::to_bytes()`, `SecretKey::from_be_bytes()` returning

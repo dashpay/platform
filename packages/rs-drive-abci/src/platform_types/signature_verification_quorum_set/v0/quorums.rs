@@ -80,7 +80,8 @@ impl<Q: Quorum> Quorums<Q> {
 
             // Finalize the hash
             let hash_result = sha256d::Hash::from_engine(hasher);
-            scores.push((quorum_hash, quorum, hash_result.into()));
+            // Scores use raw digest bytes, without reversal, at every protocol version.
+            scores.push((quorum_hash, quorum, hash_result.to_byte_array()));
         }
 
         if scores.is_empty() {
