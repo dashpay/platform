@@ -2203,7 +2203,8 @@ fn should_refuse_a_malformed_size_operand() {
         (
             platform_value!({ "size": "title" }),
             "names \"size\", which is not one of add, subtract, multiply, divide, modulo, \
-             power, min, max, abs, ifAbsent, length, byteLength, count, countOf or sumOf",
+             power, min, max, abs, ifAbsent, length, byteLength, count, countPresent, countOf or \
+             sumOf",
         ),
     ] {
         expect_refusal(
@@ -2353,6 +2354,161 @@ fn should_compare_a_size_with_other_properties() {
         ),
         Some(PropertyConstraintViolation::NotMet)
     );
+}
+
+// ── countPresent ────────────────────────────────────────────────────────
+
+/// `countPresent` lists two or more paths in declared order, is one node plus one for
+/// each, reads each by presence, and alone keeps a comparison with a literal
+/// meaningful.
+#[test]
+fn should_parse_count_present() {
+    let rule = parse_rule_value(platform_value!({
+        "equal": [{ "countPresent": ["email", "phone", "meta.handle"] }, 1]
+    }));
+    assert_eq!(
+        rule,
+        compare(
+            ConstraintComparison::Equal,
+            ConstraintExpression::CountPresent(vec![
+                "email".to_string(),
+                "phone".to_string(),
+                "meta.handle".to_string(),
+            ]),
+            ConstraintExpression::Value(1)
+        )
+    );
+    // equal, countPresent, its three paths, 1
+    assert_eq!(rule.node_count(), 6);
+    assert_eq!(
+        rule.property_reads(),
+        [
+            ("email", PropertyRead::Presence),
+            ("phone", PropertyRead::Presence),
+            ("meta.handle", PropertyRead::Presence)
+        ]
+    );
+
+    // An `in` bounds the count from both sides
+    let rule = parse_rule_value(platform_value!({
+        "in": [{ "countPresent": ["email", "phone", "handle"] }, [1, 2]]
+    }));
+    assert_eq!(
+        rule,
+        PropertyConstraint::In {
+            operand: ConstraintExpression::CountPresent(vec![
+                "email".to_string(),
+                "phone".to_string(),
+                "handle".to_string(),
+            ]),
+            values: BTreeSet::from([1, 2]),
+        }
+    );
+    // in, countPresent, its three paths, two values
+    assert_eq!(rule.node_count(), 7);
+}
+
+#[test]
+fn should_refuse_a_malformed_count_present() {
+    for (operand, needle) in [
+        (
+            platform_value!({ "countPresent": ["email"] }),
+            "at equal[0].countPresent must list two or more property paths",
+        ),
+        (
+            platform_value!({ "countPresent": "email" }),
+            "at equal[0].countPresent must list two or more property paths",
+        ),
+        (
+            platform_value!({ "countPresent": ["email", 1] }),
+            "at equal[0].countPresent[1] must name a property path",
+        ),
+        (
+            platform_value!({ "countPresent": ["email", "phone", "email"] }),
+            "at equal[0].countPresent[2] repeats the path at equal[0].countPresent[0]",
+        ),
+    ] {
+        expect_refusal(
+            platform_value!({ "rule": { "equal": [operand, 1] } }),
+            needle,
+        );
+    }
+}
+
+/// A property counts as `present` would find it: held with a value other than null,
+/// 0 and false included, and an object only with a member present.
+#[test]
+fn should_count_the_properties_a_document_holds() {
+    let values = data(&[
+        ("email", Value::Text("a@b.c".to_string())),
+        ("phone", Value::Null),
+        ("zero", Value::U64(0)),
+        ("off", Value::Bool(false)),
+        ("emptyObject", data(&[])),
+        (
+            "contact",
+            data(&[("handle", Value::Text("@a".to_string()))]),
+        ),
+    ]);
+    for (paths, expected) in [
+        (platform_value!(["email", "phone"]), 1),
+        (platform_value!(["phone", "missing"]), 0),
+        (platform_value!(["zero", "off"]), 2),
+        (platform_value!(["emptyObject", "contact"]), 1),
+        (
+            platform_value!(["contact.handle", "contact.other", "email"]),
+            2,
+        ),
+    ] {
+        assert_eq!(
+            evaluate(platform_value!({ "countPresent": paths.clone() }), &values),
+            Ok(expected),
+            "{paths:?}"
+        );
+    }
+}
+
+/// Exactly one, at most one, at least two and one or two of a group, judged
+/// against documents setting none to all of it.
+#[test]
+fn should_bound_how_many_of_a_group_a_document_sets() {
+    let group = || platform_value!({ "countPresent": ["email", "phone", "handle"] });
+    let rules = [
+        ("exactlyOne", platform_value!({ "equal": [group(), 1] })),
+        (
+            "atMostOne",
+            platform_value!({ "lessThanOrEqual": [group(), 1] }),
+        ),
+        (
+            "atLeastTwo",
+            platform_value!({ "greaterThanOrEqual": [group(), 2] }),
+        ),
+        ("oneOrTwo", platform_value!({ "in": [group(), [1, 2]] })),
+    ];
+    let set = |count: usize| {
+        data(
+            &[("email", "a@b.c"), ("phone", "555"), ("handle", "@a")][..count]
+                .iter()
+                .map(|(key, value)| (*key, Value::Text(value.to_string())))
+                .collect::<Vec<_>>(),
+        )
+    };
+    // Whether each rule holds for 0, 1, 2 and 3 of the group set
+    for ((name, rule), holds) in rules.into_iter().zip([
+        [false, true, false, false],
+        [true, true, false, false],
+        [false, false, true, true],
+        [false, true, true, false],
+    ]) {
+        let rule = parse_rule_value(rule);
+        for (count, holds) in holds.into_iter().enumerate() {
+            assert_eq!(
+                rule.violation(&set(count), &DocumentSystemValues::default()),
+                (!holds).then_some(PropertyConstraintViolation::NotMet),
+                "{name} with {count} set"
+            );
+        }
+    }
 }
 
 // ── system times and heights ────────────────────────────────────────────
