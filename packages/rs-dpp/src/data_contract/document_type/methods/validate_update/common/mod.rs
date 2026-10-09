@@ -11,7 +11,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::property::{ByteArrayPropertySizes, DocumentPropertyType};
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -432,7 +432,25 @@ impl DocumentTypeRef<'_> {
             return Ok(SimpleConsensusValidationResult::new());
         }
 
-        let mut old_document_schema_json = match self.schema().try_to_validating_json() {
+        // A property type shorthand is compared as the long form it stands
+        // for, as the parse reads it, so rewriting a property from one
+        // spelling to the other is no change. Both schemas passed the
+        // expansion when their contracts were parsed. Inert before protocol
+        // version 14, where `expand_property_type_shorthands` is `None` and
+        // rewrites nothing: the schemas are compared as they always were.
+        let old_expanded_schema =
+            DocumentType::expand_property_type_shorthands(self.schema(), false, platform_version)?;
+        let new_expanded_schema = DocumentType::expand_property_type_shorthands(
+            new_document_type.schema(),
+            false,
+            platform_version,
+        )?;
+        let old_schema = old_expanded_schema.as_ref().unwrap_or(self.schema());
+        let new_schema = new_expanded_schema
+            .as_ref()
+            .unwrap_or(new_document_type.schema());
+
+        let mut old_document_schema_json = match old_schema.try_to_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -445,8 +463,7 @@ impl DocumentTypeRef<'_> {
             }
         };
 
-        let mut new_document_schema_json = match new_document_type.schema().try_to_validating_json()
-        {
+        let mut new_document_schema_json = match new_schema.try_to_validating_json() {
             Ok(json_value) => json_value,
             Err(e) => {
                 return Ok(SimpleConsensusValidationResult::new_with_error(

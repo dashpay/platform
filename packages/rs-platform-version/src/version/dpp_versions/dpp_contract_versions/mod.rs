@@ -167,6 +167,16 @@ pub struct DocumentTypeSchemaVersions {
     /// contract registration. `None` on versions that predate the keyword: they ignore
     /// it entirely, exactly as they parsed before it existed.
     pub apply_generated_from: OptionalFeatureVersion,
+    /// `DocumentType::expand_property_type_shorthands`: rewrites the property
+    /// type shorthands of a document type schema and of the contract's
+    /// `$defs` into the long form they stand for, `"type": "identifier"` into
+    /// a 32-byte identifier byte array and `"type": "bytes"` with `"size": n`
+    /// into a byte array of exactly `n` bytes, so the meta-schema, the parser,
+    /// the document validator and the contract update comparison read one
+    /// form. The contract is stored as sent. `None` on versions that predate
+    /// the shorthands: the schema is returned as sent, and every earlier
+    /// meta-schema refuses both.
+    pub expand_property_type_shorthands: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,

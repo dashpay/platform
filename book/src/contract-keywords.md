@@ -151,6 +151,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | Key | Takes | What it does | Since | Read more |
 |---|---|---|---|---|
 | `type` | `string`, `integer`, `number`, `boolean`, `object`, `array` | The kind of value. An array is a byte array or a typed array. | 1 | [type](contract-keywords/property-schemas.md#type) |
+| `type` (shorthands) | `identifier`, or `bytes` with `size` | One keyword for an identifier, or for a byte array of exactly `size` bytes (1 to 5120); read as the long form, stored as sent. | 14 | [Shorthands](contract-keywords/property-schemas.md#shorthands-identifier-and-bytes) |
 | `position` | integer | The property's place in the stored document. Required; top-level positions run 0, 1, 2 with no gap. | 1 | [position](contract-keywords/property-schemas.md#position) · [Document Serialization](serialization/document-serialization.md) |
 | `minLength`, `maxLength` | integer | A string's length in characters. | 1 | [Strings](contract-keywords/property-schemas.md#strings) |
 | `pattern` | regular expression | A string must match it. Needs `maxLength` of at most 50000. | 1 | [Strings](contract-keywords/property-schemas.md#strings) |
@@ -176,7 +177,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `generatedFrom.params` | property paths | The properties the function reads, in order. | 14 | [Params](contract-keywords/generated-from.md#params) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 
-A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
+A typed array's element (`items`) takes `type` (the `identifier` and `bytes` shorthands included, with `size`), `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
 
 ### refersTo
 
