@@ -353,11 +353,7 @@ fn validate_document_type_references_v0(
                     Ok(None) => continue,
                     Err(RepeatedKey) => return preimage_invalid(),
                 }
-                let Some((_, key)) = target
-                    .as_any_document_reference()
-                    .and_then(|declaration| declaration.lookup)
-                    .and_then(|lookup| lookup.hash_key())
-                else {
+                let Some(key) = target.lookup_hash_key() else {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "a revealed reference carries a lookup with a computed key, which the \
                          parser enforces",

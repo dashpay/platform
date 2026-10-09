@@ -90,16 +90,11 @@ fn salted_domain_hash(
         salted_domain_buffer.extend(format!("{normalized_label}.dash").as_bytes());
         return Ok(hash_double(salted_domain_buffer));
     };
-    let key = reference
-        .as_any_document_reference()
-        .and_then(|declaration| declaration.lookup)
-        .and_then(|lookup| lookup.hash_key())
-        .map(|(_, key)| key)
-        .ok_or_else(|| {
-            Error::Generic(
-                "the DPNS domain's preorderSalt reference declares no findBy function".to_string(),
-            )
-        })?;
+    let key = reference.lookup_hash_key().ok_or_else(|| {
+        Error::Generic(
+            "the DPNS domain's preorderSalt reference declares no findBy function".to_string(),
+        )
+    })?;
     key.key_value(domain_document_type, None, owner_id, domain_properties)
         .map(|(hash, _)| hash)
         .map_err(|error| {
