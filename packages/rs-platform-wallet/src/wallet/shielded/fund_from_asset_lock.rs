@@ -281,8 +281,9 @@ impl PlatformWallet {
         //
         // The bundle commits to the locked outpoint and the shield amount
         // but not to the lock's proof (see `ProvedShieldFromAssetLockBundle`),
-        // and both are known once the lock is committed to this call. So the proof starts
-        // then and runs while the resolver waits for the InstantSend lock.
+        // and both are known once the lock is committed to this call. So the
+        // proof starts then and runs while the resolver waits for the
+        // InstantSend lock.
         // Its amount is read from the tracked row, as the lock proof does
         // not exist yet; Step 3 uses the proof only if it was made for the
         // resolved outpoint and amount. A proof nobody uses is detached: it
@@ -299,19 +300,29 @@ impl PlatformWallet {
                 spawn_proof(out_point, shield_amount),
             ))
         };
-        // `try_join!` so a failed resolution returns at once.
-        let (resolution, speculative) = tokio::try_join!(
-            self.asset_locks.resolve_funding_observing_out_point(
-                funding,
-                AssetLockFundingType::AssetLockShieldedAddressTopUp,
-                /* destination_index */ 0,
-                asset_lock_signer,
-                move |out_point| {
-                    let _ = out_point_tx.send(out_point);
-                },
-            ),
-            async { Ok(speculate.await) },
-        )?;
+        let resolve = self.asset_locks.resolve_funding_observing_out_point(
+            funding,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            /* destination_index */ 0,
+            asset_lock_signer,
+            move |out_point| {
+                let _ = out_point_tx.send(out_point);
+            },
+        );
+        tokio::pin!(resolve, speculate);
+        // Resolution never waits on speculation: whatever has not started
+        // proving by the time the lock resolves is dropped.
+        let (mut speculative, mut speculating) = (None, true);
+        let resolution = loop {
+            tokio::select! {
+                biased;
+                started = &mut speculate, if speculating => {
+                    speculating = false;
+                    speculative = started;
+                }
+                resolution = &mut resolve => break resolution?,
+            }
+        };
         let ResolvedFunding {
             proof,
             path,
