@@ -57,6 +57,11 @@ use url::Url;
 #[cfg(target_arch = "wasm32")]
 const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg(test)]
+thread_local! {
+    static QUORUM_INSERT_BARRIER: std::cell::RefCell<Option<Arc<std::sync::Barrier>>> = const { std::cell::RefCell::new(None) };
+}
+
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
 #[derive(Clone)]
@@ -461,15 +466,26 @@ impl TrustedHttpContextProvider {
         if let Ok(mut cache) = cache.lock() {
             cache.put(*quorum_hash, quorum.clone());
         }
-        // A repaired key must not remain hidden behind an older entry in
-        // the other list's cache, which synchronous verification checks first.
+        #[cfg(test)]
+        QUORUM_INSERT_BARRIER.with(|barrier| {
+            if let Some(barrier) = barrier.borrow().as_ref() {
+                barrier.wait();
+            }
+        });
+        // Remove unusable entries that could shadow the repaired key, but
+        // keep usable duplicates so overlapping repairs cannot erase both.
         let other_cache = if current {
             &self.previous_quorums_cache
         } else {
             &self.current_quorums_cache
         };
         if let Ok(mut cache) = other_cache.lock() {
-            cache.pop(quorum_hash);
+            if cache
+                .peek(quorum_hash)
+                .is_some_and(|quorum| Self::parse_quorum_public_key(&quorum.key).is_err())
+            {
+                cache.pop(quorum_hash);
+            }
         }
         info!(
             quorum_hash = %hex::encode(quorum_hash),
@@ -1197,6 +1213,7 @@ mod tests {
     use dpp::bls_signatures::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::Barrier;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1739,6 +1756,52 @@ mod tests {
             quorum_key(0x41)
         );
         server.join().expect("mock quorum server must finish");
+    }
+
+    #[test]
+    fn should_keep_a_fetched_key_during_opposite_list_cache_repairs() {
+        let provider = provider_for("http://127.0.0.1:1".to_string());
+        let barrier = Arc::new(Barrier::new(2));
+        let quorum = QuorumData {
+            quorum_hash: hex::encode([0x11; 32]),
+            key: hex::encode(quorum_key(0x41)),
+            height: 1,
+            valid_members_count: 3,
+        };
+        let workers: Vec<_> = [true, false]
+            .into_iter()
+            .map(|current| {
+                let provider = provider.clone();
+                let barrier = Arc::clone(&barrier);
+                let quorum = quorum.clone();
+                thread::spawn(move || {
+                    QUORUM_INSERT_BARRIER.with(|slot| *slot.borrow_mut() = Some(barrier));
+                    let fetched = FetchedQuorums {
+                        current: Ok(if current {
+                            vec![quorum.clone()]
+                        } else {
+                            vec![]
+                        }),
+                        previous: Ok(if current { vec![] } else { vec![quorum] }),
+                    };
+                    provider
+                        .listed_key(&fetched, &[0x11; 32])
+                        .expect("the opposite-list snapshot supplies a usable key")
+                })
+            })
+            .collect();
+        for worker in workers {
+            assert_eq!(
+                worker.join().expect("cache repair worker finishes"),
+                Some(quorum_key(0x41))
+            );
+        }
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("opposite-list repairs must not erase both usable entries"),
+            quorum_key(0x41)
+        );
     }
 
     /// A provider built without synchronous refetching, as wasm builds it,
