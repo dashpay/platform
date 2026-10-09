@@ -2244,6 +2244,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Inert before this version: the earlier meta-schemas refuse
 ///     `propertyConstraints` and their parsers ignore it.
 ///
+/// 89. **Non-transferable tokens**: a format 1 token configuration
+///     (`TokenConfigurationV1`) gains `transferable`, `true` when absent and
+///     fixed at creation (no `TokenConfigUpdate` item). With `false` the batch
+///     advanced structure validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses every `TokenTransfer` from the contract the action carries
+///     (`TokenNotTransferableError`, 40726, paid, and in check tx); the
+///     document type parser, in place, refuses a cost in the contract's own
+///     such token that pays the contract owner instead of burning it
+///     (`NonTransferableTokenPaymentMustBurnError`, 10280); data contract
+///     create and update state validation 0, in place, refuse a cost in
+///     another contract's such token (40726), reusing the read that checks the
+///     token exists, external burns being refused already (10261);
+///     document-base state validation 2 refuses a payment to the contract
+///     owner in the contract's own such token again (40726), from the
+///     configuration in hand; `validate_shielded_pool_rules` refuses it with a
+///     shielded pool (`NonTransferableTokenShieldedPoolError`, 10279, unpaid
+///     at the pre-activation gate); and the pool threshold
+///     `TokenConfigUpdate` items are refused on a format 1 configuration
+///     without a pool. Mints, claims, direct purchases, burns, freezes and
+///     burn payments for the contract's own documents are unchanged.
+///     Inert before this version: only format 1 can be non-transferable, and
+///     the pre-activation gate refuses that format on every earlier version.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
