@@ -2,55 +2,23 @@ use super::*;
 use dapi_grpc::platform::v0::{
     get_contested_resource_identity_votes_request as identity_request,
     get_data_contracts_request as contracts_request,
-    get_vote_polls_by_end_date_request as polls_request, GetDataContractsRequest,
+    get_vote_polls_by_end_date_request as polls_request,
+    get_vote_polls_by_end_date_response as polls_response, GetDataContractsRequest,
 };
 use drive_proof_verifier::types::{
     DataContracts, ResourceVotesByIdentity, VotePollsGroupedByTimestamp,
 };
 use drive_proof_verifier::Error as ProofError;
 
-fn polls_response(proof: Proof, metadata: ResponseMetadata) -> GetVotePollsByEndDateResponse {
-    GetVotePollsByEndDateResponse {
-        version: Some(polls_response::Version::V0(
-            polls_response::GetVotePollsByEndDateResponseV0 {
-                result: Some(
-                    polls_response::get_vote_polls_by_end_date_response_v0::Result::Proof(proof),
-                ),
-                metadata: Some(metadata),
-            },
-        )),
-    }
-}
-
-fn votes_response(
-    proof: Proof,
-    metadata: ResponseMetadata,
-) -> GetContestedResourceIdentityVotesResponse {
-    GetContestedResourceIdentityVotesResponse {
-        version: Some(identity_response::Version::V0(
-            identity_response::GetContestedResourceIdentityVotesResponseV0 {
-                result: Some(identity_response::get_contested_resource_identity_votes_response_v0::Result::Proof(proof)),
-                metadata: Some(metadata),
-            },
-        )),
-    }
-}
-
 #[tokio::test]
 async fn should_preserve_exact_voting_pages_for_short_full_descending_and_explicit_limits() {
-    let version = PlatformVersion::latest();
+    let version = fixture::version();
     for count in [
         3,
         DEFAULT_QUERY_LIMIT as usize,
         DEFAULT_QUERY_LIMIT as usize + 1,
     ] {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let contract = fixture::populate(&drive, count, version);
-        let root = drive
-            .grove
-            .root_hash(None, &version.drive.grove_version)
-            .unwrap()
-            .expect("root");
+        let contract = fixture::contract(version);
         for ascending in [true, false] {
             for requested_limit in [None, Some(2)] {
                 let limit = requested_limit.unwrap_or(DEFAULT_QUERY_LIMIT);
@@ -62,14 +30,11 @@ async fn should_preserve_exact_voting_pages_for_short_full_descending_and_explic
                     limit: Some(limit),
                     ..query.clone()
                 };
-                let (bytes, _) = explicit
-                    .clone()
-                    .execute_with_proof(&drive, None, None, version)
-                    .expect("poll proof");
-                let (proof, metadata) = authenticated(bytes, root);
+                let response: GetVotePollsByEndDateResponse =
+                    fixture_response("polls", count, ascending, limit, "valid");
                 let wire: GetVotePollsByEndDateRequest =
                     explicit.query(&Sdk::new_mock().query_settings()).unwrap();
-                let sdk = sdk_for(&[wire], polls_response(proof, metadata), contract.clone());
+                let sdk = sdk_for(&[wire], response, contract.clone(), false);
                 let mut indices: Vec<_> = (0..count).collect();
                 if !ascending {
                     indices.reverse();
@@ -100,14 +65,11 @@ async fn should_preserve_exact_voting_pages_for_short_full_descending_and_explic
                     limit: Some(limit),
                     ..query.clone()
                 };
-                let (bytes, _) = explicit
-                    .clone()
-                    .execute_with_proof(&drive, None, None, version)
-                    .expect("identity proof");
-                let (proof, metadata) = authenticated(bytes, root);
+                let response: GetContestedResourceIdentityVotesResponse =
+                    fixture_response("votes", count, ascending, limit, "valid");
                 let wire: GetContestedResourceIdentityVotesRequest =
                     explicit.query(&Sdk::new_mock().query_settings()).unwrap();
-                let sdk = sdk_for(&[wire], votes_response(proof, metadata), contract.clone());
+                let sdk = sdk_for(&[wire], response, contract.clone(), false);
                 let mut expected: Vec<_> = (0..count)
                     .map(|i| {
                         let poll = fixture::poll(&contract, i);
@@ -228,18 +190,15 @@ fn should_preserve_explicit_unproved_unversioned_and_unrelated_query_bytes() {
 
 #[tokio::test]
 async fn should_bind_a_raw_proved_request_when_sdk_default_proofs_are_disabled() {
-    let version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(None);
-    let contract = fixture::populate(&drive, DEFAULT_QUERY_LIMIT as usize + 1, version);
-    let root = drive
-        .grove
-        .root_hash(None, &version.drive.grove_version)
-        .unwrap()
-        .expect("root");
-    let (bytes, _) = polls_query(Some(DEFAULT_QUERY_LIMIT))
-        .execute_with_proof(&drive, None, None, version)
-        .unwrap();
-    let (proof, metadata) = authenticated(bytes, root);
+    let version = fixture::version();
+    let contract = fixture::contract(version);
+    let response: GetVotePollsByEndDateResponse = fixture_response(
+        "polls",
+        DEFAULT_QUERY_LIMIT as usize + 1,
+        true,
+        DEFAULT_QUERY_LIMIT,
+        "valid",
+    );
     let settings_sdk = Sdk::new_mock();
     let omitted: GetVotePollsByEndDateRequest = polls_query(None)
         .query(&settings_sdk.query_settings())
@@ -249,7 +208,7 @@ async fn should_bind_a_raw_proved_request_when_sdk_default_proofs_are_disabled()
         .unwrap();
     let dir = tempfile::TempDir::new().unwrap();
     let response = Ok(ExecutionResponse {
-        inner: polls_response(proof, metadata),
+        inner: response,
         retries: 0,
         address: "http://127.0.0.1:9000".parse().unwrap(),
     });
@@ -259,7 +218,7 @@ async fn should_bind_a_raw_proved_request_when_sdk_default_proofs_are_disabled()
     let sdk = SdkBuilder::new_mock()
         .with_proofs(false)
         .with_version(version)
-        .with_context_provider(Provider(Arc::new(contract.clone())))
+        .with_context_provider(Provider(Arc::new(contract.clone()), quorum_key(false)))
         .with_settings(RequestSettings {
             retries: Some(0),
             ..Default::default()
@@ -286,34 +245,44 @@ async fn should_bind_a_raw_proved_request_when_sdk_default_proofs_are_disabled()
 
 #[tokio::test]
 async fn should_refuse_tampered_proof_wrong_signed_root_signature_and_changed_limit() {
-    let version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(None);
-    let contract = fixture::populate(&drive, DEFAULT_QUERY_LIMIT as usize + 1, version);
-    let root = drive
-        .grove
-        .root_hash(None, &version.drive.grove_version)
-        .unwrap()
-        .expect("root");
-    let (bytes, _) = polls_query(Some(DEFAULT_QUERY_LIMIT))
-        .execute_with_proof(&drive, None, None, version)
-        .unwrap();
-    let (valid, metadata) = authenticated(bytes.clone(), root);
-    for corruption in 0..4 {
-        let mut proof = valid.clone();
+    let contract = fixture::contract(fixture::version());
+    let cases = [
+        "truncated-proof",
+        "wrong-root",
+        "wrong-signature",
+        "changed-limit",
+        "wrong-key",
+        "malformed-signature",
+    ];
+    for kind in cases {
+        let stored_kind = if matches!(kind, "wrong-root" | "wrong-signature") {
+            kind
+        } else {
+            "valid"
+        };
+        let mut response: GetVotePollsByEndDateResponse = fixture_response(
+            "polls",
+            DEFAULT_QUERY_LIMIT as usize + 1,
+            true,
+            DEFAULT_QUERY_LIMIT,
+            stored_kind,
+        );
+        let Some(polls_response::Version::V0(v0)) = response.version.as_mut() else {
+            panic!("V0 response")
+        };
+        let Some(polls_response::get_vote_polls_by_end_date_response_v0::Result::Proof(proof)) =
+            v0.result.as_mut()
+        else {
+            panic!("proved response")
+        };
         let mut query = polls_query(None);
-        match corruption {
-            0 => proof.grovedb_proof.truncate(proof.grovedb_proof.len() / 2),
-            1 => proof = authenticated(bytes.clone(), [0; 32]).0,
-            2 => {
-                proof.signature = signing_key()
-                    .sign(SignatureSchemes::Basic, &[0; 32])
-                    .unwrap()
-                    .as_raw_value()
-                    .to_compressed()
-                    .to_vec()
+        match kind {
+            "truncated-proof" => proof.grovedb_proof.truncate(proof.grovedb_proof.len() / 2),
+            "changed-limit" => query.limit = Some(DEFAULT_QUERY_LIMIT + 1),
+            "malformed-signature" => {
+                proof.signature.pop();
             }
-            3 => query.limit = Some(DEFAULT_QUERY_LIMIT + 1),
-            _ => unreachable!(),
+            _ => (),
         }
         let explicit = VotePollsByEndDateDriveQuery {
             limit: Some(query.limit.unwrap_or(DEFAULT_QUERY_LIMIT)),
@@ -321,24 +290,22 @@ async fn should_refuse_tampered_proof_wrong_signed_root_signature_and_changed_li
         };
         let wire: GetVotePollsByEndDateRequest =
             explicit.query(&Sdk::new_mock().query_settings()).unwrap();
-        let sdk = sdk_for(
-            &[wire],
-            polls_response(proof, metadata.clone()),
-            contract.clone(),
-        );
-        let error = VotePoll::fetch_many(&sdk, query)
-            .await
-            .expect_err("untrusted page must be refused");
-        match (corruption, error) {
-            (0 | 3, dash_sdk::Error::Proof(ProofError::GroveDBError { .. })) => (),
+        let sdk = sdk_for(&[wire], response, contract.clone(), kind == "wrong-key");
+        let error = VotePoll::fetch_many(&sdk, query).await.expect_err(kind);
+        match (kind, error) {
             (
-                1 | 2,
-                dash_sdk::Error::Proof(
-                    ProofError::InvalidSignature { .. }
-                    | ProofError::SignatureVerificationError { .. },
-                ),
+                "truncated-proof" | "changed-limit",
+                dash_sdk::Error::Proof(ProofError::GroveDBError { .. }),
             ) => (),
-            (_, other) => panic!("unexpected rejection: {other}"),
+            (
+                "wrong-root" | "wrong-signature" | "wrong-key",
+                dash_sdk::Error::Proof(ProofError::InvalidSignature { .. }),
+            ) => (),
+            (
+                "malformed-signature",
+                dash_sdk::Error::Proof(ProofError::InvalidSignatureFormat { .. }),
+            ) => (),
+            (_, other) => panic!("unexpected rejection for {kind}: {other}"),
         }
     }
 }

@@ -4,12 +4,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
-use dpp::prelude::{DataContract, Identifier};
-use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::paths::VotePollPaths;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
@@ -20,16 +17,12 @@ use drive::drive::Drive;
 use drive::grovedb::Element;
 use drive::util::object_size_info::DataContractOwnedResolvedInfo;
 
-pub const VOTER: [u8; 32] = [4; 32];
-pub const END_TIME: u64 = 1_000_000;
+#[path = "voting_default_limits_data.rs"]
+mod voting_default_limits_data;
+pub use voting_default_limits_data::{contract, poll, version, END_TIME, PROTOCOL_VERSION, VOTER};
 
 pub fn populate(drive: &Drive, count: usize, version: &PlatformVersion) -> DataContract {
-    let contract = get_dpns_data_contract_fixture(
-        Some(Identifier::from([5; 32])),
-        1,
-        version.protocol_version,
-    )
-    .data_contract_owned();
+    let contract = contract(version);
     let index_name = contract
         .document_type_for_name("domain")
         .expect("DPNS domain")
@@ -114,24 +107,4 @@ pub fn populate(drive: &Drive, count: usize, version: &PlatformVersion) -> DataC
             .expect("stored end-date poll");
     }
     contract
-}
-
-/// Reconstructs the concrete poll input used to populate the fixture.
-pub fn poll(contract: &DataContract, i: usize) -> VotePoll {
-    ContestedDocumentResourceVotePoll {
-        contract_id: contract.id(),
-        document_type_name: "domain".into(),
-        index_name: contract
-            .document_type_for_name("domain")
-            .expect("domain")
-            .find_contested_index()
-            .expect("contested index")
-            .name
-            .clone(),
-        index_values: vec![
-            Value::Text("dash".into()),
-            Value::Text(format!("name{i:03}")),
-        ],
-    }
-    .into()
 }

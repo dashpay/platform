@@ -3,6 +3,9 @@
 #[path = "../../rs-drive/tests/support/voting_default_limits.rs"]
 mod fixture;
 
+#[path = "voting_default_limits/corpus.rs"]
+mod corpus;
+
 use dapi_grpc::platform::v0::{
     get_contested_resource_identity_votes_request as identity_request,
     get_vote_polls_by_end_date_request as polls_request, GetContestedResourceIdentityVotesRequest,

@@ -1748,7 +1748,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tenderdash-abci",
  "test-case",
  "thiserror 2.0.18",
  "tokio",

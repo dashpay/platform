@@ -1,0 +1,313 @@
+{
+  "protocol_version": 14,
+  "quorum_public_key": [
+    137,
+    250,
+    44,
+    128,
+    201,
+    4,
+    223,
+    160,
+    213,
+    123,
+    99,
+    142,
+    159,
+    105,
+    51,
+    49,
+    115,
+    248,
+    130,
+    187,
+    200,
+    57,
+    122,
+    81,
+    222,
+    180,
+    35,
+    114,
+    240,
+    214,
+    123,
+    169,
+    238,
+    175,
+    250,
+    54,
+    244,
+    100,
+    169,
+    148,
+    25,
+    126,
+    195,
+    196,
+    138,
+    168,
+    124,
+    130
+  ],
+  "wrong_quorum_public_key": [
+    136,
+    61,
+    115,
+    57,
+    191,
+    54,
+    188,
+    201,
+    243,
+    155,
+    177,
+    123,
+    3,
+    135,
+    188,
+    252,
+    163,
+    166,
+    200,
+    190,
+    122,
+    22,
+    120,
+    133,
+    236,
+    76,
+    17,
+    180,
+    245,
+    158,
+    166,
+    101,
+    8,
+    157,
+    106,
+    100,
+    78,
+    107,
+    30,
+    202,
+    200,
+    30,
+    28,
+    210,
+    45,
+    32,
+    167,
+    4
+  ],
+  "cases": [
+    {
+      "endpoint": "polls",
+      "count": 3,
+      "ascending": true,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "polls-3-asc-100.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 3,
+      "ascending": true,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "votes-3-asc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 3,
+      "ascending": true,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "polls-3-asc-2.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 3,
+      "ascending": true,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "votes-3-asc-2.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 3,
+      "ascending": false,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "polls-3-desc-100.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 3,
+      "ascending": false,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "votes-3-desc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 3,
+      "ascending": false,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "polls-3-desc-2.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 3,
+      "ascending": false,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "votes-3-desc-2.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 100,
+      "ascending": true,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "polls-100-asc-100.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 100,
+      "ascending": true,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "votes-100-asc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 100,
+      "ascending": true,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "polls-100-asc-2.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 100,
+      "ascending": true,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "votes-100-asc-2.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 100,
+      "ascending": false,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "polls-100-desc-100.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 100,
+      "ascending": false,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "votes-100-desc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 100,
+      "ascending": false,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "polls-100-desc-2.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 100,
+      "ascending": false,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "votes-100-desc-2.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 101,
+      "ascending": true,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "polls-101-asc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 101,
+      "ascending": true,
+      "limit": 100,
+      "kind": "wrong-root",
+      "filename": "polls-101-asc-100-wrong-root.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 101,
+      "ascending": true,
+      "limit": 100,
+      "kind": "wrong-signature",
+      "filename": "polls-101-asc-100-wrong-signature.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 101,
+      "ascending": true,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "votes-101-asc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 101,
+      "ascending": true,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "polls-101-asc-2.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 101,
+      "ascending": true,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "votes-101-asc-2.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 101,
+      "ascending": false,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "polls-101-desc-100.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 101,
+      "ascending": false,
+      "limit": 100,
+      "kind": "valid",
+      "filename": "votes-101-desc-100.bin"
+    },
+    {
+      "endpoint": "polls",
+      "count": 101,
+      "ascending": false,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "polls-101-desc-2.bin"
+    },
+    {
+      "endpoint": "votes",
+      "count": 101,
+      "ascending": false,
+      "limit": 2,
+      "kind": "valid",
+      "filename": "votes-101-desc-2.bin"
+    }
+  ]
+}

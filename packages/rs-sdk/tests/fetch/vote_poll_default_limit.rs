@@ -1,20 +1,17 @@
 //! Voting pages bind their effective limit to the authenticated SDK request.
 
-#[path = "../../../rs-drive/tests/support/voting_default_limits.rs"]
+#[path = "../../../rs-drive/tests/support/voting_default_limits_data.rs"]
 mod fixture;
 
-use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{
-    get_contested_resource_identity_votes_response as identity_response,
-    get_vote_polls_by_end_date_response as polls_response,
     GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
-    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse, Proof, ResponseMetadata,
+    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
 };
+use dapi_grpc::{mock::Mockable, Message};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dash_sdk::platform::QuerySettings;
 use dash_sdk::platform::{FetchMany, Query};
 use dash_sdk::{Sdk, SdkBuilder};
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
@@ -29,15 +26,10 @@ use drive::query::{
     contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery,
     VotePollsByEndDateDriveQuery,
 };
-use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use rs_dapi_client::{transport::TransportRequest, DumpData, ExecutionResponse, RequestSettings};
-use std::sync::Arc;
-use tenderdash_abci::{
-    proto::types::{CanonicalVote, SignedMsgType, StateId},
-    signatures::{Hashable, Signable},
-};
+use std::{fs, path::PathBuf, sync::Arc};
 
-struct Provider(Arc<DataContract>);
+struct Provider(Arc<DataContract>, [u8; 48]);
 
 impl ContextProvider for Provider {
     fn get_data_contract(
@@ -61,8 +53,7 @@ impl ContextProvider for Provider {
         _quorum_hash: [u8; 32],
         _height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        let bytes: Vec<u8> = (&signing_key().public_key()).into();
-        Ok(bytes.try_into().expect("BLS public key length"))
+        Ok(self.1)
     }
 
     fn get_platform_activation_height(&self) -> Result<u32, ContextProviderError> {
@@ -70,70 +61,67 @@ impl ContextProvider for Provider {
     }
 }
 
-fn signing_key() -> SecretKey<Bls12381G2Impl> {
-    SecretKey::from_hash(b"voting-default-limit-test")
+fn corpus_directory() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/voting_default_limits")
 }
 
-fn authenticated(proof_bytes: Vec<u8>, root: [u8; 32]) -> (Proof, ResponseMetadata) {
-    let metadata = ResponseMetadata {
-        height: 100,
-        core_chain_locked_height: 1,
-        epoch: 0,
-        time_ms: fixture::END_TIME,
-        protocol_version: PlatformVersion::latest().protocol_version,
-        chain_id: "test-chain".into(),
+fn corpus_manifest() -> serde_json::Value {
+    let bytes = fs::read(corpus_directory().join("manifest.json")).expect("fixture manifest");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("fixture manifest JSON");
+    assert_eq!(
+        manifest["protocol_version"].as_u64(),
+        Some(fixture::PROTOCOL_VERSION as u64)
+    );
+    manifest
+}
+
+fn quorum_key(wrong: bool) -> [u8; 48] {
+    let manifest = corpus_manifest();
+    let field = if wrong {
+        "wrong_quorum_public_key"
+    } else {
+        "quorum_public_key"
     };
-    let mut proof = Proof {
-        grovedb_proof: proof_bytes,
-        quorum_hash: vec![2; 32],
-        signature: vec![],
-        round: 1,
-        block_id_hash: vec![3; 32],
-        quorum_type: 1,
-    };
-    let state = StateId {
-        app_version: metadata.protocol_version as u64,
-        core_chain_locked_height: metadata.core_chain_locked_height,
-        time: metadata.time_ms,
-        app_hash: root.to_vec(),
-        height: metadata.height,
-    };
-    let vote = CanonicalVote {
-        r#type: SignedMsgType::Precommit.into(),
-        block_id: proof.block_id_hash.clone(),
-        chain_id: metadata.chain_id.clone(),
-        height: metadata.height as i64,
-        round: proof.round as i64,
-        state_id: state
-            .calculate_msg_hash(
-                &metadata.chain_id,
-                metadata.height as i64,
-                proof.round as i32,
-            )
-            .expect("signed state digest"),
-    };
-    let digest = vote
-        .calculate_sign_hash(
-            &metadata.chain_id,
-            proof.quorum_type as u8,
-            &[2; 32],
-            metadata.height as i64,
-            proof.round as i32,
-        )
-        .expect("vote digest");
-    proof.signature = signing_key()
-        .sign(SignatureSchemes::Basic, &digest)
-        .expect("test signature")
-        .as_raw_value()
-        .to_compressed()
-        .to_vec();
-    (proof, metadata)
+    let bytes: Vec<u8> = manifest[field]
+        .as_array()
+        .expect("quorum public key")
+        .iter()
+        .map(|value| u8::try_from(value.as_u64().expect("public key byte")).unwrap())
+        .collect();
+    bytes.try_into().expect("BLS public key length")
+}
+
+fn fixture_response<R: Message + Default>(
+    endpoint: &str,
+    count: usize,
+    ascending: bool,
+    limit: u16,
+    kind: &str,
+) -> R {
+    let manifest = corpus_manifest();
+    let case = manifest["cases"]
+        .as_array()
+        .expect("response cases")
+        .iter()
+        .find(|case| {
+            case["endpoint"].as_str() == Some(endpoint)
+                && case["count"].as_u64() == Some(count as u64)
+                && case["ascending"].as_bool() == Some(ascending)
+                && case["limit"].as_u64() == Some(limit as u64)
+                && case["kind"].as_str() == Some(kind)
+        })
+        .expect("response parameters in corpus");
+    let filename = case["filename"].as_str().expect("response filename");
+    let bytes = fs::read(corpus_directory().join(filename)).expect("committed response bytes");
+    R::decode(bytes.as_slice()).expect("protobuf response")
 }
 
 fn sdk_for<R: TransportRequest>(
     requests: &[R],
     response: R::Response,
     contract: DataContract,
+    wrong_quorum_key: bool,
 ) -> Sdk {
     let dir = tempfile::TempDir::new().expect("raw response fixtures");
     let response = Ok(ExecutionResponse {
@@ -147,8 +135,8 @@ fn sdk_for<R: TransportRequest>(
             .expect("raw DAPI response");
     }
     SdkBuilder::new_mock()
-        .with_version(PlatformVersion::latest())
-        .with_context_provider(Provider(Arc::new(contract)))
+        .with_version(fixture::version())
+        .with_context_provider(Provider(Arc::new(contract), quorum_key(wrong_quorum_key)))
         .with_settings(RequestSettings {
             retries: Some(0),
             ..Default::default()
@@ -180,28 +168,15 @@ fn identity_query(limit: Option<u16>) -> ContestedResourceVotesGivenByIdentityQu
 
 #[tokio::test]
 async fn should_verify_omitted_limit_poll_page_when_more_than_default_polls_exist() {
-    let version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(None);
-    let contract = fixture::populate(&drive, DEFAULT_QUERY_LIMIT as usize + 1, version);
-    let (bytes, _) = polls_query(Some(DEFAULT_QUERY_LIMIT))
-        .execute_with_proof(&drive, None, None, version)
-        .expect("finite server proof");
-    let root = drive
-        .grove
-        .root_hash(None, &version.drive.grove_version)
-        .unwrap()
-        .expect("root");
-    let (proof, metadata) = authenticated(bytes, root);
-    let response = GetVotePollsByEndDateResponse {
-        version: Some(polls_response::Version::V0(
-            polls_response::GetVotePollsByEndDateResponseV0 {
-                result: Some(
-                    polls_response::get_vote_polls_by_end_date_response_v0::Result::Proof(proof),
-                ),
-                metadata: Some(metadata),
-            },
-        )),
-    };
+    let version = fixture::version();
+    let contract = fixture::contract(version);
+    let response: GetVotePollsByEndDateResponse = fixture_response(
+        "polls",
+        DEFAULT_QUERY_LIMIT as usize + 1,
+        true,
+        DEFAULT_QUERY_LIMIT,
+        "valid",
+    );
     let query_sdk = Sdk::new_mock();
     let settings = query_sdk.query_settings();
     let omitted: GetVotePollsByEndDateRequest = polls_query(None).query(&settings).expect("query");
@@ -209,7 +184,7 @@ async fn should_verify_omitted_limit_poll_page_when_more_than_default_polls_exis
         .query(&settings)
         .expect("query");
     let original = omitted.mock_serialize().expect("original caller bytes");
-    let sdk = sdk_for(&[omitted, explicit], response, contract.clone());
+    let sdk = sdk_for(&[omitted, explicit], response, contract.clone(), false);
     let expected: Vec<_> = (0..DEFAULT_QUERY_LIMIT as usize)
         .map(|i| {
             (
@@ -237,24 +212,15 @@ async fn should_verify_omitted_limit_poll_page_when_more_than_default_polls_exis
 
 #[tokio::test]
 async fn should_verify_omitted_limit_identity_vote_page_when_more_than_default_votes_exist() {
-    let version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(None);
-    let contract = fixture::populate(&drive, DEFAULT_QUERY_LIMIT as usize + 1, version);
-    let (bytes, _) = identity_query(Some(DEFAULT_QUERY_LIMIT))
-        .execute_with_proof(&drive, None, None, version)
-        .expect("finite server proof");
-    let root = drive
-        .grove
-        .root_hash(None, &version.drive.grove_version)
-        .unwrap()
-        .expect("root");
-    let (proof, metadata) = authenticated(bytes, root);
-    let response = GetContestedResourceIdentityVotesResponse {
-        version: Some(identity_response::Version::V0(identity_response::GetContestedResourceIdentityVotesResponseV0 {
-            result: Some(identity_response::get_contested_resource_identity_votes_response_v0::Result::Proof(proof)),
-            metadata: Some(metadata),
-        })),
-    };
+    let version = fixture::version();
+    let contract = fixture::contract(version);
+    let response: GetContestedResourceIdentityVotesResponse = fixture_response(
+        "votes",
+        DEFAULT_QUERY_LIMIT as usize + 1,
+        true,
+        DEFAULT_QUERY_LIMIT,
+        "valid",
+    );
     let query_sdk = Sdk::new_mock();
     let settings = query_sdk.query_settings();
     let omitted: GetContestedResourceIdentityVotesRequest =
@@ -263,7 +229,12 @@ async fn should_verify_omitted_limit_identity_vote_page_when_more_than_default_v
         identity_query(Some(DEFAULT_QUERY_LIMIT))
             .query(&settings)
             .expect("query");
-    let sdk = sdk_for(&[omitted.clone(), explicit], response, contract.clone());
+    let sdk = sdk_for(
+        &[omitted.clone(), explicit],
+        response,
+        contract.clone(),
+        false,
+    );
     let mut expected: Vec<_> = (0..=DEFAULT_QUERY_LIMIT as usize)
         .map(|i| {
             let poll = fixture::poll(&contract, i);
