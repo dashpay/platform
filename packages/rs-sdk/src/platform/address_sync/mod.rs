@@ -82,6 +82,9 @@ const PENDING_UNKNOWN_WARN_THRESHOLD: usize = 1000;
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
 
+#[cfg(all(test, feature = "mocks"))]
+mod signed_trunk_tests;
+
 /// The subtree key for recent (per-block) address balances storage.
 /// Mirrors `drive::drive::saved_block_transactions::queries::ADDRESS_BALANCES_KEY_U8`
 /// which is gated behind the `server` feature.
@@ -146,6 +149,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             trunk: trunk_state.into_inner(),
             height: metadata.height,
             block_time_ms: metadata.time_ms,
+            protocol_version: metadata.protocol_version,
         })
     }
 

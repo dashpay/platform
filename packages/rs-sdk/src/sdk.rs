@@ -11,6 +11,7 @@ use crate::platform::Identifier;
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::platform::VersionedGrpcResponse;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use dash_context_provider::ContextProvider;
@@ -48,6 +49,51 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
 mod quorum_key;
+#[cfg(all(test, feature = "mocks"))]
+mod signed_version_tests;
+
+/// Metadata needed to select the rules for interpreting a proved response.
+/// Reading it does not authenticate it or update the SDK's stored version.
+pub trait ProofResponseMetadata {
+    /// Read the response metadata before proof and signature verification.
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error>;
+}
+
+impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error> {
+        self.metadata()
+            .map_err(|error| drive_proof_verifier::Error::ResponseDecodeError {
+                error: error.to_string(),
+            })
+    }
+}
+
+/// Select proof rules without weakening the SDK's stored version.
+pub(crate) fn verifier_version(
+    stored: &'static PlatformVersion,
+    signed: u32,
+) -> &'static PlatformVersion {
+    if signed <= stored.protocol_version {
+        return stored;
+    }
+
+    // The quorum signature binds metadata.protocol_version as StateId.app_version.
+    // Selecting interpretation rules before authentication cannot accept a false
+    // version claim: its signature must still verify before metadata is learned.
+    match PlatformVersion::get(signed) {
+        Ok(version) => version,
+        Err(_) => {
+            let newest = PlatformVersion::latest();
+            tracing::debug!(
+                signed_protocol_version = signed,
+                stored_protocol_version = stored.protocol_version,
+                verifier_protocol_version = newest.protocol_version,
+                "unverified protocol version is unknown; selecting newest known verifier table"
+            );
+            newest
+        }
+    }
+}
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -60,10 +106,9 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 ///
 /// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
 /// any of those networks still runs. Devnets seed at 14: they are cut from the
-/// current development line, and their contracts use index grammar that
-/// version 13 cannot deserialize, so a lower seed would fail the very first
-/// proved request instead of ratcheting (the ratchet only runs after a proof
-/// verifies).
+/// current development line. Proved reads can use a newer version named in
+/// their signed response metadata even when the SDK starts with a lower seed;
+/// the stored version ratchets only after proof and signature verification.
 ///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
@@ -372,6 +417,9 @@ impl Sdk {
     }
 
     /// Verify response metadata against the current state of the SDK.
+    ///
+    /// The metadata must come from a proof whose quorum signature has already
+    /// been verified: this method learns the reported protocol version.
     pub fn verify_response_metadata(
         &self,
         method_name: &str,
@@ -427,6 +475,16 @@ impl Sdk {
         metadata: &ResponseMetadata,
         arrival: Option<MetadataArrival>,
     ) -> Result<(), Error> {
+        if metadata.protocol_version > self.protocol_version_number()
+            && PlatformVersion::get(metadata.protocol_version).is_err()
+        {
+            tracing::warn!(
+                signed_protocol_version = metadata.protocol_version,
+                stored_protocol_version = self.protocol_version_number(),
+                verifier_protocol_version = PlatformVersion::latest().protocol_version,
+                "authenticated network protocol version is unknown; using newest known verifier table"
+            );
+        }
         self.verify_response_metadata_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
@@ -538,19 +596,11 @@ impl Sdk {
     ///
     /// ## Protocol version bootstrapping
     ///
-    /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
-    /// first call to this method uses the per-network [`min_protocol_version`] floor as a fallback
-    /// because no network response has been received yet to teach the SDK the real network version.
-    ///
-    /// The actual network version is learned only *after* proof parsing succeeds, when
-    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
-    /// connected network runs an older protocol version **and** proof interpretation differs
-    /// between that version and the seeded [`min_protocol_version`], the very first request may
-    /// fail before the SDK can correct itself.  Subsequent requests will use the correct version.
-    ///
-    /// This is a known bootstrap limitation.  Callers that must guarantee correct version
-    /// behaviour on the first request should pin the version explicitly via
-    /// [`SdkBuilder::with_version()`].
+    /// Proof interpretation uses the response's signed protocol version when
+    /// it is newer than the stored version, including on a pinned SDK. An
+    /// unknown newer version uses the newest known verifier table with a warning.
+    /// The stored version is learned only after proof and signature verification
+    /// succeeds, and is never lowered; a pin still governs construction.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -559,7 +609,7 @@ impl Sdk {
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
         O::Request: Mockable + Clone,
-        O::Response: Clone,
+        O::Response: Clone + ProofResponseMetadata,
     {
         let provider = self
             .context_provider()
@@ -572,10 +622,11 @@ impl Sdk {
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let verified = mock
-                    .lock()
-                    .await
-                    .parse_proof_with_metadata(request, response)?;
+                let verified = mock.lock().await.parse_proof_with_metadata(
+                    request,
+                    response,
+                    self.version(),
+                )?;
                 // Proof and signature verification (the `?`) must precede this
                 // call; see `accept_verified_metadata`.
                 self.accept_verified_metadata(method_name, &verified.1, None)?;
@@ -1076,6 +1127,9 @@ impl SdkBuilder {
     ///
     /// Select specific version of Dash Platform to use. This pins the version and
     /// disables auto-detection.
+    ///
+    /// The pin governs construction. Proof verification may use a newer table
+    /// named in the response's quorum-signed metadata without changing the pin.
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].

@@ -2,6 +2,7 @@
 //!
 //! See [MockDashPlatformSdk] for more details.
 use super::MockResponse;
+use crate::sdk::{verifier_version, ProofResponseMetadata};
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
@@ -552,9 +553,11 @@ impl MockDashPlatformSdk {
         &self,
         request: O::Request,
         response: O::Response,
+        platform_version: &'static PlatformVersion,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
+        O::Response: ProofResponseMetadata,
         Option<O>: MockResponse,
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
@@ -573,7 +576,10 @@ impl MockDashPlatformSdk {
                 Proof::default(),
             ),
             None => {
-                let version = self.version();
+                let platform_version = verifier_version(
+                    platform_version,
+                    response.response_metadata()?.protocol_version,
+                );
                 let provider = self.context_provider()
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
@@ -582,7 +588,7 @@ impl MockDashPlatformSdk {
                     request,
                     response,
                     Network::Regtest,
-                    version,
+                    platform_version,
                     &provider,
                 )?
             }
