@@ -85,7 +85,7 @@ where
     /// `Self::Query = Self::Request`; for versioned ones the
     /// [`Query::query`] impl on [`Self::Query`] performs the
     /// protocol-version-aware wire encoding using `&Sdk`.
-    type Request: TransportRequest;
+    type Request: TransportRequest<Response: Clone>;
 
     /// Fetch single object from Platform.
     ///

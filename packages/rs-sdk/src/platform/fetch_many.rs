@@ -112,7 +112,7 @@ where
         + Sync;
 
     /// Wire-encoded request that hits the network.
-    type Request: TransportRequest;
+    type Request: TransportRequest<Response: Clone>;
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
