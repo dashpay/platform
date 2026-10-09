@@ -1061,9 +1061,10 @@ impl Merge for IdentityKeysChangeSet {
 ///
 /// `IdentityChangeSet::merge` does NOT resolve `identities` vs
 /// `removed` for the same key — both fields are extended
-/// independently. Apply runs inserts before removes, so a merged
-/// changeset that contains both an insert and a tombstone for the
-/// same identity will end up "removed". Same hazard as
+/// independently. Apply runs removes first and drops the snapshots of
+/// removed identities, so a merged changeset that contains both an
+/// insert and a tombstone for the same identity will end up "removed".
+/// Same hazard as
 /// [`ContactChangeSet`]; same mitigation: every current emitter
 /// produces only one of {insert, tombstone} per key per mutation.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1102,6 +1103,13 @@ impl Merge for IdentityChangeSet {
                     // equivalent. We use LWW for consistency with the
                     // other scalars in this block.
                     existing.wallet_id = entry.wallet_id;
+                    // `identity_index` follows the latest snapshot too. It is
+                    // not immutable: discovery re-slots an identity restored
+                    // at a placeholder index into the index its key derivation
+                    // proved (`IdentityManager::adopt_into_wallet`). Keeping
+                    // the first value would flush the stale slot and leave it
+                    // occupied for the identity that legitimately owns it.
+                    existing.identity_index = entry.identity_index;
                     // DashPay profile: last-write-wins. Same policy as
                     // every other Option<T> scalar in this block —
                     // every mutation snapshot copies the current

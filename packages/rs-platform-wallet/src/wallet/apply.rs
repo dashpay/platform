@@ -152,16 +152,22 @@ impl PlatformWalletInfo {
                 removed,
             } = id_cs;
 
-            for (_id, entry) in identities {
-                self.identity_manager.apply_identity_entry(entry);
-            }
             // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
-            // reach in and touch the index from out here.
+            // reach in and touch the index from out here. Removal wins over
+            // a same-batch snapshot, so removals go first and their
+            // snapshots are dropped: a removed identity's last placement
+            // must not hold a slot a surviving entry takes over.
             for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
             }
+            self.identity_manager.apply_identity_entries(
+                identities
+                    .into_iter()
+                    .filter(|(id, _)| !removed.contains(id))
+                    .map(|(_, entry)| entry),
+            );
         }
 
         // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
@@ -1397,6 +1403,225 @@ mod tests {
         assert_eq!(restored.identity.revision(), 5);
     }
 
+    fn slotted_entry(id_byte: u8, wallet_id: Option<[u8; 32]>, index: u32) -> IdentityEntry {
+        let managed = ManagedIdentity::new(make_test_identity(id_byte, 0), index);
+        let mut entry = IdentityEntry::from_managed(&managed);
+        entry.wallet_id = wallet_id;
+        entry.identity_index = wallet_id.map(|_| index);
+        entry
+    }
+
+    fn apply_entries(
+        info: &mut PlatformWalletInfo,
+        wallet: &mut Wallet,
+        entries: impl IntoIterator<Item = IdentityEntry>,
+    ) {
+        let mut cs = IdentityChangeSet::default();
+        for entry in entries {
+            cs.identities.insert(entry.id, entry);
+        }
+        info.apply_changeset(wallet, wrap_id(cs)).expect("apply");
+    }
+
+    fn assert_slot(info: &PlatformWalletInfo, wallet_id: [u8; 32], index: u32, id_byte: u8) {
+        use dpp::identity::accessors::IdentityGettersV0;
+        let id = Identifier::from([id_byte; 32]);
+        let slotted = &info.identity_manager.wallet_identities[&wallet_id][&index];
+        assert_eq!(slotted.identity.id(), id, "slot {index}");
+        let found = info
+            .identity_manager
+            .managed_identity(&id)
+            .expect("present");
+        assert_eq!(found.identity_index, Some(index));
+        assert_eq!(found.wallet_id, Some(wallet_id));
+    }
+
+    /// Replaying a re-slot (A@0 → A@5) must move A, so a later B@0 takes the
+    /// freed slot instead of overwriting A — applied one by one or merged
+    /// into a batch that visits B (lower id) before A.
+    #[test]
+    fn apply_follows_identity_reslot_into_its_verified_index() {
+        let w = [0xAB; 32];
+        for merged in [false, true] {
+            let mut wallet = build_test_wallet();
+            let mut info = empty_info(&wallet);
+            apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 0)]);
+            if merged {
+                apply_entries(
+                    &mut info,
+                    &mut wallet,
+                    [slotted_entry(9, Some(w), 5), slotted_entry(1, Some(w), 0)],
+                );
+            } else {
+                apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 5)]);
+                apply_entries(&mut info, &mut wallet, [slotted_entry(1, Some(w), 0)]);
+            }
+            assert_eq!(info.identity_manager.identity_count(), 2, "merged={merged}");
+            assert_slot(&info, w, 5, 9);
+            assert_slot(&info, w, 0, 1);
+        }
+    }
+
+    /// An observed identity adopted into the wallet replays into its slot.
+    #[test]
+    fn apply_promotes_an_observed_identity_into_the_wallet() {
+        let w = [0xAB; 32];
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, None, 0)]);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 3)]);
+        assert_eq!(info.identity_manager.identity_count(), 1);
+        assert_slot(&info, w, 3, 9);
+    }
+
+    /// A new entry claiming a slot another identity still holds is skipped
+    /// rather than discarding the occupant.
+    #[test]
+    fn apply_does_not_insert_over_an_occupied_slot() {
+        let w = [0xAB; 32];
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 0)]);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(1, Some(w), 0)]);
+        assert_slot(&info, w, 0, 9);
+        assert!(info
+            .identity_manager
+            .managed_identity(&Identifier::from([1; 32]))
+            .is_none());
+    }
+
+    /// A batch removing an identity frees its slot for a new entry in the
+    /// same batch.
+    #[test]
+    fn apply_removal_frees_the_slot_for_a_same_batch_entry() {
+        let w = [0xAB; 32];
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, [slotted_entry(9, Some(w), 3)]);
+        let mut cs = IdentityChangeSet::default();
+        let entry = slotted_entry(1, Some(w), 3);
+        cs.identities.insert(entry.id, entry);
+        cs.removed.insert(Identifier::from([9; 32]));
+        info.apply_changeset(&mut wallet, wrap_id(cs))
+            .expect("apply");
+        assert_eq!(info.identity_manager.identity_count(), 1);
+        assert_slot(&info, w, 3, 1);
+    }
+
+    /// Merge per-mutation changesets the way a Manual-flush buffer does.
+    fn merged(changesets: impl IntoIterator<Item = IdentityChangeSet>) -> IdentityChangeSet {
+        use crate::changeset::Merge;
+        let mut all = IdentityChangeSet::default();
+        for cs in changesets {
+            all.merge(cs);
+        }
+        all
+    }
+
+    fn snapshot(entry: IdentityEntry) -> IdentityChangeSet {
+        let mut cs = IdentityChangeSet::default();
+        cs.identities.insert(entry.id, entry);
+        cs
+    }
+
+    /// Replay a merged batch twice; both applications must reach the state
+    /// the mutations produced.
+    fn replay_twice(
+        seed: impl IntoIterator<Item = IdentityEntry> + Clone,
+        batch: IdentityChangeSet,
+        check: impl Fn(&PlatformWalletInfo),
+    ) {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        apply_entries(&mut info, &mut wallet, seed);
+        for _ in 0..2 {
+            info.apply_changeset(&mut wallet, wrap_id(batch.clone()))
+                .expect("apply");
+            check(&info);
+        }
+    }
+
+    /// A moved to 5, then removed, then B added at 5: the merged batch keeps
+    /// A's snapshot beside its tombstone, which must not keep B out.
+    #[test]
+    fn should_place_an_entry_in_the_slot_of_a_removed_identity() {
+        let w = [0xAB; 32];
+        let mut removal = IdentityChangeSet::default();
+        removal.removed.insert(Identifier::from([9; 32]));
+        let batch = merged([
+            snapshot(slotted_entry(9, Some(w), 5)),
+            removal,
+            snapshot(slotted_entry(1, Some(w), 5)),
+        ]);
+        replay_twice([slotted_entry(9, Some(w), 0)], batch, |info| {
+            assert_eq!(info.identity_manager.identity_count(), 1);
+            assert_slot(info, w, 5, 1);
+        });
+    }
+
+    /// A@0/B@1 swapped through free slot 2 merges into A@1/B@0, which replay
+    /// must install even though each move waits on the other.
+    #[test]
+    fn should_replay_a_merged_slot_swap() {
+        let w = [0xAB; 32];
+        let batch = merged([
+            snapshot(slotted_entry(9, Some(w), 2)),
+            snapshot(slotted_entry(1, Some(w), 0)),
+            snapshot(slotted_entry(9, Some(w), 1)),
+        ]);
+        replay_twice(
+            [slotted_entry(9, Some(w), 0), slotted_entry(1, Some(w), 1)],
+            batch,
+            |info| {
+                assert_eq!(info.identity_manager.identity_count(), 2);
+                assert_slot(info, w, 1, 9);
+                assert_slot(info, w, 0, 1);
+                assert!(info.identity_manager.out_of_wallet_identities.is_empty());
+            },
+        );
+    }
+
+    /// A move blocked by an identity the batch leaves in place keeps its slot.
+    #[test]
+    fn should_keep_a_move_blocked_by_a_stationary_identity_in_place() {
+        let w = [0xAB; 32];
+        replay_twice(
+            [slotted_entry(9, Some(w), 0), slotted_entry(1, Some(w), 1)],
+            snapshot(slotted_entry(9, Some(w), 1)),
+            |info| {
+                assert_slot(info, w, 0, 9);
+                assert_slot(info, w, 1, 1);
+            },
+        );
+    }
+
+    /// A swap whose slot a third entry also claims (an inconsistent batch)
+    /// is not staged, so no identity is stranded outside the wallet.
+    #[test]
+    fn should_not_stage_a_swap_whose_slot_is_claimed_twice() {
+        let w = [0xAB; 32];
+        let batch = merged([
+            snapshot(slotted_entry(1, Some(w), 1)),
+            snapshot(slotted_entry(3, Some(w), 0)),
+            snapshot(slotted_entry(2, Some(w), 0)),
+        ]);
+        replay_twice(
+            [
+                slotted_entry(1, Some(w), 0),
+                slotted_entry(3, Some(w), 1),
+                slotted_entry(2, Some(w), 5),
+            ],
+            batch,
+            |info| {
+                assert_eq!(info.identity_manager.identity_count(), 3);
+                assert!(info.identity_manager.out_of_wallet_identities.is_empty());
+                assert_slot(info, w, 0, 1);
+                assert_slot(info, w, 1, 3);
+                assert_slot(info, w, 5, 2);
+            },
+        );
+    }
+
     /// A contact tombstone for a present (non-orphan) owner
     /// must drop the matching pending request.
     #[test]
@@ -1459,6 +1684,8 @@ mod tests {
             avatar_hash: Some([0xaa; 32]),
             avatar_fingerprint: Some([0xbb; 8]),
             public_message: Some("hello world".into()),
+            shielded_address: Some(vec![0xcc; 43]),
+            ..Default::default()
         };
 
         // Mutate A (persists internally via noop persister).

@@ -6,6 +6,7 @@ use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::budget_spent;
+use crate::wallet::identity::state::VerifiedPlacement;
 
 use super::*;
 
@@ -449,15 +450,38 @@ impl IdentityWallet {
                                         "Wallet info not found in wallet manager".to_string(),
                                     )
                                 })?;
-                        let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
-                        if is_new {
-                            info_guard.identity_manager.add_identity(
-                                identity.clone(),
-                                identity_index,
-                                wallet_id,
-                                &self.persister,
-                            )?;
-                        }
+                        // The key hash at `identity_index` proved the index: add
+                        // the identity there, or move an identity known from
+                        // elsewhere into that slot. A slot held by a different
+                        // identity (whether the incoming one is new or known)
+                        // means one of the two local records is stale.
+                        // Skip this index without touching either identity, mark
+                        // it unanswered so the next launch rescans, and keep
+                        // walking: aborting here would also stop the stale
+                        // record from reaching its own verified slot higher up
+                        // the walk, which is what frees this one.
+                        let is_new = match info_guard.identity_manager.place_verified_identity(
+                            identity.clone(),
+                            identity_index,
+                            wallet_id,
+                            &self.persister,
+                        ) {
+                            Ok(placement) => placement == VerifiedPlacement::Added,
+                            Err(e @ PlatformWalletError::IdentityIndexOccupied { .. }) => {
+                                drop(wm_guard);
+                                tracing::warn!(
+                                    index = identity_index,
+                                    error = %e,
+                                    "identity discovery: verified slot holds another identity; \
+                                     leaving both untouched and rescanning later"
+                                );
+                                tally.record_sighting();
+                                tally.record_conflict(identity_index);
+                                identity_index += 1;
+                                continue;
+                            }
+                            Err(e) => return Err(e),
+                        };
 
                         if let Some(managed) = info_guard
                             .identity_manager
@@ -726,6 +750,9 @@ struct ScanTally {
     /// together, because to a later launch they are the same fact: an index
     /// nobody answered.
     aborted_at_index: Option<u32>,
+    /// Indices whose verified identity could not be placed because its slot
+    /// holds a different local identity. Unanswered for the verdict.
+    conflicted_indices: Vec<u32>,
 }
 
 impl ScanTally {
@@ -766,16 +793,22 @@ impl ScanTally {
         self.aborted_at_index = Some(index);
     }
 
+    /// Platform answered at `index`, but the identity could not be placed
+    /// because its verified slot holds a different local identity. The index
+    /// counts as unanswered (so the verdict is incomplete and a later launch
+    /// rescans) without touching the probe counters: Platform did answer.
+    fn record_conflict(&mut self, index: u32) {
+        self.conflicted_indices.push(index);
+    }
+
     /// Every index this scan did not answer, ascending — unanswered probes
     /// plus the index a local fault abandoned it at.
     fn unanswered_indices(&self) -> Vec<u32> {
         let mut indices = self.failed_indices.clone();
-        if let Some(index) = self.aborted_at_index {
-            if !indices.contains(&index) {
-                indices.push(index);
-                indices.sort_unstable();
-            }
-        }
+        indices.extend(self.aborted_at_index);
+        indices.extend(self.conflicted_indices.iter().copied());
+        indices.sort_unstable();
+        indices.dedup();
         indices
     }
 
@@ -1327,6 +1360,22 @@ mod tests {
             tally.failed_probes, 1,
             "a device-side fault is not a probe Platform failed to answer"
         );
+    }
+
+    /// A verified identity whose slot holds another local identity is skipped,
+    /// not a fault: the walk goes on (the hit still resets the gap counter),
+    /// no probe counter moves, and the index is unanswered so the next launch
+    /// rescans instead of trusting a complete verdict.
+    #[test]
+    fn a_slot_conflict_keeps_walking_and_leaves_the_scan_incomplete() {
+        let mut tally = run_scan(5, [Ok(None), Ok(None)]);
+        tally.record_sighting();
+        tally.record_conflict(2);
+        assert!(tally.should_continue(3), "the hit resets the gap counter");
+        let verdict = tally.verdict(0, 3);
+        assert!(!verdict.complete);
+        assert_eq!(verdict.failed_indices, vec![2]);
+        assert_eq!(tally.failed_probes, 0, "Platform answered the probe");
     }
 
     /// A local fault at an index that ALSO went unanswered is recorded once.

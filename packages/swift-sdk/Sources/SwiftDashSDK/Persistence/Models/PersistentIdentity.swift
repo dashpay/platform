@@ -425,6 +425,10 @@ extension PersistentIdentity {
         identityId: Data
     ) -> Bool {
         guard let row = fetch(in: context, identityId: identityId) else { return false }
+        // Payment-address rows reference their owner by id only, so no
+        // relationship cascade reaches them.
+        try? PersistentDashpayPaymentAddresses.removeOwned(
+            in: context, networkRaw: row.networkRaw, ownerIdentityId: identityId)
         context.delete(row)
         return true
     }

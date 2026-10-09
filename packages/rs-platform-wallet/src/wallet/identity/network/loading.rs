@@ -243,14 +243,16 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            if info.identity_manager.identity(&identity_id).is_none() {
-                info.identity_manager.add_identity(
-                    identity.clone(),
-                    identity_index,
-                    wallet_id,
-                    &self.persister,
-                )?;
-            }
+            // The probe at `identity_index` proved the index: add the identity
+            // there, or move an identity known from elsewhere into that slot.
+            // A slot held by another identity refuses here, before status or
+            // keys are touched, so nothing contradictory is persisted.
+            info.identity_manager.place_verified_identity(
+                identity.clone(),
+                identity_index,
+                wallet_id,
+                &self.persister,
+            )?;
 
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                 // Fold the freshly fetched on-chain state into an

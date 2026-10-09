@@ -161,9 +161,12 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * contract's `oncePerIdentityDistribution` block as JSON, so the claim
  * screen can offer the third distribution kind. NULL for every pre-existing
  * row; the next contract materialization fills it in.
+ *
+ * Version 15 adds nullable Core, Platform, and shielded payment addresses
+ * to cached owner and contact profiles.
  */
 @Database(
-    version = 14,
+    version = 15,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -679,6 +682,17 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        /** v14 → v15: optional public payment addresses on cached profiles. */
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+                    for (column in listOf("corePaymentAddress", "platformPaymentAddress", "shieldedAddress")) {
+                        db.execSQL("ALTER TABLE `$table` ADD COLUMN `$column` BLOB")
+                    }
+                }
+            }
+        }
+
         /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
@@ -708,6 +722,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
+                    MIGRATION_14_15,
                 )
                 .build()
 

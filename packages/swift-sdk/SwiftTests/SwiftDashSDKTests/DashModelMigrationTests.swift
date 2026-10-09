@@ -78,8 +78,8 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(log.contains("route=\"historical-v2-to-v3\""))
         XCTAssertTrue(log.contains("source_version=\"2.0.0\""))
         XCTAssertTrue(log.contains("source_checksum=\"\(sourceChecksum)\""))
-        XCTAssertTrue(log.contains("target_version=\"3.0.0\""))
-        XCTAssertTrue(log.contains("route=\"labelled-current-v3\""))
+        XCTAssertTrue(log.contains("target_version=\"4.0.0\""))
+        XCTAssertTrue(log.contains("route=\"labelled-current-v4\""))
         XCTAssertEqual(log.components(separatedBy: "event=store_open_succeeded").count - 1, 2)
         XCTAssertFalse(log.contains("event=store_open_failed"))
         XCTAssertFalse(log.contains(directory.path))
@@ -95,7 +95,7 @@ final class DashModelMigrationTests: XCTestCase {
         let updatedLog = try String(contentsOf: session.appendingPathComponent("swift/run.log"), encoding: .utf8)
         XCTAssertTrue(updatedLog.contains("route=\"new-store\""))
         let failure = try XCTUnwrap(updatedLog.split(separator: "\n").first { $0.contains("event=store_open_failed") })
-        XCTAssertTrue(failure.contains("target_version=\"3.0.0\""))
+        XCTAssertTrue(failure.contains("target_version=\"4.0.0\""))
         XCTAssertTrue(failure.contains("error_code="))
         XCTAssertFalse(updatedLog.contains(directory.path))
         XCTAssertFalse(updatedLog.contains("private-invalid-store-content"))
@@ -106,7 +106,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// either way. Labels whose route is undecidable without that probe
     /// (accepted V1 versus the bridge, historical V2 versus a beta layout)
     /// keep failing closed, leaving the store untouched.
-    func testCurrentV3RouteNeverDependsOnTheSchemaIdentityProbe() throws {
+    func testCurrentV4RouteNeverDependsOnTheSchemaIdentityProbe() throws {
         struct ProbeUnavailable: Error {}
         let failingProbe: (any VersionedSchema.Type) throws -> DashLegacySchemaBridge.Identity = { _ in
             throw ProbeUnavailable()
@@ -117,7 +117,7 @@ final class DashModelMigrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let current = directory.appendingPathComponent("current.store")
         try autoreleasepool { _ = try DashModelContainer.create(url: current) }
-        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: current).versions, ["3.0.0"])
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: current).versions, ["4.0.0"])
         let plan = try DashModelContainer.migrationPlan(
             at: current, defaultPlan: DashMigrationPlan.self, identity: failingProbe)
         XCTAssertTrue(ObjectIdentifier(plan) == ObjectIdentifier(DashMigrationPlan.self))
@@ -513,7 +513,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV3.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
         let v2Configuration = ModelConfiguration(
             "DashKeyLimitsMigrationTest",
             schema: v2Schema,
@@ -590,7 +590,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV3.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
         let v2Configuration = ModelConfiguration(
             "DashContractBoundsKindMigrationTest",
             schema: v2Schema,
@@ -627,11 +627,35 @@ final class DashModelMigrationTests: XCTestCase {
     func testV3AddsKeyColumnsWithoutChangingTheFrozenBaseline() throws {
         let baseline = Schema(versionedSchema: DashSchemaV1.self)
         let live = Schema(versionedSchema: DashSchemaV3.self)
+        // V3 is the published snapshot; the live types must still carry the columns.
+        let current = Schema(versionedSchema: DashSchemaV4.self)
         let oldKey = try XCTUnwrap(baseline.entities.first { $0.name == "PersistentPublicKey" })
         let newKey = try XCTUnwrap(live.entities.first { $0.name == "PersistentPublicKey" })
+        let currentKey = try XCTUnwrap(current.entities.first { $0.name == "PersistentPublicKey" })
         for column in ["totalBudget", "expiresAt", "contractBoundsKind"] {
             XCTAssertNil(oldKey.attributesByName[column])
             XCTAssertNotNil(newKey.attributesByName[column])
+            XCTAssertNotNil(currentKey.attributesByName[column])
+        }
+    }
+
+    /// What makes V3 -> V4 lightweight: V4 adds exactly one entity and changes
+    /// none. The payment addresses deliberately live in their own table rather
+    /// than as columns on the profile entities, so the published V3 profile
+    /// shapes are untouched.
+    func testV4AddsOnlyThePaymentAddressesEntityToPublishedV3() throws {
+        let v3 = Schema(versionedSchema: DashSchemaV3.self)
+        let v4 = Schema(versionedSchema: DashSchemaV4.self)
+        XCTAssertEqual(
+            Set(v4.entities.map(\.name)).subtracting(v3.entities.map(\.name)),
+            ["PersistentDashpayPaymentAddresses"])
+        XCTAssertEqual(Set(v3.entities.map(\.name)).subtracting(v4.entities.map(\.name)), [])
+        for name in ["PersistentDashpayProfile", "PersistentDashpayContactProfile"] {
+            let published = try XCTUnwrap(v3.entities.first { $0.name == name })
+            let live = try XCTUnwrap(v4.entities.first { $0.name == name })
+            XCTAssertEqual(
+                live.attributesByName.keys.sorted(), published.attributesByName.keys.sorted(),
+                "\(name): V4 adds no column; addresses live in their own entity")
         }
     }
 

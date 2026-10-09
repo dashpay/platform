@@ -63,6 +63,13 @@ struct StorageExplorerView: View {
                 DashpayContactProfileStorageListView(network: network)
             }
             modelRow(
+                "DashPay Payment Addresses",
+                icon: "qrcode",
+                type: PersistentDashpayPaymentAddresses.self
+            ) {
+                DashpayPaymentAddressesStorageListView(network: network)
+            }
+            modelRow(
                 "DashPay Payments",
                 icon: "arrow.left.arrow.right.circle",
                 type: PersistentDashpayPayment.self
@@ -289,6 +296,7 @@ struct StorageExplorerView: View {
         directCount(PersistentDashpayProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayContactRequest.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayContactProfile.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDashpayPaymentAddresses.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayPayment.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayIgnoredSender.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDocument.self, predicate: #Predicate { $0.networkRaw == raw })

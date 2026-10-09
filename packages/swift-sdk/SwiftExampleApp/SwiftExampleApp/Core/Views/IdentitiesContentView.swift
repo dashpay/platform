@@ -530,6 +530,9 @@ struct IdentitiesContentView: View {
             _ = keychain.deleteKeyData(identifier: payoutIdentifier)
         }
 
+        // Payment-address rows are keyed by owner id; no cascade reaches them.
+        try? PersistentDashpayPaymentAddresses.removeOwned(
+            in: modelContext, networkRaw: identity.networkRaw, ownerIdentityId: identity.identityId)
         modelContext.delete(identity)
         do {
             try modelContext.save()
