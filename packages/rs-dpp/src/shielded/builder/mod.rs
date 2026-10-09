@@ -231,81 +231,6 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     prove_and_sign_bundle(builder, prover, &[], extra_sighash_data)
 }
 
-#[cfg(feature = "core_key_wallet")]
-type AuthorizedBundle = Bundle<Authorized, i64, DashMemo>;
-
-/// An output-only Orchard bundle that is proved but not yet signed. Produced by
-/// [`prove_output_only_bundle`]; [`authorize`](Self::authorize) signs it over the sighash fixed at
-/// proving time, with fresh randomness on every call.
-///
-/// It holds the bundle's signing secrets — the binding signing key `bsk` and the padding spends'
-/// `dummy_ask` and `alpha` — which could sign the proof over a different sighash. They are fresh
-/// per bundle (no wallet key is among them), live only inside the signing closure (no `Debug`,
-/// never serialized or logged) and are dropped with the value.
-#[cfg(feature = "core_key_wallet")]
-pub(crate) struct ProvedOutputOnlyBundle {
-    /// Signs a clone of the proved bundle. The proved-but-unsigned bundle type
-    /// (`orchard::builder::InProgress<Proof, Unauthorized>`) is not re-exported by
-    /// `grovedb-commitment-tree`, so it lives inside this closure.
-    sign: Box<dyn Fn() -> Result<AuthorizedBundle, ProtocolError> + Send + Sync>,
-}
-
-#[cfg(feature = "core_key_wallet")]
-impl ProvedOutputOnlyBundle {
-    /// Signs the proved bundle with fresh randomness.
-    pub(crate) fn authorize(&self) -> Result<AuthorizedBundle, ProtocolError> {
-        (self.sign)()
-    }
-}
-
-/// [`build_output_only_bundle`] without the final signing step: builds and proves the bundle and
-/// binds the platform sighash (`extra_sighash_data`), but leaves the signatures to
-/// [`ProvedOutputOnlyBundle::authorize`]. Signing an output-only bundle needs no spending key
-/// (its spends are padding), so one proof can be authorized any number of times.
-#[cfg(feature = "core_key_wallet")]
-pub(crate) fn prove_output_only_bundle<P: OrchardProver>(
-    recipient: &OrchardAddress,
-    amount: u64,
-    memo: [u8; 36],
-    sender_ovk: Option<OutgoingViewingKey>,
-    dummy_outputs: usize,
-    extra_sighash_data: &[u8],
-    prover: &P,
-) -> Result<ProvedOutputOnlyBundle, ProtocolError> {
-    let builder = output_only_bundle_builder(recipient, amount, memo, sender_ovk, dummy_outputs)?;
-    let mut rng = OsRng;
-
-    let (unauthorized, _) = builder
-        .build::<i64>(&mut rng)
-        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to build bundle: {:?}", e)))?
-        .ok_or_else(|| {
-            ProtocolError::ShieldedBuildError("bundle was empty after build".to_string())
-        })?;
-
-    let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-    let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
-
-    let proven = unauthorized
-        .create_proof(prover.proving_key(), &mut rng)
-        .map_err(|e| {
-            ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e))
-        })?;
-
-    Ok(ProvedOutputOnlyBundle {
-        sign: Box::new(move || {
-            proven
-                .clone()
-                .apply_signatures(OsRng, sighash, &[])
-                .map_err(|e| {
-                    ProtocolError::ShieldedBuildError(format!(
-                        "failed to apply signatures: {:?}",
-                        e
-                    ))
-                })
-        }),
-    })
-}
-
 /// The unproved builder of an output-only bundle: the real output, then `dummy_outputs`
 /// zero-value fillers (see [`build_output_only_bundle`]).
 fn output_only_bundle_builder(
@@ -460,6 +385,26 @@ pub(crate) fn prove_and_sign_bundle_with<P: OrchardProver, F>(
 where
     F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
 {
+    prove_bundle_with(builder, prover, extra_sighash_data)?(signing_keys)
+}
+
+/// The signing step of a proved bundle (see [`prove_bundle_with`]).
+pub(crate) type SignBundleFn = dyn Fn(&[SpendAuthorizingKey]) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError>
+    + Send
+    + Sync;
+
+/// [`prove_and_sign_bundle_with`] up to, not including, the signatures: returns the signing step,
+/// which signs a copy of the proved bundle over the sighash bound here, with fresh randomness on
+/// every call. The closure holds the bundle's signing secrets (`bsk`, and the padding spends'
+/// `dummy_ask` and `alpha`), fresh per bundle and dropped with it.
+pub(crate) fn prove_bundle_with<P: OrchardProver, F>(
+    builder: Builder<DashMemo>,
+    prover: &P,
+    extra_sighash_data: F,
+) -> Result<Box<SignBundleFn>, ProtocolError>
+where
+    F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
+{
     let mut rng = OsRng;
 
     let (unauthorized, _) = builder
@@ -485,11 +430,14 @@ where
             ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e))
         })?;
 
-    proven
-        .apply_signatures(rng, sighash, signing_keys)
-        .map_err(|e| {
-            ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
-        })
+    Ok(Box::new(move |signing_keys: &[SpendAuthorizingKey]| {
+        proven
+            .clone()
+            .apply_signatures(OsRng, sighash, signing_keys)
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
+            })
+    }))
 }
 
 /// Shared test utilities for builder tests.
@@ -640,56 +588,6 @@ mod mod_tests {
             !bundle.actions().is_empty(),
             "at least one padding action expected"
         );
-    }
-
-    // `prove_output_only_bundle`: each authorization of one proof verifies on its own and does
-    // not repeat the previous one's signature bytes.
-
-    #[cfg(feature = "core_key_wallet")]
-    #[test]
-    fn proved_output_only_bundle_reauthorizes_into_distinct_valid_bundles() {
-        use grovedb_commitment_tree::{BatchValidator, VerifyingKey};
-
-        let extra_sighash_data = [0x86u8; 33];
-        let proved = prove_output_only_bundle(
-            &test_orchard_address(),
-            10_000,
-            [0u8; 36],
-            None,
-            0,
-            &extra_sighash_data,
-            &TestProver,
-        )
-        .expect("bundle should prove");
-        let first = proved.authorize().expect("first authorization");
-        let second = proved.authorize().expect("second authorization");
-
-        let commitment: [u8; 32] = first.commitment().into();
-        assert_eq!(commitment, <[u8; 32]>::from(second.commitment()));
-        assert_eq!(
-            first.authorization().proof().as_ref(),
-            second.authorization().proof().as_ref(),
-            "authorizing must not re-prove"
-        );
-        let first_sb = serialize_authorized_bundle(&first);
-        let second_sb = serialize_authorized_bundle(&second);
-        assert_ne!(first_sb.binding_signature, second_sb.binding_signature);
-        assert_eq!(*first.value_balance(), -10_000i64);
-
-        let sighash = compute_platform_sighash(&commitment, &extra_sighash_data);
-        let vk = VerifyingKey::build();
-        for bundle in [&first, &second] {
-            let mut batch = BatchValidator::new();
-            batch.add_bundle(bundle, sighash);
-            assert!(
-                batch.validate(&vk, OsRng),
-                "re-authorized bundle must verify"
-            );
-        }
-        // The signatures are bound to the sighash fixed at proving time.
-        let mut batch = BatchValidator::new();
-        batch.add_bundle(&first, compute_platform_sighash(&commitment, &[0x86u8; 1]));
-        assert!(!batch.validate(&vk, OsRng));
     }
 
     // ------------------------------------------------------------------

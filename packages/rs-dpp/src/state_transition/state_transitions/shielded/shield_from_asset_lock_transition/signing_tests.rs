@@ -97,36 +97,6 @@ fn make_chain_asset_lock_proof() -> AssetLockProof {
     })
 }
 
-/// An InstantSend proof of a one-output asset-lock transaction. Its InstantSend lock is not
-/// valid; nothing here verifies it.
-fn make_instant_asset_lock_proof() -> AssetLockProof {
-    use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-    use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-    use dashcore::transaction::special_transaction::TransactionPayload;
-    use dashcore::{InstantLock, ScriptBuf, Transaction, TxOut};
-
-    let transaction = Transaction {
-        version: 3,
-        lock_time: 0,
-        input: vec![],
-        output: vec![],
-        special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
-            AssetLockPayload {
-                version: 0,
-                credit_outputs: vec![TxOut {
-                    value: 100_000,
-                    script_pubkey: ScriptBuf::new(),
-                }],
-            },
-        )),
-    };
-    AssetLockProof::Instant(InstantAssetLockProof::new(
-        InstantLock::default(),
-        transaction,
-        0,
-    ))
-}
-
 fn extract_v0(state_transition: StateTransition) -> ShieldFromAssetLockTransitionV0 {
     let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) =
         state_transition
@@ -384,23 +354,23 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
 
 #[tokio::test]
 async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
-    // Proved from the outpoint alone, one bundle wraps an InstantSend proof, the same proof again
-    // and a ChainLock proof of the outpoint. Each assembly signs afresh, so a resubmission never
-    // repeats a rejected transition's hash. That the bundle verifies under a lock proof's binding
-    // is `proved_bundle_verifies_against_the_binding_of_a_real_lock_proof`; that both proof kinds
-    // bind alike is `proved_bundle_binding_is_the_outpoint_binding_at_every_version`.
+    // Proved from the outpoint alone, one bundle wraps a proof of that outpoint, the same proof
+    // again and another proof of it. Each assembly signs afresh, so a resubmission never repeats a
+    // rejected transition's hash. That an InstantSend and a ChainLock proof of one outpoint bind
+    // alike is pinned in `shielded::sighash`.
     use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
     use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
 
     let platform_version = PlatformVersion::latest();
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
-    let instant = make_instant_asset_lock_proof();
-    let out_point = instant.out_point().expect("fixture has a credit output");
-    let chain = AssetLockProof::Chain(ChainAssetLockProof {
-        core_chain_locked_height: 100,
-        out_point,
-    });
+    let out_point = OutPoint::from([0x42; 36]);
+    let chain_proof_at = |core_chain_locked_height| {
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height,
+            out_point,
+        })
+    };
 
     let proved = ProvedShieldFromAssetLockBundle::prove(
         &test_orchard_address(),
@@ -416,11 +386,11 @@ async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
     let assemble = |proof: AssetLockProof| {
         proved.build_transition_with_signer(proof, &path, &signer, None, platform_version)
     };
-    let first = extract_v1(assemble(instant.clone()).await.expect("instant assembly"));
-    let again = extract_v1(assemble(instant).await.expect("instant re-assembly"));
-    let over_chain = extract_v1(assemble(chain).await.expect("chain assembly"));
+    let first = extract_v1(assemble(chain_proof_at(100)).await.expect("assembly"));
+    let again = extract_v1(assemble(chain_proof_at(100)).await.expect("re-assembly"));
+    let later = extract_v1(assemble(chain_proof_at(200)).await.expect("later proof"));
 
-    for v1 in [&again, &over_chain] {
+    for v1 in [&again, &later] {
         assert_eq!(v1.proof, first.proof, "assembly must not re-prove");
         assert_eq!(v1.value_balance, 50_000);
     }
@@ -435,33 +405,4 @@ async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
             if msg.contains("does not match the binding")),
         "unexpected error: {err:?}"
     );
-}
-
-#[test]
-fn proved_bundle_binding_is_the_outpoint_binding_at_every_version() {
-    // `ProvedShieldFromAssetLockBundle::prove` derives the binding from a stand-in chain proof
-    // of the outpoint. That is only sound because the binding never depends on the proof kind
-    // or the chain-lock height: pin it at every version, binding or not.
-    use crate::shielded::shield_from_asset_lock_extra_sighash_data;
-
-    let instant = make_instant_asset_lock_proof();
-    let out_point = instant.out_point().expect("fixture has a credit output");
-    let versions: Vec<&PlatformVersion> = (1..=PlatformVersion::latest().protocol_version)
-        .filter_map(|version| PlatformVersion::get(version).ok())
-        .collect();
-    assert!(versions.len() > 1);
-    for platform_version in versions {
-        let bound = |proof: &AssetLockProof| {
-            shield_from_asset_lock_extra_sighash_data(proof, platform_version).unwrap()
-        };
-        for height in [0, 1, u32::MAX] {
-            assert_eq!(
-                bound(&instant),
-                bound(&AssetLockProof::Chain(ChainAssetLockProof {
-                    core_chain_locked_height: height,
-                    out_point,
-                })),
-            );
-        }
-    }
 }
