@@ -3356,10 +3356,16 @@ impl DocumentPropertyType {
     /// across that point come out wrong. Big-endian bytes of one width sort as
     /// the numbers do. The width is the same, so a key keeps its size.
     pub fn encode_value_for_tree_keys_v1(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
-        let key = self.encode_value_for_tree_keys(value)?;
-        Ok(self
-            .unsigned_tree_key_in_other_generation(&key)
-            .unwrap_or(key))
+        let mut key = self.encode_value_for_tree_keys(value)?;
+        // Flipped in the key generation 0 wrote; a null value's empty key stays as it is
+        if self.has_unsigned_integer_tree_key()
+            && self.fixed_tree_key_width().map(usize::from) == Some(key.len())
+        {
+            if let Some(top) = key.first_mut() {
+                *top ^= 0b1000_0000;
+            }
+        }
+        Ok(key)
     }
 
     /// Reads a tree key written by [`Self::encode_value_for_tree_keys_v1`].
