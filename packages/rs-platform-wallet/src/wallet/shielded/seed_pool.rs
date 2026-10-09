@@ -242,7 +242,7 @@ impl PlatformWallet {
             // real note lands at ~REAL_NOTE_VALUE_CREDITS and the surplus
             // is structurally zero.
             let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
-            let pool_fee = self.shield_from_asset_lock_pool_fee(num_actions)?;
+            let pool_fee = Self::shield_from_asset_lock_pool_fee(num_actions, self.sdk.version())?;
             let lock_credits = pool_fee
                 .checked_add(REAL_NOTE_VALUE_CREDITS)
                 .ok_or_else(|| {
