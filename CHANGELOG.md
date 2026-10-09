@@ -1,3 +1,45 @@
+## [5.0.0-beta.4](https://github.com/dashpay/platform/compare/v5.0.0-beta.3...v5.0.0-beta.4) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** keep the property type shorthand expansion out of shipped generations (#5357)
+* **dpp:** add identifier and bytes property type shorthands (PV14) (#5355)
+* **platform:** non-transferable tokens (PV14) (#5353)
+* **platform:** let property constraint rules read the bytes of byte arrays (PV14) (#5336)
+
+### Features
+
+* **dpp:** add identifier and bytes property type shorthands (PV14) ([#5355](https://github.com/dashpay/platform/issues/5355))
+* **platform:** let property constraint rules read the bytes of byte arrays (PV14) ([#5336](https://github.com/dashpay/platform/issues/5336))
+* **platform:** non-transferable tokens (PV14) ([#5353](https://github.com/dashpay/platform/issues/5353))
+* **sdk:** read the identifier and bytes property type shorthands in long form on iOS and Android ([#5358](https://github.com/dashpay/platform/issues/5358))
+* **swift-sdk:** decode the "bytes" propertyConstraints read kind ([#5339](https://github.com/dashpay/platform/issues/5339))
+
+
+### Bug Fixes
+
+* **dashmate:** add dedicated onion bind for Core 24 ([#5342](https://github.com/dashpay/platform/issues/5342))
+* **dashmate:** reload the local quorum list every second ([#5354](https://github.com/dashpay/platform/issues/5354))
+
+
+### Continuous Integration
+
+* **release:** add a manual rehearsal for dashmate macOS notarization ([#5348](https://github.com/dashpay/platform/issues/5348))
+* **release:** annotate a failed key decode
+* **release:** annotate a missing notarization secret
+* **release:** annotate a notarytool failure
+* **release:** check the notarization status directly
+* **release:** harden the notarize step
+* **release:** keep cpu-features out of the dashmate macOS package ([#5347](https://github.com/dashpay/platform/issues/5347))
+* **release:** keep stapling from gating an accepted package
+* **release:** notarize dashmate macOS packages with an App Store Connect API key
+
+
+### Code Refactoring
+
+* **dpp:** keep the property type shorthand expansion out of shipped generations ([#5357](https://github.com/dashpay/platform/issues/5357))
+
 ## [5.0.0-beta.3](https://github.com/dashpay/platform/compare/v5.0.0-beta.2...v5.0.0-beta.3) (2026-10-08)
 
 
