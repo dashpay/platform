@@ -183,6 +183,13 @@ fn address_list_from_seeds(
     list
 }
 
+/// Independent local height and clock anchors when a response arrives.
+#[derive(Clone, Copy)]
+pub(crate) struct MetadataArrival {
+    height: u64,
+    time_ms: u64,
+}
+
 /// Dash Platform SDK
 ///
 /// This is the main entry point for interacting with Dash Platform.
@@ -370,7 +377,7 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, None, None)
+        self.verify_response_metadata_as_of(method_name, metadata, None)
     }
 
     /// [`Self::verify_response_metadata`], with optional arrival-time height
@@ -381,15 +388,16 @@ impl Sdk {
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
-        seen_height: Option<u64>,
-        seen_time_ms: Option<u64>,
+        arrival: Option<MetadataArrival>,
     ) -> Result<(), Error> {
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
         // Check the independent local-clock anchor before mutating the
         // response-derived height high-water mark.
         if let Some(time_tolerance) = metadata_time_tolerance_ms {
-            let now = seen_time_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64);
+            let now = arrival
+                .map(|arrival| arrival.time_ms)
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64);
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
         if let Some(height_tolerance) = metadata_height_tolerance {
@@ -397,7 +405,7 @@ impl Sdk {
                 metadata,
                 height_tolerance,
                 Arc::clone(&(self.metadata_last_seen_height)),
-                seen_height,
+                arrival.map(|arrival| arrival.height),
             )?;
         };
 
@@ -417,10 +425,9 @@ impl Sdk {
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
-        seen_height: Option<u64>,
-        seen_time_ms: Option<u64>,
+        arrival: Option<MetadataArrival>,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, seen_height, seen_time_ms)
+        self.verify_response_metadata_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
             })
@@ -571,7 +578,7 @@ impl Sdk {
                     .parse_proof_with_metadata(request, response)?;
                 // Proof and signature verification (the `?`) must precede this
                 // call; see `accept_verified_metadata`.
-                self.accept_verified_metadata(method_name, &verified.1, None, None)?;
+                self.accept_verified_metadata(method_name, &verified.1, None)?;
                 Ok(verified)
             }
         }

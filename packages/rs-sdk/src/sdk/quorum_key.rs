@@ -1,6 +1,6 @@
 //! Verifying a proof signed by a quorum the context provider has not cached.
 
-use super::Sdk;
+use super::{MetadataArrival, Sdk};
 use crate::Error;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
@@ -46,8 +46,10 @@ impl Sdk {
         // response are copied on every call so a second verification can
         // follow a fetch; the copy is small next to proof verification itself.
         let version = self.version();
-        let seen_height = self.metadata_last_seen_height.load(Ordering::Acquire);
-        let seen_time_ms = chrono::Utc::now().timestamp_millis() as u64;
+        let arrival = MetadataArrival {
+            height: self.metadata_last_seen_height.load(Ordering::Acquire),
+            time_ms: chrono::Utc::now().timestamp_millis() as u64,
+        };
         let missing = match O::maybe_from_proof_with_metadata(
             request.clone(),
             response.clone(),
@@ -56,7 +58,7 @@ impl Sdk {
             provider,
         ) {
             Ok(verified) => {
-                self.accept_verified_metadata(method_name, &verified.1, None, None)?;
+                self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                 return Ok(verified);
             }
             Err(error) => error,
@@ -105,12 +107,7 @@ impl Sdk {
                     format!("the provider supplied an unusable quorum key: {error}"),
                 ),
                 Ok(verified) => {
-                    self.accept_verified_metadata(
-                        method_name,
-                        &verified.1,
-                        Some(seen_height),
-                        Some(seen_time_ms),
-                    )?;
+                    self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                     Ok(verified)
                 }
                 Err(error) => Err(error.into()),
@@ -134,6 +131,7 @@ impl Sdk {
 
 #[cfg(all(test, feature = "mocks"))]
 mod tests {
+    use crate::error::StaleNodeError;
     use crate::platform::transition::broadcast::{require_execution_proved, WaitForOutcome};
     use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
     use crate::platform::transition::put_settings::PutSettings;
@@ -707,7 +705,11 @@ mod tests {
         /// A height mark to raise when the SDK asks for a fetch, as other
         /// requests that complete during the fetch would.
         raise_on_fetch: std::sync::Mutex<Option<(Arc<std::sync::atomic::AtomicU64>, u64)>>,
+        /// Earliest fetch completion time, allowing signed-time expiration
+        /// to occur during asynchronous key acquisition.
         finish_fetch_after_ms: AtomicU64,
+        /// Earliest synchronous lookup completion time, including refetch.
+        finish_lookup_after_ms: AtomicU64,
     }
 
     impl Counting {
@@ -719,6 +721,7 @@ mod tests {
                 fetched: std::sync::Mutex::new(None),
                 raise_on_fetch: std::sync::Mutex::new(None),
                 finish_fetch_after_ms: AtomicU64::new(0),
+                finish_lookup_after_ms: AtomicU64::new(0),
             })
         }
     }
@@ -746,8 +749,19 @@ mod tests {
             core_chain_locked_height: u32,
         ) -> Result<[u8; 48], ContextProviderError> {
             self.lookups.fetch_add(1, Ordering::SeqCst);
-            self.inner
-                .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+            let result = self.inner.get_quorum_public_key(
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            );
+            let deadline = self.finish_lookup_after_ms.load(Ordering::SeqCst);
+            loop {
+                let now = chrono::Utc::now().timestamp_millis() as u64;
+                if now > deadline {
+                    return result;
+                }
+                thread::sleep(Duration::from_millis(deadline - now + 1));
+            }
         }
 
         fn fetch_quorum_public_key(
@@ -1356,21 +1370,29 @@ mod tests {
         }
     }
 
-    #[test_case::test_case(false; "fresh_on_arrival")]
-    #[test_case::test_case(true; "stale_on_arrival")]
+    /// Key acquisition may cross the signed-time deadline on either path;
+    /// only signed metadata already stale on arrival is blamed on the node.
+    #[test_case::test_case(false, false; "fresh_on_arrival")]
+    #[test_case::test_case(true, false; "stale_on_arrival")]
+    #[test_case::test_case(false, true; "synchronous_fresh_on_arrival")]
+    #[test_case::test_case(true, true; "synchronous_stale_on_arrival")]
     #[tokio::test]
     async fn should_judge_signed_time_when_the_response_arrives_before_key_acquisition(
         stale_on_arrival: bool,
+        synchronous_refetch: bool,
     ) {
-        let (base_url, service) = quorum_service(vec![
-            (
-                "/quorums",
-                200,
-                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
-            ),
-            ("/previous", 200, empty_previous_list()),
-        ]);
-        let provider = Counting::new(trusted_provider(base_url));
+        let mut responses = vec![(
+            "/quorums",
+            200,
+            current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+        )];
+        if !synchronous_refetch {
+            responses.push(("/previous", 200, empty_previous_list()));
+        }
+        let (base_url, service) = quorum_service(responses);
+        let provider = Counting::new(
+            trusted_provider(base_url).with_refetch_if_not_found(synchronous_refetch),
+        );
         let mut sdk = network_sdk(Arc::clone(&provider));
         let (request, response) = recorded_epoch_fetch();
         let signed_time = match response.version.as_ref() {
@@ -1385,9 +1407,12 @@ mod tests {
             age + 1_000
         };
         sdk.metadata_time_tolerance_ms = Some(tolerance);
-        provider
-            .finish_fetch_after_ms
-            .store(before + 1_100, Ordering::SeqCst);
+        let deadline = if synchronous_refetch {
+            &provider.finish_lookup_after_ms
+        } else {
+            &provider.finish_fetch_after_ms
+        };
+        deadline.store(before + 1_100, Ordering::SeqCst);
 
         let result = verify(&sdk, request, response).await;
 
@@ -1397,7 +1422,10 @@ mod tests {
         );
         if stale_on_arrival {
             let error = result.expect_err("signed time was already stale on arrival");
-            assert!(matches!(error, Error::StaleNode(_)), "got {error:?}");
+            assert!(
+                matches!(error, Error::StaleNode(StaleNodeError::Time { .. })),
+                "got {error:?}"
+            );
             assert!(
                 error.can_retry(),
                 "arrival-time staleness is node-attributed"
@@ -1407,8 +1435,14 @@ mod tests {
                 .expect("client key acquisition must not make a node stale")
                 .is_some());
         }
-        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
-        assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            provider.fetches.load(Ordering::SeqCst),
+            usize::from(!synchronous_refetch)
+        );
+        assert_eq!(
+            provider.lookups.load(Ordering::SeqCst),
+            if synchronous_refetch { 1 } else { 2 }
+        );
         service.join().expect("quorum service");
     }
 
