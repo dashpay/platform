@@ -4046,6 +4046,236 @@ mod tests {
                     })
                 );
             }
+
+            /// Reads the votes an identity has given from a proof of them, each with the
+            /// number of times the identity has voted on its vote poll, by vote poll id.
+            fn get_proved_identity_given_votes_with_counts(
+                platform: &TempPlatform<MockCoreRPCLike>,
+                platform_state: &PlatformState,
+                contract: &DataContract,
+                identity_id: Identifier,
+                limit: u16,
+                platform_version: &PlatformVersion,
+            ) -> BTreeMap<Identifier, (ResourceVote, u16)> {
+                let query_validation_result = platform
+                    .query_contested_resource_identity_votes(
+                        GetContestedResourceIdentityVotesRequest {
+                            version: Some(
+                                get_contested_resource_identity_votes_request::Version::V0(
+                                    GetContestedResourceIdentityVotesRequestV0 {
+                                        identity_id: identity_id.to_vec(),
+                                        limit: Some(limit as u32),
+                                        offset: None,
+                                        order_ascending: true,
+                                        start_at_vote_poll_id_info: None,
+                                        prove: true,
+                                    },
+                                ),
+                            ),
+                        },
+                        platform_state,
+                        platform_version,
+                    )
+                    .expect("expected to execute query")
+                    .into_data()
+                    .expect("expected query to be valid");
+
+                let get_contested_resource_identity_votes_response::Version::V0(
+                    GetContestedResourceIdentityVotesResponseV0 {
+                        metadata: _,
+                        result,
+                    },
+                ) = query_validation_result.version.expect("expected a version");
+
+                let Some(get_contested_resource_identity_votes_response_v0::Result::Proof(proof)) =
+                    result
+                else {
+                    panic!("expected a proof")
+                };
+
+                let query = ContestedResourceVotesGivenByIdentityQuery {
+                    identity_id,
+                    offset: None,
+                    limit: Some(limit),
+                    start_at: None,
+                    order_ascending: true,
+                };
+
+                query
+                    .verify_identity_votes_given_with_counts_proof::<BTreeMap<_, _>>(
+                        proof.grovedb_proof.as_slice(),
+                        &contract_lookup_fn_for_contract(Arc::new(contract.to_owned())),
+                        platform_version,
+                    )
+                    .expect("expected to verify proof")
+                    .1
+            }
+
+            /// A first vote is proved with a count of 1 and a changed vote with one more,
+            /// each poll counted on its own; a poll without a vote has no entry.
+            #[tokio::test]
+            async fn should_prove_identity_given_votes_with_counts() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1_quantum, _contender_2_quantum, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        7,
+                        "quantum",
+                        platform_version,
+                    )
+                    .await;
+
+                let (contender_1_cooldog, contender_2_cooldog, _dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        8,
+                        "cooldog",
+                        platform_version,
+                    )
+                    .await;
+
+                // A contest the masternode never votes on
+                let (_contender_1_superman, _contender_2_superman, dpns_contract) =
+                    create_dpns_identity_name_contest(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "superman",
+                        platform_version,
+                    )
+                    .await;
+
+                let (pro_tx_hash, _masternode, signer, voting_key) =
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
+
+                let counted_vote = |name: &str, choice: ResourceVoteChoice, vote_count: u16| {
+                    let vote_poll = VotePoll::ContestedDocumentResourceVotePoll(
+                        ContestedDocumentResourceVotePoll {
+                            contract_id: dpns_contract.id(),
+                            document_type_name: "domain".to_string(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![
+                                Text("dash".to_string()),
+                                Text(convert_to_homograph_safe_chars(name)),
+                            ],
+                        },
+                    );
+                    (
+                        vote_poll.unique_id().expect("expected a vote poll id"),
+                        (
+                            ResourceVote::V0(ResourceVoteV0 {
+                                vote_poll,
+                                resource_vote_choice: choice,
+                            }),
+                            vote_count,
+                        ),
+                    )
+                };
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes_with_counts(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        10,
+                        platform_version,
+                    ),
+                    BTreeMap::new()
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_quantum.id()),
+                    "quantum",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    1,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_2_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    2,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes_with_counts(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        10,
+                        platform_version,
+                    ),
+                    BTreeMap::from([
+                        counted_vote("quantum", TowardsIdentity(contender_1_quantum.id()), 1),
+                        counted_vote("cooldog", TowardsIdentity(contender_2_cooldog.id()), 1),
+                    ])
+                );
+
+                perform_vote(
+                    &mut platform,
+                    &platform_state,
+                    dpns_contract.as_ref(),
+                    TowardsIdentity(contender_1_cooldog.id()),
+                    "cooldog",
+                    &signer,
+                    pro_tx_hash,
+                    &voting_key,
+                    3,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let platform_state = platform.state.load();
+
+                assert_eq!(
+                    get_proved_identity_given_votes_with_counts(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        pro_tx_hash,
+                        10,
+                        platform_version,
+                    ),
+                    BTreeMap::from([
+                        counted_vote("quantum", TowardsIdentity(contender_1_quantum.id()), 1),
+                        counted_vote("cooldog", TowardsIdentity(contender_1_cooldog.id()), 2),
+                    ])
+                );
+            }
         }
 
         mod end_date_query {

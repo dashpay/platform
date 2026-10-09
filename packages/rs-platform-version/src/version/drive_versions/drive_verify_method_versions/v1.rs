@@ -126,6 +126,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_masternode_vote: 0,
         verify_vote_poll_votes_proof: 0,
         verify_identity_votes_given_proof: 0,
+        verify_identity_votes_given_with_counts_proof: 0,
         verify_vote_poll_vote_state_proof: 0,
         verify_contests_proof: 0,
         verify_vote_polls_by_end_date_proof: 0,
