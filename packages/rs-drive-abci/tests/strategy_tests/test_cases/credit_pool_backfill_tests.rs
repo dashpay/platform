@@ -8,10 +8,20 @@ mod tests {
         UpgradingInfo,
     };
     use dash_platform_macros::stack_size;
+    use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Setters;
     use dpp::dashcore::hashes::Hash;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use drive::drive::contract::paths::{
+        all_contracts_global_root_path, contract_other_path, CONTRACT_VERSION_KEY,
+    };
     use drive::drive::Drive;
     use drive::fees::op::LowLevelDriveOperation;
+    use drive::grovedb::operations::delete::DeleteOptions;
+    use drive::grovedb::{Element, TransactionArg};
+    use drive::util::storage_flags::StorageFlags;
     use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
         ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig,
@@ -19,6 +29,7 @@ mod tests {
     use drive_abci::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
     use drive_abci::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
     use drive_abci::mimic::CHAIN_ID;
+    use drive_abci::platform_types::platform::Platform;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::rpc::core::MockCoreRPCLike;
     use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -138,6 +149,92 @@ mod tests {
     #[test]
     async fn should_backfill_credit_nullifiers_when_accepted_activation_survives_a_rejected_round()
     {
+        activation_lifecycle(false).await;
+    }
+
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn should_preserve_historical_token_history_flags_across_public_activation_candidates() {
+        activation_lifecycle(true).await;
+    }
+
+    fn assert_token_history(
+        platform: &Platform<MockCoreRPCLike>,
+        tx: TransactionArg,
+        version: u32,
+        historical: bool,
+    ) {
+        let pv = if version == 1 {
+            PlatformVersion::get(13).expect("PV13")
+        } else {
+            PlatformVersion::latest()
+        };
+        let stored = platform
+            .drive
+            .fetch_contract(
+                SystemDataContract::TokenHistory.id().to_buffer(),
+                None,
+                None,
+                tx,
+                pv,
+            )
+            .value
+            .expect("TokenHistory read")
+            .expect("TokenHistory exists");
+        assert_eq!(stored.contract.version(), version);
+        let flags = historical.then(|| StorageFlags::new_single_epoch(0, Some([0; 32])));
+        assert_eq!(
+            stored.storage_flags.as_ref().map(StorageFlags::owner_id),
+            flags.as_ref().map(StorageFlags::owner_id)
+        );
+        assert_eq!(
+            stored.storage_flags.as_ref().map(StorageFlags::base_epoch),
+            flags.as_ref().map(StorageFlags::base_epoch)
+        );
+        if version == 2 {
+            if historical {
+                assert_eq!(
+                    stored
+                        .storage_flags
+                        .as_ref()
+                        .and_then(StorageFlags::epoch_index_map)
+                        .and_then(|allocations| allocations.get(&2)),
+                    Some(&108)
+                );
+            }
+            let (_, cached) = platform
+                .drive
+                .get_contract_with_fetch_info_and_fee(
+                    SystemDataContract::TokenHistory.id().to_buffer(),
+                    None,
+                    false,
+                    tx,
+                    pv,
+                )
+                .expect("cache-aware TokenHistory read");
+            assert_eq!(cached.expect("cached TokenHistory").contract.version(), 2);
+            let id = SystemDataContract::TokenHistory.id().to_buffer();
+            assert_eq!(
+                platform
+                    .drive
+                    .grove
+                    .get(
+                        &contract_other_path(&id),
+                        &[CONTRACT_VERSION_KEY],
+                        tx,
+                        &pv.drive.grove_version
+                    )
+                    .value
+                    .expect("version Item"),
+                Element::Item(
+                    2u32.to_be_bytes().to_vec(),
+                    flags.as_ref().map(StorageFlags::to_element_flags)
+                )
+            );
+        }
+    }
+
+    async fn activation_lifecycle(historical_token_history: bool) {
         let old = PlatformVersion::get(13).expect("PV13");
         let latest = PlatformVersion::latest();
         let config = PlatformConfig {
@@ -196,6 +293,34 @@ mod tests {
             drop(state);
 
             let transaction = outcome.abci_app.platform.drive.grove.start_transaction();
+            if historical_token_history {
+                let drive = &outcome.abci_app.platform.drive;
+                drive
+                    .grove
+                    .delete(
+                        &all_contracts_global_root_path(),
+                        SystemDataContract::TokenHistory.id().as_bytes(),
+                        Some(DeleteOptions {
+                            allow_deleting_non_empty_trees: true,
+                            ..Default::default()
+                        }),
+                        Some(&transaction),
+                        &old.drive.grove_version,
+                    )
+                    .value
+                    .expect("replace empty genesis fixture");
+                let contract = load_system_data_contract(SystemDataContract::TokenHistory, old)
+                    .expect("legacy TokenHistory");
+                drive
+                    .insert_contract(
+                        &contract,
+                        BlockInfo::default(),
+                        true,
+                        Some(&transaction),
+                        old,
+                    )
+                    .expect("historical insertion path");
+            }
             let mut notes = vec![];
             for (rho, cmx) in [([1u8; 32], [2u8; 32]), ([3u8; 32], [4u8; 32])] {
                 notes.extend(
@@ -215,6 +340,7 @@ mod tests {
             drive
                 .commit_transaction(transaction, &old.drive)
                 .expect("historical state commit");
+            assert_token_history(outcome.abci_app.platform, None, 1, historical_token_history);
             let committed_root = drive
                 .grove
                 .root_hash(None, &old.drive.grove_version)
@@ -317,6 +443,7 @@ mod tests {
                 .process_proposal(accepted.clone())
                 .expect("candidate A");
             assert_eq!(response.status, ProposalStatus::Accept as i32);
+            assert_token_history(abci_app.platform, None, 1, historical_token_history);
             let accepted_root = response.app_hash;
             assert_eq!(
                 abci_app
@@ -340,6 +467,12 @@ mod tests {
                     .transaction
                     .read()
                     .expect("candidate transaction lock");
+                assert_token_history(
+                    abci_app.platform,
+                    transaction.as_ref(),
+                    2,
+                    historical_token_history,
+                );
                 for rho in [[1u8; 32], [3u8; 32]] {
                     assert!(abci_app
                         .platform
@@ -385,6 +518,7 @@ mod tests {
                         .expect("dropped candidate union"));
                 }
                 abci_app = FullAbciApplication::new(&platform.platform);
+                assert_token_history(abci_app.platform, None, 1, historical_token_history);
                 let retry = abci_app
                     .process_proposal(accepted.clone())
                     .expect("retry A after restart");
@@ -394,6 +528,12 @@ mod tests {
                     "restart must reproduce the same candidate root"
                 );
                 let transaction = abci_app.transaction.read().expect("retry transaction lock");
+                assert_token_history(
+                    abci_app.platform,
+                    transaction.as_ref(),
+                    2,
+                    historical_token_history,
+                );
                 for rho in [[1u8; 32], [3u8; 32]] {
                     assert!(abci_app
                         .platform
@@ -405,6 +545,7 @@ mod tests {
             if reject_later_round {
                 let response = abci_app.process_proposal(rejected).expect("candidate B");
                 assert_eq!(response.status, ProposalStatus::Reject as i32);
+                assert_token_history(abci_app.platform, None, 1, historical_token_history);
                 assert!(
                     abci_app
                         .block_execution_context
@@ -445,6 +586,7 @@ mod tests {
                 .finalize_block(finalize_request(&accepted, accepted_root.clone()))
                 .expect("finalize accepted A after B's rejection");
             let state = abci_app.platform.state.load();
+            assert_token_history(abci_app.platform, None, 2, historical_token_history);
             assert_eq!(
                 state.current_protocol_version_in_consensus(),
                 latest.protocol_version
@@ -469,6 +611,18 @@ mod tests {
             } = platform;
             drop(before_restart);
             let reopened = TempPlatform::open_with_tempdir(tempdir, config.clone());
+            assert_token_history(&reopened, None, 2, historical_token_history);
+            assert_eq!(
+                reopened
+                    .state
+                    .load()
+                    .current_protocol_version_in_consensus(),
+                latest.protocol_version
+            );
+            assert_eq!(
+                reopened.state.load().next_epoch_protocol_version(),
+                latest.protocol_version
+            );
             for rho in [[1u8; 32], [3u8; 32]] {
                 assert!(reopened
                     .drive

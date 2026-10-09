@@ -40,6 +40,8 @@ use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
+use drive::util::storage_flags::StorageFlags;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 
@@ -793,11 +795,33 @@ impl<C> Platform<C> {
         let token_history_contract =
             load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
 
+        // This update is reached only when crossing into protocol version 14.
+        // Preserve existing storage ownership and let the flags merger account
+        // growth at the current epoch; contracts without flags stay unflagged.
+        let token_history_storage_flags = self
+            .drive
+            .fetch_contract(
+                SystemDataContract::TokenHistory.id().to_buffer(),
+                None,
+                None,
+                Some(transaction),
+                platform_version,
+            )
+            .value?
+            .and_then(|stored| {
+                stored.storage_flags.as_ref().map(|flags| {
+                    StorageFlags::new_single_epoch(
+                        block_info.epoch.index,
+                        flags.owner_id().copied(),
+                    )
+                })
+            });
+
         self.drive.apply_contract(
             &token_history_contract,
             *block_info,
             true,
-            None,
+            token_history_storage_flags.map(Cow::Owned),
             Some(transaction),
             platform_version,
         )?;
