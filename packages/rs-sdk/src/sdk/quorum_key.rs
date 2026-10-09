@@ -29,8 +29,8 @@ impl Sdk {
     ///
     /// A verified response's metadata is then accepted
     /// ([`Sdk::accept_verified_metadata`]). One that waited for a fetch is
-    /// judged as fresh as it was when it arrived: responses other requests
-    /// accepted while it waited do not make it stale.
+    /// judged as fresh as it was when it arrived: neither time spent fetching
+    /// nor responses other requests accepted while it waited make it stale.
     pub(crate) async fn verify_fetching_quorum_key<R, O: FromProof<R>>(
         &self,
         request: O::Request,
@@ -47,6 +47,7 @@ impl Sdk {
         // follow a fetch; the copy is small next to proof verification itself.
         let version = self.version();
         let seen_height = self.metadata_last_seen_height.load(Ordering::Acquire);
+        let seen_time_ms = chrono::Utc::now().timestamp_millis() as u64;
         let missing = match O::maybe_from_proof_with_metadata(
             request.clone(),
             response.clone(),
@@ -55,7 +56,7 @@ impl Sdk {
             provider,
         ) {
             Ok(verified) => {
-                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                self.accept_verified_metadata(method_name, &verified.1, None, None)?;
                 return Ok(verified);
             }
             Err(error) => error,
@@ -104,7 +105,12 @@ impl Sdk {
                     format!("the provider supplied an unusable quorum key: {error}"),
                 ),
                 Ok(verified) => {
-                    self.accept_verified_metadata(method_name, &verified.1, Some(seen_height))?;
+                    self.accept_verified_metadata(
+                        method_name,
+                        &verified.1,
+                        Some(seen_height),
+                        Some(seen_time_ms),
+                    )?;
                     Ok(verified)
                 }
                 Err(error) => Err(error.into()),
@@ -165,7 +171,7 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -701,6 +707,7 @@ mod tests {
         /// A height mark to raise when the SDK asks for a fetch, as other
         /// requests that complete during the fetch would.
         raise_on_fetch: std::sync::Mutex<Option<(Arc<std::sync::atomic::AtomicU64>, u64)>>,
+        finish_fetch_after_ms: AtomicU64,
     }
 
     impl Counting {
@@ -711,6 +718,7 @@ mod tests {
                 fetches: AtomicUsize::new(0),
                 fetched: std::sync::Mutex::new(None),
                 raise_on_fetch: std::sync::Mutex::new(None),
+                finish_fetch_after_ms: AtomicU64::new(0),
             })
         }
     }
@@ -754,8 +762,22 @@ mod tests {
             if let Some((mark, height)) = self.raise_on_fetch.lock().expect("raise lock").as_ref() {
                 mark.fetch_max(*height, Ordering::SeqCst);
             }
-            self.inner
-                .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+            let fetch = self.inner.fetch_quorum_public_key(
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            )?;
+            let deadline = self.finish_fetch_after_ms.load(Ordering::SeqCst);
+            Some(Box::pin(async move {
+                let result = fetch.await;
+                loop {
+                    let now = chrono::Utc::now().timestamp_millis() as u64;
+                    if now > deadline {
+                        return result;
+                    }
+                    tokio::time::sleep(Duration::from_millis(deadline - now + 1)).await;
+                }
+            }))
         }
 
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
@@ -1332,6 +1354,62 @@ mod tests {
             Some(EpochsVersion::V0(v0)) => v0.metadata.as_ref().expect("recorded metadata").height,
             None => panic!("recorded response is v0"),
         }
+    }
+
+    #[test_case::test_case(false; "fresh_on_arrival")]
+    #[test_case::test_case(true; "stale_on_arrival")]
+    #[tokio::test]
+    async fn should_judge_signed_time_when_the_response_arrives_before_key_acquisition(
+        stale_on_arrival: bool,
+    ) {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let mut sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+        let signed_time = match response.version.as_ref() {
+            Some(EpochsVersion::V0(v0)) => v0.metadata.as_ref().expect("signed metadata").time_ms,
+            None => panic!("recorded response is v0"),
+        };
+        let before = chrono::Utc::now().timestamp_millis() as u64;
+        let age = before.abs_diff(signed_time);
+        let tolerance = if stale_on_arrival {
+            age.checked_sub(1_000).expect("recorded response is old")
+        } else {
+            age + 1_000
+        };
+        sdk.metadata_time_tolerance_ms = Some(tolerance);
+        provider
+            .finish_fetch_after_ms
+            .store(before + 1_100, Ordering::SeqCst);
+
+        let result = verify(&sdk, request, response).await;
+
+        assert!(
+            chrono::Utc::now().timestamp_millis() as u64 > signed_time + tolerance,
+            "the signed time must have expired before key acquisition completes"
+        );
+        if stale_on_arrival {
+            let error = result.expect_err("signed time was already stale on arrival");
+            assert!(matches!(error, Error::StaleNode(_)), "got {error:?}");
+            assert!(
+                error.can_retry(),
+                "arrival-time staleness is node-attributed"
+            );
+        } else {
+            assert!(result
+                .expect("client key acquisition must not make a node stale")
+                .is_some());
+        }
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
+        service.join().expect("quorum service");
     }
 
     /// Other requests keep raising the SDK's height mark while one waits for

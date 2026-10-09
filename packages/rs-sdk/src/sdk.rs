@@ -370,26 +370,26 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, None)
+        self.verify_response_metadata_as_of(method_name, metadata, None, None)
     }
 
-    /// [`Self::verify_response_metadata`], with the height judged against
-    /// `seen_height`, the SDK's height mark when the response arrived, when it
-    /// is given. A response verified late, after the key of the quorum that
-    /// signed it was fetched, is then not made stale by the responses other
-    /// requests accepted while it waited.
+    /// [`Self::verify_response_metadata`], with optional arrival-time height
+    /// and clock anchors. A response verified after fetching its quorum key
+    /// is not made stale by the client's wait or by newer responses accepted
+    /// while it waited.
     pub(crate) fn verify_response_metadata_as_of(
         &self,
         method_name: &str,
         metadata: &ResponseMetadata,
         seen_height: Option<u64>,
+        seen_time_ms: Option<u64>,
     ) -> Result<(), Error> {
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
         // Check the independent local-clock anchor before mutating the
         // response-derived height high-water mark.
         if let Some(time_tolerance) = metadata_time_tolerance_ms {
-            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let now = seen_time_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64);
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
         if let Some(height_tolerance) = metadata_height_tolerance {
@@ -418,8 +418,9 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
         seen_height: Option<u64>,
+        seen_time_ms: Option<u64>,
     ) -> Result<(), Error> {
-        self.verify_response_metadata_as_of(method_name, metadata, seen_height)
+        self.verify_response_metadata_as_of(method_name, metadata, seen_height, seen_time_ms)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
             })
@@ -570,7 +571,7 @@ impl Sdk {
                     .parse_proof_with_metadata(request, response)?;
                 // Proof and signature verification (the `?`) must precede this
                 // call; see `accept_verified_metadata`.
-                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                self.accept_verified_metadata(method_name, &verified.1, None, None)?;
                 Ok(verified)
             }
         }
