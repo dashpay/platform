@@ -1,6 +1,11 @@
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { expect } from 'chai';
+import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
+import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
+import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
@@ -57,6 +62,40 @@ describe('ConfigFileJsonRepository', () => {
 
       return configFile;
     };
+  });
+
+  ['mainnet', 'testnet'].forEach(network => {
+    it(`should refresh ${network} stock seeds under lock without a format bump and retry a failed render`, () => {
+      const originalDefaults = structuredClone(tenderdashSeeds[network]);
+      try {
+        const data = JSON.parse(seedConfigFile());
+        data.configs.base.network = network;
+        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        const original = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, original);
+        tenderdashSeeds[network].previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+        tenderdashSeeds[network].seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+        expect(() => repository.readAndMigrate({}, ([config]) => {
+          expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.equal(true);
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(tenderdashSeeds[network].seeds);
+          throw new Error('render failed');
+        })).to.throw('render failed');
+        expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+        repository.readAndMigrate({}, configs => expect(configs).to.have.length(1));
+        const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+        expect(saved.configFormatVersion).to.equal(CURRENT_FORMAT_VERSION);
+        expect(saved.configs.base.platform.drive.tenderdash.p2p.seeds).to.deep.equal(tenderdashSeeds[network].seeds);
+        repository.readAndMigrate({}, () => { throw new Error('must not render twice'); });
+      } finally {
+        tenderdashSeeds[network] = originalDefaults;
+      }
+    });
   });
 
   afterEach(() => {
@@ -154,6 +193,46 @@ describe('ConfigFileJsonRepository', () => {
       expect(() => repository.read({ skipValidation: skipBaseValidation }))
         .to.throw('network must be equal to one of the allowed values');
     });
+
+    it('should honor recovery validation bypasses when refreshing seeds and completing a fullnode identity', () => {
+      const defaults = tenderdashSeeds.mainnet;
+      const oldSeeds = defaults.seeds.slice(0, 1);
+      const history = defaults.previousSeedSetHashes;
+      try {
+        defaults.previousSeedSetHashes = [...history, seedSetHash(oldSeeds)];
+        const data = JSON.parse(seedConfigFile());
+        data.configs.node1 = structuredClone(data.configs.base);
+        Object.assign(data.configs.node1, { network: 'mainnet', description: { invalid: true } });
+        data.configs.node1.core.masternode.enable = false;
+        data.configs.node1.platform.drive.tenderdash.p2p.seeds = oldSeeds;
+        const original = JSON.stringify(data);
+        fs.writeFileSync(configFilePath, original);
+        const repository = new ConfigFileJsonRepository(
+          identityMigration,
+          homeDir,
+          createDefaults,
+          CURRENT_FORMAT_VERSION,
+        );
+        const render = renderServiceTemplatesFactory(renderTemplateFactory());
+        expect(() => repository.read()).to.throw('description');
+
+        for (const skipValidation of [true, ({ name }) => name === 'node1']) {
+          fs.writeFileSync(configFilePath, original);
+          let renderedKey;
+          const { configFile } = repository.readAndMigrate({ skipValidation }, ([config]) => {
+            renderedKey = JSON.parse(render(config)['platform/drive/tenderdash/node_key.json']).priv_key.value;
+          });
+          const config = configFile.getConfig('node1');
+          expect(config.get('description')).to.deep.equal({ invalid: true });
+          expect(config.get('platform.drive.tenderdash.p2p.seeds')).to.deep.equal(defaults.seeds);
+          expect(renderedKey).to.be.a('string').and.not.to.equal('null');
+          const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+          expect(saved.configs.node1.platform.drive.tenderdash.node.key).to.equal(renderedKey);
+        }
+      } finally {
+        defaults.previousSeedSetHashes = history;
+      }
+    });
   });
 
   describe('#write', () => {
@@ -213,6 +292,33 @@ describe('ConfigFileJsonRepository', () => {
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('second');
+    });
+
+    it('should save and render the same identity only for changed fullnodes', () => {
+      const repository = new ConfigFileJsonRepository(
+        identityMigration,
+        homeDir,
+        createDefaults,
+        CURRENT_FORMAT_VERSION,
+      );
+      const configFile = createDefaults();
+      for (const name of ['node1', 'untouched']) {
+        configFile.createConfig(name, 'base');
+        configFile.getConfig(name).set('core.masternode.enable', false);
+      }
+      configFile.getConfig('untouched').markAsSaved();
+
+      repository.write(configFile);
+
+      const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      const identity = saved.configs.node1.platform.drive.tenderdash.node;
+      expect(identity.id).to.equal(deriveTenderdashNodeId(identity.key));
+      expect(saved.configs.untouched.platform.drive.tenderdash.node.key).to.equal(null);
+      expect(saved.configs.base.platform.drive.tenderdash.node.key).to.equal(null);
+      expect(configFile.getConfig('node1').isChanged()).to.be.true();
+      const rendered = renderServiceTemplatesFactory(renderTemplateFactory())(configFile.getConfig('node1'));
+      expect(JSON.parse(rendered['platform/drive/tenderdash/node_key.json']).priv_key.value)
+        .to.equal(identity.key);
     });
   });
 
@@ -290,6 +396,46 @@ describe('ConfigFileJsonRepository', () => {
       expect(retried).to.be.true();
       expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
         .to.equal('9.9.9');
+    });
+
+    it('should retry every migrated identity when rendering fails before the save', () => {
+      const configFile = createDefaults();
+      for (const name of ['node1', 'node2']) {
+        configFile.createConfig(name, 'base');
+        configFile.getConfig(name).set('core.masternode.enable', false);
+      }
+      const original = JSON.stringify(configFile.toObject());
+      fs.writeFileSync(configFilePath, original);
+      const repository = new ConfigFileJsonRepository(
+        (data) => ({ ...data, configFormatVersion: '9.9.9' }),
+        homeDir,
+        createDefaults,
+        '9.9.9',
+      );
+      const render = renderServiceTemplatesFactory(renderTemplateFactory());
+
+      expect(() => repository.readAndMigrate({}, (configs) => {
+        const firstNode = configs.find(config => config.getName() === 'node1');
+        render(firstNode);
+        expect(firstNode.get('platform.drive.tenderdash.node.key')).to.be.a('string');
+        throw new Error('template write failed');
+      })).to.throw('template write failed');
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+
+      const rendered = {};
+      repository.readAndMigrate({}, (configs) => {
+        configs.forEach(config => {
+          rendered[config.getName()] = JSON.parse(
+            render(config)['platform/drive/tenderdash/node_key.json'],
+          );
+        });
+      });
+      const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
+      expect(saved.configFormatVersion).to.equal('9.9.9');
+      for (const name of ['node1', 'node2']) {
+        expect(saved.configs[name].platform.drive.tenderdash.node.key)
+          .to.equal(rendered[name].priv_key.value).and.to.be.a('string');
+      }
     });
 
     it('should not wait for a lock when reading does not migrate', () => {

@@ -15,6 +15,8 @@ import { PACKAGE_ROOT_DIR } from '../../../src/constants.js';
 const ALLOWED_RAW_READERS = {
   // persistence: writing a resolved value back would defeat the whole design
   'src/config/configFile/ConfigFile.js': 2,
+  // completing an identity must preserve unset version-derived defaults when saving
+  'src/tenderdash/ensureTenderdashNodeKey.js': 1,
   // equality compares what the operator chose, not what it resolves to
   'src/config/Config.js': null,
   // reset restores stored intent
