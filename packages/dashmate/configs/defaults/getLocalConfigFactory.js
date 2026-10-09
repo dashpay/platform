@@ -57,6 +57,11 @@ export default function getLocalConfigFactory(getBaseConfig) {
           api: {
             port: 22444,
           },
+          // Platform signs with a new quorum seconds after Core mines it. With the
+          // base 60 s reload, SDKs that take keys from this service (the test suite
+          // among them) fail to verify every proof signed in between. Releases of
+          // the service before 0.7.0 read Core on every request.
+          cacheTtlSeconds: 1,
         },
         gateway: {
           ssl: {

@@ -3462,7 +3462,10 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                 }
                                 AggregateKeyKind::Text => {
                                     // A constant the key's `enum` does not list is a typo:
-                                    // no document could match it
+                                    // no document could match it. `counted.schema()` is the
+                                    // schema as sent, which may spell a property with a type
+                                    // shorthand; only its `enum` is read here, which the
+                                    // expansion never changes
                                     if !enum_admits(counted.schema(), schema_defs, key, constant)? {
                                         return Err(error(format!(
                                             "{totals} with \"{key}\" at \"{constant}\", which is \

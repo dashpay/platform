@@ -47,6 +47,8 @@ The elements may also be identifiers that point at other documents. The moderati
 
 A charter names up to 64 distinct `reason` documents, and each one must exist when the charter is written.
 
+With the [identifier shorthand](property-schemas.md#shorthands-identifier-and-bytes) the same `items` read `{ "type": "identifier", "refersTo": { "type": "permanentDocument", "documentType": "reason" } }`; `{ "type": "bytes", "size": 20 }` makes every element 20 bytes.
+
 ## How it works
 
 **On the array**, `minItems` and `maxItems` count elements, and `uniqueItems: true` refuses a document that repeats one. A list that is too long or too short, repeats an element, or holds an element of the wrong type is refused with `JsonSchemaError` (10101).
@@ -75,7 +77,7 @@ The array:
 The element schema (`items`):
 
 - is written inline: a `$ref` is refused;
-- has a `type` of `integer`, `number`, `string`, `boolean` or `array`, and an `array` element must be a byte array (`byteArray: true`). Objects and lists of lists are refused;
+- has a `type` of `integer`, `number`, `string`, `boolean` or `array`, and an `array` element must be a byte array (`byteArray: true`), or one of the [shorthands](property-schemas.md#shorthands-identifier-and-bytes) `identifier` and `bytes` (with `size`). Objects and lists of lists are refused;
 - takes these keywords: `type`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems`, `maxItems` (bytes, on a byte array element), `enum`, `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. Anything else, `position`, `const`, `uniqueItems` and `examples` included, is refused. A one-value `enum` does what `const` would, and an update can still widen it;
 - may carry an `enum` only on a string, integer, number or boolean element, and every member must be a value of the element's type;
 - on an integer element, has an integer `minimum` and `maximum`, the minimum no higher than the maximum;
