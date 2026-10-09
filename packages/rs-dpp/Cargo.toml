@@ -13,6 +13,9 @@ authors = [
 
 [dependencies]
 dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "e6402ced257c370a586ade9840ebbf545a4b7926", default-features = false, features = ["bls"], optional = true }
+# Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
+# TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
+blst = { version = "0.3.17", default-features = false, optional = true }
 zeroize = { version = "1.9.0", optional = true }
 ed25519-dalek = { version = "=2.2.0", features = ["rand_core"], optional = true }
 anyhow = { version = "1.0.81" }
@@ -104,7 +107,7 @@ getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] 
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [package.metadata.cargo-machete]
-ignored = ["getrandom_03", "getrandom_04"]
+ignored = ["getrandom_03", "getrandom_04", "blst"]
 
 [features]
 default = ["state-transitions"]
@@ -117,7 +120,7 @@ core_key_wallet_manager = ["dep:key-wallet-manager"]
 core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
 core_spv = ["dep:dash-spv"]
 core_rpc_client = ["dep:dashcore-rpc"]
-bls-signatures = ["dashcore/bls", "dep:dash-pkc", "dep:zeroize"]
+bls-signatures = ["dashcore/bls", "dep:dash-pkc", "dep:blst", "dep:zeroize"]
 ed25519-dalek = ["dashcore/eddsa", "dep:ed25519-dalek"]
 all_features = [
   "json-conversion",
