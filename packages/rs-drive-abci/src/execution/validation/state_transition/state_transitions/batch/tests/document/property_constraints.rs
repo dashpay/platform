@@ -285,6 +285,30 @@ mod property_constraints_tests {
         })
     }
 
+    /// A mutable `offer` type with the integers [`set_valid_offer`] fills and
+    /// three optional ways to reach its seller, `email`, `phone` and `handle`,
+    /// of which `oneContact` requires exactly one.
+    fn contact_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "email": { "type": "string", "maxLength": 64, "position": 4 },
+                "phone": { "type": "string", "maxLength": 20, "position": 5 },
+                "handle": { "type": "string", "maxLength": 30, "position": 6 }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "oneContact": { "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// A mutable, transferable and purchasable `offer` type with the integers
     /// [`set_valid_offer`] fills and an `endsAt` time, recording the time of its
     /// creation, last update and last transfer and the block height of its
@@ -502,6 +526,51 @@ mod property_constraints_tests {
             },
             "additionalProperties": false
         })
+    }
+
+    /// A mutable `offer` type with the integers [`set_valid_offer`] fills, an
+    /// optional DIP-33 `corePaymentAddress` of 21 bytes and an optional
+    /// `payload` of at most 8, and two rules on their bytes: `addressType`
+    /// (the address's type byte, its first, is 0 for P2PKH or 1 for P2SH; an
+    /// offer without one reads it as 0) and `taggedPayload` (a payload, when
+    /// given, starts with 0xcafe).
+    fn payment_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "corePaymentAddress": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 21,
+                    "maxItems": 21,
+                    "position": 4
+                },
+                "payload": { "type": "array", "byteArray": true, "maxItems": 8, "position": 5 }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "addressType": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] },
+                "taggedPayload": {
+                    "anyOf": [
+                        { "absent": "payload" },
+                        { "startsWith": ["payload", { "const": "cafe" }] }
+                    ]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    /// A payment address in storage form: `type_byte`, then a 20-byte HASH160.
+    fn payment_address(type_byte: u8) -> Value {
+        let mut bytes = vec![type_byte];
+        bytes.extend([0x5a; 20]);
+        Value::Bytes(bytes)
     }
 
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
@@ -1815,6 +1884,55 @@ mod property_constraints_tests {
         assert_eq!(fixture.stored_offers().len(), 1);
     }
 
+    /// `countPresent` read by real writes: an offer giving none of its three
+    /// contacts, or two, is refused, one giving exactly one is stored, a replace
+    /// adding a second is refused, and one trading the contact for another is
+    /// accepted.
+    #[tokio::test]
+    async fn should_hold_a_document_to_exactly_one_of_a_group_of_properties() {
+        let mut fixture = OfferFixture::with_schema(contact_offer_schema());
+
+        let result = fixture.create(|_| {}).await;
+        expect_violated(result, "oneContact", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| {
+                document.set("email", Value::from("seller@example.com"));
+                document.set("phone", Value::from("555-0100"));
+            })
+            .await;
+        expect_violated(result, "oneContact", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("email", Value::from("seller@example.com")))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(|document| document.set("handle", Value::from("@seller")))
+            .await;
+        expect_violated(result, "oneContact", PropertyConstraintViolation::NotMet);
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].get("handle"), None);
+
+        assert_matches!(
+            fixture
+                .replace(|document| {
+                    document.remove("email");
+                    document.set("handle", Value::from("@seller"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let stored = fixture.stored_offers();
+        assert_eq!(stored[0].get("email"), None);
+        assert_eq!(stored[0].get("handle"), Some(&Value::from("@seller")));
+    }
+
     /// The times and heights a create records are its block's: an offer must end
     /// after its creation and within a week of it, and be listed from block 10 on.
     #[tokio::test]
@@ -2045,6 +2163,95 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// The bytes of byte arrays read by real creates: an address whose type byte
+    /// is neither 0 nor 1, and a payload not starting with 0xcafe, are each
+    /// refused with the rule they break; an offer leaving both out, and one with
+    /// a P2SH address and a tagged payload, are stored.
+    #[tokio::test]
+    async fn should_judge_the_bytes_of_byte_arrays_on_create() {
+        let mut fixture = OfferFixture::with_schema(payment_offer_schema());
+
+        let result = fixture
+            .create(|document| document.set("corePaymentAddress", payment_address(0x02)))
+            .await;
+        expect_violated(result, "addressType", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| document.set("payload", Value::Bytes(vec![0xbe, 0xef])))
+            .await;
+        expect_violated(result, "taggedPayload", PropertyConstraintViolation::NotMet);
+
+        // Shorter than the constant it must start with
+        let result = fixture
+            .create(|document| document.set("payload", Value::Bytes(vec![0xca])))
+            .await;
+        expect_violated(result, "taggedPayload", PropertyConstraintViolation::NotMet);
+        assert!(
+            fixture.stored_offers().is_empty(),
+            "the refused documents must not be stored"
+        );
+
+        // Neither given: the type byte of no address reads as 0
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("corePaymentAddress", payment_address(0x01));
+                    document.set("payload", Value::Bytes(vec![0xca, 0xfe, 0x01]));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A replace is judged on the bytes it writes: one changing the address to an
+    /// unknown type, or the payload to an untagged one, is refused and leaves the
+    /// stored document untouched; one changing it to the other known type is
+    /// stored.
+    #[tokio::test]
+    async fn should_judge_the_bytes_of_byte_arrays_on_replace() {
+        let mut fixture = OfferFixture::with_schema(payment_offer_schema());
+        assert_matches!(
+            fixture
+                .create(|document| document.set("corePaymentAddress", payment_address(0x00)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(|document| document.set("corePaymentAddress", payment_address(0x05)))
+            .await;
+        expect_violated(result, "addressType", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .replace(|document| document.set("payload", Value::Bytes(vec![0x00, 0xca, 0xfe])))
+            .await;
+        expect_violated(result, "taggedPayload", PropertyConstraintViolation::NotMet);
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].get("corePaymentAddress"),
+            Some(&payment_address(0x00)),
+            "the refused replaces must leave the stored document untouched"
+        );
+        assert_eq!(stored[0].get("payload"), None);
+
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("corePaymentAddress", payment_address(0x01)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            fixture.stored_offers()[0].get("corePaymentAddress"),
+            Some(&payment_address(0x01))
+        );
     }
 
     /// The shorthand operators read by real creates: each of seven offers breaks

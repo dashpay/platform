@@ -2,10 +2,13 @@
 //! document meta-schema, through `check_tx` and block processing.
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
-    assert_paid_contract_structure_error, assert_unpaid_internal_error, check_and_process,
-    contested_unbounded_sum_schema, resign_with_schemas, summed_u64_schema,
-    terminal_without_index_only_schema, Outcome, CONTESTED_UNBOUNDED_SUM_MESSAGE,
-    SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
+    add_ref_dag_document_type, assert_paid_contract_structure_error,
+    assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
+    assert_unpaid_internal_error, check_and_process,
+    contested_unbounded_sum_schema, expiring_unbounded_sum_schema, resign_with_contract,
+    summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, SUMMED_U64_MESSAGE,
+    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -18,6 +21,7 @@ use dpp::dash_to_credits;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
@@ -57,6 +61,25 @@ async fn register_contract_with_schema_and_balance(
     protocol_version: ProtocolVersion,
     balance: u64,
 ) -> Registration {
+    register_contract_with(
+        |contract| {
+            let schemas = contract.document_schemas_mut();
+            schemas.clear();
+            schemas.insert("item".to_string(), schema);
+        },
+        protocol_version,
+        balance,
+    )
+    .await
+}
+
+/// Registers the fixture contract after `edit_contract` edits its serialized form, by an owner
+/// holding `balance`.
+async fn register_contract_with(
+    edit_contract: impl FnOnce(&mut DataContractInSerializationFormat),
+    protocol_version: ProtocolVersion,
+    balance: u64,
+) -> Registration {
     let platform_version =
         PlatformVersion::get(protocol_version).expect("expected the protocol version");
     let mut platform = TestPlatformBuilder::new()
@@ -81,16 +104,8 @@ async fn register_contract_with_schema_and_balance(
     )
     .await
     .expect("expected to create the contract create transition");
-    let transition_bytes = resign_with_schemas(
-        &mut state_transition,
-        |schemas| {
-            schemas.clear();
-            schemas.insert("item".to_string(), schema);
-        },
-        &key,
-        &signer,
-    )
-    .await;
+    let transition_bytes =
+        resign_with_contract(&mut state_transition, edit_contract, &key, &signer).await;
 
     let owner_id = identity.id();
     let outcome = check_and_process(
@@ -112,6 +127,50 @@ async fn register_contract_with_schema_and_balance(
         key,
         outcome,
     }
+}
+
+/// `check_tx` runs the schema depth check before its non-validating parse, so it refuses an
+/// acyclic `$defs` graph that parse would expand exponentially with the error the block charges
+/// for. The graph is kept small so that a missing check fails the test instead of hanging it.
+#[tokio::test]
+async fn should_refuse_an_exponential_ref_dag_in_check_tx_as_the_block_does() {
+    let outcome = register_contract_with(
+        |contract| {
+            contract.document_schemas_mut().clear();
+            add_ref_dag_document_type(contract, 12);
+        },
+        PlatformVersion::latest().protocol_version,
+        dash_to_credits!(1.0),
+    )
+    .await
+    .outcome;
+
+    assert_paid_ref_cycle_error(&outcome, 1);
+}
+
+/// The depth check `check_tx` runs first lets an ordinary contract through.
+#[tokio::test]
+async fn should_accept_an_ordinary_contract_in_check_tx() {
+    let outcome = register_contract_with(
+        |_| {},
+        PlatformVersion::latest().protocol_version,
+        dash_to_credits!(1.0),
+    )
+    .await
+    .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
 }
 
 #[tokio::test]
@@ -222,6 +281,23 @@ async fn should_keep_registering_a_contested_type_summing_an_unbounded_property_
         "block: {:?}",
         outcome.block
     );
+}
+
+/// Like the contested bound, a registration rule: `check_tx` admits the transition, and the
+/// block refuses it, charging the owner and bumping its nonce. `ttl` arrives with the protocol
+/// version that brings the rule, so no earlier version registers the type.
+#[tokio::test]
+async fn should_refuse_an_expiring_type_summing_an_unbounded_property_with_a_paid_consensus_error()
+{
+    let outcome = register_contract_with_schema(
+        expiring_unbounded_sum_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_eq!(outcome.nonce_before, Some(0));
+    assert_paid_contract_structure_error_in_block(&outcome, EXPIRING_UNBOUNDED_SUM_MESSAGE, 1);
 }
 
 /// A document type summing `payment.amount` in an index: the dotted path of `amount`, an integer

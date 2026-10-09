@@ -66,7 +66,7 @@ use dpp::consensus::state::data_trigger::DataTriggerError::{
   DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractInvalidRequiredFieldsUpdateError, DataContractTokenConfigurationUpdateError, DecimalsOverLimitError, DuplicateKeywordsError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError, InvalidDescriptionLengthError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError, InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError, NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError, RedundantDocumentPaidForByTokenWithContractId, TokenPaymentByBurningOnlyAllowedOnInternalTokenError, TokenShieldedPoolIncompatibleRulesError, TooManyKeywordsError, UnknownDocumentActionTokenEffectError, UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, DataContractInvalidRequiredFieldsUpdateError, DataContractTokenConfigurationUpdateError, DecimalsOverLimitError, DuplicateKeywordsError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError, InvalidDescriptionLengthError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError, InvalidTokenDistributionFunctionIncoherenceError, InvalidTokenDistributionFunctionInvalidParameterError, InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError, InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError, NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError, NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError, NonTransferableTokenPaymentMustBurnError, NonTransferableTokenShieldedPoolError, RedundantDocumentPaidForByTokenWithContractId, TokenPaymentByBurningOnlyAllowedOnInternalTokenError, TokenShieldedPoolIncompatibleRulesError, TooManyKeywordsError, UnknownDocumentActionTokenEffectError, UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
 use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError, DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError, DocumentReferencePreimageInvalidError, InvalidEncryptedPropertyShapeError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidKeyPurposeForContractBoundsError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
@@ -83,6 +83,7 @@ use dpp::consensus::state::document::referenced_document_requirement_not_met_err
 use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use dpp::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
@@ -154,7 +155,7 @@ use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_availab
 use dpp::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError, GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
+use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError, TokenNotTransferableError, GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
@@ -521,6 +522,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::TokenShieldedPaymentNotRequiredError(e) => {
             generic_consensus_error!(TokenShieldedPaymentNotRequiredError, e).into()
         }
+        StateError::TokenNotTransferableError(e) => {
+            generic_consensus_error!(TokenNotTransferableError, e).into()
+        }
         StateError::IdentityInTokenConfigurationNotFoundError(e) => {
             generic_consensus_error!(IdentityInTokenConfigurationNotFoundError, e).into()
         }
@@ -792,6 +796,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentTypeIndexOnlyError(e) => {
             generic_consensus_error!(ReferencedDocumentTypeIndexOnlyError, e).into()
+        }
+        StateError::DocumentDeleteConstraintViolatedError(e) => {
+            generic_consensus_error!(DocumentDeleteConstraintViolatedError, e).into()
         }
     }
 }
@@ -1399,6 +1406,12 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::TokenShieldedPoolIncompatibleRulesError(e) => {
             generic_consensus_error!(TokenShieldedPoolIncompatibleRulesError, e).into()
+        }
+        BasicError::NonTransferableTokenShieldedPoolError(e) => {
+            generic_consensus_error!(NonTransferableTokenShieldedPoolError, e).into()
+        }
+        BasicError::NonTransferableTokenPaymentMustBurnError(e) => {
+            generic_consensus_error!(NonTransferableTokenPaymentMustBurnError, e).into()
         }
     }
 }

@@ -11,11 +11,16 @@ const STRING_PROPERTIES: [&str; 5] = ["status", "from", "to", "meta.state", "lab
 /// `members` is an array of identifiers.
 const IDENTIFIER_PROPERTIES: [&str; 4] = ["buyerId", "sellerId", "meta.ownerRef", "members"];
 
+/// The paths the unit tests treat as byte array properties.
+const BYTE_ARRAY_PROPERTIES: [&str; 3] = ["address", "prefix", "meta.key"];
+
 fn property_kind(path: &str) -> Option<EqualityKind> {
     if STRING_PROPERTIES.contains(&path) {
         Some(EqualityKind::Text)
     } else if IDENTIFIER_PROPERTIES.contains(&path) {
         Some(EqualityKind::Identifier)
+    } else if BYTE_ARRAY_PROPERTIES.contains(&path) {
+        Some(EqualityKind::Bytes)
     } else {
         None
     }
@@ -2203,7 +2208,8 @@ fn should_refuse_a_malformed_size_operand() {
         (
             platform_value!({ "size": "title" }),
             "names \"size\", which is not one of add, subtract, multiply, divide, modulo, \
-             power, min, max, abs, ifAbsent, length, byteLength, count, countOf or sumOf",
+             power, min, max, abs, ifAbsent, length, byteLength, count, countPresent, byteAt, countOf \
+             or sumOf",
         ),
     ] {
         expect_refusal(
@@ -2353,6 +2359,161 @@ fn should_compare_a_size_with_other_properties() {
         ),
         Some(PropertyConstraintViolation::NotMet)
     );
+}
+
+// ── countPresent ────────────────────────────────────────────────────────
+
+/// `countPresent` lists two or more paths in declared order, is one node plus one for
+/// each, reads each by presence, and alone keeps a comparison with a literal
+/// meaningful.
+#[test]
+fn should_parse_count_present() {
+    let rule = parse_rule_value(platform_value!({
+        "equal": [{ "countPresent": ["email", "phone", "meta.handle"] }, 1]
+    }));
+    assert_eq!(
+        rule,
+        compare(
+            ConstraintComparison::Equal,
+            ConstraintExpression::CountPresent(vec![
+                "email".to_string(),
+                "phone".to_string(),
+                "meta.handle".to_string(),
+            ]),
+            ConstraintExpression::Value(1)
+        )
+    );
+    // equal, countPresent, its three paths, 1
+    assert_eq!(rule.node_count(), 6);
+    assert_eq!(
+        rule.property_reads(),
+        [
+            ("email", PropertyRead::Presence),
+            ("phone", PropertyRead::Presence),
+            ("meta.handle", PropertyRead::Presence)
+        ]
+    );
+
+    // An `in` bounds the count from both sides
+    let rule = parse_rule_value(platform_value!({
+        "in": [{ "countPresent": ["email", "phone", "handle"] }, [1, 2]]
+    }));
+    assert_eq!(
+        rule,
+        PropertyConstraint::In {
+            operand: ConstraintExpression::CountPresent(vec![
+                "email".to_string(),
+                "phone".to_string(),
+                "handle".to_string(),
+            ]),
+            values: BTreeSet::from([1, 2]),
+        }
+    );
+    // in, countPresent, its three paths, two values
+    assert_eq!(rule.node_count(), 7);
+}
+
+#[test]
+fn should_refuse_a_malformed_count_present() {
+    for (operand, needle) in [
+        (
+            platform_value!({ "countPresent": ["email"] }),
+            "at equal[0].countPresent must list two or more property paths",
+        ),
+        (
+            platform_value!({ "countPresent": "email" }),
+            "at equal[0].countPresent must list two or more property paths",
+        ),
+        (
+            platform_value!({ "countPresent": ["email", 1] }),
+            "at equal[0].countPresent[1] must name a property path",
+        ),
+        (
+            platform_value!({ "countPresent": ["email", "phone", "email"] }),
+            "at equal[0].countPresent[2] repeats the path at equal[0].countPresent[0]",
+        ),
+    ] {
+        expect_refusal(
+            platform_value!({ "rule": { "equal": [operand, 1] } }),
+            needle,
+        );
+    }
+}
+
+/// A property counts as `present` would find it: held with a value other than null,
+/// 0 and false included, and an object only with a member present.
+#[test]
+fn should_count_the_properties_a_document_holds() {
+    let values = data(&[
+        ("email", Value::Text("a@b.c".to_string())),
+        ("phone", Value::Null),
+        ("zero", Value::U64(0)),
+        ("off", Value::Bool(false)),
+        ("emptyObject", data(&[])),
+        (
+            "contact",
+            data(&[("handle", Value::Text("@a".to_string()))]),
+        ),
+    ]);
+    for (paths, expected) in [
+        (platform_value!(["email", "phone"]), 1),
+        (platform_value!(["phone", "missing"]), 0),
+        (platform_value!(["zero", "off"]), 2),
+        (platform_value!(["emptyObject", "contact"]), 1),
+        (
+            platform_value!(["contact.handle", "contact.other", "email"]),
+            2,
+        ),
+    ] {
+        assert_eq!(
+            evaluate(platform_value!({ "countPresent": paths.clone() }), &values),
+            Ok(expected),
+            "{paths:?}"
+        );
+    }
+}
+
+/// Exactly one, at most one, at least two and one or two of a group, judged
+/// against documents setting none to all of it.
+#[test]
+fn should_bound_how_many_of_a_group_a_document_sets() {
+    let group = || platform_value!({ "countPresent": ["email", "phone", "handle"] });
+    let rules = [
+        ("exactlyOne", platform_value!({ "equal": [group(), 1] })),
+        (
+            "atMostOne",
+            platform_value!({ "lessThanOrEqual": [group(), 1] }),
+        ),
+        (
+            "atLeastTwo",
+            platform_value!({ "greaterThanOrEqual": [group(), 2] }),
+        ),
+        ("oneOrTwo", platform_value!({ "in": [group(), [1, 2]] })),
+    ];
+    let set = |count: usize| {
+        data(
+            &[("email", "a@b.c"), ("phone", "555"), ("handle", "@a")][..count]
+                .iter()
+                .map(|(key, value)| (*key, Value::Text(value.to_string())))
+                .collect::<Vec<_>>(),
+        )
+    };
+    // Whether each rule holds for 0, 1, 2 and 3 of the group set
+    for ((name, rule), holds) in rules.into_iter().zip([
+        [false, true, false, false],
+        [true, true, false, false],
+        [false, false, true, true],
+        [false, true, true, false],
+    ]) {
+        let rule = parse_rule_value(rule);
+        for (count, holds) in holds.into_iter().enumerate() {
+            assert_eq!(
+                rule.violation(&set(count), &DocumentSystemValues::default()),
+                (!holds).then_some(PropertyConstraintViolation::NotMet),
+                "{name} with {count} set"
+            );
+        }
+    }
 }
 
 // ── system times and heights ────────────────────────────────────────────
@@ -3027,6 +3188,522 @@ fn should_test_whether_a_string_starts_or_ends_with_another() {
     );
 }
 
+// ── byte arrays ─────────────────────────────────────────────────────────
+
+fn byte_at(path: &str, index: u16) -> ConstraintExpression {
+    ConstraintExpression::ByteAt {
+        path: path.to_string(),
+        index,
+    }
+}
+
+/// A DIP-33 payment address in storage form: the type byte, then a 20-byte
+/// HASH160.
+fn address(type_byte: u8) -> Value {
+    let mut bytes = vec![type_byte];
+    bytes.extend([0xab; 20]);
+    Value::Bytes(bytes)
+}
+
+/// `byteAt` is an integer operand of one node, reading one byte at a literal
+/// index: a byte array property must hold one past the index for it to be
+/// there, which the read reports for the check against `maxItems`.
+#[test]
+fn should_parse_byte_at_as_an_integer_operand() {
+    let rule = parse_rule_value(platform_value!({
+        "in": [{ "byteAt": ["address", 0] }, [0, 1]]
+    }));
+    assert_eq!(
+        rule,
+        PropertyConstraint::In {
+            operand: byte_at("address", 0),
+            values: BTreeSet::from([0, 1]),
+        }
+    );
+    // The in, its operand and its two values
+    assert_eq!(rule.node_count(), 4);
+    assert_eq!(
+        rule.property_reads(),
+        [("address", PropertyRead::Bytes { extent: 1 })]
+    );
+
+    // Anywhere an integer operand stands, a float index with no fraction
+    // being the integer it spells
+    let rule = parse_rule_value(platform_value!({
+        "lessThan": [
+            { "add": [{ "byteAt": ["meta.key", 3.0] }, { "byteAt": ["address", 20] }] },
+            "price"
+        ]
+    }));
+    assert_eq!(
+        rule,
+        PropertyConstraint::Compare {
+            comparison: ConstraintComparison::LessThan,
+            left: ConstraintExpression::Add(vec![byte_at("meta.key", 3), byte_at("address", 20)]),
+            right: property("price"),
+        }
+    );
+    assert_eq!(rule.node_count(), 5);
+    assert_eq!(
+        rule.property_reads(),
+        [
+            ("meta.key", PropertyRead::Bytes { extent: 4 }),
+            ("address", PropertyRead::Bytes { extent: 21 }),
+            ("price", PropertyRead::Value)
+        ]
+    );
+    assert!(!rule.reads_owner());
+    assert!(rule.system_reads().is_empty());
+
+    // The highest index a byte array's maxItems leaves room for
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "equal": [{ "byteAt": ["address", 65535] }, 0]
+        }))
+        .property_reads(),
+        [("address", PropertyRead::Bytes { extent: 65536 })]
+    );
+
+    // The condition of an immutable entry reads the stored bytes through $old.
+    let condition = parse_property_constraint_condition(
+        &platform_value!({ "equal": [{ "byteAt": ["$old.address", 0] }, 1] }),
+        "order",
+        &property_kind,
+    )
+    .expect("the condition parses");
+    assert_eq!(
+        condition.property_reads(),
+        [("$old.address", PropertyRead::Bytes { extent: 1 })]
+    );
+}
+
+#[test]
+fn should_refuse_a_malformed_byte_at() {
+    for (operand, needle) in [
+        (
+            platform_value!({ "byteAt": "address" }),
+            "at lessThan[0].byteAt must list a byte array property path and the index of the \
+             byte it reads, counted from 0",
+        ),
+        (
+            platform_value!({ "byteAt": ["address"] }),
+            "at lessThan[0].byteAt must list a byte array property path",
+        ),
+        (
+            platform_value!({ "byteAt": ["address", 0, 1] }),
+            "at lessThan[0].byteAt must list a byte array property path",
+        ),
+        (
+            platform_value!({ "byteAt": [0, "address"] }),
+            "at lessThan[0].byteAt must name a property path first",
+        ),
+        (
+            platform_value!({ "byteAt": ["address", "0"] }),
+            "at lessThan[0].byteAt[1] must be the index of the byte, an integer from 0 to 65535",
+        ),
+        (
+            platform_value!({ "byteAt": ["address", -1] }),
+            "at lessThan[0].byteAt[1] holds -1, but the index of a byte is an integer from 0 \
+             to 65535",
+        ),
+        (
+            platform_value!({ "byteAt": ["address", 65536] }),
+            "at lessThan[0].byteAt[1] holds 65536, but the index of a byte is an integer from \
+             0 to 65535",
+        ),
+        (
+            platform_value!({ "byteAt": ["address", 1.5] }),
+            "at lessThan[0].byteAt[1] holds 1.5, which is not an integer",
+        ),
+        (
+            platform_value!({ "byteAt": ["$ownerId", 0] }),
+            "at lessThan[0].byteAt names $ownerId, but byteAt reads a byte array property",
+        ),
+        (
+            platform_value!({ "byteAt": ["$createdAt", 0] }),
+            "at lessThan[0].byteAt names $createdAt, but byteAt reads a byte array property",
+        ),
+    ] {
+        expect_refusal(
+            platform_value!({ "rule": { "lessThan": [operand, 10] } }),
+            needle,
+        );
+    }
+}
+
+/// A byte reads as 0 to 255 whichever form the document gives the array in,
+/// and never faults: a byte the array does not hold, one of an array left out
+/// or set to null, and one of a value that is no byte array (which the schema
+/// validation refuses first) read as 0.
+#[test]
+fn should_read_a_byte_or_zero_where_there_is_none() {
+    let values = data(&[
+        ("address", Value::Bytes(vec![0x01, 0xff, 0x80])),
+        ("meta", platform_value!({ "key": Value::Bytes20([7; 20]) })),
+        ("prefix", Value::Array(vec![Value::U8(5), Value::U64(250)])),
+        ("empty", Value::Bytes(vec![])),
+        ("unset", Value::Null),
+        ("title", Value::Text("hello".to_string())),
+        (
+            "mixed",
+            Value::Array(vec![Value::U8(5), Value::Text("x".to_string())]),
+        ),
+        ("float", Value::Array(vec![Value::Float(1.0), Value::U8(2)])),
+        ("large", Value::Array(vec![Value::U64(256)])),
+        ("fixed", Value::Bytes32([9; 32])),
+        ("id", Value::Identifier([3; 32])),
+        ("wide", Value::Bytes36([4; 36])),
+    ]);
+    for (path, index, expected) in [
+        ("address", 0, 1),
+        ("address", 1, 255),
+        ("address", 2, 128),
+        ("address", 3, 0),
+        ("address", 65535, 0),
+        ("meta.key", 19, 7),
+        ("meta.key", 20, 0),
+        ("prefix", 0, 5),
+        ("prefix", 1, 250),
+        ("prefix", 2, 0),
+        ("fixed", 31, 9),
+        ("id", 0, 3),
+        ("wide", 35, 4),
+        ("empty", 0, 0),
+        ("unset", 0, 0),
+        ("missing", 0, 0),
+        ("meta.missing", 0, 0),
+        ("title", 0, 0),
+        // An array holding anything but bytes reads no byte, even where it holds one
+        ("mixed", 0, 0),
+        ("float", 1, 0),
+        ("large", 0, 0),
+    ] {
+        assert_eq!(
+            evaluate(platform_value!({ "byteAt": [path, index] }), &values),
+            Ok(expected),
+            "{path}[{index}]"
+        );
+    }
+}
+
+/// The type byte of a payment address: an address left out reads its byte as
+/// 0, which the listed values admit; where 0 is not admitted, a `present` in
+/// front tells an address left out from one starting with 0.
+#[test]
+fn should_judge_a_rule_on_one_byte_of_a_byte_array() {
+    let none = DocumentSystemValues::default();
+    let type_byte = parse_rule_value(platform_value!({
+        "in": [{ "byteAt": ["address", 0] }, [0, 1]]
+    }));
+    for (values, expected) in [
+        (data(&[("address", address(0x00))]), None),
+        (data(&[("address", address(0x01))]), None),
+        (
+            data(&[("address", address(0x02))]),
+            Some(PropertyConstraintViolation::NotMet),
+        ),
+        (
+            data(&[("address", address(0xff))]),
+            Some(PropertyConstraintViolation::NotMet),
+        ),
+        (data(&[]), None),
+        // An empty array holds no byte 0, which reads as 0
+        (data(&[("address", Value::Bytes(vec![]))]), None),
+    ] {
+        assert_eq!(type_byte.violation(&values, &none), expected, "{values:?}");
+    }
+
+    let only_p2sh = parse_rule_value(platform_value!({
+        "ifThen": [{ "present": "address" }, { "equal": [{ "byteAt": ["address", 0] }, 1] }]
+    }));
+    assert_eq!(only_p2sh.violation(&data(&[]), &none), None);
+    assert_eq!(
+        only_p2sh.violation(&data(&[("address", address(0x01))]), &none),
+        None
+    );
+    assert_eq!(
+        only_p2sh.violation(&data(&[("address", address(0x00))]), &none),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+
+    // A byte is an integer like any: here the high nibble of the second byte
+    let nibble = parse_rule_value(platform_value!({
+        "equal": [{ "divide": [{ "byteAt": ["address", 1] }, 16] }, 10]
+    }));
+    assert_eq!(
+        nibble.violation(&data(&[("address", address(0x00))]), &none),
+        None
+    );
+}
+
+/// Beside a byte array property, `startsWith` and `endsWith` test byte arrays:
+/// a constant is written in hex, either case, and a constant the property
+/// must start or end with is as long as the property must be.
+#[test]
+fn should_parse_starts_with_and_ends_with_over_byte_arrays() {
+    for (key, position) in [
+        ("startsWith", AffixPosition::Start),
+        ("endsWith", AffixPosition::End),
+    ] {
+        let rule = parse_rule_value(platform_value!({ key: ["address", { "const": "00Ab" }] }));
+        assert_eq!(
+            rule,
+            PropertyConstraint::BytesAffix {
+                position,
+                bytes: BytesOperand::Property("address".to_string()),
+                affix: BytesOperand::Constant(vec![0x00, 0xab]),
+            },
+            "{key}"
+        );
+        assert_eq!(rule.node_count(), 3);
+        assert_eq!(
+            rule.property_reads(),
+            [("address", PropertyRead::Bytes { extent: 2 })]
+        );
+        // No string is compared
+        assert!(rule.text_affixes().is_empty());
+        assert!(rule.text_constants().is_empty());
+        assert!(!rule.reads_owner());
+
+        let both = parse_rule_value(platform_value!({ key: ["address", "meta.key"] }));
+        assert_eq!(
+            both,
+            PropertyConstraint::BytesAffix {
+                position,
+                bytes: BytesOperand::Property("address".to_string()),
+                affix: BytesOperand::Property("meta.key".to_string()),
+            }
+        );
+        assert_eq!(
+            both.property_reads(),
+            [
+                ("address", PropertyRead::Bytes { extent: 0 }),
+                ("meta.key", PropertyRead::Bytes { extent: 0 })
+            ]
+        );
+
+        // A constant starting or ending with the property bounds nothing
+        let constant_first =
+            parse_rule_value(platform_value!({ key: [{ "const": "cafe" }, "prefix"] }));
+        assert_eq!(
+            constant_first,
+            PropertyConstraint::BytesAffix {
+                position,
+                bytes: BytesOperand::Constant(vec![0xca, 0xfe]),
+                affix: BytesOperand::Property("prefix".to_string()),
+            }
+        );
+        assert_eq!(
+            constant_first.property_reads(),
+            [("prefix", PropertyRead::Bytes { extent: 0 })]
+        );
+    }
+
+    // Constants parse to their bytes, so two spellings of the same bytes are
+    // the same condition
+    let repeated = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "startsWith": ["address", { "const": "ab" }] },
+            { "startsWith": ["address", { "const": "AB" }] }
+        ]
+    }));
+    assert_eq!(
+        repeated.repeated_condition(),
+        Some(("anyOf[1]".to_string(), "anyOf[0]".to_string()))
+    );
+}
+
+/// A byte array is tested only by `startsWith` and `endsWith`, against hex
+/// constants and other byte arrays, with no default; `equal`, `notEqual` and
+/// `contains` refuse one.
+#[test]
+fn should_refuse_a_malformed_test_of_a_byte_array() {
+    for (rule, needle) in [
+        (
+            platform_value!({ "startsWith": ["address", { "const": "0" }] }),
+            "at startsWith[1].const holds \"0\", which is not an even number of hex digits",
+        ),
+        (
+            platform_value!({ "startsWith": ["address", { "const": "0x00" }] }),
+            "at startsWith[1].const holds \"0x00\", which is not an even number of hex digits",
+        ),
+        (
+            platform_value!({ "endsWith": [{ "const": "zz" }, "address"] }),
+            "at endsWith[0].const holds \"zz\", which is not an even number of hex digits",
+        ),
+        (
+            platform_value!({ "startsWith": ["address", { "const": 5 }] }),
+            "at startsWith[1].const must be a string of hex digits",
+        ),
+        (
+            platform_value!({ "endsWith": ["address", "address"] }),
+            "at endsWith tests \"address\" against itself",
+        ),
+        (
+            platform_value!({ "startsWith": ["address", "status"] }),
+            "at startsWith tests a byte array property against a property that is not one",
+        ),
+        (
+            platform_value!({ "startsWith": ["status", "address"] }),
+            "at startsWith tests a byte array property against a property that is not one",
+        ),
+        (
+            platform_value!({ "endsWith": ["address", "buyerId"] }),
+            "at endsWith tests a byte array property against a property that is not one",
+        ),
+        (
+            platform_value!({ "startsWith": ["address", { "ifAbsent": ["prefix", "00"] }] }),
+            "at startsWith[1] gives a byte array property a default, which byte arrays do not \
+             take",
+        ),
+        (
+            platform_value!({ "startsWith": ["address", 5] }),
+            "at startsWith[1] must be the path of a byte array property or a { \"const\": hex }",
+        ),
+        (
+            platform_value!({ "equal": ["address", { "const": "00" }] }),
+            "at equal compares a byte array property, which only startsWith and endsWith test",
+        ),
+        (
+            platform_value!({ "notEqual": ["address", "prefix"] }),
+            "at notEqual compares a byte array property, which only startsWith and endsWith \
+             test",
+        ),
+        (
+            platform_value!({ "equal": ["status", "address"] }),
+            "at equal compares a byte array property, which only startsWith and endsWith test",
+        ),
+        (
+            platform_value!({ "contains": ["address", { "const": "00" }] }),
+            "at contains[1] is a const, but address holds no strings or identifiers",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": rule }), needle);
+    }
+
+    // Looked in for an integer, or bound in a total's filter, a byte array
+    // reads as an integer, which the parsed document type refuses
+    let looked_in = parse_rule_value(platform_value!({ "contains": ["address", 0] }));
+    assert_eq!(
+        looked_in.property_reads(),
+        [("address", PropertyRead::Elements(ElementKind::Integer))]
+    );
+    let bound = parse_rule_value(platform_value!({
+        "lessThan": [{ "countOf": ["order", { "key": "address" }] }, 3]
+    }));
+    assert_eq!(bound.property_reads(), [("address", PropertyRead::Value)]);
+}
+
+/// Byte for byte: an array starts and ends with the empty one and with
+/// itself, whichever form the document gives either in; one left out takes no
+/// bytes, and the condition does not hold for it.
+#[test]
+fn should_test_whether_a_byte_array_starts_or_ends_with_another() {
+    let none = DocumentSystemValues::default();
+    let magic = parse_rule_value(platform_value!({
+        "startsWith": ["address", { "const": "cafe" }]
+    }));
+    let trailer = parse_rule_value(platform_value!({
+        "endsWith": ["address", { "const": "beef" }]
+    }));
+    let empty = parse_rule_value(platform_value!({ "startsWith": ["address", { "const": "" }] }));
+    for (address, starts, ends, nonempty) in [
+        (
+            Some(Value::Bytes(vec![0xca, 0xfe, 0xbe, 0xef])),
+            true,
+            true,
+            true,
+        ),
+        (Some(Value::Bytes(vec![0xca, 0xfe])), true, false, true),
+        (Some(Value::Bytes(vec![0xbe, 0xef])), false, true, true),
+        (Some(Value::Bytes(vec![0xca])), false, false, true),
+        (Some(Value::Bytes(vec![])), false, false, true),
+        (
+            Some(Value::Array(vec![
+                Value::U8(0xca),
+                Value::U64(0xfe),
+                Value::U8(0xbe),
+                Value::U8(0xef),
+            ])),
+            true,
+            true,
+            true,
+        ),
+        (Some(Value::Null), false, false, false),
+        (
+            Some(Value::Text("cafebeef".to_string())),
+            false,
+            false,
+            false,
+        ),
+        (None, false, false, false),
+    ] {
+        let values = match &address {
+            Some(address) => data(&[("address", address.clone())]),
+            None => data(&[]),
+        };
+        assert_eq!(magic.holds(&values, &none), Ok(starts), "{address:?}");
+        assert_eq!(trailer.holds(&values, &none), Ok(ends), "{address:?}");
+        assert_eq!(empty.holds(&values, &none), Ok(nonempty), "{address:?}");
+    }
+
+    // Two properties: a key under its parent's prefix
+    let nested = parse_rule_value(platform_value!({ "startsWith": ["address", "prefix"] }));
+    let keys = |address: &[u8], prefix: Option<&[u8]>| {
+        let mut entries = vec![("address", Value::Bytes(address.to_vec()))];
+        if let Some(prefix) = prefix {
+            entries.push(("prefix", Value::Bytes(prefix.to_vec())));
+        }
+        data(&entries)
+    };
+    assert_eq!(
+        nested.holds(&keys(&[1, 2, 3], Some(&[1, 2])), &none),
+        Ok(true)
+    );
+    assert_eq!(
+        nested.holds(&keys(&[1, 3], Some(&[1, 2])), &none),
+        Ok(false)
+    );
+    assert_eq!(nested.holds(&keys(&[1, 2], None), &none), Ok(false));
+
+    // A constant tested for the property's prefix
+    let within = parse_rule_value(platform_value!({
+        "startsWith": [{ "const": "0102ff" }, "prefix"]
+    }));
+    assert_eq!(
+        within.holds(&data(&[("prefix", Value::Bytes(vec![1, 2]))]), &none),
+        Ok(true)
+    );
+    assert_eq!(
+        within.holds(&data(&[("prefix", Value::Bytes(vec![2]))]), &none),
+        Ok(false)
+    );
+
+    // An optional address: left out, or of type 0 or 1
+    let address_type = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "absent": "address" },
+            { "startsWith": ["address", { "const": "00" }] },
+            { "startsWith": ["address", { "const": "01" }] }
+        ]
+    }));
+    assert_eq!(address_type.node_count(), 8);
+    assert_eq!(address_type.violation(&data(&[]), &none), None);
+    assert_eq!(
+        address_type.violation(&data(&[("address", address(0x01))]), &none),
+        None
+    );
+    assert_eq!(
+        address_type.violation(&data(&[("address", address(0x02))]), &none),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // `not` of a test of an array left out holds
+    let not_magic = parse_rule_value(platform_value!({
+        "not": { "startsWith": ["address", { "const": "cafe" }] }
+    }));
+    assert_eq!(not_magic.violation(&data(&[]), &none), None);
+}
+
 // ── min, max, abs, ifThen, ifThenElse and notIn ──────────────────────────
 
 /// `min` and `max` take two or more operands and evaluate every one; `abs`
@@ -3391,7 +4068,8 @@ fn should_negate_an_in_with_not_in() {
 
 /// `countOf` and `sumOf` parse to an [`AggregateRead`]: the type they total,
 /// what a `sumOf` totals, and their filter, each key bound to a property of the
-/// document (read as its kind compares), `$ownerId`, an integer or a constant.
+/// document (read as its kind compares), `$ownerId`, `$id`, an integer or a
+/// constant.
 /// The document's own type is marked, and a filter costs a node per key.
 #[test]
 fn should_parse_count_of_and_sum_of_with_their_filters() {
@@ -3456,6 +4134,26 @@ fn should_parse_count_of_and_sum_of_with_their_filters() {
         ]
     );
     assert!(!pledged.reads_owner());
+
+    // The document's own id: the documents pointing at it, which no transfer or price
+    // update changes
+    let votes = parse_rule_value(platform_value!({
+        "equal": [{ "countOf": ["vote", { "pollId": "$id" }] }, 0]
+    }));
+    assert_eq!(
+        votes.aggregate_reads(),
+        [&AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "vote".to_string(),
+            filter: BTreeMap::from([("pollId".to_string(), AggregateBinding::Id)]),
+            of_own_type: false,
+        }]
+    );
+    assert_eq!(votes.node_count(), 1 + 2 + 1);
+    assert!(votes.property_reads().is_empty());
+    assert!(!votes.reads_owner());
+    assert!(!votes.reads_change(SystemChange::Transfer));
+    assert!(!votes.reads_change(SystemChange::PriceUpdate));
 
     // A total over a whole type reads no property, but is no constant either
     let listed = parse_rule_value(platform_value!({
@@ -3536,13 +4234,13 @@ fn should_refuse_a_malformed_aggregate() {
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": "$createdAt" }] }),
-            "at lessThan[0].countOf[1].a takes $createdAt, but the one system value a key takes \
-             is $ownerId",
+            "at lessThan[0].countOf[1].a takes $createdAt, but the system values a key takes are \
+             $ownerId and $id",
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": true }] }),
-            "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, an \
-             integer or a { \"const\": ... }",
+            "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, \
+             $id, an integer or a { \"const\": ... }",
         ),
         (
             platform_value!({ "countOf": ["listing", { "a": { "const": 3 } }] }),

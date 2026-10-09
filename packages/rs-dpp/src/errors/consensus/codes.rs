@@ -123,6 +123,8 @@ impl ErrorWithCode for BasicError {
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
             Self::PreProgrammedDistributionAmountOverLimitError(_) => 10277,
             Self::TokenShieldedPoolIncompatibleRulesError(_) => 10278,
+            Self::NonTransferableTokenShieldedPoolError(_) => 10279,
+            Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -382,6 +384,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentTypeModeratedError(_) => 40144,
             Self::ReferencedDocumentRemovedError(_) => 40145,
             Self::ReferencedDocumentTypeIndexOnlyError(_) => 40146,
+            Self::DocumentDeleteConstraintViolatedError(_) => 40147,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -457,6 +460,7 @@ impl ErrorWithCode for StateError {
             Self::TokenShieldedPoolNotEnabledError(_) => 40723,
             Self::TokenShieldedPaymentAmountMismatchError(_) => 40724,
             Self::TokenShieldedPaymentNotRequiredError(_) => 40725,
+            Self::TokenNotTransferableError(_) => 40726,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,

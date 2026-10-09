@@ -67,7 +67,7 @@ pub unsafe extern "C" fn dash_sdk_token_emergency_action(
     // SAFETY: We've verified all pointers are non-null above
     // However, we cannot validate if they point to valid memory without dereferencing
     // For test safety, we should create proper mock handles instead of using arbitrary values
-    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
+    let wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
     let signer = unsafe { &*(signer_handle as *const crate::signer::VTableSigner) };
     let params = unsafe { &*params };

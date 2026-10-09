@@ -646,6 +646,14 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
+        // Nor rules gating its delete, which only a delete transition judges
+        if self.consume && !referenced.delete_constraints().is_empty() {
+            return Some(format!(
+                "consume deletes the found document without a delete transition, so \"{}\" \
+                 may declare no deleteConstraints: they would not be judged",
+                referenced.name()
+            ));
+        }
         if self.consume
             && referenced.security_level_requirement() < declaring.security_level_requirement()
         {

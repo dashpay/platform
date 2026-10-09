@@ -59,7 +59,8 @@ pub struct SystemLimits {
     /// `not`, `ifThen` or `ifThenElse`, every arithmetic operator (`min`, `max` and `abs`
     /// included) and every operand: an integer value, a `const`, a property, a size
     /// (`length`, `byteLength`, `count`) or a system time or height. An `ifAbsent` operand
-    /// is one node, the default it gives included.
+    /// is one node, the default it gives included, and a `countPresent` one plus one for
+    /// each property it tests.
     /// Refused under full validation only, like `max_property_constraints`. Read by document
     /// type parser generation 3 (protocol version 14) and never reached before.
     pub max_property_constraint_nodes: u16,
@@ -387,6 +388,19 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_contested_summed_value_magnitude: Option<u64>,
+    /// The largest magnitude a summed property whose values may be negative may admit on a
+    /// document type with a `ttl`, enforced when a contract is registered or updated (full
+    /// validation only, like `max_document_ttl_seconds`): unless the property's schema
+    /// declares a `minimum` of at least 0, it must declare a `maximum` of at most this and a
+    /// `minimum` of at least its negation. The platform deletes expired documents at the end
+    /// of a block with no transition to refuse, and removing a negative value raises every
+    /// sum it was in, so the values must be small enough that the sums stay in `i64`: with
+    /// every value this small, a sum of fewer than 2^36 documents does. Removing values that
+    /// are never negative only lowers sums. Read by document type parser generation 3
+    /// (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers do not read it.
+    pub max_expiring_signed_summed_value_magnitude: Option<u64>,
 }
 
 #[cfg(test)]

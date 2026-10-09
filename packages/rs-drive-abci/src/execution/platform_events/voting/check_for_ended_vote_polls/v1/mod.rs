@@ -10,10 +10,12 @@ use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
 use drive::query::VotePollsByEndDateDriveQuery;
+use drive::util::common::encode::encode_u64;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -21,7 +23,8 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Checks for ended vote polls, awarding a tie to the earliest contender
+    /// Checks for ended vote polls, awarding a tie to the earliest contender, after removing
+    /// the end dates left with no vote poll among the first due
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v1(
         &self,
@@ -33,13 +36,32 @@ where
     ) -> Result<(), Error> {
         // let's start by getting the vote polls that have finished. Version 0 carried two
         // testnet clean-ups of protocol versions 1 and 2; this version only runs from
-        // protocol version 14, so it fetches the polls due by the block time and nothing else
+        // protocol version 14, so it reads only what is due by the block time
         let distribute_after_time = block_info.time_ms;
         let maximum_vote_polls_to_process = platform_version
             .drive_abci
             .validation_and_processing
             .event_constants
             .maximum_vote_polls_to_process;
+        // An end date with no vote poll under it ends nothing yet takes a slot of the read
+        // below, so enough of them due before every vote poll would stall them all. Those among
+        // the first due go before the read; the read then reaches the vote polls behind them.
+        for empty_end_time in VotePollsByEndDateDriveQuery::execute_no_proof_empty_end_times(
+            distribute_after_time,
+            maximum_vote_polls_to_process,
+            &self.drive,
+            transaction,
+            &mut vec![],
+            platform_version,
+        )? {
+            self.drive.grove_delete(
+                vote_end_date_queries_tree_path_vec().as_slice().into(),
+                encode_u64(empty_end_time).as_slice(),
+                transaction,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
         let vote_polls_by_timestamp =
             VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query(
                 distribute_after_time,

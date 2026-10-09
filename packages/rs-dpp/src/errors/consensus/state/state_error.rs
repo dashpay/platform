@@ -83,6 +83,7 @@ use crate::consensus::state::document::referenced_document_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
@@ -111,7 +112,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError, TokenNotTransferableError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -722,6 +723,16 @@ pub enum StateError {
     // documents can not be fetched by id (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentTypeIndexOnlyError(ReferencedDocumentTypeIndexOnlyError),
+
+    // The owner's delete of a document breaks a rule of its type's `deleteConstraints`
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentDeleteConstraintViolatedError(DocumentDeleteConstraintViolatedError),
+
+    // A transfer of a token whose configuration sets `transferable: false`, or a contract whose
+    // document type would pay such a token to its owner (protocol version 14).
+    #[error(transparent)]
+    TokenNotTransferableError(TokenNotTransferableError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -733,6 +744,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::{ContractModerationList, ModerationAbility};
@@ -1593,6 +1605,26 @@ mod tests {
                 )
             )),
             171
+        );
+        // The owner's delete of a document a deleteConstraints rule refuses (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentDeleteConstraintViolatedError(
+                DocumentDeleteConstraintViolatedError::new(
+                    identity_id,
+                    "poll".to_string(),
+                    "noVotes".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            172
+        );
+        // A transfer of a non-transferable token (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::TokenNotTransferableError(
+                TokenNotTransferableError::new(identity_id, "transfer".to_string())
+            )),
+            173
         );
     }
 }

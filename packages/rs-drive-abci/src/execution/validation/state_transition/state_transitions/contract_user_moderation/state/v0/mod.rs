@@ -14,6 +14,7 @@ use crate::execution::validation::state_transition::common::validate_document_no
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::{
     fetch_document_with_id, read_property_constraint_aggregates_for_moderator_change,
+    read_property_constraint_aggregates_for_restore,
 };
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -1665,8 +1666,9 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// under the type, the type keeps removal records and the document has one that is not yet
 /// restored, block time is within the restore window after the removal, the bytes hash to what
 /// the record holds, the removal is no deletion the seated team approved together (those
-/// stand), and no other document holds a value of one of the type's unique indexes. Every refusal is paid
-/// for by bumping the signer's contract nonce.
+/// stand), no other document holds a value of one of the type's unique indexes, and the
+/// restored document meets its type's `propertyConstraints` with the totals after its
+/// insertion. Every refusal in a block is paid for by bumping the signer's contract nonce.
 ///
 /// The action carries the contract, the decoded document and the record marked restored, so
 /// Drive puts the document back and marks the record without reading again. Nothing the
@@ -1917,6 +1919,37 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action(),
                 uniqueness.errors,
+            ));
+        }
+    }
+
+    // Contract moderation is inactive before protocol version 14, so this check cannot
+    // alter earlier blocks. The hash pins the document's retained values, but other writes
+    // may have changed the totals its rules read while it was absent from the live trees.
+    if !document_type.property_constraints().is_empty() {
+        let aggregates = read_property_constraint_aggregates_for_restore(
+            platform.drive,
+            contract,
+            document_type_name,
+            &document,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        let system = DocumentSystemValues {
+            aggregates: Some(aggregates),
+            ..DocumentSystemValues::of_document(&document)
+        };
+        let result = document_type.validate_property_constraints(
+            &Value::from(document.properties()),
+            &system,
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action(),
+                result.errors,
             ));
         }
     }

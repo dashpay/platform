@@ -70,7 +70,7 @@ The name reads through a reference when its first segment names a top-level iden
 
 ## What Drive does
 
-- **Create.** The reference is validated as usual, which reads the referenced document, and Drive writes the entries under the values it holds, without reading it again. A referenced document that has no value for the field, or a reference left out, puts the document under null, as a missing property would.
+- **Create.** The reference is validated as usual, which reads the referenced document, and Drive writes the entries under the values it holds, without reading it again. A referenced document that has no value for the field, or a reference left out, puts the document under null, as a missing property would, or leaves it out of an index that [skips on the property](#skipping-a-document-without-the-value).
 - **Replace, transfer, purchase, price update and a moderator's change of fields.** Drive reads the referenced document once, for both versions of the document, since neither can point elsewhere. It reads it even when no index holding a derived value moves: every entry's reference is rewritten in place on an update, under the values it is filed by.
 - **Delete, a moderator's removal, and expiry by `ttl`.** Drive reads the referenced document to find the entries to remove.
 - **A removed referenced document.** Once a moderator removes a `moderatedDocument` target, Drive reads its owner, and any field its type keeps under [`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields), from the removal record, which keeps them as the document held them. So the entries are found under the values they were written under. A restored document is read again.
@@ -88,8 +88,26 @@ A derived value must stay what it was when an entry was written, or Drive could 
 - A schema property must exist on the referenced type, be stored (not `transient` or inside a transient object), be fixed once written there under the same rule as the reference property, and be one an index can key: not an object or an array, a string of at most 63 characters, a byte array of at most 255 bytes, tighter on a [ranked index](ranked.md).
 - Not `$id` of the referenced document, which is the reference property itself: index that instead. Nor any other system property.
 - The index is not `unique` or contested: a uniqueness check reads the values the create carries, and a derived value is not among them.
-- The derived property is not the source of a `timeRange` or an `integerRange`, nor a skip property of `skipIfAbsent`.
+- The derived property is not the source of a `timeRange` or an `integerRange`.
 - The type is not `indexOnly`: its entries hold every value of its documents, and its delete carries them.
+
+## Skipping a document without the value
+
+A derived property can be a skip property of [`skipIfAbsent`](indexes.md#skipifabsent). The index then leaves out a document whose reference is absent, or whose referenced document has no value for the field, instead of filing it under null. A reply that may quote a post, filed by the owner of the post it quotes:
+
+```json
+{
+  "name": "byQuotedOwner",
+  "properties": [{ "quoteId.$ownerId": "asc" }, { "$createdAt": "asc" }],
+  "skipIfAbsent": ["quoteId.$ownerId"]
+}
+```
+
+A reply quoting no post writes nothing into this index, and its delete looks for nothing there. Since neither the reference nor the field can change once written, a replace never moves a document into or out of such an index through its derived values.
+
+Only the array form names a derived property. `skipIfAbsent: true` skips on the type's own optional properties: whether a derived value can be absent depends on the referenced type.
+
+At registration, a derived skip property must be able to be absent: its reference property is not in `required`, or the field is a schema property the referenced type does not require, or one inside an object it does not require. `$ownerId` and `$creatorId` are absent only with the reference. A byte array the property reads must set `minItems` to at least 1 on the referenced type, since an empty one is keyed like a missing value. Every other [`skipIfAbsent` rule](indexes.md#skipifabsent) applies as to any skip property.
 
 ## Queries
 

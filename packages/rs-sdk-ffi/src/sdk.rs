@@ -40,6 +40,17 @@ fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilde
 }
 
 /// Internal SDK wrapper
+///
+/// A single `SDKHandle` is used from several threads at once (the Swift SDK
+/// runs Platform queries concurrently off the caller's actor), so every FFI
+/// entry point that is handed a live handle must borrow it shared:
+/// `&*(handle as *const SDKWrapper)`. Nothing here needs `&mut` once the
+/// wrapper is built: `Sdk` is `Send + Sync`, `runtime` is an `Arc`, and the
+/// trusted provider mutates only through its own interior locks. Taking
+/// `&mut SDKWrapper` from a handle another thread may be using would alias a
+/// live shared borrow, which is undefined behaviour even if nothing is
+/// written. The one exclusive operation is `dash_sdk_destroy`, whose contract
+/// is that the caller has already stopped every other use of the handle.
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
     pub runtime: Arc<BigStackRuntime>,
@@ -528,6 +539,11 @@ fn build_trusted_provider(
 /// # Safety
 /// - `handle` must be a valid pointer previously returned by this SDK and not yet destroyed.
 /// - It may be null (no-op). After this call the handle must not be used again.
+/// - This is the only entry point that takes the wrapper exclusively, so no
+///   other call on the same handle may be in flight or start concurrently.
+///   The Swift SDK calls it only from `SDK.deinit`, which cannot run while a
+///   query holds its `SDK` (`performBlockingQuery` retains `self` across the
+///   FFI call).
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
     if !handle.is_null() {

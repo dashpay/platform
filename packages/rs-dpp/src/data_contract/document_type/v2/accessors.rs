@@ -335,6 +335,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.property_constraints
     }
 
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.delete_constraints
+    }
+
     fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
         &self.derived_index_properties
     }

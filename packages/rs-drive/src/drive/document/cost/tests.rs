@@ -570,6 +570,139 @@ fn should_charge_no_layer_to_a_skip_index_that_skips_the_document() {
 }
 
 #[test]
+fn should_skip_on_a_derived_value_only_when_it_or_its_reference_is_absent() {
+    // A reply may quote a permanent post; `byBodyQuotedOwner` files it under the quoted post's
+    // owner, which the reply never stores, and skips a reply without one. It shares the body's
+    // value tree with `byBody`, which skips nothing.
+    let platform_version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "text": { "type": "string", "maxLength": 50, "position": 0 },
+            },
+            "additionalProperties": false,
+        },
+        "reply": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "body": { "type": "string", "maxLength": 20, "position": 0 },
+                "quoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": { "type": "permanentDocument", "documentType": "post" },
+                    "position": 1,
+                },
+            },
+            "indices": [
+                { "name": "byBody", "properties": [{ "body": "asc" }] },
+                {
+                    "name": "byBodyQuotedOwner",
+                    "properties": [{ "body": "asc" }, { "quoteId.$ownerId": "asc" }],
+                    "skipIfAbsent": ["quoteId.$ownerId"],
+                },
+            ],
+            "required": ["body"],
+            "additionalProperties": false,
+        },
+    }));
+    let reply = contract.document_type_for_name("reply").expect("reply");
+    let quoted = Value::Identifier([5; 32]);
+    let quoted_owner = Value::Identifier([6; 32]);
+    // (case, the quote, the derived value the caller puts in, whether the reply takes part)
+    let cases = [
+        ("unresolved, quoting", Some(&quoted), None, true),
+        ("unresolved, quoting nothing", None, None, false),
+        (
+            "resolved to null, quoting",
+            Some(&quoted),
+            Some(&Value::Null),
+            false,
+        ),
+        (
+            "resolved, quoting",
+            Some(&quoted),
+            Some(&quoted_owner),
+            true,
+        ),
+    ];
+    let mut own_bytes_taking_part = Vec::new();
+    for (case, quote, derived, takes_part) in cases {
+        let mut document = reply
+            .random_document(Some(1), platform_version)
+            .expect("expected a random document");
+        let mut properties: BTreeMap<String, Value> =
+            [("body".to_string(), Value::Text("hi".to_string()))]
+                .into_iter()
+                .collect();
+        if let Some(quote) = quote {
+            properties.insert("quoteId".to_string(), quote.clone());
+        }
+        // Under the derived name, as Drive puts it: not a path into `quoteId`
+        if let Some(derived) = derived {
+            properties.insert("quoteId.$ownerId".to_string(), derived.clone());
+        }
+        document.set_properties(properties);
+        let cost = document_create_cost(
+            &contract,
+            reply,
+            &document,
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        let shares = |name: &str| {
+            cost.indexes
+                .iter()
+                .find(|index| index.name == name)
+                .map(|index| {
+                    (
+                        index.shared_with.clone(),
+                        index.shared_bytes.new_values,
+                        index.own_bytes.new_values,
+                    )
+                })
+                .unwrap_or_default()
+        };
+        let (by_body_shared_with, by_body_shared_bytes, by_body_own_bytes) = shares("byBody");
+        assert!(by_body_own_bytes > 0, "{case}: byBody keeps its entry");
+        let (shared_with, shared_bytes, own_bytes) = shares("byBodyQuotedOwner");
+        if takes_part {
+            // The body's value tree is shared, and the derived index pays its own layer
+            assert_eq!(
+                by_body_shared_with,
+                vec!["byBodyQuotedOwner".to_string()],
+                "{case}"
+            );
+            assert!(by_body_shared_bytes > 0, "{case}");
+            assert_eq!(shared_with, vec!["byBody".to_string()], "{case}");
+            assert!(shared_bytes > 0, "{case}");
+            assert!(own_bytes > 0, "{case}");
+            own_bytes_taking_part.push(own_bytes);
+        } else {
+            // Skipped: no share of the body's value tree and no layer of its own
+            assert!(by_body_shared_with.is_empty(), "{case}");
+            assert_eq!(by_body_shared_bytes, 0, "{case}");
+            assert_eq!(
+                (shared_with, shared_bytes, own_bytes),
+                (vec![], 0, 0),
+                "{case}"
+            );
+        }
+    }
+    // An owner the caller did not resolve is priced at an identifier's size, as a resolved one
+    assert_eq!(own_bytes_taking_part.len(), 2);
+    assert_eq!(own_bytes_taking_part[0], own_bytes_taking_part[1]);
+}
+
+#[test]
 fn should_add_the_contract_charges() {
     let platform_version = PlatformVersion::latest();
     let mut schema = note_schema();

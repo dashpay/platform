@@ -668,4 +668,64 @@ mod tests {
             "error should mention empty signature, got: {err_msg}"
         );
     }
+
+    #[test]
+    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+        let (key, _) = test_keypair();
+        let root = [7; 32];
+        let mut proof = Proof {
+            grovedb_proof: grovedb_proof_bytes(1),
+            quorum_hash: vec![2; 32],
+            signature: vec![],
+            round: 1,
+            block_id_hash: vec![3; 32],
+            quorum_type: 1,
+        };
+        let state_id = StateId {
+            app_version: metadata.protocol_version as u64,
+            core_chain_locked_height: metadata.core_chain_locked_height,
+            time: metadata.time_ms,
+            app_hash: root.to_vec(),
+            height: metadata.height,
+        };
+        let vote = CanonicalVote {
+            r#type: SignedMsgType::Precommit.into(),
+            block_id: proof.block_id_hash.clone(),
+            chain_id: metadata.chain_id.clone(),
+            height: metadata.height as i64,
+            round: proof.round as i64,
+            state_id: state_id
+                .calculate_msg_hash(
+                    &metadata.chain_id,
+                    metadata.height as i64,
+                    proof.round as i32,
+                )
+                .expect("hash signed state"),
+        };
+        let digest = vote
+            .calculate_sign_hash(
+                &metadata.chain_id,
+                proof.quorum_type as u8,
+                &[2; 32],
+                metadata.height as i64,
+                proof.round as i32,
+            )
+            .expect("hash vote");
+        proof.signature = key
+            .sign(bls_signatures::SignatureSchemes::Basic, &digest)
+            .expect("sign vote")
+            .as_raw_value()
+            .to_compressed()
+            .to_vec();
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider)
+            .expect("matching app hash control");
+        let mut different_root = root;
+        different_root[0] ^= 1;
+        assert!(matches!(
+            verify_tenderdash_proof(&proof, &metadata, &different_root, &provider),
+            Err(Error::InvalidSignature { .. })
+        ));
+    }
 }

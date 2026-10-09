@@ -11,15 +11,15 @@
 //! proofs straddling a state change are refused).
 
 use super::index_only_e2e_tests::{
-    assert_live_root_hash, build_like as build_tagged_like, insert_like, platform_version,
-    setup_likes as setup_tagged_likes,
+    assert_live_root_hash, build_like as build_tagged_like, build_tip, insert_like, insert_tip,
+    platform_version, setup_likes as setup_tagged_likes,
 };
 use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::moderated_join::removals_path_query;
-use crate::query::{DriveDocumentQuery, OrderClause, WhereClause, WhereOperator};
+use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use crate::util::batch::{ContractModerationOperationType, DocumentOperationType, DriveOperation};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{
@@ -1202,4 +1202,398 @@ fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_jo
             removal: removal_of(POSTS[2]),
         }]
     );
+}
+
+const PREALLOCATED_LIKES_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json";
+
+/// A drive with the likes contract of `fixture` applied as written.
+fn setup_likes_fixture(fixture: &str) -> (Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = json_document_to_contract(fixture, false, pv)
+        .expect("expected to parse the yappr-likes contract variant");
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the yappr-likes contract variant");
+    (drive, contract)
+}
+
+/// The posts liked under `hashtag`, through `like.byHashtagPost`
+/// (`[hashtag, postId]`, terminal `$ownerId`). Only `hashtag` is fixed, so
+/// the walk fans out across one `postId` branch per liked post, each
+/// holding that post's likers, and the join property is the prefix
+/// property the walk fans out across.
+fn chained_posts_liked_under<'a>(
+    contract: &'a DataContract,
+    hashtag: &str,
+    ascending: bool,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut order_by: indexmap::IndexMap<String, OrderClause> = Default::default();
+    order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending,
+        },
+    );
+    DriveDocumentQuery {
+        contract,
+        document_type: contract
+            .document_type_for_name("like")
+            .expect("like doctype exists"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(limit),
+        order_by,
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    }
+    .with_by_id_join(
+        "postId",
+        contract
+            .document_type_for_name("post")
+            .expect("post doctype exists"),
+    )
+}
+
+/// The posts `owner` tipped, through `tip.byTipperAmount` (`[$ownerId,
+/// amount]`, terminal `postId`). Only `$ownerId` is fixed, so the walk fans
+/// out across one `amount` branch per distinct amount, each holding the
+/// posts tipped that much, and the join property is the terminal.
+fn chained_posts_tipped_by<'a>(
+    contract: &'a DataContract,
+    owner: [u8; 32],
+    ascending: bool,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut order_by: indexmap::IndexMap<String, OrderClause> = Default::default();
+    order_by.insert(
+        "amount".to_string(),
+        OrderClause {
+            field: "amount".to_string(),
+            ascending,
+        },
+    );
+    DriveDocumentQuery {
+        contract,
+        document_type: contract
+            .document_type_for_name("tip")
+            .expect("tip doctype exists"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(limit),
+        order_by,
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    }
+    .with_by_id_join(
+        "postId",
+        contract
+            .document_type_for_name("post")
+            .expect("post doctype exists"),
+    )
+}
+
+/// For a page with rows, the merged query the proof covers is the one the
+/// merge built when the inner half still carried its limit as a global
+/// one: grovedb's merge lifts a global limit into the same per-instance
+/// cap, so such a page proves to the same bytes as before.
+fn assert_merged_query_matches_the_lifted_global_limit(
+    chained: &DriveDocumentQuery,
+    join_values: &[Identifier],
+) {
+    let pv = platform_version();
+    let components = chained
+        .chained_proof_path_queries(join_values, pv)
+        .expect("the chained path queries build");
+    let mut lifted = components.clone();
+    lifted[0] = chained
+        .construct_path_query(None, pv)
+        .expect("the inner path query builds");
+    assert!(
+        lifted[0].query.limit.is_some(),
+        "the plain lowering carries the limit as a global one"
+    );
+    let merge = |path_queries: &[PathQuery]| {
+        PathQuery::merge(path_queries.iter().collect(), &pv.drive.grove_version)
+            .expect("the components merge")
+    };
+    assert_eq!(merge(&components), merge(&lifted));
+}
+
+/// Reads `chained` without and with a proof, verifies the proof, checks
+/// that every read agrees, and returns the join value of each inner row
+/// and the verified outer post ids.
+fn chained_round_trip(
+    drive: &Drive,
+    chained: &DriveDocumentQuery,
+    what: &str,
+) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
+    let pv = platform_version();
+    let outcome = drive
+        .query_chained_documents(chained, None, None, pv)
+        .unwrap_or_else(|e| panic!("{what}: the chained read executes: {e}"));
+    let (proof, proved_inner) = drive
+        .query_chained_documents_with_proof(chained, pv)
+        .unwrap_or_else(|e| panic!("{what}: the chained proof generates: {e}"));
+    let (root_hash, verified) = chained
+        .verify_chained_documents_proof(proof.as_slice(), pv)
+        .unwrap_or_else(|e| panic!("{what}: the chained proof verifies: {e}"));
+    assert_live_root_hash(drive, root_hash);
+    assert_eq!(
+        proved_inner, outcome.result.inner_documents,
+        "{what}: the proved inner page"
+    );
+    assert_eq!(
+        verified.inner_documents, outcome.result.inner_documents,
+        "{what}: the verified inner page"
+    );
+    assert_eq!(
+        verified.outer_documents, outcome.result.outer_documents,
+        "{what}: the verified outer half"
+    );
+    let join_values = chained
+        .chained_join_values(&verified.inner_documents)
+        .expect("join values");
+    if !join_values.is_empty() {
+        assert_merged_query_matches_the_lifted_global_limit(chained, &join_values);
+    }
+    let rows = verified
+        .inner_documents
+        .iter()
+        .map(|like| {
+            like.properties()
+                .get("postId")
+                .expect("join value present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect();
+    let outer = verified
+        .outer_documents
+        .iter()
+        .map(|post| post.id().to_buffer())
+        .collect();
+    (rows, outer)
+}
+
+/// An inner page whose walk fans out across an index's prefix values
+/// proves and verifies whatever its limit. With only `hashtag` fixed,
+/// `byHashtagPost` holds one `postId` branch per liked post; the merged
+/// proof carries the page's limit as a cap on rows, so it shows every
+/// branch, and the verifier used to read the page back under a global
+/// limit, which refused a proof showing more branches than the limit
+/// ("Proof returns more data than limit").
+#[test]
+fn should_prove_a_chained_page_that_fans_out_across_a_prefix_level() {
+    let (drive, contract) = setup_tagged_likes();
+    for (post, hashtag, seed) in [
+        (POST_A, "dash", 10u64),
+        (POST_B, "dash", 11),
+        (POST_C, "dash", 12),
+        (POSTS[0], "btc", 13),
+    ] {
+        insert_post(&drive, &contract, post, hashtag, "post", seed);
+    }
+    // Three likers of A, one each of B and C under `dash`, and a `btc`
+    // like the hashtag clause leaves out.
+    for (hashtag, post, owner, seed) in [
+        ("dash", POST_A, OWNER_1, 1u64),
+        ("dash", POST_A, OWNER_2, 2),
+        ("dash", POST_A, OWNER_3, 3),
+        ("dash", POST_B, OWNER_1, 4),
+        ("dash", POST_C, OWNER_2, 5),
+        ("btc", POSTS[0], OWNER_1, 6),
+    ] {
+        let like = build_tagged_like(&contract, hashtag, post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    // Limits below the three branches the walk fans out across, at and
+    // above the five rows.
+    for (limit, rows, outer) in [
+        (1u16, vec![POST_A], vec![POST_A]),
+        (2, vec![POST_A; 2], vec![POST_A]),
+        (3, vec![POST_A; 3], vec![POST_A]),
+        (
+            4,
+            vec![POST_A, POST_A, POST_A, POST_B],
+            vec![POST_A, POST_B],
+        ),
+        (
+            5,
+            vec![POST_A, POST_A, POST_A, POST_B, POST_C],
+            vec![POST_A, POST_B, POST_C],
+        ),
+        (
+            10,
+            vec![POST_A, POST_A, POST_A, POST_B, POST_C],
+            vec![POST_A, POST_B, POST_C],
+        ),
+    ] {
+        let chained = chained_posts_liked_under(&contract, "dash", true, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("ascending, limit {limit}")),
+            (rows, outer),
+            "ascending, limit {limit}"
+        );
+    }
+
+    // Newest-key first, the walk meets C's branch before B's and A's.
+    for (limit, rows, outer) in [
+        (1u16, vec![POST_C], vec![POST_C]),
+        (2, vec![POST_C, POST_B], vec![POST_C, POST_B]),
+        (
+            3,
+            vec![POST_C, POST_B, POST_A],
+            vec![POST_C, POST_B, POST_A],
+        ),
+    ] {
+        let chained = chained_posts_liked_under(&contract, "dash", false, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("descending, limit {limit}")),
+            (rows, outer),
+            "descending, limit {limit}"
+        );
+    }
+}
+
+/// The same fan-out with the join property as the index's terminal: with
+/// only `$ownerId` fixed, `byTipperAmount` holds one `amount` branch per
+/// distinct amount tipped, and one branch may hold several rows.
+#[test]
+fn should_prove_a_chained_page_joined_through_its_terminal_that_fans_out_across_a_prefix_level() {
+    let (drive, contract) = setup_likes();
+    for (i, post) in POSTS[..5].iter().enumerate() {
+        insert_post(&drive, &contract, *post, "dash", "post", 100 + i as u64);
+    }
+    // OWNER_1's amounts: 10 for posts 1 and 3, 20 for post 2, 30 for post
+    // 0. OWNER_2's tip is left out by the owner clause.
+    for (post, owner, amount, seed) in [
+        (POSTS[0], OWNER_1, 30u64, 1u64),
+        (POSTS[1], OWNER_1, 10, 2),
+        (POSTS[2], OWNER_1, 20, 3),
+        (POSTS[3], OWNER_1, 10, 4),
+        (POSTS[4], OWNER_2, 15, 5),
+    ] {
+        let tip = build_tip(&contract, post, owner, amount, seed);
+        insert_tip(&drive, &contract, &tip, true).expect("insert tip");
+    }
+
+    // Limits below the three amount branches, below, at and above the
+    // four rows.
+    let ascending = [POSTS[1], POSTS[3], POSTS[2], POSTS[0]];
+    for limit in [1u16, 2, 3, 4, 6] {
+        let expected = ascending[..ascending.len().min(limit as usize)].to_vec();
+        let chained = chained_posts_tipped_by(&contract, OWNER_1, true, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("ascending, limit {limit}")),
+            (expected.clone(), expected),
+            "ascending, limit {limit}"
+        );
+    }
+    let descending = [POSTS[0], POSTS[2], POSTS[3], POSTS[1]];
+    for limit in [1u16, 2, 3, 4] {
+        let expected = descending[..limit as usize].to_vec();
+        let chained = chained_posts_tipped_by(&contract, OWNER_1, false, limit);
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("descending, limit {limit}")),
+            (expected.clone(), expected),
+            "descending, limit {limit}"
+        );
+    }
+
+    // An owner with no tips: an empty page proves alone.
+    let chained = chained_posts_tipped_by(&contract, OWNER_3, true, 2);
+    assert_eq!(
+        chained_round_trip(&drive, &chained, "no tips"),
+        (vec![], vec![])
+    );
+}
+
+/// An empty index branch on the inner page's walk. The preallocated
+/// fixture creates `like.byHashtagPost` buckets when a post is inserted,
+/// so post C, which nobody liked, holds an empty bucket the newest-first
+/// walk visits before B's and A's. Grovedb charges that bucket against a
+/// global limit but not against the per-instance cap the proof carries,
+/// so the server reads the inner page with the proof's own query: the
+/// join values it derives the outer half from are the ones the verifier
+/// reads out of the proof.
+#[test]
+fn should_read_the_inner_page_under_the_proofs_budget_past_an_empty_index_branch() {
+    let (drive, contract) = setup_likes_fixture(PREALLOCATED_LIKES_CONTRACT);
+    for (post, seed) in [(POST_A, 10u64), (POST_B, 11), (POST_C, 12)] {
+        insert_post(&drive, &contract, post, "dash", "post", seed);
+    }
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_A, OWNER_2, 2),
+        (POST_B, OWNER_1, 3),
+    ] {
+        let like = build_tagged_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    // Past C's empty bucket: B's one like, then the first of A's two.
+    let chained = chained_posts_liked_under(&contract, "dash", false, 2);
+    assert_eq!(
+        chained_round_trip(&drive, &chained, "past the empty bucket"),
+        (vec![POST_B, POST_A], vec![POST_B, POST_A])
+    );
+}
+
+/// A page through an index that does not fan out reads and proves as it
+/// did: `byLiker` with `$ownerId` fixed lands on one branch whose rows are
+/// the page, at any limit.
+#[test]
+fn should_prove_a_chained_page_through_an_index_that_does_not_fan_out() {
+    let (drive, contract) = setup_likes();
+    for (post, seed) in [(POST_A, 10u64), (POST_B, 11), (POST_C, 12)] {
+        insert_post(&drive, &contract, post, "dash", "post", seed);
+        let like = build_like(&contract, post, OWNER_1, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let liked = [POST_A, POST_B, POST_C];
+    for limit in [1u16, 2, 3, 10] {
+        let expected = liked[..liked.len().min(limit as usize)].to_vec();
+        let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(limit));
+        assert_eq!(
+            chained_round_trip(&drive, &chained, &format!("limit {limit}")),
+            (expected.clone(), expected),
+            "limit {limit}"
+        );
+    }
 }

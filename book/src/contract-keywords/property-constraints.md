@@ -1,6 +1,6 @@
 # propertyConstraints
 
-`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)).
+`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner, a payment address whose first byte names a known type. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)).
 
 | | |
 |---|---|
@@ -51,8 +51,9 @@
 - **Name order, first failure.** Rules are checked in the order of their names, and the first rule the document breaks refuses the transition with `DocumentPropertyConstraintViolatedError` (10422). The error names the document type, the rule, and why it failed (below).
 - **Transfer and purchase.** These change only the owner and the transfer's time and heights. Rules that read `$ownerId`, `$transferredAt…` or a total that depends on the owner are judged again, against the stored document with its new owner and transfer values; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
 - **Price updates** change only the update's time and heights, so the rules that read `$updatedAt…` are judged again the same way; other rules are not.
+- **Moderator restores.** Every rule of the restored type is judged on the retained document, with its original owner, times and heights. Totals include the restored document as an insertion into the live trees; its removal record is not counted. Another write while it was deleted may make a cap, lower bound or cross-type prerequisite fail. Uniqueness is checked first. A refusal in a block charges the moderator and consumes its nonce, while the document stays deleted and its removal record stays unrestored. Mempool admission refuses the same invalid restore without persisting fees or a nonce change. Restore does not revalidate the full property schema or judge `deleteConstraints`.
 - **Immutable properties.** The same grammar is the condition of an [`immutable`](mutability.md#immutable) entry, which freezes a property while it holds. Only such a condition may read the stored document, through `$old.<path>`; a rule judges creates too, which have none.
-- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height.
+- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height. What may be deleted is the job of [`deleteConstraints`](deletion.md#deleteconstraints), rules in this grammar the stored document must meet for its owner to delete it.
 - **State and fees.** A rule reads the document, its owner and its times and heights, and a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total, which they cannot read.
 
 Why a rule fails, as the error reports it:
@@ -75,7 +76,7 @@ A rule is a condition: a JSON object with exactly one key.
 | `lessThan`, `lessThanOrEqual`, `greaterThan`, `greaterThanOrEqual` | `[left, right]` | The left integer expression compares with the right one this way. Integers only |
 | `in` | `[expression, [v1, v2, ...]]` | The expression takes one of the listed values: two or more, no two alike, all integers or all strings. With strings, the expression is a string property, or an identifier property or `$ownerId` with the strings as base58 identifiers |
 | `notIn` | `[expression, [v1, v2, ...]]` | The expression takes none of the listed values: an `in` negated, listed the same way, in as many nodes. A string or identifier property the document leaves out takes none |
-| `startsWith`, `endsWith` | `[text, affix]` | The first string starts, or ends, with the second, byte for byte with no case folding. Each side is a string constant, a string property or an `ifAbsent` string default, at least one a property and never the same one twice. A string property left out without a default takes no string, and the condition does not hold for it |
+| `startsWith`, `endsWith` | `[text, affix]` | The first string starts, or ends, with the second, byte for byte with no case folding. Each side is a string constant, a string property or an `ifAbsent` string default, at least one a property and never the same one twice. A string property left out without a default takes no string, and the condition does not hold for it. Beside a byte array property it tests byte arrays instead (see [Byte arrays](#byte-arrays)) |
 | `contains` | `["path", value]` | The typed array property at the path holds an element equal to the value: an integer expression among integers; a string constant, a string property or an `ifAbsent` string default among strings; an identifier constant, an identifier property or `$ownerId` among identifiers. An array the document leaves out holds nothing, and a string or identifier property it leaves out is among no elements |
 | `present` | `"path"` | The document holds the property, with a value other than null and, for an object, with at least one member present |
 | `absent` | `"path"` | The document leaves the property out, sets it to null, or gives an object no member that is present |
@@ -117,6 +118,8 @@ An integer expression is one of:
 | `abs` | `{ "abs": a }` | The absolute value of its one operand |
 | `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
 | `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
+| `countPresent` | `{ "countPresent": ["email", "phone"] }` | How many of two or more properties, no two alike, the document holds, each as `present` tests it (see [How many of a group](#how-many-of-a-group)) |
+| `byteAt` | `{ "byteAt": ["address", 0] }` | The byte, 0 to 255, at an index (counted from 0) of a byte array property, 0 when the array does not hold it or the document leaves it out (see [Byte arrays](#byte-arrays)) |
 | system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
 | `countOf`, `sumOf` | `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` | A total of documents of a type of the same contract, read from state (see [Totals of other documents](#totals-of-other-documents)) |
 
@@ -126,10 +129,10 @@ Two more forms appear only in string and identifier comparisons, never inside ar
 
 | Form | Meaning |
 |---|---|
-| `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier |
+| `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier, or, tested against a byte array property, hex digits |
 | `{ "ifAbsent": ["status", "open"] }` | A string property, read as the given string when the document leaves it out |
 
-A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId` and the times and heights below.
+A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`.
 
 A `number` property (a float) cannot be read by a rule, which keeps every result exact.
 
@@ -155,6 +158,30 @@ An identifier property compares in the same three ways: `{ "equal": ["paymentTok
 - `{ "in": ["$ownerId", ["<base58>", "<base58>"]] }` lets only the listed identities own a document of the type.
 
 It is not a property: `present`, `absent` and integer expressions refuse it, and comparing it with itself is refused. On create and replace it is the writer. A transfer or purchase is judged with the new owner, as described in [How it works](#how-it-works). An [index-only](index-only.md) type may not declare a rule that reads it.
+
+## Byte arrays
+
+A byte array property is read a byte at a time, or tested for the bytes it starts or ends with:
+
+- `{ "byteAt": ["address", 0] }` is an integer expression: the byte at index 0, a number from 0 to 255. It goes wherever an integer goes: `{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }` holds the first byte to 0 or 1, `{ "lessThan": [{ "byteAt": ["flags", 1] }, 128] }` keeps the top bit of the second byte clear.
+- `{ "startsWith": ["payload", { "const": "cafe" }] }` holds a payload whose first two bytes are `0xca` and `0xfe`; `endsWith` looks at the last bytes. The constant is written in hex, two digits a byte, in either case and without a `0x`. Either side may be a byte array property instead, as in `{ "startsWith": ["key", "parentKey"] }`, never the same one twice.
+
+What a document that leaves the array out, or holds fewer bytes, reads:
+
+| | Reads |
+|---|---|
+| `byteAt` of an array left out or set to null | 0, as an integer property left out does |
+| `byteAt` past the last byte the array holds | 0 |
+| `startsWith` or `endsWith` of an array left out or set to null | Holds for no constant and no other array, as a string left out does. `not` turns it into a hold |
+| `startsWith` or `endsWith` of an array shorter than the constant | Does not hold |
+
+Since a byte left out reads as 0, a rule admitting 0 holds for an array left out: `{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }` lets a document without an address through. When 0 is not admitted, or a short array must be told from a 0 byte, test the array first: `{ "ifThen": [{ "present": "address" }, { "equal": [{ "byteAt": ["address", 0] }, 1] }] }`, or compare `{ "count": "address" }` with the length it needs.
+
+The index is a literal integer from 0 to 65535, never an expression, and a byte array takes no `ifAbsent` default. `byteAt`, `startsWith` and `endsWith` read only a `byteArray` property, stored (not `transient`, nor inside a transient object). An identifier property is compared whole, with `equal`, `notEqual` or `in` (see [Identifiers](#identifiers-and-ownerid)), and a byte array never is: `equal`, `notEqual`, `in` and `contains` refuse one. A `startsWith` with a constant as long as a fixed-size array says what an `equal` would.
+
+When the property declares `maxItems`, an index at or past it, or a constant longer than it, is refused at registration, since the byte or the bytes are never there.
+
+A rule reading bytes is judged on create and replace like any other; the `$old.` paths of an [`immutable`](mutability.md#immutable) condition or `retractedWhen` read the stored array's bytes (`{ "byteAt": ["$old.address", 0] }`), and a [`deleteConstraints`](deletion.md#deleteconstraints) rule the stored document's. Reading bytes does not make a transfer, a purchase or a price update judge a rule, since none of them changes a byte array.
 
 ## Times and heights
 
@@ -185,7 +212,7 @@ SDK pre-checks run before the block exists: they use the device clock for the ti
 | `{ "sumOf": ["pledge", "amount"] }` | The total `amount` over every `pledge` | `documentsSummable: "amount"` |
 | `{ "sumOf": ["pledge", "amount", { "campaignId": "campaignRef" }] }` | The total over those matching the filter | An index with `summable: "amount"` whose properties are exactly the filter's keys |
 
-A filter maps each key, a property of the counted type or `$ownerId`, to the value it must take, read from the document being written: one of its properties (`"campaignRef"`), `$ownerId`, an integer, or a `{ "const": ... }` string or base58 identifier. The counted type may be the rule's own.
+A filter maps each key, a property of the counted type or `$ownerId`, to the value it must take, read from the document being written: one of its properties (`"campaignRef"`), `$ownerId`, `$id` (its own id, for an identifier key), an integer, or a `{ "const": ... }` string or base58 identifier. The counted type may be the rule's own. `$id` counts the documents pointing at this one: `{ "countOf": ["vote", { "pollId": "$id" }] }` is how many votes name the poll being written.
 
 ```json
 "propertyConstraints": {
@@ -198,12 +225,34 @@ A filter maps each key, a property of the counted type or `$ownerId`, to the val
 }
 ```
 
-- **As it will be after the write.** The total is the stored one with the write applied. When the counted type is the rule's own, a create adds the document, a replace swaps its stored version for the new one, and a transfer or purchase moves it to its new owner. So `atMostTenListings`, declared on `listing`, keeps every owner at ten or fewer, and a replace of one of ten is allowed.
-- **Judged when the rule's own type is written.** A rule is never judged on writes of the type it counts. On its own type it holds for good, since every write that could raise the total is judged; a type with a contested index cannot total its own documents, since a document a contest awards is stored without any rule judged. On another type it is only checked when its own type is written, and can go stale later: deleting a `profile` does not undo a `post` that needed one. Deletes are not judged, so a lower bound can be broken by deleting documents.
+- **As it will be after the write.** The total is the stored one with the write applied. When the counted type is the rule's own, a create or moderator restore adds the document, a replace swaps its stored version for the new one, and a transfer or purchase moves it to its new owner. So `atMostTenListings`, declared on `listing`, keeps every owner at ten or fewer, and a replace of one of ten is allowed.
+- **Judged when the rule's own type is written.** A rule is never judged on writes of the type it counts. On its own type it holds for good, since every write that could raise the total is judged; a type with a contested index cannot total its own documents, since a document a contest awards is stored without any rule judged. On another type it is only checked when its own type is written, and can go stale later: deleting a `profile` does not undo a `post` that needed one. Deletes are not judged, so a lower bound can be broken by deleting documents, unless the counted type's [`deleteConstraints`](deletion.md#deleteconstraints) hold it.
 - **Transfers, purchases and price updates.** A total that depends on the owner (a filter value of `$ownerId`, or a `$ownerId` key on the rule's own type) is read again for a transfer or purchase, the document counted toward its new owner. A rule a price update judges, one reading `$updatedAt…`, reads its totals too.
 - **Billed.** Each total is a state read billed with the write. A total two rules read alike is read once.
 - **Every earlier write counts.** A document batch carries one transition, and each state transition of a block is applied before the next is validated, so a total includes every write before it.
 - **SDK pre-checks** cannot read state, so they do not judge a rule reading a total.
+
+## How many of a group
+
+`countPresent` counts the properties of a group that the document holds, each as `present` tests it, so a rule compares the count with a number. A seller is reached by exactly one of three contacts:
+
+```json
+"propertyConstraints": {
+  "oneContact": { "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }
+}
+```
+
+The comparisons and `in` give every bound:
+
+| Want | Rule |
+|---|---|
+| exactly one | `{ "equal": [{ "countPresent": [...] }, 1] }` |
+| at most one | `{ "lessThanOrEqual": [{ "countPresent": [...] }, 1] }` |
+| at least two | `{ "greaterThanOrEqual": [{ "countPresent": [...] }, 2] }` |
+| one or two | `{ "in": [{ "countPresent": [...] }, [1, 2]] }` |
+| none or all three | `{ "in": [{ "countPresent": ["a", "b", "c"] }, [0, 3]] }` |
+
+The count runs from 0 to the size of the group, so an `in` lists a range in a few values. `oneContact` is 6 nodes (the comparison, `countPresent`, three paths and `1`); the same rule written with `present` alone needs an `anyOf` and a `not` of every pair, 17 nodes for three properties and more than 32 for five. Inside `ifThen` the bound applies only when another condition holds: `{ "ifThen": [{ "equal": ["kind", { "const": "shop" }] }, { "greaterThanOrEqual": [{ "countPresent": ["email", "phone", "handle"] }, 1] }] }` asks a shop for at least one contact.
 
 ## Evaluation order and short-circuiting
 
@@ -230,25 +279,26 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 
 - the keyword is an object of one or more rules, named with 1 to 64 letters, digits or underscores;
 - every condition and every operator object has exactly one key;
-- a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
+- a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings; a `countPresent` two or more distinct paths;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused;
-- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, an integer or a `{ "const": ... }` string.
+- a `byteAt` lists a path and an integer index from 0 to 65535;
+- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer or a `{ "const": ... }` string.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
-- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string, or tested by `startsWith` or `endsWith`, names a string property, and a constant tested against one with an `enum` starts or ends one of its values; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
+- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path `byteAt` reads, and every path a `startsWith` or `endsWith` of byte arrays tests, names a byte array property, within its `maxItems` when it declares one: an index below it, a constant no longer than it; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string, or tested by `startsWith` or `endsWith`, names a string property, and a constant tested against one with an `enum` starts or ends one of its values; every path compared with an identifier names an identifier property; every path `present`, `absent` or `countPresent` tests names a property of any type, an object included;
 - no rule reads a property that is `transient` or inside a transient object, since a stored document could never be held to it;
 - every comparison and `in` reads at least one property: a comparison of constants would hold for every document or for none;
-- strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a property is never compared with itself;
+- strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a byte array is tested only by `startsWith` and `endsWith`, against hex constants (an even number of hex digits) and other byte arrays, never a string or an identifier, and takes no default; a property is never compared with itself;
 - string constants and `ifAbsent` defaults are in the property's `enum` when it has one; identifier constants are base58 identifiers of 32 bytes;
 - no literal divisor is 0 and no literal exponent is negative;
 - every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
-- `present` and `absent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
+- `present`, `absent` and `countPresent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
 - no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
 - no condition or operand nests more than 64 levels deep;
 - once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, and not its own type when that has a contested index, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range, integer-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;
-- every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, and its value is of the same kind; a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
+- every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, and its value is of the same kind (`$ownerId` and `$id` are identifiers); a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
 - every property a filter value reads is listed in `required`, with every object around it, so a write always has the value; an index-only type has no rule reading a total.
 
 Three limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
@@ -271,7 +321,8 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `not` | 1, plus its condition |
 | `ifThen`, `ifThenElse` | 1, plus their conditions |
 | `notIn` | as the `in` it negates |
-| An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`) or a time or height | 1 |
+| An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`), a `byteAt` or a time or height | 1 |
+| `countPresent` | 1, plus 1 per path |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |
 | `countOf`, `sumOf` | 1, plus 1 per filter key |
 
@@ -367,6 +418,41 @@ A create by anyone else is refused, and so is a transfer or sale of a badge to a
 
 The `equal` comes first, so an empty batch never reaches the division. Written the other way round, an empty batch breaks the rule with a division by zero.
 
+**The type of a payment address.** A DIP-33 address in storage form is a type byte, `0x00` for P2PKH or `0x01` for P2SH, then a 20-byte HASH160. A profile may leave its address out:
+
+```json
+"profile": {
+  "type": "object",
+  "properties": {
+    "corePaymentAddress": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 21,
+      "maxItems": 21,
+      "position": 0
+    }
+  },
+  "additionalProperties": false,
+  "propertyConstraints": {
+    "knownAddressType": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] }
+  }
+}
+```
+
+Four nodes: the `in`, the `byteAt` and two values. An address starting with `0x02` is refused with 10422, and a profile without one is accepted, since its byte 0 reads as 0. The same rule with `startsWith` takes 8 nodes, an `anyOf` of `absent` and two prefixes:
+
+```json
+{
+  "anyOf": [
+    { "absent": "corePaymentAddress" },
+    { "startsWith": ["corePaymentAddress", { "const": "00" }] },
+    { "startsWith": ["corePaymentAddress", { "const": "01" }] }
+  ]
+}
+```
+
+`startsWith` is the one to reach for when a run of bytes is checked: `{ "startsWith": ["content", { "const": "1220" }] }` holds a multihash of a SHA-256 digest in 3 nodes, where two `byteAt` comparisons in an `allOf` take 7.
+
 **A flag in arithmetic.** A boolean reads as 1 or 0, so a waived fee must be 0:
 
 ```json
@@ -378,6 +464,7 @@ The `equal` comes first, so an empty batch never reaches the division. Written t
 ## See also
 
 - [Property Constraints](../data-model/documents.md#property-constraints-propertyconstraints), the deep dive
+- [deleteConstraints](deletion.md#deleteconstraints), rules in this grammar judged on the owner's delete
 - [distinctFrom](distinct-from.md), a single-keyword way to keep two identifiers apart
 - [Property Schemas](property-schemas.md), for the one-property bounds JSON Schema gives
 - [transient](transient.md), [Index-Only Types](index-only.md)

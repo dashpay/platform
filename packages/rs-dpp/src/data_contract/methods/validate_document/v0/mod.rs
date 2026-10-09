@@ -203,7 +203,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
 
     fn data_contract() -> CreatedDataContract {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         get_data_contract_fixture(None, 0, platform_version.protocol_version)
     }
 
@@ -221,12 +221,12 @@ mod tests {
 
     #[test]
     fn should_reject_excessive_document_value_depth_before_field_size_validation() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let data_contract = data_contract().data_contract_owned();
         let max_depth = platform_version
             .system_limits
             .max_document_value_depth
-            .expect("latest protocol should enforce document value depth");
+            .expect("protocol version 13 should enforce document value depth");
         let value = nested_document_value(
             max_depth as usize + 1,
             Value::Text(
@@ -259,12 +259,12 @@ mod tests {
 
     #[test]
     fn should_allow_document_value_depth_at_the_limit() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let data_contract = data_contract().data_contract_owned();
         let max_depth = platform_version
             .system_limits
             .max_document_value_depth
-            .expect("latest protocol should enforce document value depth");
+            .expect("protocol version 13 should enforce document value depth");
         let value = nested_document_value(
             max_depth as usize,
             Value::Text(
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn should_preserve_valid_document_properties() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let data_contract = data_contract().data_contract_owned();
         let value = Value::Map(vec![(
             Value::Text("name".to_owned()),

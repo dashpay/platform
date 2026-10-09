@@ -68,7 +68,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let document = &*(document_handle as *const Document);
     // Parse data contract ID
     let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
@@ -237,7 +237,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let document = &*(document_handle as *const Document);
     // Parse data contract ID
     let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {

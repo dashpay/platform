@@ -3,7 +3,10 @@ use crate::prelude::DataContract;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
+#[cfg(all(test, feature = "fixtures-and-mocks"))]
+mod duplicate_keys_tests;
 mod v0;
+mod v1;
 use crate::document::Document;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -23,9 +26,10 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
             .validate_document
         {
             0 => self.validate_document_v0(name, document, platform_version),
+            1 => self.validate_document_v1(name, document, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_document".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -45,9 +49,10 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
             .validate_document
         {
             0 => self.validate_document_properties_v0(name, properties, system, platform_version),
+            1 => self.validate_document_properties_v1(name, properties, system, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_document_properties".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

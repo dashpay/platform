@@ -44,7 +44,7 @@ pub mod time_range;
 
 pub use bucketing::IndexBucketing;
 pub(crate) use derived_index_property::{
-    parse_derived_index_property_name, DerivedIndexPropertyName,
+    parse_derived_index_property_name, reads_through_reference, DerivedIndexPropertyName,
 };
 pub use derived_index_property::{DerivedIndexField, DerivedIndexProperty};
 pub use extract_contested_values::contested_index_identifier;

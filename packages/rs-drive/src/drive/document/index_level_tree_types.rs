@@ -87,8 +87,8 @@ use dpp::data_contract::document_type::IndexBucketing;
 use dpp::data_contract::document_type::{
     DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
 };
-#[cfg(feature = "server")]
-use dpp::document::DocumentV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::platform_value::Value;
 #[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
@@ -435,15 +435,29 @@ where
     Ok(false)
 }
 
-/// Whether `document_info` carries `property`, a skip property: a top-level,
-/// non-system property (the parser refuses any other), so its presence is a
-/// single lookup. A worst-case size carries every property: estimation then
-/// walks every index, which keeps it an upper bound. A create's dry run reads
-/// the real document, so it skips exactly where the apply does.
+/// Whether `document` carries `property`, a skip property: it holds a value
+/// for it other than null. A skip property is a top-level, non-system property
+/// or a derived index property (the parser refuses any other), so its presence
+/// is a single lookup. Drive puts a derived value into the document before
+/// keying it (`derived_index_values`), null where the reference or the field
+/// it reads is absent, and that null is absent as a missing property is: it
+/// would be keyed under the same empty key.
+pub(crate) fn document_carries(document: &Document, property: &str) -> bool {
+    !matches!(
+        document.properties().get(property),
+        None | Some(Value::Null)
+    )
+}
+
+/// Whether `document_info` carries `property` ([`document_carries`]). A
+/// worst-case size carries every property: estimation then walks every index,
+/// which keeps it an upper bound. A create's dry run reads the real document,
+/// so it skips where the apply does, though never on a derived value it does
+/// not read, which is a placeholder of the field's type.
 #[cfg(feature = "server")]
 fn document_info_carries(document_info: &DocumentInfo, property: &str) -> bool {
     match document_info.get_borrowed_document() {
-        Some(document) => document.properties().contains_key(property),
+        Some(document) => document_carries(document, property),
         None => true,
     }
 }

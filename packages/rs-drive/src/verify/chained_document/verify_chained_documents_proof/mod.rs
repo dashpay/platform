@@ -19,7 +19,7 @@ impl DriveDocumentQuery<'_> {
     /// component is derived from those (exactly as the prover derived
     /// it from its materialization), the merged query is rebuilt, and
     /// the AUTHORITATIVE full pass verifies the whole composition —
-    /// grovedb enforces the inner page's lifted per-instance limit and
+    /// grovedb enforces the inner page's per-instance limit and
     /// range completeness — with the proven outer documents required
     /// to match the proven inner join values. Under a `refersTo:
     /// permanentDocument` join property a missing referenced document

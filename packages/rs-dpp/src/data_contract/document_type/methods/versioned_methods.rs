@@ -1,4 +1,5 @@
 use crate::consensus::basic::document::DocumentPropertyConstraintViolatedError;
+use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
@@ -892,6 +893,36 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             if let Some(violation) = constraint.violation(data, system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// `validate_delete_constraints` version 0: every rule of the document type's
+    /// `deleteConstraints` is evaluated against the stored document's `data` with `system`,
+    /// in name order, and the first one broken is reported. A rule reading a total consensus
+    /// did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
+    fn validate_delete_constraints_v0(
+        &self,
+        document_id: Identifier,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (name, constraint) in self.delete_constraints() {
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentDeleteConstraintViolatedError::new(
+                        document_id,
                         self.name().clone(),
                         name.clone(),
                         violation,

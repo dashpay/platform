@@ -93,7 +93,21 @@ mod document_ttl_tests {
             )
         }
 
-        fn on(mut platform: TempPlatform<MockCoreRPCLike>) -> Self {
+        fn on(platform: TempPlatform<MockCoreRPCLike>) -> Self {
+            Self::on_with(platform, note_schema(Some(HOUR_S)))
+        }
+
+        /// The fixture with its expiring `note` type declared by `note`.
+        fn with_note(note: Value) -> Self {
+            Self::on_with(
+                TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_initial_state_structure(),
+                note,
+            )
+        }
+
+        fn on_with(mut platform: TempPlatform<MockCoreRPCLike>, note: Value) -> Self {
             let platform_version = PlatformVersion::latest();
 
             let (identity, signer, key) = setup_identity(&mut platform, 971, dash_to_credits!(0.5));
@@ -106,15 +120,9 @@ mod document_ttl_tests {
                 platform_version.protocol_version,
             )
             .data_contract_owned();
-            for (name, ttl) in [("note", Some(HOUR_S)), ("memo", None)] {
+            for (name, schema) in [("note", note), ("memo", note_schema(None))] {
                 contract
-                    .set_document_schema(
-                        name,
-                        note_schema(ttl),
-                        true,
-                        &mut Vec::new(),
-                        platform_version,
-                    )
+                    .set_document_schema(name, schema, true, &mut Vec::new(), platform_version)
                     .expect("expected to add the document type");
             }
             platform
@@ -694,6 +702,34 @@ mod document_ttl_tests {
             "one pool of epoch 0, for one epoch: {pools:?}"
         );
         assert!(epoch_0_pools.get(&1).copied().unwrap_or_default() > 0);
+    }
+
+    /// `deleteConstraints` gate the owner's delete only: a note its owner may not delete
+    /// still expires.
+    #[tokio::test]
+    async fn should_expire_a_document_its_owners_delete_rules_refuse() {
+        let mut note = note_schema(Some(HOUR_S));
+        note.insert(
+            "deleteConstraints".to_string(),
+            platform_value!({ "shortText": { "lessThan": [{ "length": "text" }, 3] } }),
+        )
+        .expect("expected to set the delete rules");
+        let mut fixture = NotesFixture::with_note(note);
+        let (long, _) = fixture.create("note", "a long text", START_MS).await;
+
+        assert_matches!(
+            fixture.delete(&long, START_MS).await,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::DocumentDeleteConstraintViolatedError(_)
+                ),
+                ..
+            }
+        );
+        assert!(fixture.stored("note", &long).is_some());
+
+        fixture.expire(START_MS + HOUR_S * 1000);
+        assert!(fixture.stored("note", &long).is_none());
     }
 
     #[tokio::test]
