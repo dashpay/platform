@@ -1615,8 +1615,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Document create structure validation 1 refuses a create missing a param,
 ///     repeating a key on the way to one, or whose variable-length param holds
 ///     the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a `findBy`
-///     function the reference may declare `minimumAgeBlocks`, judged by
+///     (`DocumentReferencePreimageInvalidError`, 10423). A reference judged
+///     on the create alone (`DocumentReferenceLookup::is_checked_on_create_only`:
+///     beside a `findBy` function, or any `findBy` on a document type whose
+///     documents are never replaced, `documentsMutable: false`, since a replace
+///     is the one write that judges a reference again) may declare
+///     `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and `consume`, which deletes the found document with the create
@@ -1625,7 +1629,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
 ///     beside the document fetch. Such a `deletableDocument` reference, judged
 ///     on the create alone, may sit on an `immutable` property, which
-///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     `validate_no_immutable_deletable_element_references` otherwise refuses,
+///     and its `findBy` may read `$ownerId` on a transferable or tradeable
+///     referring type (item 32 refuses that otherwise): a transfer or a
+///     purchase moves the writer part of its key, but no later write judges it.
 ///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
 ///     writer's own, and `consume` requires it, into the declaring contract,
 ///     on a type whose owners may delete, that keeps no history, declares no
@@ -1640,7 +1647,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     transient; on a mutable type such a reference may not be an `anyOf`
 ///     operand; and no property a function reads may be listed under
 ///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
-///     `deletableDocument` target through a function, and the `findBy` of an
+///     `deletableDocument` target judged on the create alone, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
 ///     a parent byte for byte; the DPNS contract and its create trigger are

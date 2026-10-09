@@ -734,12 +734,13 @@ fn binds_a_changed_property(
     writer_can_change: bool,
 ) -> bool {
     // A lookup with a computed key is judged on a create only: nothing it reads can change,
-    // and the commitment it found may be gone. In place in generation 0, reached from
-    // protocol version 14 only, the only version whose parser produces one
+    // and the commitment it found may be gone. Only a replace asks, which a document type
+    // whose documents are never replaced does not reach. In place in generation 0, reached
+    // from protocol version 14 only, the only version whose parser produces one
     if reference_target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
-        .is_some_and(|lookup| lookup.is_checked_on_create_only())
+        .is_some_and(|lookup| lookup.is_checked_on_create_only(true))
     {
         return false;
     }
@@ -1095,8 +1096,12 @@ fn validate_reference_target_v0(
             };
             // A commitment is revealed once, by the create; nothing the lookup reads can
             // change on a replace. In place in generation 0: only the protocol version 14
-            // parser produces a computed key
-            if !is_create && lookup.is_some_and(|lookup| lookup.is_checked_on_create_only()) {
+            // parser produces a lookup judged on the create alone
+            if !is_create
+                && lookup.is_some_and(|lookup| {
+                    lookup.is_checked_on_create_only(document_type.documents_mutable())
+                })
+            {
                 return Ok(SimpleConsensusValidationResult::new());
             }
             let list_reference = reference_target.as_list_element_reference();

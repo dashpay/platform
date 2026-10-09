@@ -113,7 +113,8 @@ export type DocumentPropertyReferenceTarget =
        */
       where?: DocumentReferenceWhere;
       /**
-       * Beside a `findBy` function only: how many blocks before the create
+       * Beside `findBy`, on a reference judged on the create alone (a `findBy`
+       * function, or a document type whose documents are never replaced): how many blocks before the create
        * the document `findBy` finds must have been created, from its
        * `$createdAtBlockHeight`, so 1 means an earlier block (code 40142 when
        * it was not).
@@ -220,14 +221,16 @@ export type DocumentPropertyReferenceTarget =
        */
       where?: DocumentReferenceWhere;
       /**
-       * Beside a `findBy` function only: how many blocks before the create
+       * Beside `findBy`, on a reference judged on the create alone (a `findBy`
+       * function, or a document type whose documents are never replaced): how many blocks before the create
        * the document `findBy` finds must have been created, from its
        * `$createdAtBlockHeight`, so 1 means an earlier block (code 40142 when
        * it was not).
        */
       minimumAgeBlocks?: number;
       /**
-       * Beside a `findBy` function only: the create deletes the document
+       * Beside `findBy`, on a reference judged on the create alone (a `findBy`
+       * function, or a document type whose documents are never replaced): the create deletes the document
        * `findBy` finds, the writer's own commitment, in the same state
        * transition.
        */
