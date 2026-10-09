@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dash_sdk::dpp::dashcore::Network;
-use dash_sdk::platform::ContextProvider;
+use dash_sdk::platform::{ContextProvider, QuorumKeyFuture};
 use dash_sdk::{
     dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
@@ -93,6 +93,19 @@ impl ContextProvider for WasmTrustedContext {
         // Delegate to the inner provider
         self.inner
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        // The prefetched keys are never refetched inside the synchronous
+        // lookup, where wasm cannot block; this is how a newer quorum's key
+        // is fetched.
+        self.inner
+            .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_data_contract(
@@ -384,17 +397,24 @@ impl WasmTrustedContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    fn quorum_key(seed: u8) -> [u8; 48] {
+        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
+        let bytes: Vec<u8> = (&key).into();
+        bytes.try_into().expect("BLS public key is 48 bytes")
+    }
 
     fn quorums_body(hash: u8, key: u8) -> String {
         serde_json::json!({
             "success": true,
             "data": [{
                 "quorum_hash": hex::encode([hash; 32]),
-                "key": hex::encode([key; 48]),
+                "key": hex::encode(quorum_key(key)),
                 "height": 1,
                 "valid_members_count": 3
             }]
@@ -409,7 +429,7 @@ mod tests {
                 "height": 1,
                 "quorums": [{
                     "quorum_hash": hex::encode([hash; 32]),
-                    "key": hex::encode([key; 48]),
+                    "key": hex::encode(quorum_key(key)),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -487,7 +507,15 @@ mod tests {
     fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
         loop {
             match listener.accept() {
-                Ok((stream, _)) => return stream,
+                Ok((stream, _)) => {
+                    // On BSD-derived systems an accepted socket inherits the
+                    // listener's non-blocking mode, so reading the request
+                    // could otherwise fail before the client has written it.
+                    stream
+                        .set_nonblocking(false)
+                        .expect("make accepted quorum request blocking");
+                    return stream;
+                }
                 Err(error)
                     if error.kind() == std::io::ErrorKind::WouldBlock
                         && Instant::now() < deadline =>
@@ -553,13 +581,13 @@ mod tests {
             context
                 .get_quorum_public_key(1, [0x11; 32], 1)
                 .expect("current quorum key must be cached"),
-            [0x41; 48]
+            quorum_key(0x41)
         );
         assert_eq!(
             context
                 .get_quorum_public_key(1, [0x12; 32], 1)
                 .expect("previous quorum key must be cached"),
-            [0x42; 48]
+            quorum_key(0x42)
         );
         server
             .join()
@@ -592,10 +620,93 @@ mod tests {
             context
                 .get_quorum_public_key(1, [0x21; 32], 1)
                 .expect("current quorum key must be cached"),
-            [0x51; 48]
+            quorum_key(0x51)
         );
         server
             .join()
             .expect("all three requests must have been in flight together");
+    }
+
+    /// A browser app keeps its SDK for the whole session, but the context
+    /// fetched its quorum keys when it connected. Through the SDK it builds, a
+    /// quorum newer than that prefetch must be fetchable, or every proof it
+    /// signs fails until the page reloads.
+    #[tokio::test]
+    async fn should_fetch_a_quorum_newer_than_the_prefetch_through_the_sdk() {
+        let (base_url, server) = spawn_endpoint(
+            vec![
+                ("/quorums", quorums_body(0x11, 0x41)),
+                ("/previous", previous_body(0x12, 0x42)),
+                ("/quorums", quorums_body(0x13, 0x43)),
+                ("/previous", previous_body(0x12, 0x42)),
+            ],
+            false,
+        );
+        let context =
+            WasmTrustedContext::prefetch_for(Network::Regtest, None, Some(base_url), Some(false))
+                .await
+                .expect("prefetch");
+        let sdk = crate::sdk::WasmSdkBuilder::new_local()
+            .with_trusted_context(&context)
+            .build()
+            .expect("build");
+        let provider = sdk
+            .inner_sdk()
+            .context_provider()
+            .expect("the trusted context is the SDK's provider");
+
+        let key = provider
+            .fetch_quorum_public_key(6, [0x13; 32], 1)
+            .expect("the trusted context must fetch keys newer than its prefetch")
+            .await
+            .expect("the quorum service answered");
+
+        assert_eq!(key, Some(quorum_key(0x43)));
+        server.join().expect("the endpoint served both refreshes");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// In the browser the quorum lists are fetched with `fetch`, and the wait
+    /// between two refreshes is a browser timer; neither is `Send`, so both
+    /// run on the local executor and only their results reach the SDK's
+    /// future. A miss right after a failed refresh waits out the gap, asks
+    /// again, and reports the unreachable quorum service.
+    #[wasm_bindgen_test]
+    async fn should_fetch_through_the_browser_and_wait_out_the_gap() {
+        let context =
+            WasmTrustedContext::for_testing_with_url(Vec::new(), "http://127.0.0.1:1".to_string());
+        let started = web_time::Instant::now();
+        assert!(
+            context.refresh_quorums().await.is_err(),
+            "nothing listens on the quorum URL"
+        );
+        let initial_elapsed = started.elapsed();
+        wasm_bindgen_test::console_log!("initial quorum refresh took {initial_elapsed:?}");
+        assert!(
+            initial_elapsed < std::time::Duration::from_millis(500),
+            "the initial refresh must leave most of the gap for the timer: {initial_elapsed:?}"
+        );
+
+        let result = context
+            .fetch_quorum_public_key(6, [0x11; 32], 1)
+            .expect("the trusted context fetches keys")
+            .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {result:?}"
+        );
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(900),
+            "the miss waited for a refresh newer than itself"
+        );
     }
 }

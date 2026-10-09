@@ -1,3 +1,4 @@
+import DashSDKFFI
 import Foundation
 import SwiftData
 
@@ -7,20 +8,33 @@ public struct DataContractParser {
     public static func parseDataContract(contractData: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         print("🔵 Parsing data contract with ID: \(contractId.toBase58String())")
 
+        // Read the contract through its long-form view: Rust writes every
+        // property type shorthand (protocol version 14: `"type": "identifier"`,
+        // or `"type": "bytes"` with a `size`) as the byte array it stands for,
+        // so every schema and row persisted below holds one form. What the
+        // caller stores (`PersistentDataContract.serializedContract` and
+        // `binarySerialization`) stays the contract as sent.
+        let contractData = expandingPropertyTypeShorthands(in: contractData)
+
         // Parse tokens if present
         if let tokens = contractData["tokens"] as? [String: Any] {
             print("📦 Found \(tokens.count) tokens in contract")
             try parseTokens(tokens: tokens, contractId: contractId, modelContext: modelContext)
         }
 
-        // Parse document types
+        // Parse document types. A property may be a `$ref` to one of the
+        // contract's definitions, which the serialization format names
+        // `schemaDefs` and the contract itself `$defs`.
+        let definitions = contractData["schemaDefs"] as? [String: Any]
+            ?? contractData["$defs"] as? [String: Any]
+            ?? [:]
         if let documents = contractData["documents"] as? [String: Any] {
             print("📄 Found \(documents.count) document types in contract")
-            try parseDocumentTypes(documentTypes: documents, contractId: contractId, modelContext: modelContext)
+            try parseDocumentTypes(documentTypes: documents, definitions: definitions, contractId: contractId, modelContext: modelContext)
         } else if let documentSchemas = contractData["documentSchemas"] as? [String: Any] {
             // Some contracts use "documentSchemas" instead
             print("📄 Found \(documentSchemas.count) document schemas in contract")
-            try parseDocumentTypes(documentTypes: documentSchemas, contractId: contractId, modelContext: modelContext)
+            try parseDocumentTypes(documentTypes: documentSchemas, definitions: definitions, contractId: contractId, modelContext: modelContext)
         }
 
         // Update contract metadata
@@ -79,6 +93,40 @@ public struct DataContractParser {
         }
     }
 
+    // MARK: - Property Type Shorthands
+
+    /// `contractData` with its property type shorthands written in full, as
+    /// `dash_sdk_data_contract_json_expand_property_type_shorthands` returns
+    /// it: every document type schema and definition reads `"type": "array"`,
+    /// `byteArray` and the sizes where the contract wrote `"identifier"` or
+    /// `"bytes"`. Rust owns what a shorthand means; this only marshals. Logs
+    /// and returns `contractData` unchanged when it cannot be read that way.
+    static func expandingPropertyTypeShorthands(in contractData: [String: Any]) -> [String: Any] {
+        // `JSONSerialization.data(withJSONObject:)` raises, rather than
+        // throws, on a value JSON cannot hold
+        guard JSONSerialization.isValidJSONObject(contractData),
+              let json = try? JSONSerialization.data(withJSONObject: contractData, options: []),
+              let text = String(data: json, encoding: .utf8)
+        else {
+            print("⚠️ Contract is not JSON; reading its property types as sent")
+            return contractData
+        }
+        do {
+            let result = text.withCString { contractJSON in
+                dash_sdk_data_contract_json_expand_property_type_shorthands(contractJSON)
+            }
+            let expanded = try PropertyConstraintJSON.text(of: result)
+            guard let object = try PropertyConstraintJSON.object(from: expanded) as? [String: Any] else {
+                print("⚠️ Expanded contract is not a JSON object; reading its property types as sent")
+                return contractData
+            }
+            return object
+        } catch {
+            print("⚠️ Could not expand the property type shorthands (\(error)); reading them as sent")
+            return contractData
+        }
+    }
+
     // MARK: - Parse Tokens
     private static func parseTokens(tokens: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         // First, get the contract
@@ -124,7 +172,7 @@ public struct DataContractParser {
     }
 
     // MARK: - Parse Document Types
-    private static func parseDocumentTypes(documentTypes: [String: Any], contractId: Data, modelContext: ModelContext) throws {
+    private static func parseDocumentTypes(documentTypes: [String: Any], definitions: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         // First, get the contract
         let descriptor = FetchDescriptor<PersistentDataContract>(
             predicate: #Predicate { $0.id == contractId }
@@ -141,7 +189,8 @@ public struct DataContractParser {
             }
 
             // Extract schema - make sure we store the whole typeDict as schema
-            // and only properties as the properties field
+            // and only properties as the properties field. Both come from the
+            // long-form view, property type shorthands written in full.
             let schemaJSON = try JSONSerialization.data(withJSONObject: typeDict, options: [])
 
             // Extract actual properties for the form
@@ -247,7 +296,7 @@ public struct DataContractParser {
 
             // Parse properties into separate entities
             if let properties = typeDict["properties"] as? [String: Any] {
-                try parseProperties(properties: properties, contractId: contractId, documentTypeName: typeName, documentType: docType, requiredFields: typeDict["required"] as? [String] ?? [], modelContext: modelContext)
+                try parseProperties(properties: properties, definitions: definitions, contractId: contractId, documentTypeName: typeName, documentType: docType, requiredFields: typeDict["required"] as? [String] ?? [], modelContext: modelContext)
             }
         }
     }
@@ -375,12 +424,16 @@ public struct DataContractParser {
     }
 
     // MARK: - Parse Properties
-    private static func parseProperties(properties: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws {
+    private static func parseProperties(properties: [String: Any], definitions: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws {
         for (propertyName, propertyData) in properties {
-            guard let propertyDict = propertyData as? [String: Any] else {
+            guard let declared = propertyData as? [String: Any] else {
                 print("⚠️ Skipping invalid property: \(propertyName)")
                 continue
             }
+            // A property written `{ "$ref": "#/$defs/<name>", ... }` is read
+            // from the definition it names, which DPP reads in place of the
+            // whole property schema
+            let propertyDict = referencedDefinition(of: declared, in: definitions) ?? declared
 
             // Extract type
             let type = propertyDict["type"] as? String ?? "unknown"
@@ -469,6 +522,23 @@ public struct DataContractParser {
     }
 
     // MARK: - Helper Methods
+
+    /// The definition a property schema's `$ref` names, when the reference is
+    /// `#/$defs/<name>` and `definitions` holds a dictionary under `<name>`;
+    /// `nil` otherwise, and the property is read as written.
+    private static func referencedDefinition(
+        of propertySchema: [String: Any],
+        in definitions: [String: Any]
+    ) -> [String: Any]? {
+        let prefix = "#/$defs/"
+        guard let reference = propertySchema["$ref"] as? String,
+              reference.hasPrefix(prefix)
+        else {
+            return nil
+        }
+        return definitions[String(reference.dropFirst(prefix.count))] as? [String: Any]
+    }
+
     private static func extractTokenName(from tokenDict: [String: Any], position: Int) -> String {
         // Try different possible locations for the name
         if let name = tokenDict["name"] as? String { return name }

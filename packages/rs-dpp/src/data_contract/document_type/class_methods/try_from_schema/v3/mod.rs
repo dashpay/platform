@@ -394,9 +394,9 @@ fn parse_generation_3(
     // and the `$ref` walks included, reads the expanded schema and `$defs`,
     // so a shorthand parses to exactly what its long form parses to. The
     // document type keeps the schema as sent (restored before returning),
-    // since that is what the contract stores, serializes and proves. The parse
-    // of a whole contract hands down `$defs` it already expanded, which the
-    // scan here finds nothing to rewrite in.
+    // since that is what the contract stores, serializes and proves. Only a
+    // document type's parse expands the contract's `$defs`, so the `$defs` of
+    // a contract without document types stay as sent, unchecked, as before 14.
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {
             DocumentType::expand_schema_defs_property_type_shorthands(

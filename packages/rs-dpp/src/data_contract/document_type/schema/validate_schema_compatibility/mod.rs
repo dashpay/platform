@@ -29,7 +29,7 @@ pub fn validate_schema_compatibility(
         .validate_schema_compatibility
     {
         0 => v0::validate_schema_compatibility_v0(original_schema, new_schema),
-        1 => v1::validate_schema_compatibility_v1(original_schema, new_schema),
+        1 => v1::validate_schema_compatibility_v1(original_schema, new_schema, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "validate_schema_compatibility".to_string(),
             known_versions: vec![0, 1],

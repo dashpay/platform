@@ -47,6 +47,8 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
+mod quorum_key;
+
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many token configs fit in the cache.
@@ -179,6 +181,13 @@ fn address_list_from_seeds(
         }
     }
     list
+}
+
+/// Independent local height and clock anchors when a response arrives.
+#[derive(Clone, Copy)]
+pub(crate) struct MetadataArrival {
+    height: u64,
+    time_ms: u64,
 }
 
 /// Dash Platform SDK
@@ -368,12 +377,27 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
+        self.verify_response_metadata_as_of(method_name, metadata, None)
+    }
+
+    /// [`Self::verify_response_metadata`], with optional arrival-time height
+    /// and clock anchors. A response verified after fetching its quorum key
+    /// is not made stale by the client's wait or by newer responses accepted
+    /// while it waited.
+    pub(crate) fn verify_response_metadata_as_of(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
         // Check the independent local-clock anchor before mutating the
         // response-derived height high-water mark.
         if let Some(time_tolerance) = metadata_time_tolerance_ms {
-            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let now = arrival
+                .map(|arrival| arrival.time_ms)
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64);
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
         if let Some(height_tolerance) = metadata_height_tolerance {
@@ -381,12 +405,32 @@ impl Sdk {
                 metadata,
                 height_tolerance,
                 Arc::clone(&(self.metadata_last_seen_height)),
+                arrival.map(|arrival| arrival.height),
             )?;
         };
 
         self.maybe_update_protocol_version(metadata.protocol_version);
 
         Ok(())
+    }
+
+    /// Accept the metadata of a response whose proof and signature were
+    /// verified: check it is fresh and learn its protocol version.
+    ///
+    /// Security invariant: call this only after the proof and its signature
+    /// were verified. It ratchets the protocol version from
+    /// `metadata.protocol_version`, which must not come from unverified
+    /// metadata.
+    pub(crate) fn accept_verified_metadata(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
+        self.verify_response_metadata_as_of(method_name, metadata, arrival)
+            .inspect_err(|err| {
+                tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
+            })
     }
 
     /// Update the stored protocol version if `received_version` is newer and known.
@@ -524,27 +568,23 @@ impl Sdk {
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        let (object, metadata, proof) = match self.inner {
+        match self.inner {
             SdkInstance::Dapi { .. } => {
-                self.parse_proof_at_the_reported_version::<R, O>(request, response, &provider)
+                self.verify_fetching_quorum_key::<R, O>(request, response, &provider, method_name)
+                    .await
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let guard = mock.lock().await;
-                guard.parse_proof_with_metadata(request, response)
+                let verified = mock
+                    .lock()
+                    .await
+                    .parse_proof_with_metadata(request, response)?;
+                // Proof and signature verification (the `?`) must precede this
+                // call; see `accept_verified_metadata`.
+                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                Ok(verified)
             }
-        }?;
-
-        // Security invariant: proof+signature verification above (the `?`) must
-        // precede this call, which ratchets the protocol version from the now-trusted
-        // `metadata.protocol_version`. Never reorder — the ratchet must not consume
-        // unverified metadata.
-        self.verify_response_metadata(method_name, &metadata)
-            .inspect_err(|err| {
-                tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
-            })?;
-
-        Ok((object, metadata, proof))
+        }
     }
 
     /// Parses and verifies `response` under the SDK's protocol version, and, when that fails on
@@ -558,17 +598,23 @@ impl Sdk {
     /// signature, over a state id that signs the protocol version the response reports, and,
     /// when that version is another one this SDK knows, parsed again under it. A pinned SDK, or
     /// one already at the newest version it knows, reports the first failure.
+    ///
+    /// A failure of the quorum signature or its key is reported as it is, under either version:
+    /// the signature is checked once the proof was read, so under the SDK's version another
+    /// version would read it no differently, and under the newest one it is the closer account
+    /// of the response. A missing key ([`drive_proof_verifier::Error::QuorumKeyUnavailable`])
+    /// thus reaches [`Self::verify_fetching_quorum_key`], which fetches it and calls this again.
     fn parse_proof_at_the_reported_version<R, O: FromProof<R>>(
         &self,
         request: O::Request,
         response: O::Response,
         provider: &dyn ContextProvider,
+        current: &PlatformVersion,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         O::Request: Clone,
         O::Response: Clone,
     {
-        let current = self.version();
         let latest = PlatformVersion::latest();
         let error = match O::maybe_from_proof_with_metadata(
             request.clone(),
@@ -580,17 +626,24 @@ impl Sdk {
             Ok(parsed) => return Ok(parsed),
             Err(error) => error,
         };
-        if self.version_pinned || current.protocol_version >= latest.protocol_version {
+        if self.version_pinned
+            || current.protocol_version >= latest.protocol_version
+            || fails_after_reading_the_proof(&error)
+        {
             return Err(error);
         }
-        let Ok(parsed) = O::maybe_from_proof_with_metadata(
+        let parsed = match O::maybe_from_proof_with_metadata(
             request.clone(),
             response.clone(),
             self.network,
             latest,
             provider,
-        ) else {
-            return Err(error);
+        ) {
+            Ok(parsed) => parsed,
+            Err(signature_error) if fails_after_reading_the_proof(&signature_error) => {
+                return Err(signature_error)
+            }
+            Err(_) => return Err(error),
         };
         let reported = parsed.1.protocol_version;
         match PlatformVersion::get(reported) {
@@ -807,19 +860,37 @@ pub(crate) fn verify_metadata_time(
     Ok(())
 }
 
+/// Whether `error` comes from the quorum signature or its key, checked once a proof was read, so
+/// that reading the proof under another protocol version would not change it.
+fn fails_after_reading_the_proof(error: &drive_proof_verifier::Error) -> bool {
+    matches!(
+        error,
+        drive_proof_verifier::Error::QuorumKeyUnavailable { .. }
+            | drive_proof_verifier::Error::InvalidPublicKey { .. }
+            | drive_proof_verifier::Error::InvalidSignature { .. }
+            | drive_proof_verifier::Error::InvalidSignatureFormat { .. }
+            | drive_proof_verifier::Error::SignatureVerificationError { .. }
+            | drive_proof_verifier::Error::SignDigestFailed { .. }
+    )
+}
+
 /// If current metadata height is behind previously seen height by more than `tolerance`, the remote node
 ///  is considered stale.
 fn verify_metadata_height(
     metadata: &ResponseMetadata,
     tolerance: u64,
     last_seen_height: Arc<atomic::AtomicU64>,
+    seen_height: Option<u64>,
 ) -> Result<(), Error> {
     let received_height = metadata.height;
     // Linearize the response at an atomic max update, then reload so a racing
     // higher response that committed before this validation completes is also
-    // considered. A lower accepted response can never reduce the baseline.
+    // considered. A lower accepted response can never reduce the baseline. A
+    // response that waited before this check is judged against the mark when
+    // it arrived, `seen_height`, instead.
     let previous_height = last_seen_height.fetch_max(received_height, Ordering::AcqRel);
-    let expected_height = previous_height.max(last_seen_height.load(Ordering::Acquire));
+    let expected_height = seen_height
+        .unwrap_or_else(|| previous_height.max(last_seen_height.load(Ordering::Acquire)));
 
     if expected_height > tolerance && received_height < expected_height.saturating_sub(tolerance) {
         return Err(StaleNodeError::Height {
@@ -1727,8 +1798,12 @@ pub(crate) mod test {
 
         let last_seen_height = Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
 
-        let result =
-            super::verify_metadata_height(&metadata, tolerance, Arc::clone(&last_seen_height));
+        let result = super::verify_metadata_height(
+            &metadata,
+            tolerance,
+            Arc::clone(&last_seen_height),
+            None,
+        );
 
         assert_eq!(result.is_err(), expect_err);
         if result.is_ok() {
@@ -1751,6 +1826,7 @@ pub(crate) mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect("one block behind is within tolerance");
         assert_eq!(
@@ -1765,6 +1841,7 @@ pub(crate) mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect_err("a second rollback step must be compared with the high-water mark");
         assert_eq!(
@@ -1779,6 +1856,7 @@ pub(crate) mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect("a newer height should advance the high-water mark");
         assert_eq!(
@@ -2497,8 +2575,10 @@ pub(crate) mod test {
 
     /// What a proof that only protocol version 14 or later reads holds: a stand-in for a
     /// contract written with grammar protocol version 13 can not parse, its response reporting
-    /// version 14. It records the version it was parsed under.
-    struct ReadableFromVersion14(u32);
+    /// version 14. It records the version it was parsed under. Without `KEY_CACHED`, the
+    /// provider lacks the key of the quorum that signed it, which a proof read is only found to
+    /// need once it decodes.
+    struct ReadableFromVersion14<const KEY_CACHED: bool = true>(u32);
 
     #[derive(Debug, Clone)]
     struct ProbeRequest;
@@ -2506,7 +2586,9 @@ pub(crate) mod test {
     #[derive(Debug, Clone)]
     struct ProbeResponse;
 
-    impl drive_proof_verifier::FromProof<ProbeRequest> for ReadableFromVersion14 {
+    impl<const KEY_CACHED: bool> drive_proof_verifier::FromProof<ProbeRequest>
+        for ReadableFromVersion14<KEY_CACHED>
+    {
         type Request = ProbeRequest;
         type Response = ProbeResponse;
 
@@ -2532,6 +2614,16 @@ pub(crate) mod test {
                     error: "unsupported property type: bytes".to_string(),
                 });
             }
+            if !KEY_CACHED {
+                return Err(drive_proof_verifier::Error::QuorumKeyUnavailable {
+                    quorum_type: 4,
+                    quorum_hash: [7; 32],
+                    core_chain_locked_height: 1,
+                    error: dash_context_provider::ContextProviderError::InvalidQuorum(
+                        "not cached".to_string(),
+                    ),
+                });
+            }
             Ok((
                 Some(ReadableFromVersion14(platform_version.protocol_version)),
                 ResponseMetadata {
@@ -2543,12 +2635,15 @@ pub(crate) mod test {
         }
     }
 
-    fn parse_probe(sdk: &super::Sdk) -> Result<u32, drive_proof_verifier::Error> {
+    fn parse_probe<const KEY_CACHED: bool>(
+        sdk: &super::Sdk,
+    ) -> Result<u32, drive_proof_verifier::Error> {
         let provider = sdk.context_provider().expect("the mock SDK has a provider");
-        sdk.parse_proof_at_the_reported_version::<ProbeRequest, ReadableFromVersion14>(
+        sdk.parse_proof_at_the_reported_version::<ProbeRequest, ReadableFromVersion14<KEY_CACHED>>(
             ProbeRequest,
             ProbeResponse,
             &provider,
+            sdk.version(),
         )
         .map(|(object, _, _)| object.expect("the probe holds an object").0)
     }
@@ -2564,7 +2659,24 @@ pub(crate) mod test {
             .build()
             .expect("the mock SDK builds");
 
-        assert_eq!(parse_probe(&sdk).expect("the proof parses"), 14);
+        assert_eq!(parse_probe::<true>(&sdk).expect("the proof parses"), 14);
+    }
+
+    /// A proof that decodes only under the newest version but whose quorum key is not cached
+    /// reports the missing key, so the caller fetches it and reads the proof again
+    #[test]
+    fn should_report_a_missing_quorum_key_found_under_the_newest_version() {
+        let sdk = SdkBuilder::new_mock()
+            .with_initial_version(
+                dpp::version::PlatformVersion::get(13).expect("protocol version 13"),
+            )
+            .build()
+            .expect("the mock SDK builds");
+
+        assert!(matches!(
+            parse_probe::<false>(&sdk),
+            Err(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
+        ));
     }
 
     /// A pinned SDK keeps its version, failure included
@@ -2575,7 +2687,7 @@ pub(crate) mod test {
             .build()
             .expect("the mock SDK builds");
 
-        assert!(parse_probe(&sdk).is_err());
+        assert!(parse_probe::<true>(&sdk).is_err());
     }
 
     /// Seeded below `LATEST_VERSION`, a proven refresh ratchets the SDK up to the

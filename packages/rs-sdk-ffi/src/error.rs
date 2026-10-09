@@ -206,8 +206,8 @@ fn consensus_code_of(error: &dash_sdk::Error) -> Option<u32> {
 }
 
 impl FFIError {
-    /// `source` as an internal error with the message `"{context}: {source}"`,
-    /// keeping the SDK error so its consensus code reaches the host.
+    /// `source` with the message `"{context}: {source}"`, keeping the SDK
+    /// error so its consensus code and quorum-source category reach the host.
     pub fn sdk_call_failed(context: impl Into<String>, source: dash_sdk::Error) -> Self {
         FFIError::SDKCallFailed {
             context: context.into(),
@@ -220,7 +220,14 @@ impl From<FFIError> for DashSDKError {
     fn from(err: FFIError) -> Self {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
-            FFIError::SDKCallFailed { .. } => (DashSDKErrorCode::InternalError, err.to_string()),
+            FFIError::SDKCallFailed { source, .. } => {
+                let code = if source.is_quorum_source_unavailable() {
+                    DashSDKErrorCode::NetworkError
+                } else {
+                    DashSDKErrorCode::InternalError
+                };
+                (code, err.to_string())
+            }
             FFIError::SDKError(sdk_err) => {
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
@@ -248,6 +255,11 @@ impl From<FFIError> for DashSDKError {
                     // the substrings below, so it would otherwise fall through to
                     // InternalError and surface in the UI as a misleading
                     // "Internal Error" for what is really a network problem.
+                    (DashSDKErrorCode::NetworkError, error_str)
+                } else if sdk_err.is_quorum_source_unavailable() {
+                    // The quorum service that vouches for quorum keys gave no
+                    // answer, so a proof could not be checked: transient and
+                    // network-side, whatever words its message happens to hold.
                     (DashSDKErrorCode::NetworkError, error_str)
                 } else if matches!(sdk_err, dash_sdk::Error::TimeoutReached(_, _))
                     || error_str.contains("timeout")
@@ -349,6 +361,7 @@ macro_rules! ffi_result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CStr;
 
     fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
         let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
@@ -360,6 +373,99 @@ mod tests {
             }
         }
         code
+    }
+
+    /// The quorum service that vouches for quorum keys gave no answer: a
+    /// network problem the app can retry, not an internal error.
+    #[test]
+    fn quorum_source_unavailable_maps_to_network_error() {
+        let err = dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                "current quorums: HTTP 500 from https://quorums.example/quorums".to_string(),
+            ),
+        );
+        assert_eq!(classify(err), DashSDKErrorCode::NetworkError);
+    }
+
+    /// Contextual typed-write failures retain the quorum source's network
+    /// category and the exact operation context shown to the host.
+    #[test]
+    fn should_preserve_wrapped_quorum_source_failures_as_network_errors() {
+        let source = dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                "trusted quorum source is offline".to_string(),
+            ),
+        );
+        let error = FFIError::sdk_call_failed("Failed to put identity and wait", source);
+        let expected_message = error.to_string();
+        let converted: DashSDKError = error.into();
+        let message = unsafe {
+            let message = CStr::from_ptr(converted.message)
+                .to_string_lossy()
+                .into_owned();
+            let _ = CString::from_raw(converted.message);
+            message
+        };
+        assert_eq!(converted.code, DashSDKErrorCode::NetworkError);
+        assert_eq!(message, expected_message);
+        assert!(message.contains("Failed to put identity and wait"));
+    }
+
+    /// Other contextual SDK failures keep their existing classification,
+    /// even when their message resembles a network failure.
+    #[test]
+    fn should_keep_other_wrapped_sdk_failures_as_internal_errors() {
+        for source in [
+            dash_sdk::Error::Generic("connection timeout".to_string()),
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(dash_sdk::Error::Generic(
+                "connection timeout".to_string(),
+            ))),
+        ] {
+            let error = FFIError::sdk_call_failed("Failed to put identity and wait", source);
+            let converted: DashSDKError = error.into();
+            unsafe {
+                let _ = CString::from_raw(converted.message);
+            }
+            assert_eq!(converted.code, DashSDKErrorCode::InternalError);
+        }
+    }
+
+    /// Retry exhaustion preserves trusted-source attribution with and
+    /// without contextual wrapping, including nested retry envelopes.
+    #[test]
+    fn should_preserve_retry_wrapped_quorum_source_failures_as_network_errors() {
+        for contextual in [false, true] {
+            let source = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                    dash_sdk::Error::ContextProviderError(
+                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                            "trusted quorum source is offline".to_string(),
+                        ),
+                    ),
+                )),
+            ));
+            let direct_message = source.to_string();
+            let error = if contextual {
+                FFIError::sdk_call_failed("Failed to put identity and wait", source)
+            } else {
+                FFIError::SDKError(source)
+            };
+            let expected_message = if contextual {
+                error.to_string()
+            } else {
+                direct_message
+            };
+            let converted: DashSDKError = error.into();
+            let message = unsafe {
+                let message = CStr::from_ptr(converted.message)
+                    .to_string_lossy()
+                    .into_owned();
+                let _ = CString::from_raw(converted.message);
+                message
+            };
+            assert_eq!(converted.code, DashSDKErrorCode::NetworkError);
+            assert_eq!(message, expected_message);
+        }
     }
 
     #[test]

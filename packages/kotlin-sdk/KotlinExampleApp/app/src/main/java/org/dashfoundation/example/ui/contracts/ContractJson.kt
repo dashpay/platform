@@ -4,7 +4,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
+import org.dashfoundation.dashsdk.queries.Contracts
 import org.dashfoundation.example.util.LenientJson
 
 /**
@@ -12,6 +14,11 @@ import org.dashfoundation.example.util.LenientJson
  * contract JSON. The iOS app materializes the same structure into
  * SwiftData child rows via `DataContractParser`; here the detail screens
  * parse it on demand from the JSON blob instead.
+ *
+ * Like `DataContractParser`, it reads the contract with its property type
+ * shorthands (protocol version 14) written in full: a `"type": "identifier"`
+ * or `"type": "bytes"` property is a byte array here, so the screens offer
+ * the input they offer for the long form. The stored JSON stays as sent.
  */
 data class ParsedContract(
     val root: JsonObject,
@@ -25,7 +32,7 @@ data class ParsedContract(
     companion object {
         fun from(entity: DataContractEntity): ParsedContract? = try {
             val root = LenientJson
-                .parseToJsonElement(entity.serializedContract.decodeToString())
+                .parseToJsonElement(longForm(entity.serializedContract.decodeToString()))
                 .jsonObject
             val documents = (root["documents"] as? JsonObject)
                 ?: (root["documentSchemas"] as? JsonObject)
@@ -40,6 +47,19 @@ data class ParsedContract(
             )
         } catch (_: Exception) {
             null
+        }
+
+        /**
+         * [json] with its property type shorthands written in full by Rust
+         * ([Contracts.expandPropertyTypeShorthands]), or [json] as stored when
+         * that fails (JVM unit tests never load the native library).
+         */
+        private fun longForm(json: String): String = try {
+            Contracts.expandPropertyTypeShorthands(json)
+        } catch (_: DashSdkError) {
+            json
+        } catch (_: LinkageError) {
+            json
         }
 
         private fun JsonObject?.orEmpty(): JsonObject = this ?: JsonObject(emptyMap())
