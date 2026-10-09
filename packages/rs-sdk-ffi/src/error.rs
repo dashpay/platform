@@ -206,8 +206,8 @@ fn consensus_code_of(error: &dash_sdk::Error) -> Option<u32> {
 }
 
 impl FFIError {
-    /// `source` as an internal error with the message `"{context}: {source}"`,
-    /// keeping the SDK error so its consensus code reaches the host.
+    /// `source` with the message `"{context}: {source}"`, keeping the SDK
+    /// error so its consensus code and quorum-source category reach the host.
     pub fn sdk_call_failed(context: impl Into<String>, source: dash_sdk::Error) -> Self {
         FFIError::SDKCallFailed {
             context: context.into(),
@@ -220,7 +220,19 @@ impl From<FFIError> for DashSDKError {
     fn from(err: FFIError) -> Self {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
-            FFIError::SDKCallFailed { .. } => (DashSDKErrorCode::InternalError, err.to_string()),
+            FFIError::SDKCallFailed { source, .. } => {
+                let code = if matches!(
+                    source,
+                    dash_sdk::Error::ContextProviderError(
+                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_)
+                    )
+                ) {
+                    DashSDKErrorCode::NetworkError
+                } else {
+                    DashSDKErrorCode::InternalError
+                };
+                (code, err.to_string())
+            }
             FFIError::SDKError(sdk_err) => {
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
@@ -359,6 +371,7 @@ macro_rules! ffi_result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CStr;
 
     fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
         let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
@@ -382,6 +395,41 @@ mod tests {
             ),
         );
         assert_eq!(classify(err), DashSDKErrorCode::NetworkError);
+    }
+
+    #[test]
+    fn should_preserve_wrapped_quorum_source_failures_as_network_errors() {
+        let source = dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                "trusted quorum source is offline".to_string(),
+            ),
+        );
+        let error = FFIError::sdk_call_failed("Failed to put identity and wait", source);
+        let expected_message = error.to_string();
+        let converted: DashSDKError = error.into();
+        let message = unsafe {
+            let message = CStr::from_ptr(converted.message)
+                .to_string_lossy()
+                .into_owned();
+            let _ = CString::from_raw(converted.message);
+            message
+        };
+        assert_eq!(converted.code, DashSDKErrorCode::NetworkError);
+        assert_eq!(message, expected_message);
+        assert!(message.contains("Failed to put identity and wait"));
+    }
+
+    #[test]
+    fn should_keep_other_wrapped_sdk_failures_as_internal_errors() {
+        let error = FFIError::sdk_call_failed(
+            "Failed to put identity and wait",
+            dash_sdk::Error::Generic("connection timeout".to_string()),
+        );
+        let converted: DashSDKError = error.into();
+        unsafe {
+            let _ = CString::from_raw(converted.message);
+        }
+        assert_eq!(converted.code, DashSDKErrorCode::InternalError);
     }
 
     #[test]
