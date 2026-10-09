@@ -2250,6 +2250,18 @@ impl PlatformWalletPersistence for FFIPersister {
         // coverage from a round Rust reports as failed — coverage that then
         // suppresses the rescan on the next launch. Only a host attesting
         // `ATOMIC_CHANGESETS` rolls the whole round back, record included.
+        //
+        // Both gates guard COVERAGE. An empty record covers no contact, so it
+        // vouches for no cursor and is safe beside any, on any host. It is
+        // how Rust invalidates coverage a host already holds:
+        // `settle_published_backfill` sends one before publishing a wallet to
+        // a host that cannot keep coverage durably, so the host cannot
+        // restore an earlier run's coverage beside cursors this run scanned
+        // without it. Withholding it here would let `store` return `Ok` with
+        // the old coverage still on disk. So an empty record goes to every
+        // host with the slot, and a failing callback fails the round, which
+        // fails the publication. A host without the slot never received a
+        // record, so it holds none to invalidate.
         let host_stores_cursors = self.callbacks.on_persist_wallet_changeset_fn.is_some()
             && self
                 .persistence_capabilities()
@@ -2258,11 +2270,10 @@ impl PlatformWalletPersistence for FFIPersister {
             .core
             .as_ref()
             .is_some_and(|core| core.synced_height.is_some());
-        if let Some(record) = changeset
-            .dashpay_backfill
-            .as_ref()
-            .filter(|_| host_stores_cursors && (!backfill_cursor_owed || cursor_delivered))
-        {
+        if let Some(record) = changeset.dashpay_backfill.as_ref().filter(|record| {
+            record.is_empty()
+                || (host_stores_cursors && (!backfill_cursor_owed || cursor_delivered))
+        }) {
             if let Some(cb) = self.wallet_dashpay_backfill_callback {
                 let covered = build_dashpay_backfill_covered_for_callback(record);
                 let result = unsafe {
@@ -8631,13 +8642,29 @@ mod tests {
         };
         type PersistWalletChangesetFnForTest =
             unsafe extern "C" fn(*mut c_void, *const u8, *const WalletChangeSetFFI) -> i32;
+        // The gates guard coverage, so the rounds below carry a record that
+        // covers a contact; an empty one is an invalidation (see the end).
+        let covering = || {
+            let mut record = DashPayBackfillRecord::default();
+            record.record_pass(
+                1_000,
+                Some(100),
+                [(
+                    Identifier::from([0xAA; 32]),
+                    Identifier::from([0xBB; 32]),
+                    0,
+                    100,
+                )],
+            );
+            record
+        };
         let rewind_round = || PlatformWalletChangeSet {
             core: Some(CoreChangeSet {
                 synced_height: Some(100),
                 synced_height_is_rewind: true,
                 ..CoreChangeSet::default()
             }),
-            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            dashpay_backfill: Some(covering()),
             ..PlatformWalletChangeSet::default()
         };
 
@@ -8648,7 +8675,7 @@ mod tests {
         assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
 
         let record_only_round = || PlatformWalletChangeSet {
-            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            dashpay_backfill: Some(covering()),
             ..PlatformWalletChangeSet::default()
         };
 
@@ -8688,6 +8715,141 @@ mod tests {
             .store([1u8; 32], record_only_round())
             .expect("record-only round");
         assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
+
+        // An empty record covers no one, so it vouches for no cursor: it is
+        // an invalidation and reaches the cursorless and the non-atomic host
+        // alike, so neither can keep an earlier run's coverage
+        // (dashpay/platform#4302 review).
+        let invalidation = || PlatformWalletChangeSet {
+            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            ..PlatformWalletChangeSet::default()
+        };
+        non_atomic
+            .store([1u8; 32], invalidation())
+            .expect("invalidation");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 1);
+        let sink = Sink::default();
+        let cursorless = persister(&sink, None);
+        cursorless
+            .store([1u8; 32], invalidation())
+            .expect("invalidation");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 1);
+    }
+
+    /// The lifecycle end of the invalidation above, through the real FFI
+    /// adapter on a host that is not atomic: recreating a wallet under an id
+    /// published earlier in this process must clear the host's backfill
+    /// record before the wallet is published, and a host that fails that
+    /// callback must fail the registration rather than keep coverage beside
+    /// cursors the recreated wallet will scan (dashpay/platform#4302 review).
+    #[test]
+    fn a_recreated_wallet_invalidates_the_record_on_a_non_atomic_ffi_host() {
+        use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+        use crate::runtime::runtime;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use platform_wallet::PlatformWalletManager;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Host {
+            invalidations: AtomicUsize,
+            covering: AtomicUsize,
+            fail: AtomicBool,
+        }
+        unsafe extern "C" fn on_backfill(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _floor: u32,
+            _rewound_from: u32,
+            _covered: *const DashPayBackfillCoveredContactFFI,
+            covered_count: usize,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            if covered_count == 0 {
+                host.invalidations.fetch_add(1, Ordering::SeqCst);
+            } else {
+                host.covering.fetch_add(1, Ordering::SeqCst);
+            }
+            i32::from(host.fail.load(Ordering::SeqCst))
+        }
+        let host: &'static Host = Box::leak(Box::default());
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: host as *const Host as *mut c_void,
+                ..PersistenceCallbacks::default()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                wallet_dashpay_backfill: Some(on_backfill),
+                ..Default::default()
+            },
+        );
+        let events = FFIEventHandler::new(
+            EventHandlerCallbacks {
+                context: std::ptr::null_mut(),
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            },
+            None,
+        );
+        let manager = {
+            let _runtime_guard = runtime().enter();
+            PlatformWalletManager::new(
+                Arc::new(
+                    dash_sdk::SdkBuilder::new_mock()
+                        .with_network(dashcore::Network::Testnet)
+                        .build()
+                        .expect("mock sdk"),
+                ),
+                Arc::new(persister),
+                Arc::new(events),
+            )
+        };
+        runtime().block_on(async {
+            let create = || {
+                manager.create_wallet_from_seed_bytes(
+                    dashcore::Network::Testnet,
+                    &[42; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+            };
+            let wallet_id = create().await.expect("first registration").wallet_id();
+            assert_eq!(
+                host.invalidations.load(Ordering::SeqCst),
+                0,
+                "nothing was published under this id before"
+            );
+            manager
+                .remove_wallet(&wallet_id)
+                .await
+                .expect("remove the wallet");
+
+            host.fail.store(true, Ordering::SeqCst);
+            assert!(
+                create().await.is_err(),
+                "an invalidation the host failed must fail the registration"
+            );
+            assert!(manager.get_wallet(&wallet_id).await.is_none());
+
+            host.fail.store(false, Ordering::SeqCst);
+            create().await.expect("the invalidation lands");
+            assert_eq!(
+                host.invalidations.load(Ordering::SeqCst),
+                2,
+                "each recreation delivered the invalidation, the failed one included"
+            );
+            assert_eq!(
+                host.covering.load(Ordering::SeqCst),
+                0,
+                "a host that is not atomic never receives coverage"
+            );
+        });
     }
 
     /// The restore side of dashpay/platform#4302: a wallet-restore entry
