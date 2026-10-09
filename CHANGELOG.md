@@ -1,3 +1,39 @@
+## [Unreleased]
+
+### Added
+
+- **Rust compatibility tests:** frozen pre-upgrade vectors for populated GroveDB
+  state, Core transaction and lock hashes, Platform signatures and encrypted
+  DashPay fields, stored as constants.
+
+### Fixed
+
+- **dpp:** require a WASM-compatible `blst` version for BLS signatures, including
+  external consumers with older dependency lockfiles.
+- **platform-test-suite:** retry proof reads while the local quorum sidecar publishes
+  a rotated key, with a bounded wait and full proof verification on each attempt.
+- **platform-wallet-ffi:** adapt platform node ID derivation to the updated
+  rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
+- **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
+  of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+
+### Changed
+
+- **Rust dependencies:** pin rust-dashcore to `fix/legacy-serde-bls-node-id`
+  ([rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149),
+  `8fe0a381`), restoring legacy BLS public-key and canonical PlatformNodeId
+  serialization, and preserving the pre-v4 coinbase payload Serde layout. Adapt
+  WASM private-key hex decoding to the removal of `dashcore_hashes::hex`.
+- **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
+  `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
+
+- **dpp (Rust API migration):** BLS types now live under `dpp::bls::{PublicKey,
+  SecretKey, Signature, BlsError}`; the generic `dpp::bls_signatures` re-export
+  is removed. Use `PublicKey::to_bytes()`, `SecretKey::from_be_bytes()` returning
+  `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
+  `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
+  Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+
 ## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
 
 

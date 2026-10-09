@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
+use dashcore::secp256k1::{ecdsa, Message, PublicKey};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
@@ -135,25 +135,20 @@ impl Signer for WalletSigner {
         path: &DerivationPath,
         sighash: [u8; 32],
     ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
         let message = Message::from_digest(sighash);
-        Ok((
-            secp.sign_ecdsa(&message, &key),
-            PublicKey::from_secret_key(&secp, &key),
-        ))
+        Ok((key.sign_ecdsa(message), PublicKey::from_secret_key(&key)))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&secp, &key))
+        Ok(PublicKey::from_secret_key(&key))
     }
 }
 

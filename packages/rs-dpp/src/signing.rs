@@ -1,3 +1,5 @@
+#[cfg(feature = "bls-signatures")]
+use crate::bls::{self, Signature};
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
@@ -10,11 +12,6 @@ use crate::{
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, ProtocolError};
 use dashcore::signer;
-#[cfg(feature = "bls-signatures")]
-use {
-    crate::bls_signatures::{Bls12381G2Impl, Pairing},
-    dashcore::{blsful as bls_signatures, blsful::Signature},
-};
 
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]
@@ -44,17 +41,15 @@ impl PlatformMessageSignable for &[u8] {
                 }
             }
             KeyType::BLS12_381 => {
-                let public_key =
-                    match bls_signatures::PublicKey::<Bls12381G2Impl>::try_from(public_key_data) {
-                        Ok(public_key) => public_key,
-                        Err(e) => {
-                            // dbg!(format!("bls public_key could not be recovered"));
-                            return SimpleConsensusValidationResult::new_with_error(
-                                SignatureError::BasicBLSError(BasicBLSError::new(e.to_string()))
-                                    .into(),
-                            );
-                        }
-                    };
+                let public_key = match bls::PublicKey::try_from(public_key_data) {
+                    Ok(public_key) => public_key,
+                    Err(e) => {
+                        // dbg!(format!("bls public_key could not be recovered"));
+                        return SimpleConsensusValidationResult::new_with_error(
+                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
+                        );
+                    }
+                };
                 let signature_bytes: [u8; 96] = match signature.try_into() {
                     Ok(bytes) => bytes,
                     Err(_) => {
@@ -67,11 +62,7 @@ impl PlatformMessageSignable for &[u8] {
                         )
                     }
                 };
-                let g2 = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(
-                    &signature_bytes,
-                )
-                .into_option()
-                {
+                let signature = match Signature::from_compressed(&signature_bytes) {
                     Some(g2) => g2,
                     None => {
                         return SimpleConsensusValidationResult::new_with_error(
@@ -79,7 +70,6 @@ impl PlatformMessageSignable for &[u8] {
                         );
                     }
                 };
-                let signature = Signature::<Bls12381G2Impl>::Basic(g2);
 
                 if signature.verify(&public_key, signable_data).is_err() {
                     SimpleConsensusValidationResult::new_with_error(

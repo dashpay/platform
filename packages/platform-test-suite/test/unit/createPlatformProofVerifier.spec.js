@@ -41,6 +41,99 @@ function executionNotProvedError() {
 }
 
 describe('createPlatformProofVerifier', () => {
+  describe('quorum publication delay', () => {
+    let clock;
+
+    beforeEach(() => {
+      clock = sinon.useFakeTimers();
+    });
+
+    afterEach(() => {
+      clock.restore();
+    });
+
+    function missingQuorumError() {
+      // Match the prototype getters and nested error reported by the WASM SDK in CI.
+      return Object.create({
+        name: 'DapiClientError',
+        message: 'no available addresses to retry, last error: Proof verification error: '
+          + 'context provider error: invalid quorum: Quorum not found in cache for hash: '
+          + '0b32385bfc1e0147b7dee87de5db332105dfd603fef6070bd9c6323aa2493a46',
+      });
+    }
+
+    const input = { serializedStateTransition: Uint8Array.from([1, 2, 3]), network: 'local' };
+
+    it('should verify again after the sidecar publishes a rotated quorum', async () => {
+      const waitForResponse = sinon.stub().callsFake(() => {
+        if (waitForResponse.callCount === 1) {
+          return Promise.reject(missingQuorumError());
+        }
+        if (Date.now() < 60000) {
+          return Promise.reject(new Error('no available addresses'));
+        }
+        return Promise.resolve();
+      });
+      const waitForAffectedState = sinon.stub().resolves();
+      const { verifier, stateTransition } = createVerifierWith({
+        waitForResponse, waitForAffectedState,
+      });
+      const result = verifier.verifyStateTransitionResult(input).then(() => null, (error) => error);
+
+      await clock.tickAsync(65000);
+
+      expect(await result).to.equal(null);
+      expect(clock.now).to.equal(65000);
+      expect(waitForResponse.callCount).to.equal(2);
+      expect(waitForResponse).to.have.always.been.calledWithExactly(stateTransition);
+      expect(waitForAffectedState).to.not.have.been.called;
+    });
+
+    it('should fail after the bounded wait if the quorum never becomes available', async () => {
+      const waitForResponse = sinon.stub().rejects(missingQuorumError());
+      const waitForAffectedState = sinon.stub().resolves();
+      const { verifier } = createVerifierWith({ waitForResponse, waitForAffectedState });
+      const result = verifier.verifyStateTransitionResult(input).then(() => null, (error) => error);
+
+      await clock.tickAsync(65000);
+
+      expect(await result).to.be.an.instanceOf(Error)
+        .with.property('message').that.includes('Quorum not found in cache');
+      expect(waitForResponse.callCount).to.equal(2);
+      expect(waitForAffectedState).to.not.have.been.called;
+      expect(clock.countTimers()).to.equal(0);
+    });
+
+    it('should verify the affected-state proof again if its quorum is not published yet', async () => {
+      const waitForResponse = sinon.stub().rejects(executionNotProvedError());
+      const waitForAffectedState = sinon.stub().resolves();
+      waitForAffectedState.onFirstCall().rejects(missingQuorumError());
+      const { verifier } = createVerifierWith({ waitForResponse, waitForAffectedState });
+      const result = verifier.verifyStateTransitionResult(input).then(() => null, (error) => error);
+
+      await clock.tickAsync(65000);
+
+      expect(await result).to.equal(null);
+      expect(waitForAffectedState).to.have.been.calledTwice;
+    });
+
+    it('should stop immediately if the refreshed quorum reveals an invalid signature', async () => {
+      const proofError = new Error('quorum signature is invalid');
+      const waitForResponse = sinon.stub().rejects(proofError);
+      waitForResponse.onFirstCall().rejects(missingQuorumError());
+      const waitForAffectedState = sinon.stub().resolves();
+      const { verifier } = createVerifierWith({ waitForResponse, waitForAffectedState });
+      const result = verifier.verifyStateTransitionResult(input).then(() => null, (error) => error);
+
+      await clock.tickAsync(65000);
+
+      expect(await result).to.equal(proofError);
+      expect(waitForResponse).to.have.been.calledTwice;
+      expect(waitForAffectedState).to.not.have.been.called;
+      expect(clock.countTimers()).to.equal(0);
+    });
+  });
+
   it('should require an execution proof before accepting a state transition', async () => {
     const waitForResponse = sinon.stub().resolves();
     const waitForAffectedState = sinon.stub().resolves();

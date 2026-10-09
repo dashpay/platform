@@ -58,24 +58,22 @@ pub(super) fn validate_asset_lock_transaction_structure_v0(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::secp256k1::rand::thread_rng;
-    use dashcore::secp256k1::Secp256k1;
+    use dashcore::secp256k1::rand::rng;
     use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dashcore::{Network, OutPoint, PrivateKey, ScriptBuf, TxIn, Txid};
     use std::str::FromStr;
 
     fn make_asset_lock_transaction(num_inputs: usize) -> Transaction {
-        let secp = Secp256k1::new();
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let input_secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
         let private_key = PrivateKey::new(input_secret_key, Network::Testnet);
-        let public_key = private_key.public_key(&secp);
+        let public_key = private_key.public_key();
         let public_key_hash = public_key.pubkey_hash();
 
         let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
         let one_time_private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();
 
         let base_txid =

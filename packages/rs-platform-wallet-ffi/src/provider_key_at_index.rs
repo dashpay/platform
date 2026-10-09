@@ -31,6 +31,7 @@
 //! too: the wallet-manager read guard is NEVER held across the Swift
 //! resolver callback.
 
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -76,7 +77,7 @@ pub struct ProviderKeyAtIndexFFI {
     /// on the empty state.
     pub legacy_public_key_hex: *mut c_char,
     /// Null-terminated lowercase hex of the 20-byte platform node id
-    /// (40 chars) — `hash160` of the Ed25519 public key. Null for
+    /// (40 chars) — `SHA256(ed25519 pubkey)[..20]` in canonical order. Null for
     /// operator keys (no node id) and on the empty state.
     pub node_id_hex: *mut c_char,
     /// Null-terminated lowercase hex of the raw 32-byte private scalar
@@ -363,7 +364,7 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index_free(
 /// Ed25519 public key. Pure helper — no wallet handle, no key material
 /// beyond the public key.
 ///
-/// Wraps `dashcore::PlatformNodeId::from_ed25519_public_key` so the host
+/// Converts through `EddsaPkHash` and returns canonical Tenderdash bytes so the host
 /// can render the node id of a persisted platform-node public key (which
 /// carries only the pubkey) without re-implementing the SHA-256 digest.
 ///
@@ -385,7 +386,66 @@ pub unsafe extern "C" fn platform_wallet_platform_node_id_from_ed25519_pubkey(
     }
     let mut pk32 = [0u8; 32];
     pk32.copy_from_slice(unsafe { std::slice::from_raw_parts(pubkey_ptr, 32) });
-    let node_id = dashcore::PlatformNodeId::from_ed25519_public_key(&pk32).to_byte_array();
+    let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32)).to_canonical_bytes();
     unsafe { std::ptr::copy_nonoverlapping(node_id.as_ptr(), out_node_id_20, 20) };
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::platform_wallet_platform_node_id_from_ed25519_pubkey;
+
+    #[test]
+    fn should_return_canonical_platform_node_id_bytes() {
+        // RFC 8032 test 1 public key; expected SHA-256 prefix computed independently.
+        let public_key =
+            hex::decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+                .expect("valid public key hex");
+        let mut output = [0xa5; 22];
+        assert!(unsafe {
+            platform_wallet_platform_node_id_from_ed25519_pubkey(
+                public_key.as_ptr(),
+                public_key.len(),
+                output[1..].as_mut_ptr(),
+            )
+        });
+        assert_eq!(
+            hex::encode(&output[1..21]),
+            "21fe31dfa154a261626bf854046fd2271b7bed4b"
+        );
+        assert_eq!(output[0], 0xa5);
+        assert_eq!(output[21], 0xa5);
+    }
+
+    #[test]
+    fn should_reject_invalid_node_id_inputs_without_writing() {
+        let public_key = [0u8; 33];
+        for length in [0, 31, 33] {
+            let mut output = [0xa5; 20];
+            assert!(!unsafe {
+                platform_wallet_platform_node_id_from_ed25519_pubkey(
+                    public_key.as_ptr(),
+                    length,
+                    output.as_mut_ptr(),
+                )
+            });
+            assert_eq!(output, [0xa5; 20]);
+        }
+        let mut output = [0xa5; 20];
+        assert!(!unsafe {
+            platform_wallet_platform_node_id_from_ed25519_pubkey(
+                std::ptr::null(),
+                32,
+                output.as_mut_ptr(),
+            )
+        });
+        assert_eq!(output, [0xa5; 20]);
+        assert!(!unsafe {
+            platform_wallet_platform_node_id_from_ed25519_pubkey(
+                public_key.as_ptr(),
+                32,
+                std::ptr::null_mut(),
+            )
+        });
+    }
 }

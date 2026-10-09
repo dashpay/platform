@@ -1,3 +1,5 @@
+#[cfg(any(feature = "serde-conversion", feature = "bls-signatures"))]
+pub mod dashcore;
 #[cfg(feature = "json-conversion")]
 pub mod json;
 // Not gated behind `serde-conversion`: this fixed-size byte-array helper is
@@ -5,8 +7,6 @@ pub mod json;
 // `block::extended_block_info::ExtendedBlockInfo`), so it must resolve in every
 // feature configuration. It only depends on `serde` and `base64`, both
 // non-optional dependencies.
-#[cfg(feature = "serde-conversion")]
-pub mod dashcore;
 pub mod serde_bytes;
 #[cfg(feature = "serde-conversion")]
 pub mod serde_bytes_var;

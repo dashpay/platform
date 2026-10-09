@@ -1,7 +1,7 @@
 use dashcore::{ProTxHash, PubkeyHash};
 use std::fmt::{Debug, Formatter};
 
-use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use crate::bls::PublicKey as BlsPublicKey;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -21,14 +21,12 @@ pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum
-    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
-    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
-    // dependency; accepts hex string or byte sequence through any deserializer).
+    // Tagged enum buffers can carry either hex strings or byte sequences.
     #[cfg_attr(
         feature = "serde-conversion",
-        serde(with = "crate::serialization::dashcore::bls_pubkey::option")
+        serde(with = "crate::bls::serde::option")
     )]
-    pub public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
+    pub public_key: Option<BlsPublicKey>,
     /// The node address
     pub node_ip: String,
     /// The node id
@@ -56,7 +54,7 @@ impl Encode for ValidatorV0 {
         match &self.public_key {
             Some(public_key) => {
                 true.encode(encoder)?; // Indicate that public_key is present
-                public_key.0.to_compressed().encode(encoder)?;
+                public_key.to_bytes().encode(encoder)?;
             }
             None => {
                 false.encode(encoder)?; // Indicate that public_key is not present
@@ -168,7 +166,7 @@ pub trait ValidatorV0Getters {
     /// Returns the proTxHash of the validator.
     fn pro_tx_hash(&self) -> &ProTxHash;
     /// Returns the public key share of this validator for this quorum.
-    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>>;
+    fn public_key(&self) -> &Option<BlsPublicKey>;
     /// Returns the node address of the validator.
     fn node_ip(&self) -> &String;
     /// Returns the node id of the validator.
@@ -188,7 +186,7 @@ pub trait ValidatorV0Setters {
     /// Sets the proTxHash of the validator.
     fn set_pro_tx_hash(&mut self, pro_tx_hash: ProTxHash);
     /// Sets the public key share of this validator for this quorum.
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>);
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>);
     /// Sets the node address of the validator.
     fn set_node_ip(&mut self, node_ip: String);
     /// Sets the node id of the validator.
@@ -208,7 +206,7 @@ impl ValidatorV0Getters for ValidatorV0 {
         &self.pro_tx_hash
     }
 
-    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>> {
+    fn public_key(&self) -> &Option<BlsPublicKey> {
         &self.public_key
     }
 
@@ -242,7 +240,7 @@ impl ValidatorV0Setters for ValidatorV0 {
         self.pro_tx_hash = pro_tx_hash;
     }
 
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>) {
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>) {
         self.public_key = public_key;
     }
 
@@ -274,8 +272,8 @@ impl ValidatorV0Setters for ValidatorV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls::SecretKey;
     use bincode::config;
-    use dashcore::blsful::SecretKey;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
 
@@ -284,7 +282,7 @@ mod tests {
         // Sample data for testing
         let pro_tx_hash = ProTxHash::from_slice(&[1; 32]).unwrap();
         let mut rng = StdRng::seed_from_u64(0);
-        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
+        let public_key = Some(SecretKey::random(&mut rng).public_key());
         let node_ip = "127.0.0.1".to_string();
         let node_id = PubkeyHash::from_slice(&[3; 20]).unwrap();
         let core_port = 9999;

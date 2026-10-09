@@ -227,8 +227,10 @@ mod tests {
             },
         };
         let list = MasternodeList::build(
-            [(pro_tx, entry.into())].into_iter().collect(),
-            Default::default(),
+            [(pro_tx, std::sync::Arc::new(entry.into()))]
+                .into_iter()
+                .collect::<dashcore::sml::masternode_list::MasternodeMap>(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )

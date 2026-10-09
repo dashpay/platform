@@ -170,7 +170,10 @@ unsafe fn dash_sdk_identity_create_from_addresses_inner(
 
         // Parse private key (32 bytes)
         let pk_bytes = std::slice::from_raw_parts(input.private_key, 32);
-        let secret_key = match SecretKey::from_slice(pk_bytes) {
+        let secret_key = match <[u8; 32]>::try_from(pk_bytes)
+            .map_err(|_| dash_sdk::dpp::dashcore::secp256k1::Error::InvalidSecretKey)
+            .and_then(SecretKey::from_secret_bytes)
+        {
             Ok(sk) => sk,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(

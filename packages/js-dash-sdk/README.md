@@ -29,7 +29,7 @@ Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS,
 | Wallet / key management | 🟢 Full SPV wallet via wallet-lib | 🟡 Key derivation utilities only (BIP44, WIF, signing) |
 | Module format | CommonJS + UMD bundle | ESM only |
 | Browser CDN | 🟢 unpkg (UMD) | 🟢 esm.sh (ESM) |
-| Node.js requirement | Any | >= 18.18 |
+| Node.js requirement | >= 22 | >= 22 |
 | TypeScript | 🟢 | 🟢 |
 
 **Warning: This SDK should only be used in production when connected to trusted nodes. Although it
@@ -52,7 +52,7 @@ Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/expl
 
 In order to use this library, you will need to add it to your project as a dependency.
 
-Having [NodeJS](https://nodejs.org/) installed, just type : `npm install dash` in your terminal.
+With [Node.js](https://nodejs.org/) >= 22 installed, run `npm install dash` in your terminal.
 
 ```sh
 npm install dash

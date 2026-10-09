@@ -3,6 +3,9 @@
   "private": true,
   "version": "5.0.0-beta.2",
   "description": "Dash Network end-to-end tests",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "yarn exec bin/test.sh",
     "lint": "eslint .",

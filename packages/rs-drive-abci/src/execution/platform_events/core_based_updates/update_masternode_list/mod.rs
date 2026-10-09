@@ -92,7 +92,7 @@ mod test {
     use crate::platform_types::validator_set::{ValidatorSet, ValidatorSetExt};
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls::SecretKey;
     use dpp::core_types::validator_set::v0::ValidatorSetV0;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
@@ -517,10 +517,8 @@ mod test {
                         quorum_index: None,
                         core_height: init_core_height,
                         members: members.clone(),
-                        threshold_public_key: SecretKey::<Bls12381G2Impl>::random(
-                            &mut StdRng::seed_from_u64(1),
-                        )
-                        .public_key(),
+                        threshold_public_key: SecretKey::random(&mut StdRng::seed_from_u64(1))
+                            .public_key(),
                     }),
                 );
 
@@ -893,10 +891,7 @@ mod test {
                 .into_iter()
                 .map(|validator| (validator.pro_tx_hash, validator))
                 .collect(),
-            threshold_public_key: SecretKey::<Bls12381G2Impl>::random(&mut StdRng::seed_from_u64(
-                1,
-            ))
-            .public_key(),
+            threshold_public_key: SecretKey::random(&mut StdRng::seed_from_u64(1)).public_key(),
         })
         .to_update()
         .validator_updates
@@ -960,10 +955,8 @@ mod test {
                         quorum_index: None,
                         core_height: *core_height,
                         members,
-                        threshold_public_key: SecretKey::<Bls12381G2Impl>::random(
-                            &mut StdRng::seed_from_u64(1),
-                        )
-                        .public_key(),
+                        threshold_public_key: SecretKey::random(&mut StdRng::seed_from_u64(1))
+                            .public_key(),
                     }),
                 );
             }

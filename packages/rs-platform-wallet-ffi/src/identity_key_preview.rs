@@ -366,8 +366,8 @@ unsafe fn preview_identity_registration_keys_inner(
             // WIF: network-aware (mainnet → 0xCC, testnet/devnet/
             // regtest → 0xEF) and compressed. Same construction
             // `key_wallet::derive_private_key_as_wif` performs.
-            let secret_key = dashcore::secp256k1::SecretKey::from_slice(
-                material.private_key.as_ref(),
+            let secret_key = dashcore::secp256k1::SecretKey::from_secret_bytes(
+                *material.private_key,
             )
             .map_err(|e| {
                 PlatformWalletFFIResult::err(
@@ -455,7 +455,7 @@ unsafe fn preview_identity_registration_keys_inner(
                         identity_index,
                         key_index,
                     )?;
-                    let private_key = Zeroizing::new(ext_priv.private_key.secret_bytes());
+                    let private_key = Zeroizing::new(ext_priv.private_key.to_secret_bytes());
                     // Belt-and-braces: the pinned key-wallet rev zeroizes
                     // `ExtendedPrivKey` on Drop; erase explicitly anyway
                     // (cheap, and robust to an upstream Drop regression).

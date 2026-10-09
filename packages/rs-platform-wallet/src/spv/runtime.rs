@@ -1,11 +1,13 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::future::Future;
+use std::pin::pin;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinError, JoinHandle};
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
@@ -28,115 +30,47 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
 
-/// Graceful join budget for the SPV run loop before escalating to `abort`.
+/// Maximum wait per stop call; the owned teardown continues after this deadline.
 const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Budget for `DashSpvClient::stop()` itself.
-///
-/// dash-spv's stop joins its internal monitors, and those monitors dispatch
-/// host event callbacks **synchronously** — a callback blocked in host code
-/// (an FFI persister `store`, say) makes the stop unbounded. Since
-/// [`SpvRuntime::stop`] sits on the path the FFI `destroy` must return
-/// through, an unbounded stop hangs teardown outright instead of surfacing
-/// `ErrorShutdownIncomplete`. On timeout the partially-stopped client is
-/// dropped and the stop is reported as an error, so the caller treats SPV
-/// as non-clean.
-const SPV_CLIENT_STOP_BUDGET: Duration = Duration::from_secs(15);
-
-/// Post-`abort` confirmation grace for the SPV run loop.
-///
-/// An abort only lands at the task's next await point, so a task parked in
-/// synchronous host-callback code cannot be interrupted at all. Without this
-/// bound the post-abort `handle.await` waits forever — the same hang the
-/// graceful timeout above was meant to escape.
-const SPV_ABORT_GRACE: Duration = Duration::from_secs(2);
-
-/// How often [`SpvRuntime::wait_until_ready`] re-checks for a started client
-/// with connected peers.
+/// How often readiness is rechecked for a client with connected peers.
 const SPV_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-/// Join a stopped SPV runner, escalating to cancellation after `timeout`.
-///
-/// Returns `None` once Tokio has confirmed the task terminated. Returns
-/// `Some(handle)` when it is *still live* after the post-abort grace: the
-/// caller must re-park that handle (so a teardown retry re-joins it rather
-/// than silently detaching a callback-capable task) and report SPV as
-/// non-clean.
-#[must_use = "a returned handle is a still-live task that must be re-parked and reported non-clean"]
-async fn join_spv_task(handle: JoinHandle<()>, timeout: Duration) -> Option<JoinHandle<()>> {
-    join_spv_task_within(handle, timeout, SPV_ABORT_GRACE).await
-}
-
-/// [`join_spv_task`] with an explicit post-abort grace, so tests can drive
-/// the survived-the-abort path without waiting out [`SPV_ABORT_GRACE`].
-#[must_use = "a returned handle is a still-live task that must be re-parked and reported non-clean"]
-async fn join_spv_task_within(
-    mut handle: JoinHandle<()>,
-    timeout: Duration,
-    abort_grace: Duration,
-) -> Option<JoinHandle<()>> {
-    match tokio::time::timeout(timeout, &mut handle).await {
-        Ok(Ok(())) => None,
-        Ok(Err(error)) => {
-            tracing::warn!(?error, "SPV background run loop join error");
-            None
-        }
-        Err(_) => {
-            tracing::warn!("SPV stop: background run loop did not unwind in time; aborting it");
-            handle.abort();
-            match tokio::time::timeout(abort_grace, &mut handle).await {
-                Ok(Err(error)) if !error.is_cancelled() => {
-                    tracing::warn!(?error, "SPV background run loop abort join error");
-                    None
-                }
-                Ok(_) => None,
-                Err(_) => {
-                    tracing::warn!(
-                        "SPV stop: background run loop survived abort for {abort_grace:?}; \
-                         keeping the handle for a teardown retry"
-                    );
-                    Some(handle)
-                }
-            }
-        }
-    }
+#[derive(Default)]
+enum Shutdown {
+    #[default]
+    Idle,
+    Running(JoinHandle<Result<(), JoinError>>),
+    Failed(String),
 }
 
 /// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
 /// handlers by reference (no cloning).
+///
+/// # Lifecycle
+///
+/// [`start`](Self::start) works only on a stopped runtime. [`stop`](Self::stop)
+/// is idempotent; once it returns `Ok`, no SPV task runs and the storage
+/// directory is released. A stop that does not complete says which way:
+/// - [`ShutdownIncomplete`](PlatformWalletError::ShutdownIncomplete): teardown
+///   outlived the wait and continues. Stop again; start and storage clear
+///   return the same error until a stop completes.
+/// - [`SpvProcessRestartRequired`](PlatformWalletError::SpvProcessRestartRequired):
+///   startup or teardown panicked. This runtime refuses every later start,
+///   stop and storage clear, and nothing is promised about SPV in this
+///   process until it restarts.
 pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
     last_config: RwLock<Option<ClientConfig>>,
     task: Mutex<Option<JoinHandle<()>>>,
-    /// Stops currently running. A stop takes the run-loop handle out of
-    /// `task` before joining it, so an empty `task` does not mean the old run
-    /// loop has exited; `start` refuses while this is non-zero.
-    stops_in_progress: AtomicUsize,
-    /// Serializes [`stop`](Self::stop): a stop running alongside another
-    /// would find no client and an empty `task` while the first is still
-    /// joining the run loop, and report success early.
-    stop_serial: tokio::sync::Mutex<()>,
+    /// Teardown state. Held across client construction, run-loop spawning and
+    /// each stop or storage clear, so none of them interleave.
+    shutdown: tokio::sync::Mutex<Shutdown>,
     peer_tracker: Arc<PeerTracker>,
-}
-
-/// Counts one running [`SpvRuntime::stop`] for as long as it lives.
-struct StopInProgress<'a>(&'a AtomicUsize);
-
-impl<'a> StopInProgress<'a> {
-    fn begin(count: &'a AtomicUsize) -> Self {
-        count.fetch_add(1, Ordering::SeqCst);
-        Self(count)
-    }
-}
-
-impl Drop for StopInProgress<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 /// Classify a failure from the SPV acceptance-check path
@@ -175,28 +109,36 @@ impl SpvRuntime {
             client: RwLock::new(None),
             last_config: RwLock::new(None),
             task: Mutex::new(None),
-            stops_in_progress: AtomicUsize::new(0),
-            stop_serial: tokio::sync::Mutex::new(()),
+            shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
             peer_tracker: Arc::new(PeerTracker::default()),
         }
     }
 
     /// Start SPV sync.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+        if self.client.read().await.is_some() {
+            return Err(PlatformWalletError::SpvAlreadyRunning);
+        }
+        // Fail fast instead of queueing behind a stop that is still joining.
+        self.ensure_no_live_run_loop()?;
+        let shutdown = self.shutdown.lock().await;
         {
             let running = self.client.read().await;
             if running.is_some() {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
-        self.ensure_no_live_run_loop()?;
+        self.ensure_joined(&shutdown)?;
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        let storage_manager = DiskStorageManager::new(&config)
+        let mut storage_manager = DiskStorageManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        // Upstream starts the storage writer here and again in `run`, but
+        // stops it only for a client that ran.
+        StorageManager::stop(&mut storage_manager).await;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
         // rides alongside it so `connected_peers` can answer from the latest
@@ -225,41 +167,80 @@ impl SpvRuntime {
         Ok(())
     }
 
-    /// Refuse a start while the run loop of an earlier stop may still be live.
-    ///
-    /// A stop that is still joining the run loop has already taken it out of
-    /// `task`; when that loop exits, `run` clears the client, which would be
-    /// the one started now. [`stop`](Self::stop) also re-parks a run loop that
-    /// survived its abort, and [`spawn_run_loop`](Self::spawn_run_loop) keeps a
-    /// parked loop instead of spawning one, so a client started over it would
-    /// never sync. A parked loop that has exited since is dropped and the
-    /// start goes ahead.
+    /// Refuse restart until all previous startup and shutdown work is joined.
     fn ensure_no_live_run_loop(&self) -> Result<(), PlatformWalletError> {
-        // Lock `task` before reading the counter. A stop counts itself before
-        // it takes the handle under this lock, so a start either still sees
-        // the handle or already sees the stop.
-        let mut task = self.task.lock().expect("spv task mutex poisoned");
-        if self.stops_in_progress.load(Ordering::SeqCst) > 0 {
-            return Err(PlatformWalletError::SpvError(
-                "an SPV stop is still in progress; wait for it before starting SPV".to_string(),
+        let shutdown = self.shutdown.try_lock().map_err(|_| {
+            PlatformWalletError::SpvError(
+                "an SPV start or stop is still in progress; wait for it before starting SPV"
+                    .to_string(),
+            )
+        })?;
+        self.ensure_joined(&shutdown)
+    }
+
+    /// Check that nothing is left to join. Takes the locked `shutdown` state:
+    /// `task` only changes under that lock, so the answer cannot go stale.
+    fn ensure_joined(&self, shutdown: &Shutdown) -> Result<(), PlatformWalletError> {
+        match shutdown {
+            Shutdown::Idle => {}
+            Shutdown::Running(_) => {
+                return Err(PlatformWalletError::ShutdownIncomplete(
+                    "SPV teardown is still running; stop SPV again before starting it".to_string(),
+                ))
+            }
+            Shutdown::Failed(error) => {
+                return Err(PlatformWalletError::SpvProcessRestartRequired(
+                    error.clone(),
+                ))
+            }
+        }
+        let task = self.task_slot();
+        if task.is_some() {
+            return Err(PlatformWalletError::ShutdownIncomplete(
+                "SPV startup has not been joined; stop SPV before restarting it".to_string(),
             ));
         }
-        match task.as_ref() {
-            Some(handle) if !handle.is_finished() => Err(PlatformWalletError::SpvError(
-                "the previous SPV run loop has not exited yet; stop SPV again before starting it"
-                    .to_string(),
-            )),
-            Some(_) => {
-                *task = None;
-                Ok(())
-            }
-            None => Ok(()),
-        }
+        Ok(())
+    }
+
+    /// Lock the startup-task slot, recovering from poisoning: the slot is only
+    /// read, taken or replaced whole, so a panicking holder cannot tear it.
+    fn task_slot(&self) -> MutexGuard<'_, Option<JoinHandle<()>>> {
+        self.task.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Whether SPV sync is running or starting. `false` once background sync
+    /// has failed, although the client stays started until [`Self::stop`].
+    /// Never waits, so an event handler may call it.
+    pub fn is_running(&self) -> bool {
+        let Ok(client) = self.client.try_read() else {
+            return false;
+        };
+        let Some(client) = client.as_ref() else {
+            return false;
+        };
+        let starting = self
+            .task_slot()
+            .as_ref()
+            .is_some_and(|task| !task.is_finished());
+        if starting {
+            return true;
+        }
+        let mut running = pin!(tokio::task::unconstrained(client.is_running()));
+        match running
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            Poll::Ready(running) => running,
+            // Upstream holds this lock while it cleans up after a failed sync
+            // and, briefly, while it recovers from a fork.
+            Poll::Pending => false,
+        }
     }
 
     /// Whether a broadcast issued right now could reach the network: the
@@ -359,8 +340,7 @@ impl SpvRuntime {
         Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
     }
 
-    /// Drive the sync loop of an already-[`start`]ed client until [`stop`]
-    /// is called
+    /// Start upstream's background sync while retaining its client for queries and stop.
     async fn run(&self) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
@@ -376,111 +356,117 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
 
-        let mut client = self.client.write().await;
-        let _ = client.take();
-        self.peer_tracker.clear();
+        self.finish_startup(result).await
+    }
 
+    async fn finish_startup(
+        &self,
+        result: Result<(), PlatformWalletError>,
+    ) -> Result<(), PlatformWalletError> {
+        if result.is_err() {
+            let client = self.client.write().await.take();
+            if let Some(client) = client {
+                client.stop().await;
+            }
+            self.peer_tracker.clear();
+        }
         result
     }
 
-    /// Stop SPV sync gracefully. Unlocks the data dir safely.
+    /// Stop SPV sync, waiting up to 15 seconds for startup and teardown.
     ///
-    /// **Every phase after taking the client is bounded** — `stop` runs on the
-    /// path [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
-    /// and therefore the FFI's `destroy` must return through, so a wedged
-    /// host callback has to surface as an error rather than hang teardown:
-    /// the client stop is capped at [`SPV_CLIENT_STOP_BUDGET`], the run-loop
-    /// join at [`SPV_STOP_TIMEOUT`] with an [`SPV_ABORT_GRACE`] post-abort
-    /// confirmation. A run loop that outlives all of that is **re-parked**,
-    /// not detached, so a teardown retry re-joins it — and the error return
-    /// keeps it out of a clean shutdown verdict.
+    /// A timeout or cancelled caller leaves teardown tracked for the next stop.
+    /// Restart stays blocked until a stop confirms completion. Client queries
+    /// already in flight finish before teardown starts; this wait is unbounded.
     ///
-    /// Taking the client is not bounded: it waits for the client's read
-    /// guards, and [`broadcast_transaction_and_wait`](Self::broadcast_transaction_and_wait)
-    /// holds one for its whole acceptance wait (the caller's timeout). That
-    /// keeps a broadcast on a live client and the data directory free once
-    /// `stop` returns, at the cost of a stop waiting for the broadcast.
+    /// # Errors
     ///
-    /// Idempotent. Stops run one at a time: a second call waits for the one
-    /// in flight, then finds no client and re-joins whatever that one
-    /// re-parked, so it never reports success while the old run loop is live.
+    /// See the lifecycle on [`SpvRuntime`].
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
-        let _stopping = StopInProgress::begin(&self.stops_in_progress);
-        let _serial = self.stop_serial.lock().await;
-
-        let taken = {
-            let mut client = self.client.write().await;
-            client.take()
-        };
-
-        let stop_result = match taken {
-            Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
-                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
-                Err(_) => {
-                    // The client is dropped with the timed-out future. The
-                    // data-dir lock may outlive this call, which is strictly
-                    // better than never returning from `destroy`.
-                    tracing::warn!(
-                        "SPV client stop did not complete within {:?}; abandoning it",
-                        SPV_CLIENT_STOP_BUDGET
-                    );
-                    Err(PlatformWalletError::SpvError(format!(
-                        "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
-                    )))
-                }
-            },
-            None => Ok(()),
-        };
-        self.peer_tracker.clear();
-
-        let handle = self.task.lock().expect("spv task mutex poisoned").take();
-        let join_result = match handle {
-            None => Ok(()),
-            Some(handle) => match join_spv_task(handle, SPV_STOP_TIMEOUT).await {
-                None => Ok(()),
-                Some(live) => {
-                    // Re-park rather than drop: dropping a `JoinHandle`
-                    // detaches the task, and this one can still reach host
-                    // callbacks. Keeping it lets a teardown retry re-join.
-                    *self.task.lock().expect("spv task mutex poisoned") = Some(live);
-                    Err(PlatformWalletError::SpvError(
-                        "SPV background run loop did not terminate after abort; \
-                         it is still tracked for a retry"
-                            .to_string(),
-                    ))
-                }
-            },
-        };
-
-        // A failed client stop is the more informative diagnosis, so it wins;
-        // either one makes the caller's shutdown verdict non-clean.
-        stop_result.and(join_result)
+        self.stop_with(|client| async move { client.stop().await })
+            .await
     }
 
-    /// Spawn the sync loop of an already-[`start`]ed client on the current
-    /// tokio runtime and return immediately.
-    ///
-    /// Call [`stop`] to stop it
-    pub fn spawn_run_loop(self: &Arc<Self>) {
-        {
-            let existing = self.task.lock().expect("spv task mutex poisoned");
-            if existing.is_some() {
-                tracing::warn!(
-                    "spawn_in_background called while a task is already running; ignoring"
-                );
-                return;
-            }
+    async fn stop_with<F, Fut>(&self, stop_client: F) -> Result<(), PlatformWalletError>
+    where
+        F: FnOnce(SpvClient) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let mut shutdown = self.shutdown.lock().await;
+        self.stop_locked(&mut shutdown, stop_client).await
+    }
+
+    /// Run or rejoin teardown. The caller holds the `shutdown` lock.
+    async fn stop_locked<F, Fut>(
+        &self,
+        shutdown: &mut Shutdown,
+        stop_client: F,
+    ) -> Result<(), PlatformWalletError>
+    where
+        F: FnOnce(SpvClient) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        if matches!(*shutdown, Shutdown::Idle) {
+            let client = self.client.write().await.take();
+            let startup = self.task_slot().take();
+            let peers = Arc::clone(&self.peer_tracker);
+            // Never cancel upstream run/stop: each can own callback-capable tasks
+            // that cancellation would detach before their handles are restored.
+            *shutdown = Shutdown::Running(tokio::spawn(async move {
+                let result = match startup {
+                    Some(task) => task.await,
+                    None => Ok(()),
+                };
+                if let Some(client) = client {
+                    stop_client(client).await;
+                }
+                peers.clear();
+                result
+            }));
         }
 
-        let this = Arc::clone(self);
-
-        let handle = tokio::spawn(async move {
-            if let Err(e) = this.run().await {
-                tracing::warn!("SpvRuntime background run loop exited with error: {}", e);
+        if let Shutdown::Running(task) = shutdown {
+            match tokio::time::timeout(SPV_STOP_TIMEOUT, task).await {
+                Ok(Ok(Ok(()))) => *shutdown = Shutdown::Idle,
+                Ok(result) => {
+                    *shutdown = Shutdown::Failed(format!("SPV teardown task failed: {result:?}"))
+                }
+                Err(_) => {
+                    return Err(PlatformWalletError::ShutdownIncomplete(
+                        "SPV teardown timed out; it is still tracked for a retry".to_string(),
+                    ))
+                }
             }
-        });
+        }
+        match shutdown {
+            Shutdown::Failed(error) => Err(PlatformWalletError::SpvProcessRestartRequired(
+                error.clone(),
+            )),
+            _ => Ok(()),
+        }
+    }
 
-        *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
+    /// Start upstream background sync on the current Tokio runtime.
+    ///
+    /// Skipped with a warning while a start or stop is in progress, or while
+    /// earlier startup or teardown is still unjoined. Call [`Self::stop`] to
+    /// stop it.
+    pub fn spawn_run_loop(self: &Arc<Self>) {
+        let Ok(shutdown) = self.shutdown.try_lock() else {
+            tracing::warn!("SPV background sync not spawned: an SPV start or stop is in progress");
+            return;
+        };
+        if let Err(error) = self.ensure_joined(&shutdown) {
+            tracing::warn!(%error, "SPV background sync not spawned: earlier SPV work is unjoined");
+            return;
+        }
+        let this = Arc::clone(self);
+        let mut task = self.task_slot();
+        *task = Some(tokio::spawn(async move {
+            if let Err(e) = this.run().await {
+                tracing::warn!("SpvRuntime background startup failed: {}", e);
+            }
+        }));
     }
 
     /// The peers the SPV client is currently connected to, each classified
@@ -504,16 +490,9 @@ impl SpvRuntime {
             return Vec::new();
         }
 
-        let engine = client.masternode_list_engine().ok();
+        let list = client.latest_masternode_list().await;
         drop(client_guard);
-
-        match engine {
-            Some(engine) => {
-                let engine_guard = engine.read().await;
-                classify_peers(&addresses, engine_guard.latest_masternode_list())
-            }
-            None => classify_peers(&addresses, None),
-        }
+        classify_peers(&addresses, list.as_ref())
     }
 
     /// Snapshot of the current deterministic masternode list (DML) keyed
@@ -531,17 +510,10 @@ impl SpvRuntime {
     pub fn masternode_validity_snapshot_blocking(
         &self,
     ) -> Option<std::collections::HashMap<[u8; 32], bool>> {
-        // Clone the engine `Arc` out while holding the client lock, then
-        // drop it before reading the engine — same ordering as
-        // `connected_peers`.
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list_blocking()?
         };
-
-        let engine_guard = engine.blocking_read();
-        let list = engine_guard.latest_masternode_list()?;
 
         let mut map = std::collections::HashMap::with_capacity(list.masternodes.len());
         for qualified in list.masternodes.values() {
@@ -574,55 +546,40 @@ impl SpvRuntime {
     /// it must run off the async runtime (FFI blocking thread), mirroring the
     /// other `*_blocking` accessors.
     pub fn masternodes_by_voting_key_blocking(&self, voting_key_id: &PubkeyHash) -> Vec<[u8; 32]> {
-        // Clone the engine `Arc` out while holding the client lock, then drop
-        // it before reading the engine — same ordering as `connected_peers`.
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
             let Some(client) = client_guard.as_ref() else {
                 return Vec::new();
             };
-            match client.masternode_list_engine().ok() {
-                Some(engine) => engine,
-                None => return Vec::new(),
-            }
+            let Some(list) = client.latest_masternode_list_blocking() else {
+                return Vec::new();
+            };
+            list
         };
 
-        let engine_guard = engine.blocking_read();
-        let Some(list) = engine_guard.latest_masternode_list() else {
-            return Vec::new();
-        };
-
-        masternodes_by_voting_key(list, voting_key_id)
+        masternodes_by_voting_key(&list, voting_key_id)
     }
 
     /// Snapshot of the current-tip deterministic masternode list as typed
     /// summaries. `None` when the list isn't available (SPV client not
     /// running, engine not initialized, or masternode sync not complete).
-    /// Clones the engine `Arc` out under the client lock and reads the
-    /// engine without it — the two never nest, same as
-    /// [`Self::masternode_validity_snapshot_blocking`].
+    /// Reads an owned snapshot through the client's public query API.
     pub async fn masternode_list_summaries(&self) -> Option<Vec<MasternodeListSummary>> {
-        let engine = {
+        let list = {
             let client_guard = self.client.read().await;
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list().await?
         };
-        let engine_guard = engine.read().await;
-        let list = engine_guard.latest_masternode_list()?;
-        Some(MasternodeListSummary::all_from_list(list))
+        Some(MasternodeListSummary::all_from_list(&list))
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
     /// (`blocking_read`; never call from the async runtime).
     pub fn masternode_list_summaries_blocking(&self) -> Option<Vec<MasternodeListSummary>> {
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list_blocking()?
         };
-        let engine_guard = engine.blocking_read();
-        let list = engine_guard.latest_masternode_list()?;
-        Some(MasternodeListSummary::all_from_list(list))
+        Some(MasternodeListSummary::all_from_list(&list))
     }
 
     /// Get the current sync progress.
@@ -631,7 +588,7 @@ impl SpvRuntime {
     pub async fn sync_progress(&self) -> Option<SyncProgress> {
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref()?;
-        Some(client.sync_progress().await)
+        Some(client.progress().await)
     }
 
     /// Read the unix-seconds block time of the SPV header storage's
@@ -689,20 +646,22 @@ impl SpvRuntime {
 
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
-    /// If the SPVClient is running it will be stopped and the
-    /// storage will be cleaned. If it is not running a tmp
-    /// Storage Manager built from the cached config will be used.
+    /// A running client is stopped first, as by [`Self::stop`], and stays
+    /// stopped: start SPV again to resync. Nothing is cleared unless that
+    /// stop completes.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
-        // Fast path: a live client holds the storage lock; clear through it.
-        {
-            let client_guard = self.client.read().await;
-            if let Some(client) = client_guard.as_ref() {
-                return client
-                    .clear_storage()
-                    .await
-                    .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
-            }
-        }
+        self.clear_storage_with(|client| async move { client.stop().await })
+            .await
+    }
+
+    async fn clear_storage_with<F, Fut>(&self, stop_client: F) -> Result<(), PlatformWalletError>
+    where
+        F: FnOnce(SpvClient) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        // Held to the end so no start can reopen the storage mid-clear.
+        let mut shutdown = self.shutdown.lock().await;
+        self.stop_locked(&mut shutdown, stop_client).await?;
 
         let config = self.last_config.read().await.clone().ok_or_else(|| {
             PlatformWalletError::SpvError(
@@ -717,7 +676,7 @@ impl SpvRuntime {
         StorageManager::clear(&mut storage)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        StorageManager::shutdown(&mut storage).await;
+        StorageManager::stop(&mut storage).await;
 
         Ok(())
     }
@@ -788,7 +747,7 @@ mod masternodes_by_voting_key_tests {
     /// Build a list from `(proTxHash-seed, voting-key-id)` pairs so each entry
     /// gets a distinct proTxHash and a caller-chosen voting key.
     fn list_from(entries: Vec<(u8, [u8; 20])>) -> MasternodeList {
-        let masternodes = entries
+        let masternodes: dashcore::sml::masternode_list::MasternodeMap = entries
             .into_iter()
             .map(|(seed, voting_key_id)| {
                 let mut hash_bytes = [0u8; 32];
@@ -807,12 +766,12 @@ mod masternodes_by_voting_key_tests {
                     is_valid: true,
                     mn_type: EntryMasternodeType::Regular,
                 };
-                (pro_tx_hash, entry.into())
+                (pro_tx_hash, std::sync::Arc::new(entry.into()))
             })
             .collect();
         MasternodeList::build(
             masternodes,
-            Default::default(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )
@@ -866,72 +825,6 @@ mod masternodes_by_voting_key_tests {
     }
 }
 
-#[cfg(test)]
-mod shutdown_tests {
-    use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    struct DropFlag(Arc<AtomicBool>);
-
-    impl Drop for DropFlag {
-        fn drop(&mut self) {
-            self.0.store(true, Ordering::SeqCst);
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn timed_out_spv_task_is_aborted_and_joined_before_return() {
-        let dropped = Arc::new(AtomicBool::new(false));
-        let dropped_in_task = Arc::clone(&dropped);
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(async move {
-            let _flag = DropFlag(dropped_in_task);
-            let _ = started_tx.send(());
-            std::future::pending::<()>().await;
-        });
-        started_rx.await.expect("SPV task should start");
-
-        assert!(
-            join_spv_task(handle, SPV_STOP_TIMEOUT).await.is_none(),
-            "an abortable task must be confirmed terminated, not returned as live"
-        );
-
-        assert!(
-            dropped.load(Ordering::SeqCst),
-            "abort must be joined so task-owned callback state is dropped"
-        );
-    }
-
-    /// A run loop parked in **synchronous** code cannot be interrupted by
-    /// `abort` — the cancellation only lands at the next await point, which
-    /// never comes. The post-abort confirmation must therefore be bounded
-    /// and hand the still-live handle back, so `stop` can re-park it (a
-    /// dropped `JoinHandle` detaches the task, and this one can still reach
-    /// host callbacks) and report SPV non-clean.
-    ///
-    /// Without the post-abort deadline this test hangs: that is exactly the
-    /// hang that would reach the FFI's `destroy`.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn spv_task_surviving_abort_is_returned_for_reparking() {
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(async move {
-            let _ = started_tx.send(());
-            // Stands in for a monitor blocked inside a synchronous host
-            // callback: no await point for the abort to land on.
-            std::thread::sleep(Duration::from_millis(500));
-        });
-        started_rx.await.expect("SPV task should start");
-
-        let live =
-            join_spv_task_within(handle, Duration::from_millis(10), Duration::from_millis(20))
-                .await
-                .expect("an un-abortable task must be handed back, never silently detached");
-
-        // Cleanup: the blocking section does end eventually.
-        let _ = live.await;
-    }
-}
-
 impl std::fmt::Debug for SpvRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SpvRuntime")
@@ -942,7 +835,7 @@ impl std::fmt::Debug for SpvRuntime {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use dash_spv::error::{NetworkError, SpvError};
@@ -953,7 +846,7 @@ mod tests {
     use super::{classify_spv_send_error, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
-    use crate::events::PlatformEventManager;
+    use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use dash_spv::ClientConfig;
 
@@ -964,9 +857,18 @@ mod tests {
         SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])))
     }
 
-    /// A stop that could not join its run loop leaves it parked. A start
-    /// issued while that loop is live must fail instead of starting a client
-    /// that `spawn_run_loop` would give no run loop.
+    /// Poll until `ready` holds, failing the test instead of hanging it.
+    async fn wait_until(what: &str, ready: impl Fn() -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !ready() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+    }
+
+    /// An outstanding startup must remain owned until stop joins it.
     #[tokio::test]
     async fn should_refuse_a_start_while_a_parked_run_loop_is_live() {
         let runtime = unstarted_runtime();
@@ -979,8 +881,8 @@ mod tests {
         let result = runtime.start(ClientConfig::default()).await;
 
         assert!(
-            matches!(result, Err(PlatformWalletError::SpvError(_))),
-            "a start over a live parked run loop must fail, got {result:?}"
+            is_retryable(&result),
+            "a start over a live parked run loop must ask for a stop, got {result:?}"
         );
         assert!(!runtime.is_started(), "no client may be started");
         assert!(
@@ -994,9 +896,7 @@ mod tests {
         let _ = release_tx.send(());
     }
 
-    /// A stop that is joining the run loop has taken it out of `task`. A start
-    /// in that window must fail: when the old loop exits, `run` clears the
-    /// client, which would be the newly started one.
+    /// Startup remains owned by teardown while its original slot is empty.
     #[tokio::test]
     async fn should_refuse_a_start_while_a_stop_is_joining_the_run_loop() {
         let runtime = Arc::new(unstarted_runtime());
@@ -1098,10 +998,9 @@ mod tests {
             .expect("the second stop finds nothing left to stop");
     }
 
-    /// Once the parked run loop has exited, the next start drops it and
-    /// goes ahead.
+    /// Completion alone cannot prove success: stop must check the join result.
     #[tokio::test]
-    async fn should_drop_a_parked_run_loop_that_has_exited() {
+    async fn should_join_a_completed_startup_before_allowing_restart() {
         let runtime = unstarted_runtime();
         let exited = tokio::spawn(async {});
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -1113,6 +1012,8 @@ mod tests {
         .expect("an empty task should finish promptly");
         *runtime.task.lock().expect("spv task mutex poisoned") = Some(exited);
 
+        assert!(runtime.ensure_no_live_run_loop().is_err());
+        runtime.stop().await.unwrap();
         assert!(runtime.ensure_no_live_run_loop().is_ok());
         assert!(
             runtime
@@ -1122,6 +1023,533 @@ mod tests {
                 .is_none(),
             "an exited run loop must be dropped"
         );
+    }
+
+    #[tokio::test]
+    async fn should_retain_client_after_successful_startup() {
+        let (runtime, _storage) = offline_runtime().await;
+        runtime.finish_startup(Ok(())).await.unwrap();
+        *runtime.task.lock().unwrap() = Some(tokio::spawn(async {}));
+        assert!(matches!(
+            runtime.start(ClientConfig::default()).await,
+            Err(PlatformWalletError::SpvAlreadyRunning)
+        ));
+        let retained = runtime.is_started();
+        let progress = runtime.sync_progress().await;
+        let broadcast = runtime
+            .broadcast_transaction_and_wait(&dummy_tx(), None)
+            .await;
+        assert!(
+            matches!(broadcast, Err(BroadcastError::Rejected { reason }) if reason.contains("no connected peers")),
+            "broadcast must reach the retained client"
+        );
+        runtime.stop().await.unwrap();
+        assert!(
+            retained,
+            "successful startup must retain access to the background client"
+        );
+        assert!(
+            progress.is_some(),
+            "queries must remain available after startup"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_track_shutdown_after_stop_caller_is_cancelled() {
+        let runtime = Arc::new(unstarted_runtime());
+        let (release, pending) = tokio::sync::oneshot::channel();
+        *runtime.task.lock().unwrap() = Some(tokio::spawn(async move {
+            let _ = pending.await;
+        }));
+        let stopping = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        wait_until("stop to take the startup task", || {
+            runtime.task.lock().unwrap().is_none()
+        })
+        .await;
+        stopping.abort();
+        let _ = stopping.await;
+        let blocked = runtime.ensure_no_live_run_loop().is_err();
+        let retry = tokio::time::timeout(Duration::from_millis(10), runtime.stop()).await;
+        let _ = release.send(());
+        runtime.stop().await.unwrap();
+        assert!(
+            blocked,
+            "cancelling stop must not permit a restart over live work"
+        );
+        assert!(
+            retry.is_err(),
+            "retry must wait for the original work to finish"
+        );
+    }
+
+    /// Teardown is still tracked: the host should stop again.
+    fn is_retryable(result: &Result<(), PlatformWalletError>) -> bool {
+        matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_)))
+    }
+
+    /// Startup or teardown panicked: only a process restart recovers.
+    fn needs_restart(result: &Result<(), PlatformWalletError>) -> bool {
+        matches!(
+            result,
+            Err(PlatformWalletError::SpvProcessRestartRequired(_))
+        )
+    }
+
+    async fn offline_runtime() -> (Arc<SpvRuntime>, tempfile::TempDir) {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .unwrap();
+        (runtime, storage)
+    }
+
+    /// Wait out two periods of upstream's five-second storage writer and
+    /// check that nothing re-created the removed directory.
+    async fn assert_no_storage_writer_survives(storage: &tempfile::TempDir) {
+        std::fs::remove_dir_all(storage.path()).unwrap();
+        tokio::time::sleep(Duration::from_secs(11)).await;
+        assert!(
+            !storage.path().exists(),
+            "a storage writer outlived its client"
+        );
+    }
+
+    /// Upstream starts a storage writer at construction and stops it only for
+    /// a client whose sync loop ran. Left behind, it keeps writing into a
+    /// directory that was cleared or handed to the next client.
+    #[tokio::test(start_paused = true)]
+    async fn should_leave_no_storage_writer_after_clearing_a_client_that_never_ran() {
+        let (runtime, storage) = offline_runtime().await;
+        runtime.clear_storage().await.unwrap();
+        assert_no_storage_writer_survives(&storage).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_leave_no_storage_writer_after_client_construction_fails() {
+        let storage = tempfile::tempdir().unwrap();
+        let mut config = ClientConfig::testnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true);
+        config.max_peers = 0;
+        assert!(unstarted_runtime().start(config).await.is_err());
+        assert_no_storage_writer_survives(&storage).await;
+    }
+
+    /// Drive the production startup path and wait for upstream `run` to return.
+    async fn run_offline(runtime: &Arc<SpvRuntime>) {
+        runtime.spawn_run_loop();
+        wait_until("the startup task to finish", || {
+            runtime
+                .task
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|task| task.is_finished())
+        })
+        .await;
+    }
+
+    fn offline_config(storage: &tempfile::TempDir) -> ClientConfig {
+        ClientConfig::testnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true)
+    }
+
+    /// The production startup path: `spawn_run_loop` drives upstream `run`,
+    /// the client stays available for queries, and stop tears down a client
+    /// whose sync loop is live.
+    #[tokio::test]
+    async fn should_run_the_real_startup_and_stop_a_running_client() {
+        let (runtime, storage) = offline_runtime().await;
+        assert!(
+            !runtime.is_running(),
+            "a client that never ran is not running"
+        );
+
+        run_offline(&runtime).await;
+        assert!(runtime.is_started(), "startup must retain the client");
+        assert!(runtime.is_running());
+        assert!(
+            runtime.sync_progress().await.is_some(),
+            "queries must reach the retained client"
+        );
+
+        runtime.stop().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running());
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("restart after stopping a running client");
+        runtime.stop().await.unwrap();
+    }
+
+    /// Upstream stops itself when its sync loop fails and reports that only
+    /// through `on_error`, so the retained client must stop counting as
+    /// running.
+    #[tokio::test]
+    async fn should_not_report_running_after_upstream_background_sync_fails() {
+        /// Reports the error and what a host callback sees when it queries
+        /// the running state from inside the callback.
+        struct ErrorObserver {
+            runtime: std::sync::Weak<SpvRuntime>,
+            report: Mutex<Option<tokio::sync::oneshot::Sender<(String, bool)>>>,
+        }
+
+        impl EventHandler for ErrorObserver {
+            fn on_error(&self, error: &str) {
+                if let Some(report) = self.report.lock().unwrap().take() {
+                    let running = self.runtime.upgrade().is_some_and(|spv| spv.is_running());
+                    let _ = report.send((error.to_owned(), running));
+                }
+            }
+        }
+
+        impl PlatformEventHandler for ErrorObserver {}
+
+        let (runtime, storage) = offline_runtime().await;
+        let (sender, error) = tokio::sync::oneshot::channel();
+        runtime.event_manager.add_handler(Arc::new(ErrorObserver {
+            runtime: Arc::downgrade(&runtime),
+            report: Mutex::new(Some(sender)),
+        }));
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+
+        // Dropping the empty fixture's wallet closes its event channel. The
+        // real upstream monitor reports the failure and stops the sync loop.
+        *runtime.wallet_manager.write().await = WalletManager::new(Network::Testnet);
+        let (error, running_in_callback) = tokio::time::timeout(Duration::from_secs(5), error)
+            .await
+            .expect("upstream must report the background failure")
+            .expect("the error observer must remain registered");
+        assert!(
+            !running_in_callback,
+            "a callback querying the running state must get the stopped answer"
+        );
+        assert!(
+            error.contains("WalletEvent monitor channel closed unexpectedly"),
+            "expected a wallet event monitor failure, got {error}"
+        );
+
+        assert!(runtime.is_started(), "the client stays owned until stop");
+        // Upstream cleans up after the failure in a task of its own.
+        for _ in 0..1000 {
+            assert!(
+                !runtime.is_running(),
+                "a failed sync must not report running while upstream cleans up"
+            );
+            tokio::task::yield_now().await;
+        }
+        runtime.stop().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running());
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("restart after releasing the stopped client");
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+        runtime.stop().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_timed_out_upstream_stop_alive_until_retry_joins_it() {
+        let (runtime, storage) = offline_runtime().await;
+        let (release, pending) = tokio::sync::oneshot::channel();
+        let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed = Arc::clone(&stopped);
+        let result = runtime
+            .stop_with(move |client| async move {
+                let _ = pending.await;
+                client.stop().await;
+                completed.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .await;
+        assert!(
+            is_retryable(&result),
+            "an incomplete upstream stop must time out as retryable, got {result:?}"
+        );
+        assert!(is_retryable(&runtime.start(ClientConfig::default()).await));
+        assert!(
+            is_retryable(&runtime.clear_storage().await),
+            "storage must not be cleared under a pending upstream stop"
+        );
+        assert!(
+            is_retryable(&runtime.stop().await),
+            "retry must not report clean while upstream stop is pending"
+        );
+        release
+            .send(())
+            .expect("timed out stop must still own its future");
+        runtime.stop().await.unwrap();
+        assert!(stopped.load(std::sync::atomic::Ordering::SeqCst));
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .expect("restart after confirmed teardown");
+        runtime.stop().await.unwrap();
+        runtime.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_keep_upstream_stop_alive_when_its_caller_is_cancelled() {
+        let (runtime, _storage) = offline_runtime().await;
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, pending) = tokio::sync::oneshot::channel();
+        let stopping = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move {
+                runtime
+                    .stop_with(move |client| async move {
+                        entered.send(()).unwrap();
+                        let _ = pending.await;
+                        client.stop().await;
+                    })
+                    .await
+            })
+        };
+        started.await.unwrap();
+        stopping.abort();
+        let _ = stopping.await;
+        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), runtime.stop())
+                .await
+                .is_err()
+        );
+        release
+            .send(())
+            .expect("cancelled caller must leave upstream stop owned");
+        runtime.stop().await.unwrap();
+    }
+
+    /// Clearing stops the client, so the runtime must not keep reporting it
+    /// as started or holding its startup task.
+    #[tokio::test]
+    async fn should_leave_spv_stopped_and_restartable_after_clearing_a_running_client() {
+        let (runtime, storage) = offline_runtime().await;
+        runtime.finish_startup(Ok(())).await.unwrap();
+        *runtime.task.lock().unwrap() = Some(tokio::spawn(async {}));
+
+        runtime.clear_storage().await.unwrap();
+
+        assert!(
+            !runtime.is_started(),
+            "a cleared client is stopped and must not be reported as started"
+        );
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .expect("restart after clearing a running client");
+        runtime.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_keep_teardown_tracked_when_a_clear_storage_caller_is_cancelled() {
+        let (runtime, storage) = offline_runtime().await;
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, pending) = tokio::sync::oneshot::channel();
+        let clearing = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move {
+                runtime
+                    .clear_storage_with(move |client| async move {
+                        entered.send(()).unwrap();
+                        let _ = pending.await;
+                        client.stop().await;
+                    })
+                    .await
+            })
+        };
+        started.await.unwrap();
+        clearing.abort();
+        let _ = clearing.await;
+        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), runtime.clear_storage())
+                .await
+                .is_err(),
+            "a retried clear must wait for the teardown it left running"
+        );
+        release
+            .send(())
+            .expect("cancelled caller must leave upstream stop owned");
+        runtime.clear_storage().await.unwrap();
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .expect("restart after the retried clear joins teardown");
+        runtime.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_wait_for_startup_before_stopping_its_client() {
+        let (runtime, _storage) = offline_runtime().await;
+        let (release, pending) = tokio::sync::oneshot::channel();
+        let startup_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed = Arc::clone(&startup_done);
+        *runtime.task.lock().unwrap() = Some(tokio::spawn(async move {
+            let _ = pending.await;
+            completed.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+        let stopping = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move {
+                runtime
+                    .stop_with(move |client| async move {
+                        assert!(startup_done.load(std::sync::atomic::Ordering::SeqCst));
+                        client.stop().await;
+                    })
+                    .await
+            })
+        };
+        wait_until("stop to take the startup task", || {
+            runtime.task.lock().unwrap().is_none()
+        })
+        .await;
+        assert!(!stopping.is_finished());
+        runtime.spawn_run_loop();
+        assert!(
+            runtime.task.lock().unwrap().is_none(),
+            "cannot spawn during teardown"
+        );
+        release.send(()).unwrap();
+        stopping.await.unwrap().unwrap();
+    }
+
+    /// Failed-startup cleanup runs inside the startup task, whose finished
+    /// handle stays owned until stop joins it.
+    #[tokio::test]
+    async fn should_clean_up_failed_startup_and_allow_restart_after_stop() {
+        let (runtime, storage) = offline_runtime().await;
+        let config = || {
+            ClientConfig::testnet()
+                .with_storage_path(storage.path())
+                .with_restrict_to_configured_peers(true)
+        };
+        let startup = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move {
+                let failure = PlatformWalletError::SpvError("mock startup failure".into());
+                assert!(runtime.finish_startup(Err(failure)).await.is_err());
+            })
+        };
+        *runtime.task.lock().unwrap() = Some(startup);
+        wait_until("the failed startup to finish its cleanup", || {
+            runtime
+                .task
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|task| task.is_finished())
+        })
+        .await;
+
+        assert!(!runtime.is_started(), "failed startup must drop its client");
+        assert!(
+            is_retryable(&runtime.start(config()).await),
+            "an unjoined startup must block restart until a stop joins it"
+        );
+        runtime.stop().await.unwrap();
+        runtime
+            .start(config())
+            .await
+            .expect("restart after stop joins the failed startup");
+        runtime.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_never_report_clean_after_a_startup_task_panics() {
+        let runtime = Arc::new(unstarted_runtime());
+        *runtime.task.lock().unwrap() = Some(tokio::spawn(async { panic!("mock startup panic") }));
+        assert!(needs_restart(&runtime.stop().await));
+        assert!(
+            needs_restart(&runtime.stop().await),
+            "a join failure cannot be forgotten by a retry"
+        );
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
+        runtime.spawn_run_loop();
+        assert!(
+            runtime.task.lock().unwrap().is_none(),
+            "no run loop may be spawned over a panicked startup"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_preserve_ownership_when_cancelled_while_waiting_for_client_access() {
+        let (runtime, _storage) = offline_runtime().await;
+        let guard = runtime.client.read().await;
+        let stopping = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        // Stop takes `shutdown` and then parks on the client write lock.
+        wait_until("stop to take the shutdown lock", || {
+            runtime.shutdown.try_lock().is_err()
+        })
+        .await;
+        stopping.abort();
+        let _ = stopping.await;
+        assert!(
+            guard.is_some(),
+            "a cancelled lock wait must not take the client"
+        );
+        drop(guard);
+        runtime.stop().await.unwrap();
+        assert!(!runtime.is_started());
+    }
+
+    #[tokio::test]
+    async fn should_keep_teardown_panics_non_clean_on_every_retry() {
+        let (runtime, _storage) = offline_runtime().await;
+        let failed = runtime
+            .stop_with(|_client| async { panic!("mock teardown panic") })
+            .await;
+        assert!(needs_restart(&failed));
+        assert!(needs_restart(&runtime.stop().await));
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
+    }
+
+    /// A panic under the `task` mutex must not make every later lifecycle
+    /// call panic too: teardown has to stay reachable.
+    #[tokio::test]
+    async fn should_keep_lifecycle_usable_after_the_task_mutex_is_poisoned() {
+        let runtime = Arc::new(unstarted_runtime());
+        let poisoner = Arc::clone(&runtime);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.task.lock().unwrap();
+            panic!("mock panic while holding the task mutex");
+        })
+        .join();
+        assert!(runtime.task.is_poisoned());
+
+        runtime.spawn_run_loop();
+        runtime.stop().await.unwrap();
+        assert!(runtime.ensure_no_live_run_loop().is_ok());
     }
 
     /// A minimal valid transaction — the unstarted-client arm never
