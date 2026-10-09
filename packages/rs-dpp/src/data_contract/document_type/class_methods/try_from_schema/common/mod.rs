@@ -83,7 +83,8 @@ use super::{insert_values, insert_values_nested};
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
-    InvalidDocumentTypeNameError, RedundantDocumentPaidForByTokenWithContractId,
+    InvalidDocumentTypeNameError, NonTransferableTokenPaymentMustBurnError,
+    RedundantDocumentPaidForByTokenWithContractId,
     TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
 };
 #[cfg(feature = "validation")]
@@ -101,6 +102,8 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
+#[cfg(feature = "validation")]
+use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
@@ -1678,6 +1681,31 @@ fn parse_token_costs(
                                         InvalidTokenPositionError::new(
                                             ctx.token_configurations.last_key_value().map(|(position, _)| *position),
                                             token_contract_position,
+                                        ),
+                                    ),
+                                )
+                                    .into(),
+                            ));
+                        }
+
+                        // A non-transferable token pays only by burning: paying the contract
+                        // owner would move it to another identity. Only a format 1 token
+                        // configuration can be non-transferable, and the pre-activation gate
+                        // refuses that format before protocol version 14, so no earlier version
+                        // reaches this refusal.
+                        if target_contract_id.is_none()
+                            && effect == DocumentActionTokenEffect::TransferTokenToContractOwner
+                            && ctx
+                                .token_configurations
+                                .get(&token_contract_position)
+                                .is_some_and(|configuration| !configuration.is_transferable())
+                        {
+                            return Err(ProtocolError::ConsensusError(
+                                ConsensusError::BasicError(
+                                    BasicError::NonTransferableTokenPaymentMustBurnError(
+                                        NonTransferableTokenPaymentMustBurnError::new(
+                                            token_contract_position,
+                                            key.to_string(),
                                         ),
                                     ),
                                 )

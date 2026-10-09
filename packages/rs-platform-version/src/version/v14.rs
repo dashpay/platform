@@ -2244,7 +2244,30 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Inert before this version: the earlier meta-schemas refuse
 ///     `propertyConstraints` and their parsers ignore it.
 ///
-/// 89. **Unsigned integers are keyed in value order**: `serialize_value_for_key`
+/// 89. **Non-transferable tokens**: a format 1 token configuration
+///     (`TokenConfigurationV1`) gains `transferable`, `true` when absent and
+///     fixed at creation (no `TokenConfigUpdate` item). With `false` the batch
+///     advanced structure validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses every `TokenTransfer` from the contract the action carries
+///     (`TokenNotTransferableError`, 40726, paid, and in check tx); the
+///     document type parser, in place, refuses a cost in the contract's own
+///     such token that pays the contract owner instead of burning it
+///     (`NonTransferableTokenPaymentMustBurnError`, 10280); data contract
+///     create and update state validation 0, in place, refuse a cost in
+///     another contract's such token (40726), reusing the read that checks the
+///     token exists, external burns being refused already (10261);
+///     document-base state validation 2 refuses a payment to the contract
+///     owner in the contract's own such token again (40726), from the
+///     configuration in hand; `validate_shielded_pool_rules` refuses it with a
+///     shielded pool (`NonTransferableTokenShieldedPoolError`, 10279, unpaid
+///     at the pre-activation gate); and the pool threshold
+///     `TokenConfigUpdate` items are refused on a format 1 configuration
+///     without a pool. Mints, claims, direct purchases, burns, freezes and
+///     burn payments for the contract's own documents are unchanged.
+///     Inert before this version: only format 1 can be non-transferable, and
+///     the pre-activation gate refuses that format on every earlier version.
+///
+/// 90. **Unsigned integers are keyed in value order**: `serialize_value_for_key`
 ///     and `deserialize_value_for_key` 1 (`CONTRACT_VERSIONS_V6`) key a property,
 ///     or derived index property, of an unsigned integer type by its plain
 ///     big-endian bytes (`DocumentPropertyType::encode_value_for_tree_keys_v1`).
