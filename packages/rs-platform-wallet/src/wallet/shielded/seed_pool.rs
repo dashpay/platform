@@ -211,7 +211,7 @@ impl PlatformWallet {
 
         // One prover handle for the whole run (zero-sized; shares the
         // process-global cached proving key).
-        let prover = CachedOrchardProver::new();
+        let prover: &'static CachedOrchardProver = &CachedOrchardProver;
 
         let mut pool_notes_now = start_notes;
         let mut batches_submitted = 0u64;
@@ -242,7 +242,7 @@ impl PlatformWallet {
             // real note lands at ~REAL_NOTE_VALUE_CREDITS and the surplus
             // is structurally zero.
             let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
-            let pool_fee = self.shield_from_asset_lock_pool_fee(num_actions)?;
+            let pool_fee = Self::shield_from_asset_lock_pool_fee(num_actions, self.sdk.version())?;
             let lock_credits = pool_fee
                 .checked_add(REAL_NOTE_VALUE_CREDITS)
                 .ok_or_else(|| {
@@ -281,7 +281,7 @@ impl PlatformWallet {
                         funding,
                         vec![(recipient, None)],
                         asset_lock_signer,
-                        &prover,
+                        prover,
                         None,
                         dummy_outputs,
                         settings,

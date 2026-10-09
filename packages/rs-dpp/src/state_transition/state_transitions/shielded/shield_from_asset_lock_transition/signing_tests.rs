@@ -351,3 +351,112 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
         "dummy outputs are zero-value: value_balance must equal the real amount",
     );
 }
+
+#[tokio::test]
+async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
+    // Proved from the outpoint alone, one bundle wraps a proof of that outpoint, the same proof
+    // again and another proof of it. Each assembly signs afresh, so a resubmission never repeats a
+    // rejected transition's hash. That an InstantSend and a ChainLock proof of one outpoint bind
+    // alike is pinned in `shielded::sighash`.
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+    use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
+
+    let platform_version = PlatformVersion::latest();
+    let signer = FixedKeySigner::new([7u8; 32]);
+    let path = DerivationPath::default();
+    let out_point = OutPoint::from([0x42; 36]);
+    let chain_proof_at = |core_chain_locked_height| {
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height,
+            out_point,
+        })
+    };
+
+    let proved = ProvedShieldFromAssetLockBundle::prove(
+        &test_orchard_address(),
+        50_000,
+        out_point,
+        &TestProver,
+        [0u8; 36],
+        None,
+        0,
+        platform_version,
+    )
+    .expect("proving should succeed");
+    let assemble = |proof: AssetLockProof| {
+        proved.build_transition_with_signer(proof, &path, &signer, None, platform_version)
+    };
+    let first = extract_v1(assemble(chain_proof_at(100)).await.expect("assembly"));
+    let again = extract_v1(assemble(chain_proof_at(100)).await.expect("re-assembly"));
+    let later = extract_v1(assemble(chain_proof_at(200)).await.expect("later proof"));
+
+    for v1 in [&again, &later] {
+        assert_eq!(v1.proof, first.proof, "assembly must not re-prove");
+        assert_eq!(v1.value_balance, 50_000);
+    }
+    assert_ne!(first.binding_signature, again.binding_signature);
+    assert_ne!(first.signature, again.signature);
+
+    let err = assemble(make_chain_asset_lock_proof())
+        .await
+        .expect_err("a bundle bound to another outpoint must not be assembled");
+    assert!(
+        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+            if msg.contains("does not match the binding")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing() {
+    // Protocol 13 predates `credit_pool_bundle_binding`, so the sighash is the same for every
+    // lock: only the stored outpoint stops one proved bundle from funding the note twice.
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+    use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
+
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+    let signer = FixedKeySigner::new([7u8; 32]);
+    let path = DerivationPath::default();
+    let out_point = OutPoint::from([0x42; 36]);
+    let proved = ProvedShieldFromAssetLockBundle::prove(
+        &test_orchard_address(),
+        50_000,
+        out_point,
+        &TestProver,
+        [0u8; 36],
+        None,
+        0,
+        platform_version,
+    )
+    .expect("proving should succeed");
+    let assemble = |proof: AssetLockProof| {
+        proved.build_transition_with_signer(proof, &path, &signer, None, platform_version)
+    };
+
+    let own = AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: 100,
+        out_point,
+    });
+    assemble(own.clone())
+        .await
+        .expect("a proof of its own outpoint assembles");
+    // A version that binds the outpoint verifies against another sighash than the one the bundle
+    // was signed for, even around the bundle's own outpoint.
+    let err = proved
+        .build_transition_with_signer(own, &path, &signer, None, PlatformVersion::latest())
+        .await
+        .expect_err("a bundle proved before the binding must not assemble after it");
+    assert!(
+        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+            if msg.contains("does not match the binding")),
+        "unexpected error: {err:?}"
+    );
+    let err = assemble(make_chain_asset_lock_proof())
+        .await
+        .expect_err("a bundle proved for another outpoint must not be assembled");
+    assert!(
+        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+            if msg.contains("does not match the binding")),
+        "unexpected error: {err:?}"
+    );
+}
