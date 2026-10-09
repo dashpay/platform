@@ -138,6 +138,21 @@ pub enum Error {
     EncryptedFor(#[from] EncryptedForError),
 }
 
+impl Error {
+    /// Whether the trusted quorum source failed, including retry exhaustion
+    /// around its original error. Bindings use this category independently
+    /// of node-health retryability.
+    pub fn is_quorum_source_unavailable(&self) -> bool {
+        match self {
+            Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_)) => true,
+            Self::NoAvailableAddressesToRetry(last_error) => {
+                last_error.is_quorum_source_unavailable()
+            }
+            _ => false,
+        }
+    }
+}
+
 /// A trusted source outage is not the responding node's fault. Preserve that
 /// attribution and quorum context; every other verifier failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
