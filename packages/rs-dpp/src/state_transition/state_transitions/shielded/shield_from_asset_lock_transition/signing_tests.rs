@@ -437,9 +437,20 @@ async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing(
         core_chain_locked_height: 100,
         out_point,
     });
-    assemble(own)
+    assemble(own.clone())
         .await
         .expect("a proof of its own outpoint assembles");
+    // A version that binds the outpoint verifies against another sighash than the one the bundle
+    // was signed for, even around the bundle's own outpoint.
+    let err = proved
+        .build_transition_with_signer(own, &path, &signer, None, PlatformVersion::latest())
+        .await
+        .expect_err("a bundle proved before the binding must not assemble after it");
+    assert!(
+        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+            if msg.contains("does not match the binding")),
+        "unexpected error: {err:?}"
+    );
     let err = assemble(make_chain_asset_lock_proof())
         .await
         .expect_err("a bundle proved for another outpoint must not be assembled");

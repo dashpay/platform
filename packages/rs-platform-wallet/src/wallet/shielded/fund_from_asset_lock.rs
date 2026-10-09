@@ -44,6 +44,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 
 use std::future::Future;
 use std::time::Duration;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
@@ -261,10 +262,12 @@ impl PlatformWallet {
             Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
 
         // Proves the Orchard bundle on the blocking pool, so the seconds of
-        // Halo 2 work never occupy an async worker.
+        // Halo 2 work never occupy an async worker. Dropping the handle on
+        // any exit cancels a proof that is still queued; a running one can't
+        // be interrupted, and its result is dropped.
         let spawn_proof = |out_point, shield_amount| {
             let sender_ovk = sender_ovk.clone();
-            tokio::task::spawn_blocking(move || {
+            AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
                 ProvedShieldFromAssetLockBundle::prove(
                     &recipient,
                     shield_amount,
@@ -275,7 +278,7 @@ impl PlatformWallet {
                     dummy_outputs,
                     platform_version,
                 )
-            })
+            }))
         };
 
         // Step 2: resolve funding. `AssetLockShieldedAddressTopUp`
@@ -418,14 +421,8 @@ impl PlatformWallet {
             {
                 proving
             }
-            stale => {
-                // Made for other inputs: a queued proof never starts; a
-                // running one can't be interrupted, and its result is dropped.
-                if let Some((_, _, proving)) = stale {
-                    proving.abort();
-                }
-                spawn_proof(proof_out_point, shield_amount)
-            }
+            // Made for other inputs: dropping it cancels it if still queued.
+            _ => spawn_proof(proof_out_point, shield_amount),
         };
         let bundle = join_proof(proving).await?;
         let sdk = self.sdk.clone();
@@ -783,7 +780,7 @@ async fn resolve_while_speculating<R, S>(
 
 /// Wait for a bundle proof started with `spawn_blocking`.
 async fn join_proof(
-    proving: tokio::task::JoinHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>,
+    proving: AbortOnDropHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>,
 ) -> Result<ProvedShieldFromAssetLockBundle, PlatformWalletError> {
     match proving.await {
         Ok(proved) => proved.map_err(|e| PlatformWalletError::Sdk(e.into())),
