@@ -822,14 +822,6 @@ where
     use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
 
-    let current_version = sdk.version().protocol_version;
-    if current_version != platform_version.protocol_version {
-        return Err(dash_sdk::Error::Generic(format!(
-            "protocol version moved from {} to {current_version} since the shield bundle \
-             was priced; resume the asset lock to re-prove it",
-            platform_version.protocol_version
-        )));
-    }
     let st = bundle
         .build_transition_with_signer(
             proof,
@@ -844,6 +836,17 @@ where
         StateTransition::ShieldFromAssetLock(transition) => transition.actions().to_vec(),
         _ => Vec::new(),
     };
+
+    // Checked after signing, which an external signer can stretch out, and
+    // as close to the broadcast as the SDK allows.
+    let current_version = sdk.version().protocol_version;
+    if current_version != platform_version.protocol_version {
+        return Err(dash_sdk::Error::Generic(format!(
+            "protocol version moved from {} to {current_version} since the shield bundle \
+             was priced; resume the asset lock to re-prove it",
+            platform_version.protocol_version
+        )));
+    }
 
     // Wait for the verified result rather than relay-ACK. Single-use
     // asset-lock proof: a false-positive on a transition Platform
