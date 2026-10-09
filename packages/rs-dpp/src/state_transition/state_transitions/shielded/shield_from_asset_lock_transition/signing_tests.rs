@@ -406,3 +406,46 @@ async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
         "unexpected error: {err:?}"
     );
 }
+
+#[tokio::test]
+async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing() {
+    // Protocol 13 predates `credit_pool_bundle_binding`, so the sighash is the same for every
+    // lock: only the stored outpoint stops one proved bundle from funding the note twice.
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+    use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
+
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+    let signer = FixedKeySigner::new([7u8; 32]);
+    let path = DerivationPath::default();
+    let out_point = OutPoint::from([0x42; 36]);
+    let proved = ProvedShieldFromAssetLockBundle::prove(
+        &test_orchard_address(),
+        50_000,
+        out_point,
+        &TestProver,
+        [0u8; 36],
+        None,
+        0,
+        platform_version,
+    )
+    .expect("proving should succeed");
+    let assemble = |proof: AssetLockProof| {
+        proved.build_transition_with_signer(proof, &path, &signer, None, platform_version)
+    };
+
+    let own = AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: 100,
+        out_point,
+    });
+    assemble(own)
+        .await
+        .expect("a proof of its own outpoint assembles");
+    let err = assemble(make_chain_asset_lock_proof())
+        .await
+        .expect_err("a bundle proved for another outpoint must not be assembled");
+    assert!(
+        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+            if msg.contains("does not match the binding")),
+        "unexpected error: {err:?}"
+    );
+}

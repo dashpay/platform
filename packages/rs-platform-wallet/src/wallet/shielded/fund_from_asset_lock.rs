@@ -418,7 +418,14 @@ impl PlatformWallet {
             {
                 proving
             }
-            _ => spawn_proof(proof_out_point, shield_amount),
+            stale => {
+                // Made for other inputs: a queued proof never starts; a
+                // running one can't be interrupted, and its result is dropped.
+                if let Some((_, _, proving)) = stale {
+                    proving.abort();
+                }
+                spawn_proof(proof_out_point, shield_amount)
+            }
         };
         let bundle = join_proof(proving).await?;
         let sdk = self.sdk.clone();
