@@ -32,9 +32,10 @@
 //! between them: a dotted path a property of the referring document (a
 //! string's UTF-8, a byte array's bytes, an identifier's 32 bytes), the
 //! property carrying the reference included, named by its path;
-//! `{ "const": text }` fixed UTF-8 text; and `"."` the value carrying the
+//! `{ "const": text }` fixed UTF-8 text; `"."` the value carrying the
 //! reference where it has no path (each element of a typed array, the writer
-//! or the creator). So that the joined bytes split back into the params one
+//! or the creator); and `"$ownerId"` the writer's 32-byte id, which binds the
+//! commitment to whoever may reveal it. So that the joined bytes split back into the params one
 //! way only, every variable-length param (a string, or a byte array whose size
 //! is not fixed) that another variable-length param follows is followed
 //! directly by a one-byte `const`, its separator, and a value holding that
@@ -52,6 +53,7 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
+use crate::document::property_names::OWNER_ID;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::{Identifier, Value};
 use serde::ser::SerializeMap;
@@ -93,6 +95,9 @@ pub enum LookupKeyParam {
     Property(String),
     /// `{ "const": text }`: fixed text, as UTF-8.
     Const(String),
+    /// `"$ownerId"`: the writer's id, its 32 bytes. A commitment hashing it can be
+    /// revealed only by the identity it was made for, whoever stores a copy of it.
+    Writer,
 }
 
 impl Serialize for LookupKeyParam {
@@ -105,6 +110,7 @@ impl Serialize for LookupKeyParam {
                 map.serialize_entry(LOOKUP_KEY_CONST, text)?;
                 map.end()
             }
+            LookupKeyParam::Writer => serializer.serialize_str(OWNER_ID),
         }
     }
 }
@@ -288,7 +294,8 @@ impl LookupHashKey {
     /// order, borrowed from the document where they can be: `"."` reads
     /// `reference_id`, the identifier carrying the reference where it has no
     /// path (an element's, the writer's or the creator's id; a property carrying
-    /// the reference is named by its path, so it passes `None`). An error names
+    /// the reference is named by its path, so it passes `None`), and `"$ownerId"`
+    /// reads `writer_id`, the identity creating the document. An error names
     /// the first param whose value is absent, of a kind a param cannot take,
     /// behind a repeated key, or a variable-length value holding the separator
     /// that follows it.
@@ -296,6 +303,7 @@ impl LookupHashKey {
         &'a self,
         declaring: DocumentTypeRef,
         reference_id: Option<Identifier>,
+        writer_id: Identifier,
         document_data: &'a BTreeMap<String, Value>,
     ) -> Result<Vec<Cow<'a, [u8]>>, LookupPreimageError> {
         let mut parts = Vec::with_capacity(self.params.len());
@@ -312,6 +320,7 @@ impl LookupHashKey {
                     })?;
                     Cow::Owned(reference_id.to_buffer().to_vec())
                 }
+                LookupKeyParam::Writer => Cow::Owned(writer_id.to_buffer().to_vec()),
                 LookupKeyParam::Property(path) => {
                     value_bytes(path, read_param(document_data, path)?)?
                 }
@@ -348,9 +357,10 @@ impl LookupHashKey {
         &self,
         declaring: DocumentTypeRef,
         reference_id: Option<Identifier>,
+        writer_id: Identifier,
         document_data: &BTreeMap<String, Value>,
     ) -> Result<(), LookupPreimageError> {
-        self.parts(declaring, reference_id, document_data)
+        self.parts(declaring, reference_id, writer_id, document_data)
             .map(|_| ())
     }
 
@@ -360,9 +370,12 @@ impl LookupHashKey {
         &self,
         declaring: DocumentTypeRef,
         reference_id: Option<Identifier>,
+        writer_id: Identifier,
         document_data: &BTreeMap<String, Value>,
     ) -> Result<Vec<u8>, LookupPreimageError> {
-        Ok(self.parts(declaring, reference_id, document_data)?.concat())
+        Ok(self
+            .parts(declaring, reference_id, writer_id, document_data)?
+            .concat())
     }
 
     /// The value of the index property this key fills for a create of a
@@ -373,9 +386,10 @@ impl LookupHashKey {
         &self,
         declaring: DocumentTypeRef,
         reference_id: Option<Identifier>,
+        writer_id: Identifier,
         document_data: &BTreeMap<String, Value>,
     ) -> Result<([u8; 32], u16), LookupPreimageError> {
-        let preimage = self.preimage(declaring, reference_id, document_data)?;
+        let preimage = self.preimage(declaring, reference_id, writer_id, document_data)?;
         Ok((
             self.function.digest(&preimage),
             self.function.block_count(preimage.len()),
@@ -383,17 +397,21 @@ impl LookupHashKey {
     }
 }
 
-/// Reads one param: `"."`, a dotted property path, or `{ "const": text }`.
+/// Reads one param: `"."`, `"$ownerId"`, a dotted property path, or
+/// `{ "const": text }`.
 fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
     if let Some(path) = value.as_text() {
         if path == LOOKUP_KEY_REFERENCE_VALUE {
             return Ok(LookupKeyParam::ReferenceValue);
         }
+        if path == OWNER_ID {
+            return Ok(LookupKeyParam::Writer);
+        }
         if path.is_empty() || path.len() > MAX_LOOKUP_KEY_PATH_LENGTH || path.starts_with('$') {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a refersTo findBy function param is \".\", {{ \"const\": text }} or the path \
-                 of a schema property of 1 to {MAX_LOOKUP_KEY_PATH_LENGTH} characters, not \
-                 {path:?}"
+                "a refersTo findBy function param is \".\", \"$ownerId\", {{ \"const\": text }} \
+                 or the path of a schema property of 1 to {MAX_LOOKUP_KEY_PATH_LENGTH} \
+                 characters, not {path:?}"
             )));
         }
         return Ok(LookupKeyParam::Property(path.to_string()));
@@ -435,17 +453,20 @@ fn param_name(param: &LookupKeyParam) -> &str {
         LookupKeyParam::ReferenceValue => LOOKUP_KEY_REFERENCE_VALUE,
         LookupKeyParam::Property(path) => path,
         LookupKeyParam::Const(text) => text,
+        LookupKeyParam::Writer => OWNER_ID,
     }
 }
 
 /// Whether `param` has no fixed length: a string, or a byte array whose
 /// minimum and maximum sizes differ, read from a property of `declaring`. A
-/// `const` is fixed, and so is `"."`, always an identifier (an element's, the
-/// writer's or the creator's id); a path naming no property is judged by
-/// [`LookupHashKey::referring_side_error`].
+/// `const` is fixed, and so are `"."`, always an identifier (an element's, the
+/// writer's or the creator's id), and `"$ownerId"`, the writer's; a path naming
+/// no property is judged by [`LookupHashKey::referring_side_error`].
 fn is_variable_length(param: &LookupKeyParam, declaring: DocumentTypeRef) -> bool {
     let property_type = match param {
-        LookupKeyParam::Const(_) | LookupKeyParam::ReferenceValue => return false,
+        LookupKeyParam::Const(_) | LookupKeyParam::ReferenceValue | LookupKeyParam::Writer => {
+            return false
+        }
         LookupKeyParam::Property(path) => match declaring.flattened_properties().get(path) {
             Some(property) => &property.property_type,
             None => return false,
@@ -575,7 +596,8 @@ pub fn first_unrevealable_lookup_key(
             // A property carrying the reference is named by its path
             (ReferenceHolder::Property(_), _) => None,
         };
-        if let Err(error) = key.check_preimage(document_type, reference_id, document_data) {
+        if let Err(error) = key.check_preimage(document_type, reference_id, owner_id, document_data)
+        {
             return Some((holder.path().to_string(), error));
         }
     }
@@ -678,13 +700,48 @@ mod tests {
                     ("preorderSalt", salt_value.clone()),
                 ]);
                 assert_eq!(
-                    key.key_value(domain.as_ref(), None, &document)
+                    key.key_value(domain.as_ref(), None, Identifier::default(), &document)
                         .map(|(digest, _)| Value::Bytes32(digest)),
                     Ok(trigger_hash(salt, normalized_label, parent)),
                     "{normalized_label} {parent}"
                 );
             }
         }
+    }
+
+    /// `"$ownerId"` reads the writer's 32 bytes, so the same preimage values hash
+    /// to a different key for every writer: DPNS v3's preorder hash.
+    #[test]
+    fn should_hash_the_writer_for_an_owner_id_param() {
+        let domain = domain();
+        let key = LookupHashKey::from_value(&platform_value!({
+            "function": "sys.hash.sha256d",
+            "params": ["$ownerId", "preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
+        }))
+        .expect("the key should parse");
+        assert_eq!(key.params[0], LookupKeyParam::Writer);
+        let document = data(&[
+            ("normalizedLabel", "al1ce".into()),
+            ("parentDomainName", "dash".into()),
+            ("preorderSalt", Value::Bytes32([0x42; 32])),
+        ]);
+        let alice = Identifier::new([0xA1; 32]);
+        let mut expected = alice.to_buffer().to_vec();
+        expected.extend([0x42; 32]);
+        expected.extend(b"al1ce.dash");
+        assert_eq!(
+            key.preimage(domain.as_ref(), None, alice, &document),
+            Ok(expected)
+        );
+        assert_ne!(
+            key.key_value(domain.as_ref(), None, alice, &document),
+            key.key_value(
+                domain.as_ref(),
+                None,
+                Identifier::new([0xB0; 32]),
+                &document
+            )
+        );
     }
 
     #[test]
@@ -699,7 +756,7 @@ mod tests {
         // 32 + 5 + 1 + 4 bytes pad to one block, plus the second pass
         assert_eq!(
             dpns_key()
-                .key_value(domain.as_ref(), None, &document)
+                .key_value(domain.as_ref(), None, Identifier::default(), &document)
                 .map(|(digest, blocks)| (Value::Bytes32(digest), blocks)),
             Ok((hash.clone(), 2))
         );
@@ -823,7 +880,7 @@ mod tests {
             ("preorderSalt", salt.clone()),
         ]);
         assert!(matches!(
-            key.preimage(domain.as_ref(), None, &missing_parent),
+            key.preimage(domain.as_ref(), None, Identifier::default(), &missing_parent),
             Err(LookupPreimageError { param, .. }) if param == "parentDomainName"
         ));
 
@@ -834,7 +891,7 @@ mod tests {
             ("preorderSalt", salt.clone()),
         ]);
         assert!(matches!(
-            key.preimage(domain.as_ref(), None, &dotted_label),
+            key.preimage(domain.as_ref(), None, Identifier::default(), &dotted_label),
             Err(LookupPreimageError { param, .. }) if param == "normalizedLabel"
         ));
 
@@ -844,7 +901,9 @@ mod tests {
             ("parentDomainName", "b.c".into()),
             ("preorderSalt", salt.clone()),
         ]);
-        assert!(key.preimage(domain.as_ref(), None, &dotted_parent).is_ok());
+        assert!(key
+            .preimage(domain.as_ref(), None, Identifier::default(), &dotted_parent)
+            .is_ok());
     }
 
     #[test]
@@ -895,7 +954,7 @@ mod tests {
             platform_value!({ "function": "sys.hash.sha256d" }),
             platform_value!({ "function": "sys.hash.sha256d", "params": ["."], "extra": 1 }),
             platform_value!({ "function": "sys.hash.sha256d", "params": [{ "const": "" }] }),
-            platform_value!({ "function": "sys.hash.sha256d", "params": ["$ownerId"] }),
+            platform_value!({ "function": "sys.hash.sha256d", "params": ["$creatorId"] }),
             platform_value!({ "function": "sys.hash.sha256d", "params": [{ "text": "." }] }),
             platform_value!({ "sha256d": ["."] }),
         ] {

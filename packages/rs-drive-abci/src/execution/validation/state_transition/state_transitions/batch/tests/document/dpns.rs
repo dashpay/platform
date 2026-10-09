@@ -1029,13 +1029,13 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
+    use crate::test::helpers::dpns::dpns_salted_domain_hash;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use drive::query::drive_document_average_query::{
         AverageMode, DocumentAverageRequest, DocumentAverageResponse,
@@ -1130,11 +1130,13 @@ mod dpns_username_transfer_tests {
 
         let salt: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer: Vec<u8> = vec![];
-        salted_domain_buffer.extend(salt);
-        salted_domain_buffer.extend((normalized_label + ".dash").as_bytes());
-
-        let salted_domain_hash = hash_double(salted_domain_buffer);
+        let salted_domain_hash = dpns_salted_domain_hash(
+            document.owner_id(),
+            &salt,
+            &normalized_label,
+            "dash",
+            platform_version,
+        );
 
         preorder_document.set("saltedDomainHash", salted_domain_hash.into());
         document.set("preorderSalt", salt.into());
@@ -1180,9 +1182,16 @@ mod dpns_username_transfer_tests {
             .serialize_to_bytes()
             .expect("expected domain batch serialized state transition");
 
-        for serialized_transition in [
-            documents_batch_create_serialized_preorder_transition,
-            documents_batch_create_serialized_transition,
+        // The preorder and the domain in consecutive blocks, since from protocol
+        // version 14 a domain reveals a preorder made in an earlier block, and both
+        // before the transfers and sales of the tests below, which run at +3000: a
+        // transfer at the domain's own creation time would be judged as its create
+        let last_block_time_ms = platform_state
+            .last_committed_block_time_ms()
+            .unwrap_or_default();
+        for (block_offset, serialized_transition) in [
+            (1, documents_batch_create_serialized_preorder_transition),
+            (2, documents_batch_create_serialized_transition),
         ] {
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1191,12 +1200,11 @@ mod dpns_username_transfer_tests {
                 .process_raw_state_transitions(
                     &[serialized_transition],
                     &platform_state,
-                    &BlockInfo::default_with_time(
-                        platform_state
-                            .last_committed_block_time_ms()
-                            .unwrap_or_default()
-                            + 3000,
-                    ),
+                    &BlockInfo {
+                        time_ms: last_block_time_ms + 1000 * block_offset,
+                        height: block_offset,
+                        ..Default::default()
+                    },
                     &transaction,
                     platform_version,
                     false,
@@ -2875,13 +2883,28 @@ mod dpns_username_transfer_tests {
     /// now change hands.
     ///
     /// `Replace` is stopped before data triggers run because the domain
-    /// document type is not mutable, but `Delete` is stopped only by the
-    /// reject data trigger (the domain document type sets `canBeDeleted:
-    /// true`), so this pins the single guard protecting names from deletion.
+    /// document type is not mutable. From protocol version 14 `Delete` is too:
+    /// DPNS v3 sets `canBeDeleted: false`, and the bindings no longer reject it.
     #[tokio::test]
     async fn test_dpns_username_replace_and_delete_still_rejected() {
+        run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: DPNS v2's `domain` sets `canBeDeleted: true`, so
+    /// `Delete` is stopped only by the reject data trigger.
+    #[tokio::test]
+    async fn should_reject_dpns_username_replace_and_delete_at_protocol_version_13() {
+        run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(13).await;
+    }
+
+    async fn run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(
+        protocol_version: ProtocolVersion,
+    ) {
         let mut platform = TestPlatformBuilder::new()
-            .with_initial_protocol_version(PlatformVersion::latest().protocol_version)
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -2889,6 +2912,8 @@ mod dpns_username_transfer_tests {
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected to get current platform version");
+        // DPNS v2's `domain` may be deleted, so only the reject data trigger stops it
+        let delete_rejected_by_data_trigger = platform_version.system_data_contracts.dpns < 3;
 
         let mut rng = StdRng::seed_from_u64(439);
 
@@ -2943,7 +2968,10 @@ mod dpns_username_transfer_tests {
 
         for (transition, expect_data_trigger_reject) in [
             (documents_batch_replace_transition, false),
-            (documents_batch_delete_transition, true),
+            (
+                documents_batch_delete_transition,
+                delete_rejected_by_data_trigger,
+            ),
         ] {
             let serialized_transition = transition
                 .serialize_to_bytes()

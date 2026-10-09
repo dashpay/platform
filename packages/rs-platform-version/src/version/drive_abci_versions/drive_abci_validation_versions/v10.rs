@@ -222,7 +222,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     // PROTOCOL_VERSION_14: v2 adds DashPay `profile`
                     // Create/Replace triggers enforcing the DIP-33
-                    // payment-address type byte (0x00 P2PKH / 0x01 P2SH).
+                    // payment-address type byte (0x00 P2PKH / 0x01 P2SH),
+                    // and drops the reject bindings on DPNS `domain` Replace
+                    // and Delete, which DPNS v3 refuses with
+                    // `documentsMutable` and `canBeDeleted` false.
                     // It keeps v1's PROTOCOL_VERSION_13 change: no reject
                     // bindings for Transfer, Purchase and UpdatePrice on
                     // DPNS `domain` documents (username transfers/sales).
@@ -235,7 +238,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         // byte-identical to PV11 (don't bill).
                         create_contact_request_data_trigger: 1,
                         validate_profile_payment_addresses_data_trigger: 0,
-                        create_domain_data_trigger: 1,
+                        // PROTOCOL_VERSION_14: v2 keeps only the parent
+                        // domain checks; DPNS v3's schema keywords check the
+                        // rest of a domain create.
+                        create_domain_data_trigger: 2,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,

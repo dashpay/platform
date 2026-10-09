@@ -268,6 +268,43 @@ fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption
     assert!(salt.revealed_reference.is_some());
 }
 
+/// DPNS v3's reveal: preorders are unique per owner, and `findBy` keys the
+/// preorder's `$ownerId` by the writer beside the function. The key is judged on
+/// the create alone, so the transferable domain may read the writer there, and it
+/// makes the writer the preorder's owner, which `consume` asks, without a `where`.
+#[test]
+fn should_parse_an_owner_keyed_reveal_on_a_transferable_type_and_let_it_consume() {
+    let preorder_per_owner = json!({
+        "indices": [{
+            "name": "ownerAndSaltedHash",
+            "properties": [{ "$ownerId": "asc" }, { "saltedDomainHash": "asc" }],
+            "unique": true
+        }]
+    });
+    let reveal = reveal_with(
+        dpns_function(),
+        json!({ "$ownerId": "$ownerId" }),
+        json!({}),
+        json!({ "minimumAgeBlocks": 1, "consume": true }),
+    );
+    let parsed = contract(dpns_contract_with(reveal, json!({}), preorder_per_owner))
+        .expect("an owner-keyed reveal should parse on a transferable type");
+
+    let mut lookup = dpns_lookup(Some(1), true);
+    lookup
+        .keys
+        .insert("$ownerId".to_string(), LookupKeySource::OwnerId);
+    assert_eq!(
+        salt_reference(&parsed),
+        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id: None,
+            document_type_name: "preorder".to_string(),
+            property_agreement: BTreeMap::new(),
+            lookup,
+        }
+    );
+}
+
 #[test]
 fn should_parse_a_function_pair_that_demands_nothing_more() {
     // No owner entry, no minimum age, no consume: each is optional, and
@@ -387,8 +424,8 @@ fn should_refuse_malformed_functions_in_the_parser() {
             "const holds between 1 and 64 bytes",
         ),
         (
-            json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "$ownerId"] }),
-            "not \"$ownerId\"",
+            json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "$creatorId"] }),
+            "not \"$creatorId\"",
         ),
         (
             json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", { "value": "." }] }),

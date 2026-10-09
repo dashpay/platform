@@ -425,21 +425,28 @@ impl BilledLookupKey {
     }
 }
 
-/// Hashes `key` for a create of a document of `declaring_document_type`
-/// carrying `document_data`, `"."` reading `reference_id` (an element's, the
-/// writer's or the creator's id; `None` for a property carrying the reference,
-/// which the key names by its path), and bills it as the double SHA-256 it is
+/// Hashes `key` for a create by `writer_id` of a document of
+/// `declaring_document_type` carrying `document_data`, `"."` reading
+/// `reference_id` (an element's, the writer's or the creator's id; `None` for a
+/// property carrying the reference, which the key names by its path) and
+/// `"$ownerId"` the writer, and bills it as the double SHA-256 it is
 /// (`ValidationOperation::DoubleSha256`, by the blocks it hashes). `None`, with
 /// nothing hashed or billed, when the preimage cannot be assembled.
 pub(crate) fn hash_lookup_key(
     key: &LookupHashKey,
     declaring_document_type: DocumentTypeRef,
     reference_id: Option<Identifier>,
+    writer_id: Identifier,
     document_data: &BTreeMap<String, Value>,
     execution_context: &mut StateTransitionExecutionContext,
 ) -> Option<BilledLookupKey> {
     let (digest, blocks) = key
-        .key_value(declaring_document_type, reference_id, document_data)
+        .key_value(
+            declaring_document_type,
+            reference_id,
+            writer_id,
+            document_data,
+        )
         .ok()?;
     execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
     Some(BilledLookupKey(digest))
@@ -486,12 +493,15 @@ pub(crate) fn fetch_document_through_lookup(
     if lookup.resolve_index(document_type).is_err() {
         return Ok(None);
     }
+    // The writer is passed in place, inert before protocol version 14: only meta-schema v3
+    // admits a computed key, and the `"$ownerId"` param that reads the writer
     let billed_key = billed_key.or_else(|| {
         lookup.hash_key().and_then(|(_, key)| {
             hash_lookup_key(
                 key,
                 declaring_document_type,
                 Some(reference_value),
+                owner_id,
                 document_data,
                 execution_context,
             )

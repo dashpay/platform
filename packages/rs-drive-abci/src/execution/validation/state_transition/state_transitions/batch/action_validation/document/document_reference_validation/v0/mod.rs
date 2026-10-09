@@ -353,11 +353,7 @@ fn validate_document_type_references_v0(
                     Ok(None) => continue,
                     Err(RepeatedKey) => return preimage_invalid(),
                 }
-                let Some((_, key)) = target
-                    .as_any_document_reference()
-                    .and_then(|declaration| declaration.lookup)
-                    .and_then(|lookup| lookup.hash_key())
-                else {
+                let Some(key) = target.lookup_hash_key() else {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "a revealed reference carries a lookup with a computed key, which the \
                          parser enforces",
@@ -366,10 +362,17 @@ fn validate_document_type_references_v0(
                 // Hashed and billed once here, the property named by its path in
                 // the key's params, and handed to the lookup as its key. The create's
                 // structure validation refused a value it could not reveal, before
-                // any read
-                let Some(billed_key) =
-                    hash_lookup_key(key, document_type, None, document_data, execution_context)
-                else {
+                // any read. The writer is passed in place in generation 0, inert
+                // before protocol version 14: only meta-schema v3 admits a computed
+                // key at all, and the `"$ownerId"` param that reads the writer
+                let Some(billed_key) = hash_lookup_key(
+                    key,
+                    document_type,
+                    None,
+                    owner_id,
+                    document_data,
+                    execution_context,
+                ) else {
                     return preimage_invalid();
                 };
                 let result = validate_reference_v0(

@@ -36,7 +36,7 @@ The DPNS `domain` type, trimmed to two properties:
 }
 ```
 
-Registering a name takes two steps. A `preorder` document first commits to a hash of the salt and the name, and the `domain` document then reveals both. Every domain create must carry its 32-byte `preorderSalt`, and DPNS checks it against the preorder. Once the domain is created the salt has done its job, and the stored domain does not hold it.
+Registering a name takes two steps. A `preorder` document first commits to a hash of the salt and the name, and the `domain` document then reveals both. Every domain create must carry its 32-byte `preorderSalt`, and DPNS checks it against the preorder: from protocol version 14 through a `refersTo` on the salt that finds the writer's preorder and deletes it ([Commit and reveal](refers-to-lookup.md#commit-and-reveal)), before it in the type's create data trigger. Once the domain is created the salt has done its job, and the stored domain does not hold it.
 
 ## How it works
 

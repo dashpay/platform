@@ -92,6 +92,15 @@ describe('Client - Platform - Contracts - .get()', () => {
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(askedFromDapi).to.equal(1);
     });
+
+    it('should fetch from DAPIClient when asked to skip the cache', async () => {
+      const contract = await get.call({
+        // @ts-ignore
+        apps, dpp, client, initialize, logger, fetcher,
+      }, dataContractFixture.getId(), { skipCache: true });
+      expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
+      expect(askedFromDapi).to.equal(2);
+    });
   });
 
   describe('other conditions', () => {

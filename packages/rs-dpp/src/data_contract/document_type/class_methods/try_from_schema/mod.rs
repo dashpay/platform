@@ -1358,14 +1358,12 @@ fn parse_reference_target(
                 }
                 _ => {
                     // Consuming deletes the found document, so only its
-                    // owner's own reveal may: the `$ownerId` entry makes the
-                    // writer the found document's owner
-                    if lookup.consume
-                        && property_agreement.get(OWNER_ID).map(String::as_str) != Some(OWNER_ID)
-                    {
+                    // owner's own reveal may
+                    if lookup.consume && !writer_owns_found_document(&property_agreement, &lookup) {
                         return Err(DataContractError::InvalidContractStructure(
                             "deletableDocument refersTo may consume the document findBy finds \
                              only when the writer owns it: declare the where entry \
+                             \"$ownerId\": \"$ownerId\", or the findBy entry \
                              \"$ownerId\": \"$ownerId\""
                                 .to_string(),
                         ));
@@ -1877,6 +1875,16 @@ pub(super) fn parse_doctype_reference(
         }
     }
     Ok(Some(target))
+}
+
+/// Whether a lookup reference makes the writer the found document's owner: a `$ownerId`
+/// entry of `where`, or of `findBy` keying the found document's owner by the writer.
+fn writer_owns_found_document(
+    property_agreement: &BTreeMap<String, String>,
+    lookup: &DocumentReferenceLookup,
+) -> bool {
+    property_agreement.get(OWNER_ID).map(String::as_str) == Some(OWNER_ID)
+        || matches!(lookup.keys.get(OWNER_ID), Some(LookupKeySource::OwnerId))
 }
 
 /// The `findBy` of a document reference, `find_by_value`: properties of the

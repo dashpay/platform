@@ -543,14 +543,17 @@ impl Sdk {
     /// because no network response has been received yet to teach the SDK the real network version.
     ///
     /// The actual network version is learned only *after* proof parsing succeeds, when
-    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
-    /// connected network runs an older protocol version **and** proof interpretation differs
-    /// between that version and the seeded [`min_protocol_version`], the very first request may
-    /// fail before the SDK can correct itself.  Subsequent requests will use the correct version.
+    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`. A proof the
+    /// SDK's version can not read, such as a contract written with grammar only a newer
+    /// protocol version parses, is read as [`Self::parse_proof_at_the_reported_version`] sets
+    /// out: under the newest version this SDK knows, then under the version the response
+    /// reports, which the proof's quorum signature covers. If the connected network runs an
+    /// older protocol version **and** proof interpretation differs between that version and the
+    /// seeded [`min_protocol_version`] without failing, the very first request may still read
+    /// the proof the seeded way. Subsequent requests will use the correct version.
     ///
-    /// This is a known bootstrap limitation.  Callers that must guarantee correct version
-    /// behaviour on the first request should pin the version explicitly via
-    /// [`SdkBuilder::with_version()`].
+    /// Callers that must guarantee correct version behaviour on the first request should pin
+    /// the version explicitly via [`SdkBuilder::with_version()`].
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -581,6 +584,85 @@ impl Sdk {
                 self.accept_verified_metadata(method_name, &verified.1, None)?;
                 Ok(verified)
             }
+        }
+    }
+
+    /// Parses and verifies `response` under the SDK's protocol version, and, when that fails on
+    /// an SDK that learns its version from the network, under the version the response reports.
+    ///
+    /// A fresh SDK starts at its network's [`min_protocol_version`], and a proof can hold what
+    /// only a newer protocol version reads, such as a contract written with the `bytes` and
+    /// `identifier` property type shorthands of protocol version 14. The version is learned
+    /// from a verified response, so such a proof would fail every time. The response is then
+    /// parsed under the newest version this SDK knows, which verifies the proof and its quorum
+    /// signature, over a state id that signs the protocol version the response reports, and,
+    /// when that version is another one this SDK knows, parsed again under it. A pinned SDK, or
+    /// one already at the newest version it knows, reports the first failure.
+    ///
+    /// A failure of the quorum signature or its key is reported as it is, under either version:
+    /// the signature is checked once the proof was read, so under the SDK's version another
+    /// version would read it no differently, and under the newest one it is the closer account
+    /// of the response. A missing key ([`drive_proof_verifier::Error::QuorumKeyUnavailable`])
+    /// thus reaches [`Self::verify_fetching_quorum_key`], which fetches it and calls this again.
+    fn parse_proof_at_the_reported_version<R, O: FromProof<R>>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+        provider: &dyn ContextProvider,
+        current: &PlatformVersion,
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    where
+        O::Request: Clone,
+        O::Response: Clone,
+    {
+        let latest = PlatformVersion::latest();
+        let error = match O::maybe_from_proof_with_metadata(
+            request.clone(),
+            response.clone(),
+            self.network,
+            current,
+            provider,
+        ) {
+            Ok(parsed) => return Ok(parsed),
+            Err(error) => error,
+        };
+        if self.version_pinned
+            || current.protocol_version >= latest.protocol_version
+            || fails_after_reading_the_proof(&error)
+        {
+            return Err(error);
+        }
+        let parsed = match O::maybe_from_proof_with_metadata(
+            request.clone(),
+            response.clone(),
+            self.network,
+            latest,
+            provider,
+        ) {
+            Ok(parsed) => parsed,
+            Err(signature_error) if fails_after_reading_the_proof(&signature_error) => {
+                return Err(signature_error)
+            }
+            Err(_) => return Err(error),
+        };
+        let reported = parsed.1.protocol_version;
+        match PlatformVersion::get(reported) {
+            Ok(reported) if reported.protocol_version != latest.protocol_version => {
+                tracing::debug!(
+                    target: "dash_sdk::protocol_version",
+                    current = current.protocol_version,
+                    reported = reported.protocol_version,
+                    "parsed a proof under the protocol version its response reports"
+                );
+                O::maybe_from_proof_with_metadata(
+                    request,
+                    response,
+                    self.network,
+                    reported,
+                    provider,
+                )
+            }
+            _ => Ok(parsed),
         }
     }
 
@@ -776,6 +858,20 @@ pub(crate) fn verify_metadata_time(
         "received response with valid time"
     );
     Ok(())
+}
+
+/// Whether `error` comes from the quorum signature or its key, checked once a proof was read, so
+/// that reading the proof under another protocol version would not change it.
+fn fails_after_reading_the_proof(error: &drive_proof_verifier::Error) -> bool {
+    matches!(
+        error,
+        drive_proof_verifier::Error::QuorumKeyUnavailable { .. }
+            | drive_proof_verifier::Error::InvalidPublicKey { .. }
+            | drive_proof_verifier::Error::InvalidSignature { .. }
+            | drive_proof_verifier::Error::InvalidSignatureFormat { .. }
+            | drive_proof_verifier::Error::SignatureVerificationError { .. }
+            | drive_proof_verifier::Error::SignDigestFailed { .. }
+    )
 }
 
 /// If current metadata height is behind previously seen height by more than `tolerance`, the remote node
@@ -1412,7 +1508,7 @@ pub fn prettify_proof(proof: &Proof) -> String {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::sync::Arc;
 
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
@@ -2433,7 +2529,7 @@ mod test {
     /// metadata, so consuming this expectation drives `refresh_protocol_version`
     /// through the same verified `maybe_update_protocol_version` ratchet a real
     /// quorum-signed response would — the exact path production relies on.
-    async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
+    pub(crate) async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
         use crate::platform::types::epoch::EpochQuery;
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
@@ -2475,6 +2571,123 @@ mod test {
             )
             .await
             .expect("register epoch refresh expectation");
+    }
+
+    /// What a proof that only protocol version 14 or later reads holds: a stand-in for a
+    /// contract written with grammar protocol version 13 can not parse, its response reporting
+    /// version 14. It records the version it was parsed under. Without `KEY_CACHED`, the
+    /// provider lacks the key of the quorum that signed it, which a proof read is only found to
+    /// need once it decodes.
+    struct ReadableFromVersion14<const KEY_CACHED: bool = true>(u32);
+
+    #[derive(Debug, Clone)]
+    struct ProbeRequest;
+
+    #[derive(Debug, Clone)]
+    struct ProbeResponse;
+
+    impl<const KEY_CACHED: bool> drive_proof_verifier::FromProof<ProbeRequest>
+        for ReadableFromVersion14<KEY_CACHED>
+    {
+        type Request = ProbeRequest;
+        type Response = ProbeResponse;
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<ProbeRequest>, O: Into<ProbeResponse>>(
+            _request: I,
+            _response: O,
+            _network: Network,
+            platform_version: &dpp::version::PlatformVersion,
+            _provider: &'a dyn dash_context_provider::ContextProvider,
+        ) -> Result<
+            (
+                Option<Self>,
+                ResponseMetadata,
+                dapi_grpc::platform::v0::Proof,
+            ),
+            drive_proof_verifier::Error,
+        >
+        where
+            Self: Sized + 'a,
+        {
+            if platform_version.protocol_version < 14 {
+                return Err(drive_proof_verifier::Error::ResponseDecodeError {
+                    error: "unsupported property type: bytes".to_string(),
+                });
+            }
+            if !KEY_CACHED {
+                return Err(drive_proof_verifier::Error::QuorumKeyUnavailable {
+                    quorum_type: 4,
+                    quorum_hash: [7; 32],
+                    core_chain_locked_height: 1,
+                    error: dash_context_provider::ContextProviderError::InvalidQuorum(
+                        "not cached".to_string(),
+                    ),
+                });
+            }
+            Ok((
+                Some(ReadableFromVersion14(platform_version.protocol_version)),
+                ResponseMetadata {
+                    protocol_version: 14,
+                    ..Default::default()
+                },
+                Default::default(),
+            ))
+        }
+    }
+
+    fn parse_probe<const KEY_CACHED: bool>(
+        sdk: &super::Sdk,
+    ) -> Result<u32, drive_proof_verifier::Error> {
+        let provider = sdk.context_provider().expect("the mock SDK has a provider");
+        sdk.parse_proof_at_the_reported_version::<ProbeRequest, ReadableFromVersion14<KEY_CACHED>>(
+            ProbeRequest,
+            ProbeResponse,
+            &provider,
+            sdk.version(),
+        )
+        .map(|(object, _, _)| object.expect("the probe holds an object").0)
+    }
+
+    /// A fresh SDK at protocol version 13 reads a proof only version 14 parses: under the
+    /// newest version it knows, then under the version 14 the response reports
+    #[test]
+    fn should_parse_a_proof_its_version_can_not_read_at_the_version_the_response_reports() {
+        let sdk = SdkBuilder::new_mock()
+            .with_initial_version(
+                dpp::version::PlatformVersion::get(13).expect("protocol version 13"),
+            )
+            .build()
+            .expect("the mock SDK builds");
+
+        assert_eq!(parse_probe::<true>(&sdk).expect("the proof parses"), 14);
+    }
+
+    /// A proof that decodes only under the newest version but whose quorum key is not cached
+    /// reports the missing key, so the caller fetches it and reads the proof again
+    #[test]
+    fn should_report_a_missing_quorum_key_found_under_the_newest_version() {
+        let sdk = SdkBuilder::new_mock()
+            .with_initial_version(
+                dpp::version::PlatformVersion::get(13).expect("protocol version 13"),
+            )
+            .build()
+            .expect("the mock SDK builds");
+
+        assert!(matches!(
+            parse_probe::<false>(&sdk),
+            Err(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
+        ));
+    }
+
+    /// A pinned SDK keeps its version, failure included
+    #[test]
+    fn should_report_the_failure_of_a_pinned_sdk() {
+        let sdk = SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::get(13).expect("protocol version 13"))
+            .build()
+            .expect("the mock SDK builds");
+
+        assert!(parse_probe::<true>(&sdk).is_err());
     }
 
     /// Seeded below `LATEST_VERSION`, a proven refresh ratchets the SDK up to the

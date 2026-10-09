@@ -1177,6 +1177,15 @@ impl DocumentPropertyReferenceTarget {
         }
     }
 
+    /// The computed key of the `findBy` function this target declares, the one
+    /// key a commit and reveal hashes; `None` for a target without one.
+    pub fn lookup_hash_key(&self) -> Option<&LookupHashKey> {
+        self.as_any_document_reference()
+            .and_then(|declaration| declaration.lookup)
+            .and_then(|lookup| lookup.hash_key())
+            .map(|(_, key)| key)
+    }
+
     /// The declaration of a reference with `inList`; `None` for every other
     /// target.
     pub fn as_list_element_reference(&self) -> Option<&ListElementReference> {

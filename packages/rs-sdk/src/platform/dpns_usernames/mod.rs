@@ -9,11 +9,14 @@ pub use queries::DpnsUsername;
 
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::{Document, FetchMany};
+use crate::platform::{DataContract, Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -23,6 +26,7 @@ use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::Arc;
 use tracing::debug;
 use tracing::warn;
@@ -56,6 +60,51 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
     hash.to_byte_array()
 }
 
+/// The `saltedDomainHash` a preorder by `owner_id` commits to, for a domain
+/// carrying `domain_properties` (its `preorderSalt`, labels and parent), as the
+/// DPNS contract the network runs declares it. From DPNS v3 the domain's
+/// `preorderSalt` reveals the hash of the writer's id, the salt, the normalized
+/// label, `"."` and the parent, and the declaration computes it, as the platform
+/// does; before it the salt carries no reference and the hash is of the salt and
+/// `<normalizedLabel>.dash`. A reference without a `findBy` function is an error,
+/// never the older hash, which such a contract could not reveal.
+fn salted_domain_hash(
+    domain_document_type: DocumentTypeRef,
+    owner_id: Identifier,
+    domain_properties: &BTreeMap<String, Value>,
+) -> Result<[u8; 32], Error> {
+    let Some(reference) = domain_document_type
+        .flattened_properties()
+        .get("preorderSalt")
+        .and_then(|property| property.revealed_reference.as_ref())
+    else {
+        let (Some(Value::Bytes32(salt)), Some(Value::Text(normalized_label))) = (
+            domain_properties.get("preorderSalt"),
+            domain_properties.get("normalizedLabel"),
+        ) else {
+            return Err(Error::Generic(
+                "a DPNS domain carries a 32-byte preorderSalt and a normalizedLabel".to_string(),
+            ));
+        };
+        let mut salted_domain_buffer = salt.to_vec();
+        salted_domain_buffer.extend(format!("{normalized_label}.dash").as_bytes());
+        return Ok(hash_double(salted_domain_buffer));
+    };
+    let key = reference.lookup_hash_key().ok_or_else(|| {
+        Error::Generic(
+            "the DPNS domain's preorderSalt reference declares no findBy function".to_string(),
+        )
+    })?;
+    key.key_value(domain_document_type, None, owner_id, domain_properties)
+        .map(|(hash, _)| hash)
+        .map_err(|error| {
+            Error::Generic(format!(
+                "cannot compute the DPNS preorder hash: {} {}",
+                error.param, error.reason
+            ))
+        })
+}
+
 /// Callback type for preorder document
 pub type PreorderCallback = Box<dyn FnOnce(&Document) + Send>;
 
@@ -81,12 +130,61 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
 /// Result of a DPNS name registration
 #[derive(Debug)]
 pub struct RegisterDpnsNameResult {
-    /// The preorder document that was created
+    /// The preorder document that was created. From protocol version 14 the domain
+    /// create deletes it, so it is no longer in state once the name is registered
     pub preorder_document: Document,
     /// The domain document that was created
     pub domain_document: Document,
     /// The full domain name (e.g., "alice.dash")
     pub full_domain_name: String,
+}
+
+/// The documents a DPNS registration submits, built against one DPNS contract.
+struct DpnsRegistrationDocuments {
+    preorder_document_type: DocumentType,
+    preorder_document: Document,
+    domain_document_type: DocumentType,
+    domain_document: Document,
+    normalized_label: String,
+}
+
+/// How many DPNS contract responses a registration reads for one proved at the protocol
+/// version the SDK parsed it under.
+const DPNS_CONTRACT_FETCH_ATTEMPTS: usize = 3;
+
+/// The DPNS contract of the first response proved at the protocol version the SDK parsed it
+/// under, reading the SDK's version through `sdk_version` and each response through `fetch`,
+/// at most [`DPNS_CONTRACT_FETCH_ATTEMPTS`] times. The SDK's version only rises, and SDK clones
+/// share it, so a version unchanged across the fetch is the one the response was parsed under;
+/// one that rose meanwhile (this response, or another request, taught the SDK a newer version)
+/// leaves the response unused. A response proved at a newer version was parsed under an older
+/// one, which can drop the declaration the preorder hash follows. One proved at an older
+/// version comes from a node behind the network, which can still hold the contract an upgrade
+/// replaced. Either would commit the preorder to a hash the domain cannot reveal.
+async fn dpns_contract_proved_at_parsed_version<V, F, R>(
+    sdk_version: V,
+    mut fetch: F,
+) -> Result<DataContract, Error>
+where
+    V: Fn() -> u32,
+    F: FnMut() -> R,
+    R: Future<Output = Result<(Option<DataContract>, ResponseMetadata), Error>>,
+{
+    let mut last_mismatch = None;
+    for _ in 0..DPNS_CONTRACT_FETCH_ATTEMPTS {
+        let parsed_under = sdk_version();
+        let (dpns_contract, metadata) = fetch().await?;
+        if metadata.protocol_version == parsed_under && sdk_version() == parsed_under {
+            return dpns_contract
+                .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()));
+        }
+        last_mismatch = Some((metadata.protocol_version, parsed_under));
+    }
+    let (proved_at, parsed_under) = last_mismatch.unwrap_or_default();
+    Err(Error::Generic(format!(
+        "no DPNS contract response was proved at the protocol version the SDK parsed it under \
+         (last proved at {proved_at}, parsed under {parsed_under})"
+    )))
 }
 
 impl Sdk {
@@ -120,30 +218,32 @@ impl Sdk {
             .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
     }
 
-    /// Register a DPNS username in a single operation
-    ///
-    /// This method handles both the preorder and domain registration steps automatically.
-    /// It generates the necessary entropy, creates both documents, and submits them in order.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - The registration input containing label, identity, public key, and signer
-    ///
-    /// # Returns
-    ///
-    /// Returns a `RegisterDpnsNameResult` containing both created documents and the full domain name
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The DPNS contract cannot be fetched
-    /// - Document types are not found in the contract
-    /// - Document creation or submission fails
-    pub async fn register_dpns_name<S: Signer<IdentityPublicKey>>(
+    /// The DPNS contract the network stores now, fetched and proved, for a registration.
+    /// The preorder commits to the hash that contract declares, so neither a contract the
+    /// context provider holds for the SDK's protocol version nor one cached before an upgrade
+    /// changed it will do: either can be older than the network's, and its hash one the
+    /// domain cannot reveal. The SDK first learns the network's protocol version (a proven
+    /// refresh), then takes a response proved at the version it parsed it under
+    /// ([`dpns_contract_proved_at_parsed_version`]).
+    async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
+        let dpns_contract_id = self.get_dpns_contract_id()?;
+        self.refresh_protocol_version().await?;
+        dpns_contract_proved_at_parsed_version(
+            || self.protocol_version_number(),
+            || DataContract::fetch_with_metadata(self, dpns_contract_id, None),
+        )
+        .await
+    }
+
+    /// The documents a registration of `label` by `identity_id` submits, built against the
+    /// DPNS contract the network stores now: the preorder, committing to the hash that
+    /// contract declares, and the domain revealing it.
+    async fn dpns_registration_documents(
         &self,
-        input: RegisterDpnsNameInput<S>,
-    ) -> Result<RegisterDpnsNameResult, Error> {
-        let dpns_contract = self.fetch_dpns_contract().await?;
+        label: &str,
+        identity_id: Identifier,
+    ) -> Result<DpnsRegistrationDocuments, Error> {
+        let dpns_contract = self.fetch_current_dpns_contract().await?;
 
         // Get document types
         let preorder_document_type = dpns_contract
@@ -163,16 +263,44 @@ impl Sdk {
         // fetched that nonce. The documents are built with a placeholder id;
         // the confirmed documents carry the real one. Nothing here needs the
         // ids up front: the domain is tied to its preorder by the salt.
-        let identity_id = input.identity.id().to_owned();
         let preorder_id = Identifier::default();
         let domain_id = Identifier::default();
 
-        // Create salted domain hash for preorder
-        let normalized_label = convert_to_homograph_safe_chars(&input.label);
-        let mut salted_domain_buffer: Vec<u8> = vec![];
-        salted_domain_buffer.extend(salt);
-        salted_domain_buffer.extend((normalized_label.clone() + ".dash").as_bytes());
-        let salted_domain_hash = hash_double(salted_domain_buffer);
+        let normalized_label = convert_to_homograph_safe_chars(label);
+        let domain_properties = BTreeMap::from([
+            (
+                "parentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            ("label".to_string(), Value::Text(label.to_string())),
+            (
+                "normalizedLabel".to_string(),
+                Value::Text(normalized_label.clone()),
+            ),
+            ("preorderSalt".to_string(), Value::Bytes32(salt)),
+            (
+                "records".to_string(),
+                Value::Map(vec![(
+                    Value::Text("identity".to_string()),
+                    Value::Identifier(identity_id.to_buffer()),
+                )]),
+            ),
+            (
+                "subdomainRules".to_string(),
+                Value::Map(vec![(
+                    Value::Text("allowSubdomains".to_string()),
+                    Value::Bool(false),
+                )]),
+            ),
+        ]);
+
+        // The salted domain hash the preorder commits to
+        let salted_domain_hash =
+            salted_domain_hash(domain_document_type, identity_id, &domain_properties)?;
 
         // Create preorder document
         let preorder_document = Document::V0(DocumentV0 {
@@ -203,36 +331,7 @@ impl Sdk {
             contract_version: None,
             id: domain_id,
             owner_id: identity_id,
-            properties: BTreeMap::from([
-                (
-                    "parentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                (
-                    "normalizedParentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                ("label".to_string(), Value::Text(input.label.clone())),
-                (
-                    "normalizedLabel".to_string(),
-                    Value::Text(normalized_label.clone()),
-                ),
-                ("preorderSalt".to_string(), Value::Bytes32(salt)),
-                (
-                    "records".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("identity".to_string()),
-                        Value::Identifier(identity_id.to_buffer()),
-                    )]),
-                ),
-                (
-                    "subdomainRules".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("allowSubdomains".to_string()),
-                        Value::Bool(false),
-                    )]),
-                ),
-            ]),
+            properties: domain_properties,
             revision: None,
             created_at: None,
             updated_at: None,
@@ -248,12 +347,55 @@ impl Sdk {
             moderated_by: None,
         });
 
+        Ok(DpnsRegistrationDocuments {
+            preorder_document_type: preorder_document_type.to_owned_document_type(),
+            preorder_document,
+            domain_document_type: domain_document_type.to_owned_document_type(),
+            domain_document,
+            normalized_label,
+        })
+    }
+
+    /// Register a DPNS username in a single operation
+    ///
+    /// This method handles both the preorder and domain registration steps automatically.
+    /// It generates the necessary entropy, creates both documents, and submits them in order.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The registration input containing label, identity, public key, and signer
+    ///
+    /// # Returns
+    ///
+    /// Returns a `RegisterDpnsNameResult` containing both created documents and the full domain name
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The DPNS contract cannot be fetched
+    /// - Document types are not found in the contract
+    /// - Document creation or submission fails
+    pub async fn register_dpns_name<S: Signer<IdentityPublicKey>>(
+        &self,
+        input: RegisterDpnsNameInput<S>,
+    ) -> Result<RegisterDpnsNameResult, Error> {
+        let identity_id = input.identity.id().to_owned();
+        let DpnsRegistrationDocuments {
+            preorder_document_type,
+            preorder_document,
+            domain_document_type,
+            domain_document,
+            normalized_label,
+        } = self
+            .dpns_registration_documents(&input.label, identity_id)
+            .await?;
+
         // Submit preorder document first
         debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
         let platform_preorder_document = preorder_document
             .put_to_platform_and_wait_for_response(
                 self,
-                preorder_document_type.to_owned_document_type(),
+                preorder_document_type,
                 None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key.clone(),
                 None, // token payment info
@@ -283,7 +425,7 @@ impl Sdk {
         let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
                 self,
-                domain_document_type.to_owned_document_type(),
+                domain_document_type,
                 None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key,
                 None, // token payment info
@@ -461,6 +603,19 @@ fn identity_from_domain_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sdk::test::expect_epoch_refresh;
+    use crate::SdkBuilder;
+    use dash_context_provider::{ContextProvider, ContextProviderError};
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::CoreBlockHeight;
+    use dpp::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+        PlatformSerializableWithPlatformVersion,
+    };
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::{PlatformVersion, LATEST_VERSION};
+    use std::cell::{Cell, RefCell};
+    use std::future::ready;
 
     #[test]
     fn test_normalize_dpns_label_strips_dash_suffix_case_insensitively() {
@@ -533,6 +688,308 @@ mod tests {
                 "{malformed:?} should be rejected"
             );
         }
+    }
+
+    const SALT: [u8; 32] = [9u8; 32];
+
+    /// The properties of a domain `Bob.dash` the preorder hash may read.
+    fn bob_domain_properties() -> BTreeMap<String, Value> {
+        BTreeMap::from([
+            ("label".to_string(), Value::Text("Bob".to_string())),
+            (
+                "normalizedLabel".to_string(),
+                Value::Text("b0b".to_string()),
+            ),
+            (
+                "parentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            ("preorderSalt".to_string(), Value::Bytes32(SALT)),
+        ])
+    }
+
+    /// The preorder hash the SDK computes for `owner_id` and `properties` against the DPNS
+    /// contract of `platform_version`.
+    fn preorder_hash(
+        platform_version: &PlatformVersion,
+        owner_id: Identifier,
+        properties: &BTreeMap<String, Value>,
+    ) -> Result<[u8; 32], Error> {
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("the DPNS contract loads");
+        let domain = contract
+            .document_type_for_name("domain")
+            .expect("the DPNS contract has a domain type");
+        salted_domain_hash(domain, owner_id, properties)
+    }
+
+    fn sha256d(parts: &[&[u8]]) -> [u8; 32] {
+        use dpp::dashcore::hashes::{sha256d, Hash};
+        sha256d::Hash::hash(&parts.concat()).to_byte_array()
+    }
+
+    #[test]
+    fn should_hash_the_salt_and_name_whoever_the_owner_for_dpns_v2() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        let expected = sha256d(&[&SALT, b"b0b.dash"]);
+        for owner_id in [Identifier::new([1u8; 32]), Identifier::new([2u8; 32])] {
+            assert_eq!(
+                preorder_hash(platform_version, owner_id, &bob_domain_properties())
+                    .expect("DPNS v2 hashes the salt and the name"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn should_hash_the_owner_salt_and_name_the_dpns_v3_contract_declares() {
+        let platform_version = PlatformVersion::latest();
+        for owner_id in [Identifier::new([1u8; 32]), Identifier::new([2u8; 32])] {
+            assert_eq!(
+                preorder_hash(platform_version, owner_id, &bob_domain_properties())
+                    .expect("DPNS v3 hashes the declared params"),
+                sha256d(&[owner_id.as_slice(), &SALT, b"b0b", b".", b"dash"]),
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_dpns_v3_domain_missing_a_hashed_property() {
+        let mut properties = bob_domain_properties();
+        properties.remove("normalizedLabel");
+        assert!(preorder_hash(
+            PlatformVersion::latest(),
+            Identifier::new([1u8; 32]),
+            &properties
+        )
+        .is_err());
+    }
+
+    /// A context provider seeded before the upgrade to DPNS v3: it holds DPNS v2 whatever
+    /// protocol version it is asked for, as a provider's known contracts do.
+    struct DpnsV2ContextProvider;
+
+    impl ContextProvider for DpnsV2ContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+            load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|error| ContextProviderError::Generic(error.to_string()))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "no quorum in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    #[tokio::test]
+    async fn should_build_the_registration_against_the_dpns_contract_the_network_stores() {
+        // An SDK seeded at protocol version 13, whose context provider holds DPNS v2, on a
+        // network that runs the latest version and stores DPNS v3
+        let mut sdk = SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(13).expect("protocol version 13"))
+            .with_context_provider(DpnsV2ContextProvider)
+            .build()
+            .expect("the mock SDK builds");
+        expect_epoch_refresh(&mut sdk).await;
+        let stored = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("the DPNS contract loads");
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DPNS fetch is expected");
+
+        let owner_id = Identifier::new([1u8; 32]);
+        let documents = sdk
+            .dpns_registration_documents("Bob", owner_id)
+            .await
+            .expect("the registration documents are built");
+
+        assert_eq!(sdk.protocol_version_number(), LATEST_VERSION);
+        let Some(Value::Bytes32(salt)) = documents.domain_document.properties().get("preorderSalt")
+        else {
+            panic!("the domain carries a 32-byte preorderSalt");
+        };
+        assert_eq!(documents.preorder_document.owner_id(), owner_id);
+        assert_eq!(
+            documents
+                .preorder_document
+                .properties()
+                .get("saltedDomainHash"),
+            Some(&Value::Bytes32(sha256d(&[
+                owner_id.as_slice(),
+                salt,
+                b"b0b",
+                b".",
+                b"dash"
+            ]))),
+        );
+    }
+
+    /// The DPNS contract of `platform_version`, as a proof decodes it under `parsed_under`:
+    /// serialized, then rebuilt without validation.
+    fn dpns_contract_decoded_under(
+        platform_version: &PlatformVersion,
+        parsed_under: u32,
+    ) -> DataContract {
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("the DPNS contract loads");
+        let bytes = contract
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("the DPNS contract serializes");
+        DataContract::versioned_deserialize_untrusted(
+            &bytes,
+            false,
+            PlatformVersion::get(parsed_under).expect("a known protocol version"),
+        )
+        .expect("the DPNS contract decodes")
+    }
+
+    fn proved_at(protocol_version: u32) -> ResponseMetadata {
+        ResponseMetadata {
+            protocol_version,
+            ..Default::default()
+        }
+    }
+
+    fn declares_the_preorder_hash(dpns_contract: &DataContract) -> bool {
+        dpns_contract
+            .document_type_for_name("domain")
+            .expect("the DPNS contract has a domain type")
+            .flattened_properties()
+            .get("preorderSalt")
+            .is_some_and(|property| property.revealed_reference.is_some())
+    }
+
+    #[tokio::test]
+    async fn should_fetch_again_a_dpns_contract_parsed_under_an_older_protocol_version() {
+        // The refresh failed: the SDK is still at 13 when the first response, proved at the
+        // latest version, is parsed, so what it holds is read under the older version (here
+        // DPNS v2, which declares no preorder hash). The response teaches the SDK the latest
+        // version, so the next one is parsed under it.
+        let sdk_version = Cell::new(13);
+        let fetches = Cell::new(0);
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
+            || sdk_version.get(),
+            || {
+                fetches.set(fetches.get() + 1);
+                let stored_at = if sdk_version.get() == 13 {
+                    PlatformVersion::get(13).expect("protocol version 13")
+                } else {
+                    PlatformVersion::latest()
+                };
+                let dpns_contract = dpns_contract_decoded_under(stored_at, sdk_version.get());
+                sdk_version.set(LATEST_VERSION);
+                ready(Ok((Some(dpns_contract), proved_at(LATEST_VERSION))))
+            },
+        )
+        .await
+        .expect("the second response is taken");
+
+        assert_eq!(fetches.get(), 2);
+        assert!(declares_the_preorder_hash(&dpns_contract));
+    }
+
+    #[tokio::test]
+    async fn should_skip_a_dpns_contract_proved_by_a_node_behind_the_network() {
+        // The SDK learned the latest version; the first node is still at 13 and proves DPNS
+        // v2, the next one proves DPNS v3
+        let responses = RefCell::new(vec![
+            (PlatformVersion::latest(), LATEST_VERSION),
+            (PlatformVersion::get(13).expect("protocol version 13"), 13),
+        ]);
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
+            || LATEST_VERSION,
+            || {
+                let (stored_at, proved) = responses
+                    .borrow_mut()
+                    .pop()
+                    .expect("a response is scripted");
+                let dpns_contract = dpns_contract_decoded_under(stored_at, LATEST_VERSION);
+                ready(Ok((Some(dpns_contract), proved_at(proved))))
+            },
+        )
+        .await
+        .expect("the current node's response is taken");
+
+        assert!(responses.borrow().is_empty());
+        assert!(declares_the_preorder_hash(&dpns_contract));
+    }
+
+    #[tokio::test]
+    async fn should_skip_a_dpns_contract_proved_while_another_request_raised_the_version() {
+        // The SDK is at 13 when the fetch starts. While it waits, another request on a clone
+        // teaches the shared SDK the latest version, and the response comes from a node still
+        // at 13 proving DPNS v2: it matches the version the fetch started at, not the one the
+        // SDK has learned since.
+        let sdk_version = Cell::new(13);
+        let fetches = Cell::new(0);
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
+            || sdk_version.get(),
+            || {
+                fetches.set(fetches.get() + 1);
+                let response = if fetches.get() == 1 {
+                    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+                    let dpns_v2 = dpns_contract_decoded_under(platform_version, 13);
+                    sdk_version.set(LATEST_VERSION);
+                    (Some(dpns_v2), proved_at(13))
+                } else {
+                    let dpns_v3 =
+                        dpns_contract_decoded_under(PlatformVersion::latest(), sdk_version.get());
+                    (Some(dpns_v3), proved_at(LATEST_VERSION))
+                };
+                ready(Ok(response))
+            },
+        )
+        .await
+        .expect("the response proved at the learned version is taken");
+
+        assert_eq!(fetches.get(), 2);
+        assert!(declares_the_preorder_hash(&dpns_contract));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_when_every_dpns_contract_response_is_behind_the_network() {
+        let fetches = Cell::new(0);
+        let result = dpns_contract_proved_at_parsed_version(
+            || LATEST_VERSION,
+            || {
+                fetches.set(fetches.get() + 1);
+                let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+                let dpns_contract = dpns_contract_decoded_under(platform_version, LATEST_VERSION);
+                ready(Ok((Some(dpns_contract), proved_at(13))))
+            },
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(fetches.get(), DPNS_CONTRACT_FETCH_ATTEMPTS);
     }
 
     #[test]

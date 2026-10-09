@@ -1,0 +1,208 @@
+{
+  "domain": {
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "transferable": 1,
+    "tradeMode": 1,
+    "keepsTransferHistory": true,
+    "keepsPurchaseHistory": true,
+    "keepsPricingHistory": true,
+    "type": "object",
+    "indices": [
+      {
+        "name": "parentNameAndLabel",
+        "properties": [
+          {
+            "normalizedParentDomainName": "asc"
+          },
+          {
+            "normalizedLabel": "asc"
+          }
+        ],
+        "unique": true,
+        "contested": {
+          "fieldMatches": [
+            {
+              "field": "normalizedLabel",
+              "regexPattern": "^[a-zA-Z01-]{3,19}$"
+            }
+          ],
+          "resolution": 0,
+          "description": "Normalized labels of 3 to 19 a-z, 0, 1 or - characters go to a masternode vote"
+        }
+      },
+      {
+        "name": "identityId",
+        "nullSearchable": false,
+        "properties": [
+          {
+            "records.identity": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "label": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
+        "minLength": 3,
+        "maxLength": 63,
+        "position": 0,
+        "description": "Label, e.g. 'Bob'"
+      },
+      "normalizedLabel": {
+        "type": "string",
+        "maxLength": 63,
+        "generatedFrom": {
+          "function": "sys.stringTransformations.homographSafeASCII",
+          "params": [
+            "label"
+          ]
+        },
+        "position": 1,
+        "description": "Generated: label lowercased, o to 0, i and l to 1, e.g. 'b0b'"
+      },
+      "parentDomainName": {
+        "type": "string",
+        "pattern": "^$|^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
+        "minLength": 0,
+        "maxLength": 63,
+        "position": 2,
+        "description": "Parent domain name, e.g. 'dash'"
+      },
+      "normalizedParentDomainName": {
+        "type": "string",
+        "maxLength": 63,
+        "generatedFrom": {
+          "function": "sys.stringTransformations.homographSafeASCII",
+          "params": [
+            "parentDomainName"
+          ]
+        },
+        "position": 3,
+        "description": "Generated: parentDomainName normalized like normalizedLabel"
+      },
+      "preorderSalt": {
+        "type": "bytes",
+        "size": 32,
+        "position": 4,
+        "description": "Salt of the writer's preorder, made in an earlier block; the create deletes it",
+        "refersTo": {
+          "type": "deletableDocument",
+          "documentType": "preorder",
+          "findBy": {
+            "$ownerId": "$ownerId",
+            "saltedDomainHash": {
+              "function": "sys.hash.sha256d",
+              "params": [
+                "$ownerId",
+                "preorderSalt",
+                "normalizedLabel",
+                {
+                  "const": "."
+                },
+                "parentDomainName"
+              ]
+            }
+          },
+          "minimumAgeBlocks": 1,
+          "consume": true
+        }
+      },
+      "records": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "identifier",
+            "position": 1,
+            "description": "Identity the name resolves to; its owner's at creation"
+          }
+        },
+        "minProperties": 1,
+        "position": 5,
+        "additionalProperties": false
+      },
+      "subdomainRules": {
+        "type": "object",
+        "properties": {
+          "allowSubdomains": {
+            "type": "boolean",
+            "description": "Anyone may create subdomains (true) or only the owner (false)",
+            "position": 0
+          }
+        },
+        "position": 6,
+        "description": "Subdomain rules",
+        "additionalProperties": false,
+        "required": [
+          "allowSubdomains"
+        ]
+      }
+    },
+    "required": [
+      "$createdAt",
+      "$updatedAt",
+      "$transferredAt",
+      "label",
+      "normalizedLabel",
+      "normalizedParentDomainName",
+      "preorderSalt",
+      "records",
+      "subdomainRules"
+    ],
+    "transient": [
+      "preorderSalt"
+    ],
+    "propertyConstraints": {
+      "recordsIdentityIsOwner": {
+        "ifThen": [
+          {
+            "equal": [
+              "$transferredAt",
+              "$createdAt"
+            ]
+          },
+          {
+            "equal": [
+              "records.identity",
+              "$ownerId"
+            ]
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "preorder": {
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "type": "object",
+    "indices": [
+      {
+        "name": "ownerAndSaltedHash",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "saltedDomainHash": "asc"
+          }
+        ],
+        "unique": true
+      }
+    ],
+    "properties": {
+      "saltedDomainHash": {
+        "type": "bytes",
+        "size": 32,
+        "position": 0,
+        "description": "sha256d of owner id, salt, normalized label, '.' and parent domain name"
+      }
+    },
+    "required": [
+      "$createdAtBlockHeight",
+      "saltedDomainHash"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -42,7 +42,7 @@ A client creates `{ "label": "Bob" }` and the stored document holds `{ "label": 
 
 The generated property needs no `pattern` of its own. Every value it can hold is what the function generates from params that passed their own patterns: here `label` admits ASCII letters, digits and `-`, so `normalizedLabel` can only ever hold `a` to `z` without `i`, `l` and `o`, digits and `-`. It keeps `maxLength` because it is indexed, and an indexed string declares one of at most 63.
 
-This is the rule the DPNS `domain` type's data trigger checks today for `normalizedLabel` and `normalizedParentDomainName`, written into the schema.
+The DPNS `domain` type declares this rule for `normalizedLabel` and `normalizedParentDomainName` from protocol version 14 (DPNS contract v3). Before it, the type's create data trigger checked the same rule.
 
 ## Functions
 

@@ -338,9 +338,11 @@ export type DocumentReferenceWhere = Record<string, string>;
  * joined in order with nothing between them. A param is a property path of the
  * document being created (a string's UTF-8, a byte array's bytes, an
  * identifier's 32 bytes), the property carrying the reference included,
- * `{ const }`, fixed UTF-8 text, or `'.'`, the value carrying the reference
+ * `{ const }`, fixed UTF-8 text, `'.'`, the value carrying the reference
  * where it has no path (each element of a typed array, the writer or the
- * creator). The document it finds is a commitment made earlier; the reference
+ * creator), or `'$ownerId'`, the 32 bytes of the writer's identity, the owner
+ * of the document being created. The document it finds is a commitment made
+ * earlier; the reference
  * is checked when the document is created only. To reveal one, compute the
  * same hash over the values you create the document with.
  */
@@ -430,6 +432,7 @@ fn find_by_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsVa
                 set_field(&object, "const", &JsValue::from_str(text), path)?;
                 object.into()
             }
+            LookupKeyParam::Writer => JsValue::from_str("$ownerId"),
         };
         params.push(&param_value);
     }
