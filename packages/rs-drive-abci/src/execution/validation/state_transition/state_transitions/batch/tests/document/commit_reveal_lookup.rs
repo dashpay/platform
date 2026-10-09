@@ -1198,6 +1198,142 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.preorder_exists(preorder.id()));
     }
 
+    /// The fixture with a `voucher`, a deletable document keyed by a unique `serial`, and a
+    /// `redemption` that finds one by its serial through a plain `findBy`, no function: the
+    /// writer's own (`where $ownerId`), from an earlier block, and consumes it. A redemption
+    /// is never replaced, so its lookup is judged on the create alone, as a commitment's is.
+    fn voucher_fixture() -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let schemas = &mut contract["documentSchemas"];
+            schemas["voucher"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": true,
+                "properties": {
+                    "serial": { "type": "identifier", "position": 0 }
+                },
+                "indices": [
+                    { "name": "serial", "properties": [{ "serial": "asc" }], "unique": true }
+                ],
+                "required": ["$createdAtBlockHeight", "serial"],
+                "additionalProperties": false
+            });
+            schemas["redemption"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": false,
+                "properties": {
+                    "voucherSerial": {
+                        "type": "identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "deletableDocument",
+                            "documentType": "voucher",
+                            "findBy": { "serial": "." },
+                            "where": { "$ownerId": "$ownerId" },
+                            "minimumAgeBlocks": 1,
+                            "consume": true
+                        }
+                    }
+                },
+                "required": ["voucherSerial"],
+                "additionalProperties": false
+            });
+        })
+    }
+
+    const VOUCHER_SERIAL: [u8; 32] = [0x5e; 32];
+
+    /// A voucher of `who` with [`VOUCHER_SERIAL`], made in `height`.
+    async fn make_voucher(fixture: &mut CommitRevealFixture, who: Who, height: u64) -> Document {
+        let (voucher, result) = fixture
+            .create(
+                who,
+                "voucher",
+                &[("serial", Value::Identifier(VOUCHER_SERIAL))],
+                &[],
+                height,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        voucher
+    }
+
+    /// The redemption of the voucher with [`VOUCHER_SERIAL`] by `who`, in `height`.
+    async fn redeem(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        height: u64,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                who,
+                "redemption",
+                &[("voucherSerial", Value::Identifier(VOUCHER_SERIAL))],
+                &[],
+                height,
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn should_consume_a_document_a_plain_lookup_finds_on_a_type_never_replaced() {
+        let mut fixture = voucher_fixture();
+        let voucher = make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (redemption, result) = redeem(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(!fixture.document_exists("voucher", voucher.id()));
+        assert!(fixture.document_exists("redemption", redemption.id()));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_plain_lookup_redemption_in_the_block_of_its_voucher() {
+        let mut fixture = voucher_fixture();
+        let voucher = make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (_, result) = redeem(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentRequirementNotMetError(e)
+                ),
+                ..
+            } if *e.document_id() == voucher.id()
+                && e.field() == "minimumAgeBlocks"
+                && e.required() == "1"
+                && e.path() == "voucherSerial"
+        );
+        assert!(fixture.document_exists("voucher", voucher.id()));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_redeeming_another_identitys_voucher_through_a_plain_lookup() {
+        let mut fixture = voucher_fixture();
+        let voucher = make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (_, result) = redeem(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.path() == "voucherSerial"
+                && e.referring_property() == "$ownerId"
+                && e.referenced_property() == "$ownerId"
+        );
+        assert!(fixture.document_exists("voucher", voucher.id()));
+    }
+
     /// The type in the fixture reads what [`DocumentTypeRef`] reports: the
     /// declaration is the salt's, revealed, and the key is computed.
     #[test]
@@ -1218,7 +1354,8 @@ mod commit_reveal_lookup_tests {
             .as_any_document_reference()
             .and_then(|declaration| declaration.lookup)
             .expect("expected the salt's lookup");
-        assert!(lookup.is_checked_on_create_only());
+        assert!(lookup.hash_key().is_some());
+        assert!(lookup.is_checked_on_create_only(true));
         assert_eq!(lookup.minimum_age_blocks, Some(1));
         assert!(lookup.consume);
     }

@@ -1616,8 +1616,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Document create structure validation 1 refuses a create missing a param,
 ///     repeating a key on the way to one, or whose variable-length param holds
 ///     the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a `findBy`
-///     function the reference may declare `minimumAgeBlocks`, judged by
+///     (`DocumentReferencePreimageInvalidError`, 10423). A reference judged
+///     on the create alone (`DocumentReferenceLookup::is_checked_on_create_only`:
+///     beside a `findBy` function, or any `findBy` on a document type whose
+///     documents are never replaced, `documentsMutable: false`, since a replace
+///     is the one write that judges a reference again) may declare
+///     `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and
@@ -1630,10 +1634,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `validate_no_immutable_deletable_element_references` otherwise refuses.
 ///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
 ///     writer's own, and so does a `findBy` entry `{"$ownerId": "$ownerId"}`
-///     through a unique index over the owner and the hash, which beside a
-///     function a transferable referring type may declare too, the key being
-///     judged on the create alone; `consume` requires one of the two, into the declaring contract,
-///     on a type whose owners may delete, that keeps no history, declares no
+///     through a unique index over the owner and the hash, which a
+///     transferable referring type may declare too on a reference judged on the
+///     create alone; `consume` requires one of the two, into the declaring
+///     contract, on a type whose owners may delete, that keeps no history, declares no
 ///     delete token cost or delete action fee and requires no stricter
 ///     signature security level than the declaring type; batch advanced
 ///     structure 1 refuses a contract-bound key whose bounds leave out a type
@@ -1645,7 +1649,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     transient; on a mutable type such a reference may not be an `anyOf`
 ///     operand; and no property a function reads may be listed under
 ///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
-///     `deletableDocument` target through a function, and the `findBy` of an
+///     `deletableDocument` target judged on the create alone, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
 ///     one. DPNS v3 declares such a reveal (90). See
 ///     `book/src/data-model/documents.md`.

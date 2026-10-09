@@ -151,7 +151,8 @@ pub struct DocumentReferenceLookup {
     /// except in the lookup of an `ownerRefersTo` or `creatorRefersTo` holding
     /// a computed key, where it may be left out.
     pub keys: BTreeMap<String, LookupKeySource>,
-    /// With a computed key only: how many blocks before the create the
+    /// On a lookup judged on the create alone only
+    /// ([`Self::is_checked_on_create_only`]): how many blocks before the create the
     /// document the key finds must have been created (the reference's
     /// `minimumAgeBlocks`, beside `findBy`), judged on its
     /// `$createdAtBlockHeight`, so that 1 keeps a commitment and its reveal out
@@ -159,7 +160,8 @@ pub struct DocumentReferenceLookup {
     /// record `$createdAtBlockHeight`.
     #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
     pub minimum_age_blocks: Option<u32>,
-    /// With a computed key only: whether the create deletes the document the
+    /// On a lookup judged on the create alone only
+    /// ([`Self::is_checked_on_create_only`]): whether the create deletes the document the
     /// key found (the reference's `consume`, beside `findBy`), in the same
     /// state transition. Only a `deletableDocument` reference whose `where` or
     /// `findBy` pairs the found document's `$ownerId` with the writer's may
@@ -298,13 +300,17 @@ impl DocumentReferenceLookup {
             .sum()
     }
 
-    /// Whether this lookup is judged only when the referring document is
-    /// created: it holds a computed key, a commitment the create reveals.
-    /// Nothing such a lookup reads can change afterwards (registration makes
-    /// every stored value it reads fixed once written), and the commitment it
-    /// found may be consumed or deleted, so a replace never re-validates it.
-    pub fn is_checked_on_create_only(&self) -> bool {
-        self.hash_key().is_some()
+    /// Whether this lookup, declared on a document type whose documents can
+    /// (`documents_mutable`) or can not be replaced, is judged only when the
+    /// referring document is created: it holds a computed key, a commitment the
+    /// create reveals, or its type's documents are never replaced, and a
+    /// replace is the one write that judges a reference again. Nothing such a
+    /// lookup reads can change afterwards (registration makes every stored value
+    /// it reads fixed once written, and no `changeFields` entry may name one),
+    /// and the document it found may be consumed or deleted, so a replace never
+    /// re-validates it.
+    pub fn is_checked_on_create_only(&self, documents_mutable: bool) -> bool {
+        self.hash_key().is_some() || !documents_mutable
     }
 
     /// The referring document type's property paths the key reads as is, in
@@ -358,7 +364,8 @@ impl DocumentReferenceLookup {
         declaring: DocumentTypeRef,
         reference_path: &str,
     ) -> Option<String> {
-        let computed = self.is_checked_on_create_only();
+        let computed = self.hash_key().is_some();
+        let create_only = self.is_checked_on_create_only(declaring.documents_mutable());
         let on_the_document = reference_path == OWNER_ID || reference_path == CREATOR_ID;
         let carrier_type = declaring
             .flattened_properties()
@@ -431,14 +438,15 @@ impl DocumentReferenceLookup {
                     continue;
                 }
                 LookupKeySource::OwnerId => {
-                    // A lookup with a computed key is judged when the document is created
-                    // only, so a later transfer or purchase moving the writer moves no key
-                    if !computed && owner_can_change(declaring) {
+                    // A lookup judged when the document is created only, so a later transfer
+                    // or purchase moving the writer moves no key
+                    if !create_only && owner_can_change(declaring) {
                         return Some(format!(
                             "findBy \"{index_property}\" reads \"$ownerId\", which a transfer or \
                              a purchase of the referring document changes without re-validating \
                              the reference: findBy may read the writer only on a document type \
-                             that cannot be transferred or traded, or beside a function"
+                             that cannot be transferred or traded, beside a function, or on a \
+                             type whose documents are never replaced"
                         ));
                     }
                     continue;

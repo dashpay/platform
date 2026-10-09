@@ -911,7 +911,7 @@ fn apply_revealed_reference_v0(
     let computed = target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
-        .is_some_and(|lookup| lookup.is_checked_on_create_only());
+        .is_some_and(|lookup| lookup.hash_key().is_some());
     if !computed {
         return Err(refused());
     }
@@ -1762,6 +1762,7 @@ pub(super) fn parse_doctype_reference(
     schema: &Value,
     keyword: &str,
     value: &str,
+    documents_mutable: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
     if platform_version
@@ -1845,17 +1846,19 @@ pub(super) fn parse_doctype_reference(
             // keeps to targets that hold for good
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
                 if keyword == property_names::OWNER_REFERS_TO => {}
-            // A lookup with a computed key is judged when the document is
-            // created only, by its creator: a commitment the creator revealed,
-            // which no replace asks for again, so the creator's gate cannot
-            // outlive a transfer
+            // A lookup judged when the document is created only (a commitment
+            // the creator revealed, or on a type whose documents are never
+            // replaced), which no replace asks for again, so the creator's gate
+            // cannot outlive a transfer
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
-                if lookup.is_checked_on_create_only() => {}
+                if lookup.is_checked_on_create_only(documents_mutable) => {}
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} does not take a deletableDocument reference unless its findBy \
-                     key is computed: the creator never changes, and a document a transfer \
-                     handed on could not be replaced once the one findBy found is deleted"
+                    "{keyword}{at} does not take a deletableDocument reference unless it is \
+                     judged on the create alone (a findBy function, or a document type whose \
+                     documents are never replaced): the creator never changes, and a document a \
+                     transfer handed on could not be replaced once the one findBy found is \
+                     deleted"
                 )))
             }
             DocumentPropertyReferenceTarget::PermanentDocument { .. }
@@ -2008,14 +2011,6 @@ fn parse_find_by(
             ))
         }
     };
-    if computed_keys == 0 && (minimum_age_blocks.is_some() || consume) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo minimumAgeBlocks and consume need a findBy function computing the key: \
-             they describe the commitment a create reveals"
-                .to_string(),
-        ));
-    }
-
     Ok(DocumentReferenceLookup {
         minimum_age_blocks,
         consume,
@@ -2069,6 +2064,7 @@ pub(super) fn validate_reference_lookup_sources(
                         declaration.property_agreement,
                     )
                 })
+                .or_else(|| age_or_consume_error(document_type, lookup))
             {
                 let at = if leaf_path.is_empty() {
                     String::new()
@@ -2083,6 +2079,24 @@ pub(super) fn validate_reference_lookup_sources(
         }
     }
     Ok(())
+}
+
+/// Why a lookup declared on `document_type` may not declare `minimumAgeBlocks` or `consume`;
+/// `None` when it declares neither or may. Both describe the document found when the
+/// referring document is created, so the reference must be judged on the create alone
+/// ([`DocumentReferenceLookup::is_checked_on_create_only`]): its key holds a `findBy` function,
+/// or the type's documents are never replaced.
+fn age_or_consume_error(
+    document_type: DocumentTypeRef,
+    lookup: &DocumentReferenceLookup,
+) -> Option<String> {
+    let declares = lookup.minimum_age_blocks.is_some() || lookup.consume;
+    (declares && !lookup.is_checked_on_create_only(document_type.documents_mutable())).then(|| {
+        "minimumAgeBlocks and consume describe the document found when the referring document \
+         is created, so the reference must be judged on the create alone: give findBy a \
+         function, or make the document type immutable (documentsMutable: false)"
+            .to_string()
+    })
 }
 
 /// Why a `refersTo` leaf whose key a `findBy` function computes, at
@@ -2104,7 +2118,7 @@ fn create_only_leaf_error(
     lookup: &DocumentReferenceLookup,
     property_agreement: &BTreeMap<String, String>,
 ) -> Option<String> {
-    if !lookup.is_checked_on_create_only() {
+    if !lookup.is_checked_on_create_only(document_type.documents_mutable()) {
         return None;
     }
     if document_type.documents_mutable()
