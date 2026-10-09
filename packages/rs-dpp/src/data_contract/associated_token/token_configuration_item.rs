@@ -75,8 +75,8 @@ pub enum TokenConfigurationChangeItem {
     MarketplaceTradeModeControlGroup(AuthorizedActionTakers),
     MarketplaceTradeModeAdminGroup(AuthorizedActionTakers),
     MainControlGroup(Option<GroupContractPosition>),
-    /// The token shielded pool's outgoing notes threshold. Only a `TokenConfiguration::V1`
-    /// (a token with a pool) carries one, so only it can apply these three items.
+    /// The token shielded pool's outgoing notes threshold. Only a `TokenConfiguration::V1` that
+    /// has a pool can apply these three items; a non-transferable token is V1 without one.
     MinimumPoolNotesForOutgoing(u64),
     MinimumPoolNotesForOutgoingControlGroup(AuthorizedActionTakers),
     MinimumPoolNotesForOutgoingAdminGroup(AuthorizedActionTakers),

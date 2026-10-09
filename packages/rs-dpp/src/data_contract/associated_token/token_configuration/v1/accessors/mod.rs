@@ -210,10 +210,18 @@ impl TokenConfigurationV1Getters for TokenConfigurationV1 {
     fn minimum_pool_notes_for_outgoing(&self) -> u64 {
         self.minimum_pool_notes_for_outgoing.unwrap_or(0)
     }
+
+    fn is_transferable(&self) -> bool {
+        self.transferable
+    }
 }
 
 impl TokenConfigurationV1Setters for TokenConfigurationV1 {
     fn set_has_shielded_pool(&mut self, has_shielded_pool: bool) {
         self.has_shielded_pool = has_shielded_pool;
+    }
+
+    fn set_transferable(&mut self, transferable: bool) {
+        self.transferable = transferable;
     }
 }
