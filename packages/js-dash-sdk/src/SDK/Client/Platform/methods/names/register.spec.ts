@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { Identifier } from '@dashevo/wasm-dpp';
 import { ImportMock } from 'ts-mock-imports';
 import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync';
 
@@ -254,7 +255,9 @@ describe('Platform', () => {
       });
 
       it('should refuse records.identity other than the registering identity under DPNS v3', async () => {
-        identityMock.getId.returns(await generateRandomIdentifier());
+        // Fixed ids: `crypto.randomBytes` is mocked to zeros here, so two random
+        // identifiers would be the same
+        identityMock.getId.returns(Identifier.from(Buffer.alloc(32, 1)));
         platformMock.contracts.get.resolves({
           getDocumentSchema: dpnsV3DomainSchema,
         });
@@ -262,7 +265,7 @@ describe('Platform', () => {
         let error;
         try {
           await register.call(platformMock, 'User.dash', {
-            identity: await generateRandomIdentifier(),
+            identity: Identifier.from(Buffer.alloc(32, 2)),
           }, identityMock);
         } catch (e: any) {
           error = e;
