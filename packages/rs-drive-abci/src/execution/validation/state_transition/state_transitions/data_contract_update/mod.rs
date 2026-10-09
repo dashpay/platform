@@ -2027,6 +2027,125 @@ mod tests {
             assert_matches!(result, StateTransitionProofResult::VerifiedDataContract(_));
         }
 
+        /// A contract update can only bring an external token cost in with a new document type,
+        /// and that cost pays the contract owner, which a non-transferable token refuses
+        /// (protocol version 14).
+        #[tokio::test]
+        async fn should_refuse_an_update_adding_a_type_paying_an_external_non_transferable_token() {
+            use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
+            use dpp::consensus::codes::ErrorWithCode;
+            use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+            use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+            use dpp::platform_value::platform_value;
+
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+            let (token_contract_owner, _, _) =
+                setup_identity(&mut platform, 11, dash_to_credits!(0.1));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let (token_contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                token_contract_owner.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_transferable(false)
+                }),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+            updated_data_contract
+                .set_document_schema(
+                    "tip",
+                    platform_value!({
+                        "type": "object",
+                        "properties": {
+                            "message": {"type": "string", "position": 0, "maxLength": 40_u32},
+                        },
+                        "tokenCost": {
+                            "create": {
+                                "contractId": token_contract.id().to_buffer(),
+                                "tokenPosition": 0_u64,
+                                "amount": 1_u64,
+                            }
+                        },
+                        "additionalProperties": false,
+                    }),
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to add the tip document type");
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_update_transition
+                        .serialize_to_bytes()
+                        .expect("expected serialized state transition")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: error @ ConsensusError::StateError(
+                        StateError::TokenNotTransferableError(inner)
+                    ),
+                    ..
+                }] if *inner.token_id() == token_id && error.code() == 40726
+            );
+        }
+
         #[tokio::test]
         async fn test_data_contract_update_with_token_setting_identifier_that_does_exist() {
             let mut platform = TestPlatformBuilder::new()

@@ -1,4 +1,6 @@
-use crate::consensus::basic::data_contract::TokenShieldedPoolIncompatibleRulesError;
+use crate::consensus::basic::data_contract::{
+    NonTransferableTokenShieldedPoolError, TokenShieldedPoolIncompatibleRulesError,
+};
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
@@ -91,14 +93,21 @@ impl TokenConfiguration {
     /// let an issuer advertise controls that only cover transparent balances, a token with
     /// `hasShieldedPool` must permanently disable `freezeRules`, `unfreezeRules` and
     /// `destroyFrozenFundsRules`: no one may take the action and no one may administer the
-    /// rule, so no configuration update can ever switch them on. Checked on contract create
-    /// and update; the flag itself is immutable.
+    /// rule, so no configuration update can ever switch them on. The token must also be
+    /// transferable: a spend inside the pool can pay any identity, so a non-transferable token
+    /// with a pool would change hands through shield and unshield. Checked on contract create
+    /// and update; both flags are immutable.
     pub fn validate_shielded_pool_rules(
         &self,
         token_contract_position: TokenContractPosition,
     ) -> SimpleConsensusValidationResult {
         if !self.has_shielded_pool() {
             return SimpleConsensusValidationResult::new();
+        }
+        if !self.is_transferable() {
+            return SimpleConsensusValidationResult::new_with_error(
+                NonTransferableTokenShieldedPoolError::new(token_contract_position).into(),
+            );
         }
         let rules: [(&ChangeControlRules, &str); 3] = [
             (self.freeze_rules(), "freezeRules"),
@@ -876,5 +885,154 @@ mod unknown_configuration_key_tests {
         assert_eq!(clean, configuration);
         assert_eq!(clean.format_version(), 1);
         assert!(clean.has_shielded_pool());
+    }
+}
+
+#[cfg(test)]
+mod non_transferable_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::codes::ErrorWithCode;
+    use crate::consensus::ConsensusError;
+    use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+
+    fn transferable() -> TokenConfiguration {
+        TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
+    }
+
+    fn non_transferable() -> TokenConfiguration {
+        let mut configuration = transferable();
+        configuration.set_transferable(false);
+        configuration
+    }
+
+    #[test]
+    fn should_read_every_format_version_0_configuration_as_transferable() {
+        assert!(transferable().is_transferable());
+    }
+
+    #[test]
+    fn should_make_a_non_transferable_token_a_format_version_1_configuration_without_a_pool() {
+        let configuration = non_transferable();
+        assert_eq!(configuration.format_version(), 1);
+        assert!(!configuration.is_transferable());
+        assert!(!configuration.has_shielded_pool());
+    }
+
+    #[test]
+    fn should_return_to_format_version_0_when_made_transferable_again() {
+        let mut configuration = non_transferable();
+        configuration.set_transferable(true);
+        assert_eq!(configuration, transferable());
+    }
+
+    /// Disabling a pool used to downgrade every V1 configuration to V0, which would now drop
+    /// the non-transferable flag along with the pool.
+    #[test]
+    fn should_keep_a_non_transferable_token_non_transferable_when_its_pool_is_removed() {
+        let mut configuration = non_transferable();
+        configuration.set_has_shielded_pool(true);
+        configuration.set_has_shielded_pool(false);
+        assert_eq!(configuration, non_transferable());
+    }
+
+    #[test]
+    fn should_refuse_a_shielded_pool_on_a_non_transferable_token_with_error_10279() {
+        let mut pooled = transferable();
+        pooled.set_has_shielded_pool(true);
+        assert!(pooled.validate_shielded_pool_rules(2).is_valid());
+
+        pooled.set_transferable(false);
+        let result = pooled.validate_shielded_pool_rules(2);
+        match result.errors.as_slice() {
+            [error @ ConsensusError::BasicError(
+                BasicError::NonTransferableTokenShieldedPoolError(inner),
+            )] => {
+                assert_eq!(inner.token_contract_position(), 2);
+                assert_eq!(error.code(), 10279);
+            }
+            other => panic!("expected NonTransferableTokenShieldedPoolError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_accept_a_non_transferable_token_without_a_pool() {
+        let configurations = BTreeMap::from([(0, non_transferable())]);
+        assert!(
+            validate_token_configurations(&configurations, PlatformVersion::latest()).is_valid()
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_non_transferable_configuration_through_bincode() {
+        let configuration = non_transferable();
+        let bytes =
+            bincode::encode_to_vec(&configuration, bincode::config::standard()).expect("encode");
+        let (decoded, read): (TokenConfiguration, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("decode");
+        assert_eq!(read, bytes.len());
+        assert_eq!(decoded, configuration);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod non_transferable_json_tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use crate::serialization::{JsonConvertible, ValueConvertible};
+
+    fn non_transferable() -> TokenConfiguration {
+        let mut configuration =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        configuration.set_transferable(false);
+        configuration
+    }
+
+    #[test]
+    fn should_write_transferable_false_and_read_it_back_on_both_wires() {
+        let configuration = non_transferable();
+
+        let json = configuration.to_json().expect("to_json");
+        assert_eq!(
+            json.get("$formatVersion").and_then(|v| v.as_str()),
+            Some("1")
+        );
+        assert_eq!(
+            json.get("transferable"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            TokenConfiguration::from_json(json).expect("from_json"),
+            configuration
+        );
+
+        let value = configuration.to_object().expect("to_object");
+        assert_eq!(
+            TokenConfiguration::from_object(value).expect("from_object"),
+            configuration
+        );
+    }
+
+    /// A format 1 configuration written without the key, such as a pooled token from before
+    /// the flag existed, reads as transferable.
+    #[test]
+    fn should_read_a_format_version_1_configuration_without_the_key_as_transferable() {
+        let mut pooled = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        pooled.set_has_shielded_pool(true);
+        let mut json = pooled.to_json().expect("to_json");
+        assert!(json
+            .as_object_mut()
+            .expect("configuration object")
+            .remove("transferable")
+            .is_some());
+
+        let decoded = TokenConfiguration::from_json(json).expect("from_json");
+        assert!(decoded.is_transferable());
+        assert_eq!(decoded, pooled);
     }
 }

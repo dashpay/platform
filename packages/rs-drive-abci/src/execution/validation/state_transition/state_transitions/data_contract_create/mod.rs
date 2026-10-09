@@ -3548,6 +3548,259 @@ mod tests {
         }
     }
 
+    /// A non-transferable token (protocol version 14) may pay only for its own contract's
+    /// documents, and only by being burned; it cannot have a shielded pool.
+    mod non_transferable_tokens {
+        use super::*;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+
+        fn make_non_transferable(token_configuration: &mut TokenConfiguration) {
+            token_configuration.set_transferable(false);
+        }
+
+        /// Registers the card game with its gold token (position 0) changed by
+        /// `modify_gold_token`, and the card's create cost set to `card_cost` in both the parsed
+        /// type and its schema. The fixture's purchase cost, which pays the owner in gold too, is
+        /// taken out so that the create cost is the only one charging gold.
+        async fn register_card_game(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            modify_gold_token: impl FnOnce(&mut TokenConfiguration),
+            card_cost: DocumentActionTokenCost,
+        ) -> Vec<StateTransitionExecutionResult> {
+            let platform_version = PlatformVersion::latest();
+            let platform_state = platform.state.load();
+
+            let (identity, contract_signer, contract_key) =
+                setup_identity(platform, 958, dash_to_credits!(1.0));
+
+            let mut data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency.json",
+                None,
+                None,
+                false, //no need to validate the data contracts in tests for drive
+                platform_version,
+            )
+            .expect("expected to get json based contract");
+
+            modify_gold_token(
+                data_contract
+                    .tokens_mut()
+                    .expect("expected tokens")
+                    .get_mut(&0)
+                    .expect("expected the gold token"),
+            );
+
+            {
+                let document_type = data_contract
+                    .document_types_mut()
+                    .get_mut("card")
+                    .expect("expected a document type with name card");
+                document_type.set_document_creation_token_cost(Some(card_cost));
+                document_type.set_document_purchase_token_cost(None);
+                let gas_fees_paid_by_int: u8 = card_cost.gas_fees_paid_by.into();
+                let token_cost = document_type
+                    .schema_mut()
+                    .get_mut("tokenCost")
+                    .expect("expected to get token cost")
+                    .expect("expected token cost to be set");
+                token_cost
+                    .as_map_mut()
+                    .expect("expected token cost to be a map")
+                    .retain(|(action, _)| action.as_text() != Some("purchase"));
+                let creation_token_cost = token_cost
+                    .get_mut("create")
+                    .expect("expected to get creation token cost")
+                    .expect("expected creation token cost to be set");
+                if let Some(contract_id) = card_cost.contract_id {
+                    creation_token_cost
+                        .set_value("contractId", contract_id.into())
+                        .expect("expected to set token contract id");
+                }
+                creation_token_cost
+                    .set_value("tokenPosition", card_cost.token_contract_position.into())
+                    .expect("expected to set token position");
+                creation_token_cost
+                    .set_value("amount", card_cost.token_amount.into())
+                    .expect("expected to set token amount");
+                creation_token_cost
+                    .set_value("effect", Value::U8(card_cost.effect.into()))
+                    .expect("expected to set token pay effect");
+                creation_token_cost
+                    .set_value("gasFeesPaidBy", gas_fees_paid_by_int.into())
+                    .expect("expected to set gas fees paid by");
+            }
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    contract_key.id(),
+                    &contract_signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract create transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_transition
+                        .serialize_to_bytes()
+                        .expect("expected serialized state transition")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result.execution_results().to_vec()
+        }
+
+        fn own_gold_cost(effect: DocumentActionTokenEffect) -> DocumentActionTokenCost {
+            DocumentActionTokenCost {
+                contract_id: None,
+                token_contract_position: 0,
+                token_amount: 5,
+                effect,
+                gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                optional: false,
+            }
+        }
+
+        #[tokio::test]
+        async fn should_register_a_contract_burning_its_own_non_transferable_token() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let results = register_card_game(
+                &mut platform,
+                make_non_transferable,
+                own_gold_cost(DocumentActionTokenEffect::BurnToken),
+            )
+            .await;
+
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_contract_paying_its_own_non_transferable_token_to_its_owner() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let results = register_card_game(
+                &mut platform,
+                make_non_transferable,
+                own_gold_cost(DocumentActionTokenEffect::TransferTokenToContractOwner),
+            )
+            .await;
+
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: error @ ConsensusError::BasicError(
+                        BasicError::NonTransferableTokenPaymentMustBurnError(inner)
+                    ),
+                    ..
+                }] if inner.token_contract_position() == 0
+                    && inner.action() == "create"
+                    && error.code() == 10280
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_contract_paying_an_external_non_transferable_token() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (token_contract_owner, _, _) =
+                setup_identity(&mut platform, 11, dash_to_credits!(0.1));
+            let (token_contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                token_contract_owner.id(),
+                Some(make_non_transferable),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            let results = register_card_game(
+                &mut platform,
+                |_| {},
+                DocumentActionTokenCost {
+                    contract_id: Some(token_contract.id()),
+                    token_contract_position: 0,
+                    token_amount: 5,
+                    effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
+                    gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                    optional: false,
+                },
+            )
+            .await;
+
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: error @ ConsensusError::StateError(
+                        StateError::TokenNotTransferableError(inner)
+                    ),
+                    ..
+                }] if *inner.token_id() == token_id && error.code() == 40726
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_non_transferable_token_with_a_shielded_pool_unpaid() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let results = register_card_game(
+                &mut platform,
+                |gold| {
+                    gold.set_has_shielded_pool(true);
+                    gold.set_transferable(false);
+                },
+                own_gold_cost(DocumentActionTokenEffect::BurnToken),
+            )
+            .await;
+
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    error @ ConsensusError::BasicError(
+                        BasicError::NonTransferableTokenShieldedPoolError(inner)
+                    )
+                )] if inner.token_contract_position() == 0 && error.code() == 10279
+            );
+        }
+    }
+
     mod group_errors {
         use super::*;
         #[tokio::test]

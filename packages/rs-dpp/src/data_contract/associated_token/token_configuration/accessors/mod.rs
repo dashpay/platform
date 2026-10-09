@@ -255,13 +255,20 @@ impl TokenConfigurationV1Getters for TokenConfiguration {
             TokenConfiguration::V1(v1) => v1.minimum_pool_notes_for_outgoing(),
         }
     }
+
+    fn is_transferable(&self) -> bool {
+        match self {
+            TokenConfiguration::V0(_) => true,
+            TokenConfiguration::V1(v1) => v1.is_transferable(),
+        }
+    }
 }
 
 impl TokenConfigurationV1Setters for TokenConfiguration {
     /// The representation stays canonical: enabling the pool on a V0 configuration upgrades
-    /// it in place to V1, and disabling it on a V1 configuration downgrades it back to V0, so
-    /// a configuration without a pool always serializes as format version 0 and is accepted
-    /// by every protocol version.
+    /// it in place to V1, and disabling it on a transferable V1 configuration downgrades it
+    /// back to V0, so a configuration using no V1 feature always serializes as format version 0
+    /// and is accepted by every protocol version.
     fn set_has_shielded_pool(&mut self, has_shielded_pool: bool) {
         match self {
             TokenConfiguration::V0(v0) => {
@@ -272,15 +279,45 @@ impl TokenConfigurationV1Setters for TokenConfiguration {
                 }
             }
             TokenConfiguration::V1(v1) => {
-                if has_shielded_pool {
-                    v1.set_has_shielded_pool(true);
-                } else {
-                    let base = std::mem::replace(
-                        &mut v1.base,
-                        TokenConfigurationV0::default_most_restrictive(),
-                    );
-                    *self = TokenConfiguration::V0(base);
+                v1.set_has_shielded_pool(has_shielded_pool);
+                self.downgrade_to_v0_if_unused();
+            }
+        }
+    }
+
+    /// Canonical like `set_has_shielded_pool`: making a V0 configuration non-transferable
+    /// upgrades it to V1, and making a V1 configuration without a pool transferable again
+    /// downgrades it to V0.
+    fn set_transferable(&mut self, transferable: bool) {
+        match self {
+            TokenConfiguration::V0(v0) => {
+                if !transferable {
+                    let base =
+                        std::mem::replace(v0, TokenConfigurationV0::default_most_restrictive());
+                    let mut v1 = TokenConfigurationV1::from_v0(base, false);
+                    v1.set_transferable(false);
+                    *self = TokenConfiguration::V1(v1);
                 }
+            }
+            TokenConfiguration::V1(v1) => {
+                v1.set_transferable(transferable);
+                self.downgrade_to_v0_if_unused();
+            }
+        }
+    }
+}
+
+impl TokenConfiguration {
+    /// Replaces a V1 configuration that has no pool and is transferable by its V0 base. The
+    /// pool's threshold and its rules go with it: they only apply to a pool.
+    fn downgrade_to_v0_if_unused(&mut self) {
+        if let TokenConfiguration::V1(v1) = self {
+            if !v1.has_shielded_pool && v1.transferable {
+                let base = std::mem::replace(
+                    &mut v1.base,
+                    TokenConfigurationV0::default_most_restrictive(),
+                );
+                *self = TokenConfiguration::V0(base);
             }
         }
     }

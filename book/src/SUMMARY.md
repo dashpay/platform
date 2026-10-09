@@ -63,6 +63,7 @@
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)
 - [Token Shielded Pools](data-model/token-shielded-pools.md)
+- [Non-Transferable Tokens](data-model/non-transferable-tokens.md)
 
 # Contract Keywords
 

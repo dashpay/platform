@@ -9,7 +9,7 @@
 | **Default** | Absent: no action costs tokens |
 | **Since** | protocol version 9. `gasFeesPaidBy` is accepted from 9 and acted on from 14; `optional` is 14 |
 | **On update** | Fixed: a cost may not be added, changed or removed on an existing document type (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009) |
+| **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `NonTransferableTokenPaymentMustBurnError` (10280), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009), `TokenNotTransferableError` (40726) |
 
 The keys of each cost object:
 
@@ -86,6 +86,8 @@ The signer pays: the creator for a create, the owner for a replace, delete, tran
 - `0`, the default, moves the tokens from the signer to the owner of the contract that holds the document type. When the contract owner performs the action themselves nothing moves, though their balance is still checked.
 - `1` burns the tokens from the signer's balance, lowering the token's supply. Only a token of the contract's own can be burned (`TokenPaymentByBurningOnlyAllowedOnInternalTokenError`, 10261, at registration).
 
+A [non-transferable token](../data-model/non-transferable-tokens.md) (protocol version 14) can only be burned: paying the contract owner would move it to another identity, so a cost in the contract's own non-transferable token must set `effect: 1` (`NonTransferableTokenPaymentMustBurnError`, 10280, at registration). Another contract's non-transferable token cannot be charged at all, since it cannot be burned (`TokenNotTransferableError`, 40726, at registration).
+
 ## Tokens of another contract: `contractId`
 
 A document type may charge a token another contract defines, for example a shared currency. `contractId` names that contract and `tokenPosition` the token in it. The effect must then be `0`: the tokens go to the owner of the contract holding the document type, not to the token's issuer. At registration the named contract must exist (`DataContractNotFoundError`, 40008) and have a token at that position (`InvalidTokenPositionStateError`, 40009), and it must not be the contract itself: leave `contractId` out for the contract's own tokens (`RedundantDocumentPaidForByTokenWithContractId`, 10275).
@@ -119,7 +121,8 @@ Together with `gasFeesPaidBy` this gives a "free usage" pattern: an app hands ou
 
 - The meta-schema checks the shape (`JsonSchemaError`, 10101): only the six action keys; `tokenPosition` and `amount` required in each cost; values in the ranges above; no other key. Before protocol version 14 it also refuses `optional`.
 - Without `contractId`, `tokenPosition` must be a token of this contract (`InvalidTokenPositionError`, 10451).
-- With `contractId`: not this contract's own id (10275), no burn (10261), and a contract that exists with a token at that position (40008, 40009).
+- With `contractId`: not this contract's own id (10275), no burn (10261), and a contract that exists with a token at that position (40008, 40009). From protocol version 14 that token must be transferable (40726).
+- Without `contractId`, from protocol version 14, a non-transferable token must be burned (10280).
 
 ## See also
 

@@ -23,9 +23,10 @@ interface KeepsHistoryRulesOptions {
   isKeepingEmergencyActionHistory?: boolean;
 }
 
-interface ShieldedPoolOptions {
+interface FormatVersion1Options {
   hasShieldedPool?: boolean;
   minimumPoolNotesForOutgoing?: bigint;
+  transferable?: boolean;
 }
 
 describe('TokenConfiguration', () => {
@@ -220,75 +221,75 @@ describe('TokenConfiguration', () => {
     });
   });
 
-  describe('minimumPoolNotesForOutgoing', () => {
-    // A configuration whose shielded pool settings are the only thing under test. Everything
-    // else is the least interesting valid value, and `hasShieldedPool` defaults to false so a
-    // test has to ask for a pool to get one.
-    function createConfiguration(shieldedPool: ShieldedPoolOptions = {}) {
-      const changeRules = createChangeControlRules();
+  // A configuration whose format version 1 settings are the only thing under test. Everything
+  // else is the least interesting valid value, `hasShieldedPool` defaults to false so a test
+  // has to ask for a pool to get one, and `transferable` defaults to true.
+  function createConfiguration(formatVersion1: FormatVersion1Options = {}) {
+    const changeRules = createChangeControlRules();
 
-      return new wasm.TokenConfiguration({
-        conventions: new wasm.TokenConfigurationConvention(
-          {
-            en: {
-              $formatVersion: '0',
-              shouldCapitalize: true,
-              singularForm: 'TOKEN',
-              pluralForm: 'TOKENS',
-            },
+    return new wasm.TokenConfiguration({
+      conventions: new wasm.TokenConfigurationConvention(
+        {
+          en: {
+            $formatVersion: '0',
+            shouldCapitalize: true,
+            singularForm: 'TOKEN',
+            pluralForm: 'TOKENS',
           },
-          8,
-        ),
-        conventionsChangeRules: changeRules,
-        baseSupply: BigInt(1000),
-        maxSupply: undefined,
-        keepsHistory: createKeepsHistoryRules(),
-        isStartedAsPaused: false,
-        isAllowedTransferToFrozenBalance: false,
-        maxSupplyChangeRules: changeRules,
-        distributionRules: new wasm.TokenDistributionRules({
-          perpetualDistribution: undefined,
-          perpetualDistributionRules: changeRules,
-          preProgrammedDistribution: undefined,
-          newTokensDestinationIdentityRules: changeRules,
-          mintingAllowChoosingDestination: true,
-          mintingAllowChoosingDestinationRules: changeRules,
-          changeDirectPurchasePricingRules: changeRules,
-        }),
-        marketplaceRules: new wasm.TokenMarketplaceRules(
-          wasm.TokenTradeMode.NotTradeable(),
-          changeRules,
-        ),
-        manualMintingRules: changeRules,
-        manualBurningRules: changeRules,
-        freezeRules: changeRules,
-        unfreezeRules: changeRules,
-        destroyFrozenFundsRules: changeRules,
-        emergencyActionRules: changeRules,
-        mainControlGroup: undefined,
-        mainControlGroupCanBeModified: wasm.AuthorizedActionTakers.NoOne(),
-        description: 'note',
-        ...shieldedPool,
-      });
-    }
+        },
+        8,
+      ),
+      conventionsChangeRules: changeRules,
+      baseSupply: BigInt(1000),
+      maxSupply: undefined,
+      keepsHistory: createKeepsHistoryRules(),
+      isStartedAsPaused: false,
+      isAllowedTransferToFrozenBalance: false,
+      maxSupplyChangeRules: changeRules,
+      distributionRules: new wasm.TokenDistributionRules({
+        perpetualDistribution: undefined,
+        perpetualDistributionRules: changeRules,
+        preProgrammedDistribution: undefined,
+        newTokensDestinationIdentityRules: changeRules,
+        mintingAllowChoosingDestination: true,
+        mintingAllowChoosingDestinationRules: changeRules,
+        changeDirectPurchasePricingRules: changeRules,
+      }),
+      marketplaceRules: new wasm.TokenMarketplaceRules(
+        wasm.TokenTradeMode.NotTradeable(),
+        changeRules,
+      ),
+      manualMintingRules: changeRules,
+      manualBurningRules: changeRules,
+      freezeRules: changeRules,
+      unfreezeRules: changeRules,
+      destroyFrozenFundsRules: changeRules,
+      emergencyActionRules: changeRules,
+      mainControlGroup: undefined,
+      mainControlGroupCanBeModified: wasm.AuthorizedActionTakers.NoOne(),
+      description: 'note',
+      ...formatVersion1,
+    });
+  }
 
-    // The configuration a data contract hands back, rebuilt from the one it was given. Reading
-    // a threshold off it proves the value reached the configuration itself: assigning to a
-    // property the wasm class does not define lands on the JavaScript object instead, where
-    // the same object's getter reads it straight back and agrees with anything.
-    function configurationHeldByContract(config: wasm.TokenConfiguration) {
-      const contract = new wasm.DataContract({
-        ownerId,
-        identityNonce: BigInt(2),
-        schemas: object.documentSchemas,
-        definitions: null,
-        fullValidation: false,
-        tokens: { 0: config },
-      });
+  // The configuration a data contract hands back, rebuilt from the one it was given. Reading
+  // a threshold off it proves the value reached the configuration itself: assigning to a
+  // property the wasm class does not define lands on the JavaScript object instead, where
+  // the same object's getter reads it straight back and agrees with anything.
+  function configurationHeldByContract(config: wasm.TokenConfiguration) {
+    const contract = new wasm.DataContract({
+      ownerId,
+      identityNonce: BigInt(2),
+      schemas: object.documentSchemas,
+      definitions: null,
+      fullValidation: false,
+      tokens: { 0: config },
+    });
 
-      return (contract.tokens as Record<number, wasm.TokenConfiguration>)[0];
-    }
+    return (contract.tokens as Record<number, wasm.TokenConfiguration>)[0];
+  }
 
+  describe('minimumPoolNotesForOutgoing', () => {
     it('should keep a threshold asked for at creation', () => {
       const config = createConfiguration({
         hasShieldedPool: true,
@@ -350,6 +351,50 @@ describe('TokenConfiguration', () => {
       expect(() => {
         config.minimumPoolNotesForOutgoing = BigInt(5);
       }).to.throw(/hasShieldedPool/);
+    });
+  });
+
+  describe('transferable', () => {
+    it('should read a token as transferable unless it asks otherwise', () => {
+      const config = createConfiguration();
+
+      expect(config.transferable).to.equal(true);
+      expect(config.formatVersion).to.equal(0);
+    });
+
+    it('should make a non-transferable token a format version 1 configuration', () => {
+      const config = createConfiguration({ transferable: false });
+
+      expect(config.transferable).to.equal(false);
+      expect(config.hasShieldedPool).to.equal(false);
+      expect(config.formatVersion).to.equal(1);
+      expect(configurationHeldByContract(config).transferable).to.equal(false);
+    });
+
+    it('should return to format version 0 when made transferable again', () => {
+      const config = createConfiguration({ transferable: false });
+
+      config.transferable = true;
+
+      expect(config.transferable).to.equal(true);
+      expect(config.formatVersion).to.equal(0);
+    });
+
+    it('should keep a token non-transferable when its shielded pool is removed', () => {
+      const config = createConfiguration({ transferable: false });
+
+      config.hasShieldedPool = true;
+      config.hasShieldedPool = false;
+
+      expect(config.transferable).to.equal(false);
+      expect(config.formatVersion).to.equal(1);
+    });
+
+    it('should refuse a threshold for a non-transferable token without a shielded pool', () => {
+      expect(() => createConfiguration({
+        transferable: false,
+        minimumPoolNotesForOutgoing: BigInt(5),
+      })).to.throw(/hasShieldedPool/);
     });
   });
 });

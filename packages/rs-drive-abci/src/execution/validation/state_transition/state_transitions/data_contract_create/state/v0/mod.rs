@@ -14,20 +14,23 @@ use dpp::consensus::state::identity::identity_for_token_configuration_not_found_
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{
     InvalidTokenPositionStateError, PreProgrammedDistributionTimestampInPastError,
+    TokenNotTransferableError,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
-use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::tokens::calculate_token_id;
 use dpp::ProtocolError;
 
 use crate::error::execution::ExecutionError;
@@ -363,6 +366,31 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                                         ),
                                     )
                                         .into()],
+                                ));
+                            }
+                            // An external token cost always pays the contract owner (an external
+                            // burn is refused when the schema is parsed), which a non-transferable
+                            // token forbids. Inert before protocol version 14: only a format 1
+                            // token configuration is non-transferable, and the pre-activation
+                            // gate refuses that format on every earlier version, so no stored
+                            // contract an earlier version reads here holds one.
+                            if contract_tokens
+                                .get(token_position)
+                                .is_some_and(|configuration| !configuration.is_transferable())
+                            {
+                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                    StateTransitionAction::BumpIdentityNonceAction(
+                                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                    ),
+                                    vec![TokenNotTransferableError::new(
+                                        calculate_token_id(contract_id.as_bytes(), *token_position)
+                                            .into(),
+                                        format!(
+                                            "document type {} token cost paid to the contract owner",
+                                            document_type.name()
+                                        ),
+                                    )
+                                    .into()],
                                 ));
                             }
                         }

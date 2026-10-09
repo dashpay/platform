@@ -11,18 +11,21 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Version 1 of the token configuration: everything `TokenConfigurationV0` carries, plus the
-/// per-token shielded pool opt-in and the pool's outgoing notes threshold.
+/// per-token shielded pool opt-in, the pool's outgoing notes threshold and whether holders may
+/// move the token to anyone else.
 ///
 /// The V0 fields are nested as `base` and flattened on the JSON / Value wire, so a V1
 /// configuration reads exactly like a V0 one with `$formatVersion: "1"` and the extra
-/// `hasShieldedPool`, `minimumPoolNotesForOutgoing` and `minimumPoolNotesForOutgoingChangeRules`
-/// keys. On the bincode wire it is the V0 bytes followed by the flag, the threshold and its
-/// rules, under the enum's variant index 1, so stored V0 configurations decode unchanged.
+/// `hasShieldedPool`, `minimumPoolNotesForOutgoing`, `minimumPoolNotesForOutgoingChangeRules`
+/// and `transferable` keys. On the bincode wire it is the V0 bytes followed by the flag, the
+/// threshold, its rules and the transferable flag, under the enum's variant index 1, so stored
+/// V0 configurations decode unchanged.
 ///
 /// `has_shielded_pool` is decided at token creation and is immutable afterwards: the pool
 /// subtree (an Orchard note commitment tree, nullifier set, anchors and a balance) is created
 /// together with the token's other trees, and a pool holding notes can never be removed.
-/// Enabling a pool on an existing token is not supported by this version.
+/// Enabling a pool on an existing token is not supported by this version. `transferable` is
+/// fixed at creation too: no `TokenConfigUpdate` item changes it.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, DecodeUntrusted)]
 // An unknown key is refused rather than dropped: what a token can do is fixed when it is
@@ -58,6 +61,18 @@ pub struct TokenConfigurationV1 {
     /// when absent.
     #[serde(default = "default_change_control_rules")]
     pub minimum_pool_notes_for_outgoing_change_rules: ChangeControlRules,
+    /// Whether holders may move this token to another identity. When `false` the token still
+    /// mints, is claimed, bought from the issuer, burned, frozen and destroyed as configured, but
+    /// a `TokenTransfer` is refused, a document type may charge it only by burning it (so only
+    /// its own contract's document types can use it, external burns being refused), and it
+    /// cannot have a shielded pool, whose notes change hands without an identity. `true` when
+    /// absent, as for every V0 configuration.
+    #[serde(default = "default_transferable")]
+    pub transferable: bool,
+}
+
+fn default_transferable() -> bool {
+    true
 }
 
 impl TokenConfigurationV1 {
@@ -68,6 +83,7 @@ impl TokenConfigurationV1 {
             has_shielded_pool,
             minimum_pool_notes_for_outgoing: None,
             minimum_pool_notes_for_outgoing_change_rules: default_change_control_rules(),
+            transferable: true,
         }
     }
 }
@@ -76,11 +92,12 @@ impl fmt::Display for TokenConfigurationV1 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TokenConfigurationV1 {{\n  base: {},\n  has_shielded_pool: {},\n  minimum_pool_notes_for_outgoing: {:?},\n  minimum_pool_notes_for_outgoing_change_rules: {:?}\n}}",
+            "TokenConfigurationV1 {{\n  base: {},\n  has_shielded_pool: {},\n  minimum_pool_notes_for_outgoing: {:?},\n  minimum_pool_notes_for_outgoing_change_rules: {:?},\n  transferable: {}\n}}",
             self.base,
             self.has_shielded_pool,
             self.minimum_pool_notes_for_outgoing,
-            self.minimum_pool_notes_for_outgoing_change_rules
+            self.minimum_pool_notes_for_outgoing_change_rules,
+            self.transferable
         )
     }
 }
