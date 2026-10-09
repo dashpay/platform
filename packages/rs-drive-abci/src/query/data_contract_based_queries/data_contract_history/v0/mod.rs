@@ -11,6 +11,7 @@ use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
 use drive::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::platform_types::platform_state::PlatformState;
@@ -59,6 +60,14 @@ impl<C> Platform<C> {
                     .map_err(|_| QueryError::InvalidArgument("offset out of bounds".to_string()))
             })
             .transpose());
+
+        if prove && offset.is_some_and(|offset| offset > 0) {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(
+                    "proof requests do not support positive offsets".to_string(),
+                ),
+            )));
+        }
 
         let response = if prove {
             let proof = self.drive.prove_contract_history(

@@ -156,6 +156,18 @@ impl<C> Platform<C> {
             platform_version.drive_abci.query.max_returned_elements
         ));
 
+        // Specific-key queries intentionally ignore offsets in both response modes.
+        if prove
+            && offset.is_some_and(|offset| offset > 0)
+            && !matches!(key_request_type, KeyRequestType::SpecificKeys(_))
+        {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(
+                    "proof requests do not support positive offsets".to_string(),
+                ),
+            )));
+        }
+
         let key_request = IdentityKeysRequest {
             identity_id: identity_id.into_buffer(),
             request_type: key_request_type,
@@ -182,8 +194,8 @@ impl<C> Platform<C> {
                 // The non-proof specific-keys fetch only runs under a limit that covers every
                 // distinct id, which the bound above already caps; a smaller one fails inside
                 // GroveDB. The requested limit then caps what is returned instead: the first
-                // keys that exist, in id order, which is what the proof path proves. The proof
-                // path is left as requested so the proof matches what the client verifies.
+                // keys that exist, in encoded-key order, which is what the proof path proves.
+                // The proof path is left as requested so it matches what the client verifies.
                 KeyRequestType::SpecificKeys(key_ids) => {
                     returned_keys_cap = key_request.limit;
                     key_request.limit = key_ids.len().try_into().ok();
@@ -196,6 +208,18 @@ impl<C> Platform<C> {
                             "a search key request without a proof must set a limit".to_string(),
                         ),
                     )));
+                }
+                KeyRequestType::SearchKey(_) => {
+                    if key_request.offset.is_some_and(|offset| offset > 0) {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::InvalidParameter(
+                                "search key requests without a proof do not support positive offsets"
+                                    .to_string(),
+                            ),
+                        )));
+                    }
+                    // The optional-key projection only accepts an omitted offset.
+                    key_request.offset = None;
                 }
                 _ => {}
             }
@@ -686,13 +710,14 @@ mod tests {
         use dapi_grpc::platform::v0::SpecificKeys;
         use dpp::block::block_info::BlockInfo;
         use dpp::identity::accessors::IdentityGettersV0;
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::{
+            IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+        };
         use dpp::identity::{Identity, IdentityPublicKey, KeyID};
         use dpp::serialization::PlatformDeserializableUntrusted;
         use drive::drive::identity::key::fetch::KeyRequestType as DriveKeyRequestType;
         use drive::drive::Drive;
         use drive::grovedb::GroveDb;
-        use integer_encoding::VarInt;
 
         /// Stores an identity with `key_count` keys (ids `0..key_count`) and returns it.
         fn seed_identity(
@@ -769,66 +794,114 @@ mod tests {
             proof.grovedb_proof
         }
 
-        /// Verifies a specific-keys proof at the GroveDB level against the raw
-        /// (possibly duplicated) id list and returns the proved keys by id.
-        /// GroveDB proves the requested ids that do not exist implicitly, so
-        /// they do not show up in the result. The Drive key verifier is not
-        /// used here because it rejects proofs that carry absent keys.
+        /// Verifies the original specific-key selection through the Drive verifier used by
+        /// the SDK. Requested keys that do not exist are omitted from the decoded result.
         fn verify_specific_keys_proof(
             proof: &[u8],
             identity_id: [u8; 32],
             key_ids: Vec<KeyID>,
             platform_version: &PlatformVersion,
         ) -> BTreeMap<KeyID, IdentityPublicKey> {
-            let path_query = IdentityKeysRequest {
-                identity_id,
-                request_type: DriveKeyRequestType::SpecificKeys(key_ids),
-                limit: None,
-                offset: None,
-            }
-            .into_path_query();
-
-            let (_, proved_values) =
-                GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
-                    .expect("proof should verify");
-
-            proved_values
-                .into_iter()
-                .filter_map(|(_, _, maybe_element)| maybe_element)
-                .map(|element| {
-                    let bytes = element
-                        .into_item_bytes()
-                        .expect("key element should be an item");
-                    let key = IdentityPublicKey::deserialize_from_bytes_untrusted(&bytes)
-                        .expect("expected a serialized identity public key");
-                    (key.id(), key)
-                })
-                .collect()
+            let (_, identity) = Drive::verify_identity_keys_by_identity_id(
+                proof,
+                IdentityKeysRequest {
+                    identity_id,
+                    request_type: DriveKeyRequestType::SpecificKeys(key_ids),
+                    limit: None,
+                    offset: None,
+                },
+                false,
+                false,
+                false,
+                platform_version,
+            )
+            .expect("the original specific-key selection verifies");
+            identity.expect("partial identity").loaded_public_keys
         }
 
         /// Without a proof, GroveDB only fetches specific keys under a limit that covers every
         /// requested id. A smaller limit caps what is returned instead: the first keys that
-        /// exist, in id order, the same keys the proof with that limit proves.
+        /// exist, in encoded-key order, the same keys the proof with that limit proves.
         #[test]
         fn should_cap_an_unproved_specific_keys_request_like_its_proof() {
             let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-            let identity = seed_identity(&platform, 5, 44444, version);
+            let mut identity = Identity::random_identity(7, Some(44444), version)
+                .expect("expected a random identity");
+            for (old_id, new_id) in [(5, 200), (6, 300)] {
+                let mut key = identity
+                    .public_keys_mut()
+                    .remove(&old_id)
+                    .expect("seeded key");
+                key.set_id(new_id);
+                identity.public_keys_mut().insert(new_id, key);
+            }
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    version,
+                )
+                .expect("expected to insert identity");
             let identity_id = identity.id().to_buffer();
 
-            for (key_ids, limit) in [
-                (vec![0, 1, 2], 1),
-                (vec![0, 1, 2], 2),
-                (vec![9, 0, 7, 3], 1),
-                (vec![9, 0, 7, 3], 2),
-                (vec![9, 8], 1),
+            let stored_root = platform
+                .drive
+                .grove
+                .root_hash(None, &version.drive.grove_version)
+                .value
+                .expect("state root");
+            for (key_ids, limit, expected_ids) in [
+                (vec![0, 1, 2], 1, vec![0]),
+                (vec![0, 1, 2], 2, vec![0, 1]),
+                (vec![9, 0, 7, 3], 1, vec![0]),
+                (vec![9, 0, 7, 3], 2, vec![0, 3]),
+                (vec![9, 8], 1, vec![]),
+                (vec![200, 300], 1, vec![300]),
+                (vec![200, 300], 2, vec![300, 200]),
+                (vec![200, 300, 200, 0], 3, vec![0, 300, 200]),
+                (
+                    vec![200, 4, 300, 2, 0, 3, 1],
+                    10,
+                    vec![0, 1, 2, 3, 4, 300, 200],
+                ),
             ] {
                 let mut unproved =
                     specific_keys_request(identity_id.to_vec(), key_ids.clone(), false);
                 unproved.limit = Some(limit);
-                let fetched = fetched_keys(
-                    platform
-                        .query_keys_v0(unproved, &state, version)
-                        .expect("expected query to succeed"),
+                let response = platform
+                    .query_keys_v0(unproved, &state, version)
+                    .expect("query executes")
+                    .data
+                    .expect("query succeeds");
+                let Some(get_identity_keys_response_v0::Result::Keys(keys)) = response.result
+                else {
+                    panic!("an unproved request must return keys");
+                };
+                let fetched_bytes = keys.keys_bytes;
+                let fetched_keys: Vec<IdentityPublicKey> = fetched_bytes
+                    .iter()
+                    .map(|bytes| {
+                        IdentityPublicKey::deserialize_from_bytes_untrusted(bytes)
+                            .expect("returned public key deserializes")
+                    })
+                    .collect();
+                let expected_keys: Vec<IdentityPublicKey> = expected_ids
+                    .iter()
+                    .map(|id| {
+                        identity
+                            .public_keys()
+                            .get(id)
+                            .expect("seeded public key")
+                            .clone()
+                    })
+                    .collect();
+                assert_eq!(
+                    fetched_keys, expected_keys,
+                    "ids {key_ids:?}, limit {limit}"
                 );
 
                 let mut proved = specific_keys_request(identity_id.to_vec(), key_ids.clone(), true);
@@ -838,28 +911,59 @@ mod tests {
                         .query_keys_v0(proved, &state, version)
                         .expect("expected query to succeed"),
                 );
-                let path_query = IdentityKeysRequest {
+                let request = IdentityKeysRequest {
                     identity_id,
                     request_type: DriveKeyRequestType::SpecificKeys(key_ids.clone()),
                     limit: Some(limit as u16),
                     offset: None,
-                }
-                .into_path_query();
-                let (_, proved_values) =
-                    GroveDb::verify_query(&proof, &path_query, &version.drive.grove_version)
-                        .expect("proof should verify");
-                let proved_ids: Vec<KeyID> = proved_values
-                    .into_iter()
-                    .filter(|(_, _, element)| element.is_some())
-                    .map(|(_, key, _)| KeyID::decode_var(&key).expect("a key id").0)
-                    .collect();
-
+                };
+                let (drive_root, verified_identity) = Drive::verify_identity_keys_by_identity_id(
+                    &proof,
+                    request.clone(),
+                    false,
+                    false,
+                    false,
+                    version,
+                )
+                .expect("the original request verifies through the SDK's Drive verifier");
+                assert_eq!(drive_root, stored_root);
+                let verified_keys = verified_identity
+                    .expect("partial identity")
+                    .loaded_public_keys;
                 assert_eq!(
-                    fetched.keys().copied().collect::<Vec<_>>(),
-                    proved_ids,
-                    "ids {key_ids:?}, limit {limit}"
+                    verified_keys,
+                    expected_keys
+                        .iter()
+                        .map(|key| (key.id(), key.clone()))
+                        .collect::<BTreeMap<_, _>>()
+                );
+
+                let (proof_root, proved_values) = GroveDb::verify_query(
+                    &proof,
+                    &request.into_path_query(),
+                    &version.drive.grove_version,
+                )
+                .expect("proof should verify");
+                assert_eq!(proof_root, stored_root);
+                let proved_bytes: Vec<Vec<u8>> = proved_values
+                    .into_iter()
+                    .filter_map(|(_, _, element)| element)
+                    .map(|element| element.into_item_bytes().expect("public key item"))
+                    .collect();
+                assert_eq!(
+                    fetched_bytes, proved_bytes,
+                    "ordered key payloads, ids {key_ids:?}, limit {limit}"
                 );
             }
+            assert_eq!(
+                platform
+                    .drive
+                    .grove
+                    .root_hash(None, &version.drive.grove_version)
+                    .value
+                    .expect("state root"),
+                stored_root
+            );
 
             let mut zero = specific_keys_request(identity_id.to_vec(), vec![0, 1], false);
             zero.limit = Some(0);

@@ -82,6 +82,14 @@ impl<C> Platform<C> {
             order_ascending,
         };
 
+        if prove && offset.is_some_and(|offset| offset > 0) {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(
+                    "proof requests do not support positive offsets".to_string(),
+                ),
+            )));
+        }
+
         let response = if prove {
             let proof = match query.execute_with_proof(&self.drive, None, None, platform_version) {
                 Ok(result) => result.0,
