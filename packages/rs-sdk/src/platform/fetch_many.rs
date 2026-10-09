@@ -111,8 +111,10 @@ where
         + Send
         + Sync;
 
-    /// Wire-encoded request that hits the network.
-    type Request: TransportRequest;
+    /// Wire-encoded request that hits the network. Its response is `Clone`
+    /// so that a proof whose quorum key had to be fetched can be verified
+    /// again without asking the network a second time.
+    type Request: TransportRequest<Response: Clone>;
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///

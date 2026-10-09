@@ -47,6 +47,8 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
+mod quorum_key;
+
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 /// How many token configs fit in the cache.
@@ -179,6 +181,13 @@ fn address_list_from_seeds(
         }
     }
     list
+}
+
+/// Independent local height and clock anchors when a response arrives.
+#[derive(Clone, Copy)]
+pub(crate) struct MetadataArrival {
+    height: u64,
+    time_ms: u64,
 }
 
 /// Dash Platform SDK
@@ -368,12 +377,27 @@ impl Sdk {
         method_name: &str,
         metadata: &ResponseMetadata,
     ) -> Result<(), Error> {
+        self.verify_response_metadata_as_of(method_name, metadata, None)
+    }
+
+    /// [`Self::verify_response_metadata`], with optional arrival-time height
+    /// and clock anchors. A response verified after fetching its quorum key
+    /// is not made stale by the client's wait or by newer responses accepted
+    /// while it waited.
+    pub(crate) fn verify_response_metadata_as_of(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
         // Check the independent local-clock anchor before mutating the
         // response-derived height high-water mark.
         if let Some(time_tolerance) = metadata_time_tolerance_ms {
-            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let now = arrival
+                .map(|arrival| arrival.time_ms)
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as u64);
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
         if let Some(height_tolerance) = metadata_height_tolerance {
@@ -381,12 +405,32 @@ impl Sdk {
                 metadata,
                 height_tolerance,
                 Arc::clone(&(self.metadata_last_seen_height)),
+                arrival.map(|arrival| arrival.height),
             )?;
         };
 
         self.maybe_update_protocol_version(metadata.protocol_version);
 
         Ok(())
+    }
+
+    /// Accept the metadata of a response whose proof and signature were
+    /// verified: check it is fresh and learn its protocol version.
+    ///
+    /// Security invariant: call this only after the proof and its signature
+    /// were verified. It ratchets the protocol version from
+    /// `metadata.protocol_version`, which must not come from unverified
+    /// metadata.
+    pub(crate) fn accept_verified_metadata(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+        arrival: Option<MetadataArrival>,
+    ) -> Result<(), Error> {
+        self.verify_response_metadata_as_of(method_name, metadata, arrival)
+            .inspect_err(|err| {
+                tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
+            })
     }
 
     /// Update the stored protocol version if `received_version` is newer and known.
@@ -514,37 +558,30 @@ impl Sdk {
         method_name: &'static str,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
-        O::Request: Mockable,
+        O::Request: Mockable + Clone,
+        O::Response: Clone,
     {
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        let (object, metadata, proof) = match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
-                request,
-                response,
-                self.network,
-                self.version(),
-                &provider,
-            ),
+        match self.inner {
+            SdkInstance::Dapi { .. } => {
+                self.verify_fetching_quorum_key::<R, O>(request, response, &provider, method_name)
+                    .await
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let guard = mock.lock().await;
-                guard.parse_proof_with_metadata(request, response)
+                let verified = mock
+                    .lock()
+                    .await
+                    .parse_proof_with_metadata(request, response)?;
+                // Proof and signature verification (the `?`) must precede this
+                // call; see `accept_verified_metadata`.
+                self.accept_verified_metadata(method_name, &verified.1, None)?;
+                Ok(verified)
             }
-        }?;
-
-        // Security invariant: proof+signature verification above (the `?`) must
-        // precede this call, which ratchets the protocol version from the now-trusted
-        // `metadata.protocol_version`. Never reorder — the ratchet must not consume
-        // unverified metadata.
-        self.verify_response_metadata(method_name, &metadata)
-            .inspect_err(|err| {
-                tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
-            })?;
-
-        Ok((object, metadata, proof))
+        }
     }
 
     /// Return [ContextProvider] used by the SDK.
@@ -747,13 +784,17 @@ fn verify_metadata_height(
     metadata: &ResponseMetadata,
     tolerance: u64,
     last_seen_height: Arc<atomic::AtomicU64>,
+    seen_height: Option<u64>,
 ) -> Result<(), Error> {
     let received_height = metadata.height;
     // Linearize the response at an atomic max update, then reload so a racing
     // higher response that committed before this validation completes is also
-    // considered. A lower accepted response can never reduce the baseline.
+    // considered. A lower accepted response can never reduce the baseline. A
+    // response that waited before this check is judged against the mark when
+    // it arrived, `seen_height`, instead.
     let previous_height = last_seen_height.fetch_max(received_height, Ordering::AcqRel);
-    let expected_height = previous_height.max(last_seen_height.load(Ordering::Acquire));
+    let expected_height = seen_height
+        .unwrap_or_else(|| previous_height.max(last_seen_height.load(Ordering::Acquire)));
 
     if expected_height > tolerance && received_height < expected_height.saturating_sub(tolerance) {
         return Err(StaleNodeError::Height {
@@ -1661,8 +1702,12 @@ mod test {
 
         let last_seen_height = Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
 
-        let result =
-            super::verify_metadata_height(&metadata, tolerance, Arc::clone(&last_seen_height));
+        let result = super::verify_metadata_height(
+            &metadata,
+            tolerance,
+            Arc::clone(&last_seen_height),
+            None,
+        );
 
         assert_eq!(result.is_err(), expect_err);
         if result.is_ok() {
@@ -1685,6 +1730,7 @@ mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect("one block behind is within tolerance");
         assert_eq!(
@@ -1699,6 +1745,7 @@ mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect_err("a second rollback step must be compared with the high-water mark");
         assert_eq!(
@@ -1713,6 +1760,7 @@ mod test {
             },
             1,
             Arc::clone(&last_seen_height),
+            None,
         )
         .expect("a newer height should advance the high-water mark");
         assert_eq!(

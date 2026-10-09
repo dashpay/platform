@@ -6512,6 +6512,7 @@ dependencies = [
  "dash-context-provider",
  "dpp",
  "futures",
+ "gloo-timers",
  "hex",
  "lru",
  "reqwest 0.12.28",
@@ -6521,6 +6522,8 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "wasm-bindgen-futures",
+ "web-time",
 ]
 
 [[package]]
@@ -8934,6 +8937,7 @@ dependencies = [
  "wasm-bindgen-test",
  "wasm-dpp2",
  "wasm-sdk",
+ "web-time",
 ]
 
 [[package]]

@@ -109,6 +109,26 @@ pub enum Error {
     /// Context provider error
     #[error("context provider error: {0}")]
     ContextProviderError(#[from] dash_context_provider::ContextProviderError),
+
+    /// The context provider could not supply the public key of the quorum
+    /// that signed the proof. The quorum fields come from the response, which
+    /// is not verified yet; they say which key to look for, not that the
+    /// quorum exists.
+    #[error(
+        "quorum key unavailable for quorum {quorum_type}:{}: {error}",
+        hex::encode(.quorum_hash)
+    )]
+    QuorumKeyUnavailable {
+        /// Quorum type named by the proof
+        quorum_type: u32,
+        /// Quorum hash named by the proof
+        quorum_hash: [u8; 32],
+        /// Core chain locked height from the response metadata
+        core_chain_locked_height: u32,
+        /// Why the provider could not supply the key
+        #[source]
+        error: dash_context_provider::ContextProviderError,
+    },
 }
 
 impl From<drive::error::Error> for Error {
