@@ -56,7 +56,8 @@ export async function register(
   // preorderSalt against. From DPNS v3 the contract declares it: the params of
   // the salt's findBy function (the writer's id, the salt, the normalized label,
   // '.' and the parent domain name as sent). Before it, the salt and
-  // `${normalizedLabel}.${parentDomainName}`. The contract is the one the
+  // `${normalizedLabel}.${parentDomainName}`, or the label as sent for a
+  // top-level name. The contract is the one the
   // network stores now, not one cached before an upgrade changed it, whose hash
   // the domain could not reveal; fetching it also replaces the cached one, so
   // both documents are created against it.
@@ -65,6 +66,14 @@ export async function register(
   const domainSchema = dpnsContract ? dpnsContract.getDocumentSchema('domain') : undefined;
   const hashParams = domainSchema?.properties?.preorderSalt?.refersTo
     ?.findBy?.saltedDomainHash?.params;
+
+  // From DPNS v3 a new name's records.identity must be its owner
+  // (recordsIdentityIsOwner): refuse another before the preorder is paid
+  if (domainSchema?.propertyConstraints?.recordsIdentityIsOwner
+    && records.identity
+    && !Identifier.from(records.identity).equals(identity.getId())) {
+    throw new Error('records.identity must be the identity registering the name.');
+  }
 
   const paramBytes = (param: any): Buffer => {
     if (typeof param === 'object' && param !== null) {
@@ -93,7 +102,7 @@ export async function register(
       ? Buffer.concat(hashParams.map(paramBytes))
       : Buffer.concat([
         preorderSalt,
-        Buffer.from(`${normalizedLabel}.${parentDomainName}`),
+        Buffer.from(isSecondLevelDomain ? `${normalizedLabel}.${parentDomainName}` : label),
       ]),
   );
 

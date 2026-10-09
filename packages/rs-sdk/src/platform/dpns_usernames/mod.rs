@@ -71,8 +71,6 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
 fn salted_domain_hash(
     domain_document_type: DocumentTypeRef,
     owner_id: Identifier,
-    salt: [u8; 32],
-    normalized_label: &str,
     domain_properties: &BTreeMap<String, Value>,
 ) -> Result<[u8; 32], Error> {
     let Some(reference) = domain_document_type
@@ -80,6 +78,14 @@ fn salted_domain_hash(
         .get("preorderSalt")
         .and_then(|property| property.revealed_reference.as_ref())
     else {
+        let (Some(Value::Bytes32(salt)), Some(Value::Text(normalized_label))) = (
+            domain_properties.get("preorderSalt"),
+            domain_properties.get("normalizedLabel"),
+        ) else {
+            return Err(Error::Generic(
+                "a DPNS domain carries a 32-byte preorderSalt and a normalizedLabel".to_string(),
+            ));
+        };
         let mut salted_domain_buffer = salt.to_vec();
         salted_domain_buffer.extend(format!("{normalized_label}.dash").as_bytes());
         return Ok(hash_double(salted_domain_buffer));
@@ -298,13 +304,8 @@ impl Sdk {
         ]);
 
         // The salted domain hash the preorder commits to
-        let salted_domain_hash = salted_domain_hash(
-            domain_document_type,
-            identity_id,
-            salt,
-            &normalized_label,
-            &domain_properties,
-        )?;
+        let salted_domain_hash =
+            salted_domain_hash(domain_document_type, identity_id, &domain_properties)?;
 
         // Create preorder document
         let preorder_document = Document::V0(DocumentV0 {
@@ -728,7 +729,7 @@ mod tests {
         let domain = contract
             .document_type_for_name("domain")
             .expect("the DPNS contract has a domain type");
-        salted_domain_hash(domain, owner_id, SALT, "b0b", properties)
+        salted_domain_hash(domain, owner_id, properties)
     }
 
     fn sha256d(parts: &[&[u8]]) -> [u8; 32] {

@@ -31,7 +31,7 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::Identifier;
     use dpp::state_transition::StateTransition;
-    use dpp::util::hash::hash_double;
+    use drive_abci::test::helpers::dpns::dpns_salted_domain_hash;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
@@ -45,14 +45,15 @@ mod tests {
 
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
-    /// The `preorder` op of `owner_id` for `label` under `dash` salted with `salt`, and the
-    /// `domain` op revealing it. From protocol version 14 a domain must reveal its owner's
+    /// The `preorder` op of `owner_id` for `label` under `dash` salted with `salt`, hashed as
+    /// the DPNS contract of `platform_version` declares, and the `domain` op revealing it. From protocol version 14 a domain must reveal its owner's
     /// preorder made in an earlier block, so the preorder op runs in a block before the domain op.
     fn dpns_preorder_and_domain_ops(
         dpns_contract: &DataContract,
         owner_id: Identifier,
         label: &str,
         salt: [u8; 32],
+        platform_version: &PlatformVersion,
     ) -> (DocumentOp, DocumentOp) {
         let normalized_label = convert_to_homograph_safe_chars(label);
         let domain_values: BTreeMap<String, Value> = BTreeMap::from([
@@ -66,33 +67,8 @@ mod tests {
                 BTreeMap::from([("identity", Value::from(owner_id))]).into(),
             ),
         ]);
-        // The hash the domain's `preorderSalt` declares from DPNS v3 (the owner's id, the
-        // salt, the normalized label, "." and the parent); before it, of the salt and
-        // `<normalizedLabel>.dash`
-        let domain_type = dpns_contract
-            .document_type_for_name("domain")
-            .expect("expected the domain document type");
-        let declared_key = domain_type
-            .flattened_properties()
-            .get("preorderSalt")
-            .and_then(|property| property.revealed_reference.as_ref())
-            .and_then(|target| target.as_any_document_reference())
-            .and_then(|declaration| declaration.lookup)
-            .and_then(|lookup| lookup.hash_key())
-            .map(|(_, key)| key);
-        let salted_domain_hash = match declared_key {
-            Some(key) => {
-                key.key_value(domain_type, None, owner_id, &domain_values)
-                    .expect("expected the preorder hash")
-                    .0
-            }
-            None => {
-                let mut salted_domain_name = salt.to_vec();
-                salted_domain_name.extend(normalized_label.as_bytes());
-                salted_domain_name.extend(b".dash");
-                hash_double(salted_domain_name)
-            }
-        };
+        let salted_domain_hash =
+            dpns_salted_domain_hash(owner_id, &salt, &normalized_label, "dash", platform_version);
 
         let preorder_op = DocumentOp {
             contract: dpns_contract.clone(),
@@ -220,7 +196,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 epoch_time_length_s,
                 ..Default::default()
@@ -268,8 +243,13 @@ mod tests {
             .clone();
 
         let identity1_id = start_identities.first().unwrap().0.id();
-        let (preorder_op_1, domain_op_1) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
+        let (preorder_op_1, domain_op_1) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity1_id,
+            "quantum",
+            [1u8; 32],
+            platform_version,
+        );
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -349,7 +329,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -627,7 +606,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -687,10 +665,20 @@ mod tests {
 
         let identity1_id = start_identities.first().unwrap().0.id();
         let identity2_id = start_identities.last().unwrap().0.id();
-        let (preorder_op_1, domain_op_1) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
-        let (preorder_op_2, domain_op_2) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity2_id, "quantum", [2u8; 32]);
+        let (preorder_op_1, domain_op_1) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity1_id,
+            "quantum",
+            [1u8; 32],
+            platform_version,
+        );
+        let (preorder_op_2, domain_op_2) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity2_id,
+            "quantum",
+            [2u8; 32],
+            platform_version,
+        );
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -942,7 +930,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -1002,10 +989,20 @@ mod tests {
 
         let identity1_id = start_identities.first().unwrap().0.id();
         let identity2_id = start_identities.last().unwrap().0.id();
-        let (preorder_op_1, domain_op_1) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
-        let (preorder_op_2, domain_op_2) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity2_id, "quantum", [2u8; 32]);
+        let (preorder_op_1, domain_op_1) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity1_id,
+            "quantum",
+            [1u8; 32],
+            platform_version,
+        );
+        let (preorder_op_2, domain_op_2) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity2_id,
+            "quantum",
+            [2u8; 32],
+            platform_version,
+        );
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -1267,7 +1264,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -1472,7 +1468,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -1703,7 +1698,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -1775,10 +1769,20 @@ mod tests {
 
         let identity1_id = start_identities.first().unwrap().0.id();
         let identity2_id = start_identities.last().unwrap().0.id();
-        let (preorder_op_1, domain_op_1) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity1_id, "quantum", [1u8; 32]);
-        let (preorder_op_2, domain_op_2) =
-            dpns_preorder_and_domain_ops(&dpns_contract, identity2_id, "quantum", [2u8; 32]);
+        let (preorder_op_1, domain_op_1) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity1_id,
+            "quantum",
+            [1u8; 32],
+            platform_version,
+        );
+        let (preorder_op_2, domain_op_2) = dpns_preorder_and_domain_ops(
+            &dpns_contract,
+            identity2_id,
+            "quantum",
+            [2u8; 32],
+            platform_version,
+        );
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -1875,7 +1879,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -2080,7 +2083,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -2291,7 +2293,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },
@@ -2516,7 +2517,6 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
                 ..Default::default()
             },

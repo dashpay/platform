@@ -53,6 +53,7 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
+use crate::document::property_names::OWNER_ID;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::{Identifier, Value};
 use serde::ser::SerializeMap;
@@ -68,8 +69,6 @@ pub const LOOKUP_KEY_PARAMS: &str = "params";
 pub const LOOKUP_KEY_CONST: &str = "const";
 /// The param naming the value carrying the reference.
 pub const LOOKUP_KEY_REFERENCE_VALUE: &str = ".";
-/// The param naming the writer, the document's owner when it is created.
-pub const LOOKUP_KEY_WRITER: &str = "$ownerId";
 
 /// The most params a computed key may list, the bound meta-schema v3 puts on
 /// it.
@@ -111,7 +110,7 @@ impl Serialize for LookupKeyParam {
                 map.serialize_entry(LOOKUP_KEY_CONST, text)?;
                 map.end()
             }
-            LookupKeyParam::Writer => serializer.serialize_str(LOOKUP_KEY_WRITER),
+            LookupKeyParam::Writer => serializer.serialize_str(OWNER_ID),
         }
     }
 }
@@ -405,7 +404,7 @@ fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
         if path == LOOKUP_KEY_REFERENCE_VALUE {
             return Ok(LookupKeyParam::ReferenceValue);
         }
-        if path == LOOKUP_KEY_WRITER {
+        if path == OWNER_ID {
             return Ok(LookupKeyParam::Writer);
         }
         if path.is_empty() || path.len() > MAX_LOOKUP_KEY_PATH_LENGTH || path.starts_with('$') {
@@ -454,7 +453,7 @@ fn param_name(param: &LookupKeyParam) -> &str {
         LookupKeyParam::ReferenceValue => LOOKUP_KEY_REFERENCE_VALUE,
         LookupKeyParam::Property(path) => path,
         LookupKeyParam::Const(text) => text,
-        LookupKeyParam::Writer => LOOKUP_KEY_WRITER,
+        LookupKeyParam::Writer => OWNER_ID,
     }
 }
 

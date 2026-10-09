@@ -1,15 +1,26 @@
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use grovedb::operations::delete::DeleteOptions;
-use grovedb::{Element, Transaction};
-use std::borrow::Cow;
+use grovedb::{BackwardsReferences, Element, Transaction};
+
+/// Whether a contract update lays `document_type` out as a registration does, with nothing of
+/// it outside its own subtree: an `indexOnly` type has no primary key tree when registered, a
+/// contested index keeps vote polls, moderator deletions keep removal records and a ttl keeps
+/// expiration entries, none of which a rebuild deletes or lays out.
+fn rebuilds_like_a_registration(document_type: DocumentTypeRef) -> bool {
+    !document_type.index_only()
+        && document_type.find_contested_index().is_none()
+        && !document_type.documents_can_be_deleted_by_moderators()
+        && document_type.documents_ttl_seconds().is_none()
+}
 
 impl Drive {
     /// Re-stores `contract` over the stored version of the same contract, as `apply_contract`
@@ -17,7 +28,8 @@ impl Drive {
     /// its whole subtree, every document and index entry under it, is deleted, and the update
     /// then creates the type as it creates a type a contract update adds, which is how a
     /// contract registration creates it too. The rebuilt types end up holding no documents,
-    /// laid out exactly as on a chain that registered `contract` directly.
+    /// laid out exactly as on a chain that registered `contract` directly. A type with trees
+    /// outside its own subtree ([`rebuilds_like_a_registration`]) is refused.
     ///
     /// For a protocol upgrade that changes a system contract's document type in a way a
     /// contract update cannot follow, such as replacing a unique index; the documents deleted
@@ -29,7 +41,6 @@ impl Drive {
         contract: &DataContract,
         rebuilt_document_types: &[&str],
         block_info: &BlockInfo,
-        storage_flags: Option<Cow<StorageFlags>>,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -54,14 +65,22 @@ impl Drive {
         // creates each of them as a type the update adds
         let mut original_contract = stored_contract;
         for document_type_name in rebuilt_document_types {
-            if original_contract
+            let stored_type = original_contract
                 .document_types_mut()
-                .remove(*document_type_name)
-                .is_none()
-                || !contract.has_document_type_for_name(document_type_name)
-            {
+                .remove(*document_type_name);
+            let (Some(stored_type), Ok(new_type)) = (
+                stored_type,
+                contract.document_type_for_name(document_type_name),
+            ) else {
                 return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "a rebuilt document type must be in both the stored and the new contract",
+                )));
+            };
+            if !rebuilds_like_a_registration(stored_type.as_ref())
+                || !rebuilds_like_a_registration(new_type)
+            {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a rebuilt document type may keep no trees outside its own subtree",
                 )));
             }
             self.grove
@@ -71,6 +90,8 @@ impl Drive {
                     Some(DeleteOptions {
                         allow_deleting_non_empty_trees: true,
                         deleting_non_empty_trees_returns_error: false,
+                        // Drive stores no backward-reference participants
+                        backwards_references: BackwardsReferences::DontCheck,
                         ..Default::default()
                     }),
                     Some(transaction),
@@ -80,9 +101,10 @@ impl Drive {
                 .map_err(Error::from)?;
         }
 
+        // A system contract, stored without storage flags
         let contract_element = Element::Item(
             contract.serialize_to_bytes_with_platform_version(platform_version)?,
-            StorageFlags::map_cow_to_some_element_flags(storage_flags),
+            None,
         );
         let mut drive_operations = vec![];
         self.update_contract_add_operations(
@@ -166,7 +188,6 @@ mod tests {
                 &dpns_v3,
                 &["preorder"],
                 &BlockInfo::default(),
-                None,
                 &transaction,
                 platform_version,
             )

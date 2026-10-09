@@ -2,7 +2,6 @@
 #[cfg(test)]
 pub mod contract_groups;
 /// DPNS fixtures
-#[cfg(test)]
 pub mod dpns;
 /// Test helpers
 #[cfg(test)]

@@ -66,7 +66,11 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
   "documentsMutable": false,
   "canBeDeleted": "onlyWhenConsumed",
   "indices": [
-    { "name": "saltedHash", "properties": [{ "saltedDomainHash": "asc" }], "unique": true }
+    {
+      "name": "ownerAndSaltedHash",
+      "properties": [{ "$ownerId": "asc" }, { "saltedDomainHash": "asc" }],
+      "unique": true
+    }
   ],
   "properties": {
     "saltedDomainHash": {

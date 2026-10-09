@@ -1241,169 +1241,165 @@ fn parse_reference_target(
     refers_to_map: &BTreeMap<String, &Value>,
     reference_type: &str,
 ) -> Result<DocumentPropertyReferenceTarget, DataContractError> {
-    let target =
-        match reference_type {
-            "identity" => DocumentPropertyReferenceTarget::Identity,
-            "contract" => DocumentPropertyReferenceTarget::Contract {
-                contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
-            },
-            "token" => DocumentPropertyReferenceTarget::Token,
-            // A moderated document is found by the value as its id alone (the keys
-            // refused `findBy` and `inList`), with the declaration shape the other
-            // two share; whether the referenced document type leaves its documents
-            // only to a moderator's recorded removal is checked against state at
-            // contract registration
-            //
-            // A writer gate (a `where` entry valued `"$ownerId"`) is asked about on
-            // every replace, and once a moderator removes the document only its owner
-            // and its id are sure to be in its removal record (the fields a type keeps,
-            // `moderatorAbilities.deleteKeepsFields`, are left out where the document
-            // held none, and the type may be another contract's): a gate on any other
-            // property could refuse every later replace, for good on a property that
-            // can not be repointed or cleared, so it may compare only those two
-            "moderatedDocument" => {
-                let (contract_id, document_type_name) =
-                    parse_document_reference_type(refers_to_map, reference_type)?;
-                let property_agreement = parse_where(refers_to_map, reference_type)?;
-                if let Some(referenced_property) = property_agreement.iter().find_map(
-                    |(referring_property, referenced_property)| {
+    let target = match reference_type {
+        "identity" => DocumentPropertyReferenceTarget::Identity,
+        "contract" => DocumentPropertyReferenceTarget::Contract {
+            contract_requirements: parse_contract_reference_requirements(refers_to_map)?,
+        },
+        "token" => DocumentPropertyReferenceTarget::Token,
+        // A moderated document is found by the value as its id alone (the keys
+        // refused `findBy` and `inList`), with the declaration shape the other
+        // two share; whether the referenced document type leaves its documents
+        // only to a moderator's recorded removal is checked against state at
+        // contract registration
+        //
+        // A writer gate (a `where` entry valued `"$ownerId"`) is asked about on
+        // every replace, and once a moderator removes the document only its owner
+        // and its id are sure to be in its removal record (the fields a type keeps,
+        // `moderatorAbilities.deleteKeepsFields`, are left out where the document
+        // held none, and the type may be another contract's): a gate on any other
+        // property could refuse every later replace, for good on a property that
+        // can not be repointed or cleared, so it may compare only those two
+        "moderatedDocument" => {
+            let (contract_id, document_type_name) =
+                parse_document_reference_type(refers_to_map, reference_type)?;
+            let property_agreement = parse_where(refers_to_map, reference_type)?;
+            if let Some(referenced_property) =
+                property_agreement
+                    .iter()
+                    .find_map(|(referring_property, referenced_property)| {
                         (is_referring_system_agreement_property(referring_property)
                             && !matches!(referenced_property.as_str(), OWNER_ID | ID))
                         .then_some(referenced_property)
-                    },
-                ) {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "moderatedDocument refersTo where compares the writer with \
+                    })
+            {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "moderatedDocument refersTo where compares the writer with \
                      \"{referenced_property}\": a writer is checked on every replace, and \
                      once a moderator removes the document only its $ownerId and $id are sure \
                      to be in its removal record, so the writer may be compared with those \
                      alone"
-                    )));
-                }
-                DocumentPropertyReferenceTarget::ModeratedDocument {
-                    contract_id,
-                    document_type_name,
-                    property_agreement,
-                }
+                )));
             }
-            // The two document targets share one declaration shape; they differ in
-            // whether the referenced document type must forbid deletion, checked
-            // against state at contract registration. The document is found by the
-            // value as its id, by `findBy` through a unique index, or, for a list
-            // the value must be in (`inList`, permanent only), by a `findBy` naming
-            // its `$id` from another property
-            document_target @ ("permanentDocument" | "deletableDocument") => {
-                let (contract_id, document_type_name) =
-                    parse_document_reference_type(refers_to_map, document_target)?;
+            DocumentPropertyReferenceTarget::ModeratedDocument {
+                contract_id,
+                document_type_name,
+                property_agreement,
+            }
+        }
+        // The two document targets share one declaration shape; they differ in
+        // whether the referenced document type must forbid deletion, checked
+        // against state at contract registration. The document is found by the
+        // value as its id, by `findBy` through a unique index, or, for a list
+        // the value must be in (`inList`, permanent only), by a `findBy` naming
+        // its `$id` from another property
+        document_target @ ("permanentDocument" | "deletableDocument") => {
+            let (contract_id, document_type_name) =
+                parse_document_reference_type(refers_to_map, document_target)?;
 
-                let property_agreement = parse_where(refers_to_map, document_target)?;
-                let find_by = refers_to_map.get(property_names::FIND_BY);
+            let property_agreement = parse_where(refers_to_map, document_target)?;
+            let find_by = refers_to_map.get(property_names::FIND_BY);
 
-                if refers_to_map.contains_key(property_names::IN_LIST) {
-                    let Some(find_by) = find_by else {
-                        return Err(DataContractError::InvalidContractStructure(
+            if refers_to_map.contains_key(property_names::IN_LIST) {
+                let Some(find_by) = find_by else {
+                    return Err(DataContractError::InvalidContractStructure(
                         "permanentDocument refersTo inList needs findBy { \"$id\": <the property \
                          holding the document's id> }: the value is an element of the list, not \
                          the id of the document holding it"
                             .to_string(),
                     ));
-                    };
-                    return Ok(DocumentPropertyReferenceTarget::ListElement(
-                        parse_list_element_reference(
-                            refers_to_map,
-                            find_by,
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        )?,
-                    ));
-                }
-
-                // A lookup is its own variant, so an id reference keeps its shape
-                // (and its encoding in the reference errors)
-                let Some(find_by) = find_by else {
-                    return Ok(match document_target {
-                        "permanentDocument" => DocumentPropertyReferenceTarget::PermanentDocument {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        },
-                        _ => DocumentPropertyReferenceTarget::DeletableDocument {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        },
-                    });
                 };
-                let lookup = parse_find_by(refers_to_map, find_by)?;
-                match document_target {
-                    "permanentDocument" => {
-                        // A permanent document is never deleted, so there is
-                        // nothing to consume
-                        if lookup.consume {
-                            return Err(DataContractError::InvalidContractStructure(
-                                "permanentDocument refersTo cannot consume the document findBy \
+                return Ok(DocumentPropertyReferenceTarget::ListElement(
+                    parse_list_element_reference(
+                        refers_to_map,
+                        find_by,
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    )?,
+                ));
+            }
+
+            // A lookup is its own variant, so an id reference keeps its shape
+            // (and its encoding in the reference errors)
+            let Some(find_by) = find_by else {
+                return Ok(match document_target {
+                    "permanentDocument" => DocumentPropertyReferenceTarget::PermanentDocument {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    },
+                    _ => DocumentPropertyReferenceTarget::DeletableDocument {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                    },
+                });
+            };
+            let lookup = parse_find_by(refers_to_map, find_by)?;
+            match document_target {
+                "permanentDocument" => {
+                    // A permanent document is never deleted, so there is
+                    // nothing to consume
+                    if lookup.consume {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "permanentDocument refersTo cannot consume the document findBy \
                              finds, which is never deleted: consume needs a deletableDocument \
                              reference"
-                                    .to_string(),
-                            ));
-                        }
-                        DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                            lookup,
-                        }
+                                .to_string(),
+                        ));
                     }
-                    _ => {
-                        // Consuming deletes the found document, so only its
-                        // owner's own reveal may: a `$ownerId` entry of `where`, or of
-                        // `findBy` keying the found document's owner by the writer,
-                        // makes the writer the found document's owner
-                        let owner_is_writer = property_agreement.get(OWNER_ID).map(String::as_str)
-                            == Some(OWNER_ID)
-                            || matches!(lookup.keys.get(OWNER_ID), Some(LookupKeySource::OwnerId));
-                        if lookup.consume && !owner_is_writer {
-                            return Err(DataContractError::InvalidContractStructure(
-                                "deletableDocument refersTo may consume the document findBy finds \
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                        lookup,
+                    }
+                }
+                _ => {
+                    // Consuming deletes the found document, so only its
+                    // owner's own reveal may
+                    if lookup.consume && !writer_owns_found_document(&property_agreement, &lookup) {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "deletableDocument refersTo may consume the document findBy finds \
                              only when the writer owns it: declare the where entry \
                              \"$ownerId\": \"$ownerId\", or the findBy entry \
                              \"$ownerId\": \"$ownerId\""
-                                    .to_string(),
-                            ));
-                        }
-                        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                            lookup,
-                        }
+                                .to_string(),
+                        ));
+                    }
+                    DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                        contract_id,
+                        document_type_name,
+                        property_agreement,
+                        lookup,
                     }
                 }
             }
-            "identityPublicKey" => {
-                let key_id_property = refers_to_map
-                    .get_str(property_names::KEY_ID_PROPERTY)
-                    .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+        }
+        "identityPublicKey" => {
+            let key_id_property = refers_to_map
+                .get_str(property_names::KEY_ID_PROPERTY)
+                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
 
-                if key_id_property.is_empty() || key_id_property.len() > MAX_PROPERTY_PATH_LENGTH {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "identityPublicKey refersTo keyIdProperty must be between 1 and \
-                     {MAX_PROPERTY_PATH_LENGTH} characters"
-                    )));
-                }
-
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property: key_id_property.to_string(),
-                    key_requirements: parse_identity_key_reference_requirements(refers_to_map)?,
-                }
-            }
-            other => {
+            if key_id_property.is_empty() || key_id_property.len() > MAX_PROPERTY_PATH_LENGTH {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "invalid refersTo type {other}"
-                )))
+                    "identityPublicKey refersTo keyIdProperty must be between 1 and \
+                     {MAX_PROPERTY_PATH_LENGTH} characters"
+                )));
             }
-        };
+
+            DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property: key_id_property.to_string(),
+                key_requirements: parse_identity_key_reference_requirements(refers_to_map)?,
+            }
+        }
+        other => {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "invalid refersTo type {other}"
+            )))
+        }
+    };
 
     Ok(target)
 }
@@ -1879,6 +1875,16 @@ pub(super) fn parse_doctype_reference(
         }
     }
     Ok(Some(target))
+}
+
+/// Whether a lookup reference makes the writer the found document's owner: a `$ownerId`
+/// entry of `where`, or of `findBy` keying the found document's owner by the writer.
+fn writer_owns_found_document(
+    property_agreement: &BTreeMap<String, String>,
+    lookup: &DocumentReferenceLookup,
+) -> bool {
+    property_agreement.get(OWNER_ID).map(String::as_str) == Some(OWNER_ID)
+        || matches!(lookup.keys.get(OWNER_ID), Some(LookupKeySource::OwnerId))
 }
 
 /// The `findBy` of a document reference, `find_by_value`: properties of the

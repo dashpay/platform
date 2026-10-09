@@ -14,8 +14,17 @@ const sha256d = (data: Buffer): Buffer => {
 };
 
 // The `domain` schema of DPNS v3: the salt reveals the hash of the writer's id,
-// the salt, the normalized label, '.' and the parent domain name
+// the salt, the normalized label, '.' and the parent domain name, and a new
+// name's records.identity is its owner
 const dpnsV3DomainSchema = () => ({
+  propertyConstraints: {
+    recordsIdentityIsOwner: {
+      ifThen: [
+        { equal: ['$transferredAt', '$createdAt'] },
+        { equal: ['records.identity', '$ownerId'] },
+      ],
+    },
+  },
   properties: {
     preorderSalt: {
       refersTo: {
@@ -85,8 +94,9 @@ describe('Platform', () => {
 
         expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
         expect(platformMock.documents.create.getCall(0).args[1]).to.deep.equal(identityMock);
+        // sha256d(salt ++ 'Dash'): a top-level name hashes its label as sent
         expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.deep.equal(
-          'dad5808c709bec62b65e607b38846d4fe4080b251cb917a2221c81fb7c3b5f5e',
+          'f6e0b46fa0f455f0b8feabdd25d31e65ea5dbb5f6a9bf34d339099917cf3951b',
         );
 
         expect(platformMock.documents.create.getCall(1).args).to.have.deep.members([
@@ -243,16 +253,40 @@ describe('Platform', () => {
         expect(apps.get('dpns').contract).to.equal(storedContract);
       });
 
-      it('should fail if DPNS app have no contract set up', async () => {
-        delete platformMock.client.getApps().get('dpns').contractId;
+      it('should refuse records.identity other than the registering identity under DPNS v3', async () => {
+        identityMock.getId.returns(await generateRandomIdentifier());
+        platformMock.contracts.get.resolves({
+          getDocumentSchema: dpnsV3DomainSchema,
+        });
 
+        let error;
+        try {
+          await register.call(platformMock, 'User.dash', {
+            identity: await generateRandomIdentifier(),
+          }, identityMock);
+        } catch (e: any) {
+          error = e;
+        }
+
+        expect(error.message).to.equal('records.identity must be the identity registering the name.');
+        expect(platformMock.documents.create.called).to.equal(false);
+        expect(platformMock.documents.broadcast.called).to.equal(false);
+      });
+
+      it('should fail if DPNS app is not set up', async () => {
+        platformMock.client.getApps = () => new ClientApps({});
+
+        let error;
         try {
           await register.call(platformMock, 'user.dash', {
             identity: await generateRandomIdentifier(),
           }, identityMock);
         } catch (e: any) {
-          expect(e.message).to.equal('DPNS is required to register a new name.');
+          error = e;
         }
+
+        expect(error.message).to.equal('DPNS is required to register a new name.');
+        expect(platformMock.documents.create.called).to.equal(false);
       });
     });
   });

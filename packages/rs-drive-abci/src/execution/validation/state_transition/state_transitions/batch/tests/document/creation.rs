@@ -22,7 +22,6 @@ mod creation_tests {
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::util::hash::hash_double;
     use crate::test::helpers::dpns::dpns_salted_domain_hash;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
@@ -65,6 +64,12 @@ mod creation_tests {
     use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
+
+    /// The block after the one holding the preorders: from protocol version 14 a domain
+    /// reveals a preorder made in an earlier block.
+    fn block_after_the_preorders() -> BlockInfo {
+        BlockInfo::default_with_height(1)
+    }
 
     #[tokio::test]
     async fn test_document_creation() {
@@ -752,12 +757,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 14)
-        assert_eq!(
-            domain.documents_can_be_deleted(),
-            platform_version.system_data_contracts.dpns < 3
-        );
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -976,9 +976,7 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -1237,12 +1235,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 14)
-        assert_eq!(
-            domain.documents_can_be_deleted(),
-            platform_version.system_data_contracts.dpns < 3
-        );
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -1384,9 +1377,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -1677,9 +1668,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2105,12 +2094,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 14)
-        assert_eq!(
-            domain.documents_can_be_deleted(),
-            platform_version.system_data_contracts.dpns < 3
-        );
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2251,9 +2235,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2401,12 +2383,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 14)
-        assert_eq!(
-            domain.documents_can_be_deleted(),
-            platform_version.system_data_contracts.dpns < 3
-        );
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2822,9 +2799,7 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2848,9 +2823,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_3.clone()],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2877,9 +2850,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_4],
                 &platform_state,
-                // The block after the preorders: from protocol version 14 a domain
-                // reveals a preorder made in an earlier block
-                &BlockInfo::default_with_height(1),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,

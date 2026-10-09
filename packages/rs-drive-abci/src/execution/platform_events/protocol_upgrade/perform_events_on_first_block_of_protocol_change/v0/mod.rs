@@ -705,9 +705,10 @@ impl<C> Platform<C> {
     /// `profile` document type (DIP-33), the withdrawals contract whose v2
     /// schema admits the terminal FAILED value of the `status` property, the
     /// DPNS contract whose v3 schema checks a domain create with keywords
-    /// instead of most of its data trigger, and register the app-connect contract that carries the wallet-to-app login
-    /// handshake and the moderation charters contract that elected moderation
-    /// teams apply through.
+    /// instead of most of its data trigger, and register the app-connect
+    /// contract that carries the wallet-to-app login handshake and the
+    /// moderation charters contract that elected moderation teams apply
+    /// through.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
@@ -741,20 +742,15 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // DPNS contract v3: a domain create generates its normalized names, reveals and
-        // deletes the writer's own preorder from an earlier block, and holds its identity
-        // record to its owner, all by schema keywords; the create data trigger keeps only
-        // the parent domain checks. Its preorders are unique per owner, which no contract
-        // update can turn a unique index into, so the `preorder` type is rebuilt: every
-        // preorder made before this block is deleted, unrefunded, and the type laid out as
-        // a fresh chain registering DPNS v3 lays it out.
+        // DPNS contract v3 (v14 note 90): its preorders are unique per owner, which no
+        // contract update can turn a unique index into, so the `preorder` type is rebuilt
+        // and every preorder made before this block is deleted, unrefunded.
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
 
         self.drive.apply_contract_rebuilding_document_types(
             &dpns_contract,
             &[preorder::NAME],
             block_info,
-            None,
             transaction,
             platform_version,
         )?;

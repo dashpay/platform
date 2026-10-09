@@ -16,8 +16,8 @@ mod dpns_v3_tests {
     };
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::dpns::dpns_salted_domain_hash;
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TempPlatform;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::state::data_trigger::DataTriggerError;
@@ -370,30 +370,28 @@ mod dpns_v3_tests {
             .pop()
         }
 
-        /// The stored preorder `preorder` is, found by its unique index: its owner
-        /// and salted hash from DPNS v3, its salted hash before it.
+        /// The stored preorder `preorder` is, found by its id.
         fn stored_preorder(&self, preorder: &Document) -> Option<Document> {
-            let salted_domain_hash = preorder
-                .properties()
-                .get("saltedDomainHash")
-                .expect("expected the preorder's salted hash")
-                .clone();
-            if self.platform_version.system_data_contracts.dpns >= 3 {
-                self.query(
-                    "preorder",
-                    &[
-                        (
-                            "$ownerId",
-                            Value::Identifier(preorder.owner_id().to_buffer()),
-                        ),
-                        ("saltedDomainHash", salted_domain_hash),
-                    ],
+            let dpns = self.dpns();
+            let document_type = dpns
+                .document_type_for_name("preorder")
+                .expect("expected the preorder document type");
+            self.platform
+                .drive
+                .query_documents(
+                    DriveDocumentQuery::new_primary_key_single_item_query(
+                        &dpns,
+                        document_type,
+                        preorder.id(),
+                    ),
+                    None,
+                    false,
+                    None,
+                    Some(self.platform_version.protocol_version),
                 )
+                .expect("expected to query the preorder")
+                .documents_owned()
                 .pop()
-            } else {
-                self.query("preorder", &[("saltedDomainHash", salted_domain_hash)])
-                    .pop()
-            }
         }
 
         /// Runs the protocol version 14 activation at block `height` on a
@@ -1019,10 +1017,14 @@ mod dpns_v3_tests {
         // The rebuilt preorder type holds nothing and is laid out as a chain born at
         // protocol version 14 lays it out
         assert!(fixture.stored_preorder(&pending).is_none());
-        let born_at_14 = DpnsFixture::new(14);
+        // A genesis state is all such a chain needs: no identities
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
         assert_eq!(
             preorder_type_layout(&fixture.platform, fixture.platform_version),
-            preorder_type_layout(&born_at_14.platform, born_at_14.platform_version)
+            preorder_type_layout(&born_at_14, fixture.platform_version)
         );
 
         // Alice's pending preorder is gone, so she preorders again
@@ -1191,25 +1193,14 @@ mod dpns_v3_tests {
             core_height: 42,
             epoch: Default::default(),
         };
-        let mut ended_state = platform.state.load().as_ref().clone();
-        ended_state.set_last_committed_block_info(Some(
-            ExtendedBlockInfoV0 {
-                basic_info: block_info,
-                app_hash: platform
-                    .drive
-                    .grove
-                    .root_hash(None, &platform_version.drive.grove_version)
-                    .unwrap()
-                    .expect("expected the root hash"),
-                quorum_hash: [0u8; 32],
-                block_id_hash: [0u8; 32],
-                proposer_pro_tx_hash: [0u8; 32],
-                signature: [0u8; 96],
-                round: 0,
-            }
-            .into(),
-        ));
-        platform.state.store(Arc::new(ended_state));
+        fast_forward_to_block(
+            &platform,
+            block_info.time_ms,
+            block_info.height,
+            42,
+            0,
+            false,
+        );
         let platform_state = platform.state.load();
         let transaction = platform.drive.grove.start_transaction();
         platform

@@ -161,11 +161,10 @@ pub struct DocumentReferenceLookup {
     pub minimum_age_blocks: Option<u32>,
     /// With a computed key only: whether the create deletes the document the
     /// key found (the reference's `consume`, beside `findBy`), in the same
-    /// state transition. Only a `deletableDocument` reference whose `where`
-    /// pairs the found document's `$ownerId` with the writer's may consume,
-    /// into a
-    /// document type of the declaring contract whose documents their owner
-    /// may delete.
+    /// state transition. Only a `deletableDocument` reference whose `where` or
+    /// `findBy` pairs the found document's `$ownerId` with the writer's may
+    /// consume, into a document type of the declaring contract whose documents
+    /// their owner may delete.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub consume: bool,
 }
@@ -329,8 +328,9 @@ impl DocumentReferenceLookup {
     /// assemble the same key from the stored document; it may not be the
     /// reference property itself, whose value is `"."`. A `"$ownerId"` source
     /// needs a declaring type whose documents cannot be transferred or
-    /// traded: the reference is validated when the document is written, and
-    /// a transfer or a purchase would move the writer part of the key
+    /// traded, unless the lookup holds a computed key (judged on the create
+    /// alone, below): the reference is validated when the document is written,
+    /// and a transfer or a purchase would move the writer part of the key
     /// without any write, leaving a validated reference that finds nothing.
     /// With that, every part of the referring side's key changes only through
     /// a replace, which re-validates the reference.

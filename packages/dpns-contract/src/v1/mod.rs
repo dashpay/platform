@@ -21,10 +21,6 @@ pub mod document_types {
 
     pub mod preorder {
         pub const NAME: &str = "preorder";
-
-        pub mod properties {
-            pub const SALTED_DOMAIN_HASH: &str = "saltedDomainHash";
-        }
     }
 }
 

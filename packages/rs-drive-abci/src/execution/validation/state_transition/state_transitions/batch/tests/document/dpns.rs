@@ -2889,7 +2889,6 @@ mod dpns_username_transfer_tests {
     async fn test_dpns_username_replace_and_delete_still_rejected() {
         run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            false,
         )
         .await;
     }
@@ -2897,13 +2896,12 @@ mod dpns_username_transfer_tests {
     /// PROTOCOL_VERSION_13: DPNS v2's `domain` sets `canBeDeleted: true`, so
     /// `Delete` is stopped only by the reject data trigger.
     #[tokio::test]
-    async fn test_dpns_username_replace_and_delete_still_rejected_protocol_version_13() {
-        run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(13, true).await;
+    async fn should_reject_dpns_username_replace_and_delete_at_protocol_version_13() {
+        run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(13).await;
     }
 
     async fn run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(
         protocol_version: ProtocolVersion,
-        delete_rejected_by_data_trigger: bool,
     ) {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
@@ -2914,6 +2912,8 @@ mod dpns_username_transfer_tests {
         let platform_version = platform_state
             .current_platform_version()
             .expect("expected to get current platform version");
+        // DPNS v2's `domain` may be deleted, so only the reject data trigger stops it
+        let delete_rejected_by_data_trigger = platform_version.system_data_contracts.dpns < 3;
 
         let mut rng = StdRng::seed_from_u64(439);
 
