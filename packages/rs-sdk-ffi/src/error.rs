@@ -205,6 +205,20 @@ fn consensus_code_of(error: &dash_sdk::Error) -> Option<u32> {
     }
 }
 
+/// Whether the trusted quorum source failed, including retry exhaustion
+/// around its original SDK error.
+fn is_quorum_source_unavailable(error: &dash_sdk::Error) -> bool {
+    match error {
+        dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_),
+        ) => true,
+        dash_sdk::Error::NoAvailableAddressesToRetry(last_error) => {
+            is_quorum_source_unavailable(last_error)
+        }
+        _ => false,
+    }
+}
+
 impl FFIError {
     /// `source` with the message `"{context}: {source}"`, keeping the SDK
     /// error so its consensus code and quorum-source category reach the host.
@@ -221,12 +235,7 @@ impl From<FFIError> for DashSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKCallFailed { source, .. } => {
-                let code = if matches!(
-                    source,
-                    dash_sdk::Error::ContextProviderError(
-                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_)
-                    )
-                ) {
+                let code = if is_quorum_source_unavailable(source) {
                     DashSDKErrorCode::NetworkError
                 } else {
                     DashSDKErrorCode::InternalError
@@ -261,12 +270,7 @@ impl From<FFIError> for DashSDKError {
                     // InternalError and surface in the UI as a misleading
                     // "Internal Error" for what is really a network problem.
                     (DashSDKErrorCode::NetworkError, error_str)
-                } else if matches!(
-                    sdk_err,
-                    dash_sdk::Error::ContextProviderError(
-                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_)
-                    )
-                ) {
+                } else if is_quorum_source_unavailable(sdk_err) {
                     // The quorum service that vouches for quorum keys gave no
                     // answer, so a proof could not be checked: transient and
                     // network-side, whatever words its message happens to hold.
@@ -397,6 +401,8 @@ mod tests {
         assert_eq!(classify(err), DashSDKErrorCode::NetworkError);
     }
 
+    /// Contextual typed-write failures retain the quorum source's network
+    /// category and the exact operation context shown to the host.
     #[test]
     fn should_preserve_wrapped_quorum_source_failures_as_network_errors() {
         let source = dash_sdk::Error::ContextProviderError(
@@ -419,17 +425,61 @@ mod tests {
         assert!(message.contains("Failed to put identity and wait"));
     }
 
+    /// Other contextual SDK failures keep their existing classification,
+    /// even when their message resembles a network failure.
     #[test]
     fn should_keep_other_wrapped_sdk_failures_as_internal_errors() {
-        let error = FFIError::sdk_call_failed(
-            "Failed to put identity and wait",
+        for source in [
             dash_sdk::Error::Generic("connection timeout".to_string()),
-        );
-        let converted: DashSDKError = error.into();
-        unsafe {
-            let _ = CString::from_raw(converted.message);
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(dash_sdk::Error::Generic(
+                "connection timeout".to_string(),
+            ))),
+        ] {
+            let error = FFIError::sdk_call_failed("Failed to put identity and wait", source);
+            let converted: DashSDKError = error.into();
+            unsafe {
+                let _ = CString::from_raw(converted.message);
+            }
+            assert_eq!(converted.code, DashSDKErrorCode::InternalError);
         }
-        assert_eq!(converted.code, DashSDKErrorCode::InternalError);
+    }
+
+    /// Retry exhaustion preserves trusted-source attribution with and
+    /// without contextual wrapping, including nested retry envelopes.
+    #[test]
+    fn should_preserve_retry_wrapped_quorum_source_failures_as_network_errors() {
+        for contextual in [false, true] {
+            let source = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                    dash_sdk::Error::ContextProviderError(
+                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                            "trusted quorum source is offline".to_string(),
+                        ),
+                    ),
+                )),
+            ));
+            let direct_message = source.to_string();
+            let error = if contextual {
+                FFIError::sdk_call_failed("Failed to put identity and wait", source)
+            } else {
+                FFIError::SDKError(source)
+            };
+            let expected_message = if contextual {
+                error.to_string()
+            } else {
+                direct_message
+            };
+            let converted: DashSDKError = error.into();
+            let message = unsafe {
+                let message = CStr::from_ptr(converted.message)
+                    .to_string_lossy()
+                    .into_owned();
+                let _ = CString::from_raw(converted.message);
+                message
+            };
+            assert_eq!(converted.code, DashSDKErrorCode::NetworkError);
+            assert_eq!(message, expected_message);
+        }
     }
 
     #[test]
