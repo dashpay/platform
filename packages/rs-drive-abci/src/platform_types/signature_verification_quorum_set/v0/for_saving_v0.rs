@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn should_restore_current_and_previous_quorums_from_frozen_v0_storage() {
-        let bytes = hex::decode(include_str!("fixtures/quorum-storage-v0.hex").trim()).unwrap();
+        let bytes = hex::decode(super::super::storage_vectors::QUORUM_STORAGE_V0.trim()).unwrap();
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();

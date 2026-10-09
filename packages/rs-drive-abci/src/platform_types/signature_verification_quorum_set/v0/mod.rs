@@ -8,3 +8,6 @@ pub mod quorums;
 
 #[cfg(all(test, feature = "bls-signatures"))]
 mod storage_tests;
+
+#[cfg(all(test, feature = "bls-signatures"))]
+mod storage_vectors;

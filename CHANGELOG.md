@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+### Added
+
+- **Rust compatibility tests:** frozen pre-upgrade vectors for populated GroveDB
+  state, Core transaction and lock hashes, Platform signatures and encrypted
+  DashPay fields, stored as constants.
+
 ### Fixed
 
 - **dpp:** require a WASM-compatible `blst` version for BLS signatures, including
