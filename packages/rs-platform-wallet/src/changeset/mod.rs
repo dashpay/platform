@@ -29,6 +29,7 @@ pub mod shielded_changeset_disabled;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync_start_state;
 pub mod traits;
+mod wallet_accounting;
 
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
@@ -60,3 +61,4 @@ pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncSta
 pub use traits::{
     ListedCoreTxid, PersistenceError, PersistenceErrorKind, PlatformWalletPersistence,
 };
+pub use wallet_accounting::{is_owned, wallet_accounting, wallet_direction};

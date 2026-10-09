@@ -100,6 +100,37 @@ final class DashReleasedSchemaTests: XCTestCase {
     }
 
     @MainActor
+    func testShouldMigrateV3AccountingAvailabilityAndPersistAnUnavailableAmount() throws {
+        let fixture = try XCTUnwrap(DashReleasedSchemaRegistry.fixtures.first {
+            $0.version.versionIdentifier == Schema.Version(3, 0, 0)
+        })
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("accounting.store")
+        try FileManager.default.copyItem(at: source(fixture), to: url)
+        let txid = Data(repeating: 0x32, count: 32)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
+                .first { $0.txid == txid })
+            XCTAssertNil(row.netAmountUnavailable, "V3 rows retain their stored accounting by default")
+            XCTAssertEqual(row.displayNetAmount(for: nil), row.netAmount)
+            row.netAmountUnavailable = true
+            try container.mainContext.save()
+        }
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
+                .first { $0.txid == txid })
+            XCTAssertEqual(row.netAmountUnavailable, true)
+            XCTAssertNil(row.displayNetAmount(for: nil))
+            XCTAssertEqual(row.formattedAmount, "Amount unavailable")
+            XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["4.0.0"])
+        }
+    }
+
+    @MainActor
     func testRuntimePlanHasNoDuplicateModelChecksums() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

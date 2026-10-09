@@ -24,9 +24,11 @@ use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
 use {
-    dashcore::OutPoint, platform_wallet::changeset::AssetLockEntry,
-    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock, rusqlite::Connection,
-    std::collections::BTreeMap,
+    dashcore::{OutPoint, Txid},
+    platform_wallet::changeset::AssetLockEntry,
+    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock,
+    rusqlite::Connection,
+    std::collections::{BTreeMap, HashSet},
 };
 
 use crate::sqlite::schema::blob::impl_persistable_blob;
@@ -194,6 +196,30 @@ pub fn apply(
         }
     }
     Ok(())
+}
+
+/// Remove replay losers from the resumable lifecycle in the Core repair transaction.
+pub(crate) fn remove_swept(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    txids: &HashSet<Txid>,
+) -> Result<(), WalletStorageError> {
+    let mut changes = AssetLockChangeSet::default();
+    {
+        let mut stmt = tx.prepare(
+            "SELECT length(outpoint), outpoint FROM asset_locks WHERE wallet_id = ?1 AND status != 'consumed'",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            blob::check_size(row.get(0)?)?;
+            let bytes: Vec<u8> = row.get(1)?;
+            let outpoint = blob::decode_outpoint(&bytes)?;
+            if txids.contains(&outpoint.txid) {
+                changes.removed.insert(outpoint);
+            }
+        }
+    }
+    apply(tx, wallet_id, &changes)
 }
 
 /// Test-only drift guard for the `asset_locks.status` TEXT-column
