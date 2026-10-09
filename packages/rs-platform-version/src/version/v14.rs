@@ -2280,11 +2280,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document type schema and the contract's `$defs` before the meta-schema
 ///     (v3, unchanged), the core parse with its `$ref` walks, the validator it
 ///     compiles and every later stage; `validate_document` 1, in place,
-///     expands before compiling a stored contract's validator; and the
-///     contract update comparison (the `validate_update` helpers shared with
-///     generation 0) expands the old and the new document type schemas and
-///     `$defs` before diffing, so rewriting a property between the two
-///     spellings is no change. The document type, the stored contract and the
+///     expands before compiling a stored contract's validator;
+///     `validate_schema_compatibility` 1, in place, expands the old and the
+///     new document type schemas and `$defs` before diffing, so rewriting a
+///     property or a definition between the two spellings is no change; and
+///     the check_tx schema-depth pre-check walks the rewritten schema, as the
+///     block's check does. The document type, the stored contract and the
 ///     transition keep the schema as sent. Refused (10231) under full
 ///     validation: `byteArray`, `minItems`, `maxItems` or `contentMediaType`
 ///     beside a shorthand, `size` on `identifier`, and `bytes` without a
