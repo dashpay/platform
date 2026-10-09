@@ -18,6 +18,10 @@ mod insert_shielded_pool_structure;
 #[cfg(feature = "server")]
 mod insert_note;
 
+/// Backfill historical CREDIT note rhos into permanent nullifiers.
+#[cfg(feature = "server")]
+mod backfill_historical_credit_pool_nullifiers;
+
 /// Insert nullifiers into the permanent tree and per-block sync storage
 #[cfg(feature = "server")]
 mod insert_nullifiers;

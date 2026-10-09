@@ -112,6 +112,10 @@ use crate::version::system_limits::SystemLimits;
 ///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
 ///   configuration able to carry it.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
+    // The page matches one notes-tree chunk (2^11). A batch holds at most that
+    // page's missing rhos; GroveDB accepts a Vec of operations with no smaller API cap.
+    credit_pool_nullifier_backfill_page_size: 2048,
+    credit_pool_nullifier_backfill_batch_size: 2048,
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     // Use the protocol's existing data-contract schema-depth ceiling as the conservative

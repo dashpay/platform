@@ -1,4 +1,4 @@
-use grovedb_version::version::FeatureVersion;
+use grovedb_version::version::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 
@@ -66,6 +66,8 @@ pub struct DriveAddressFundsCostEstimationMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveShieldedMethodVersions {
+    /// Historical CREDIT note rho union into permanent nullifiers at protocol activation.
+    pub backfill_historical_credit_pool_nullifiers: OptionalFeatureVersion,
     pub insert_note: FeatureVersion,
     pub insert_nullifiers: FeatureVersion,
     pub update_total_balance: FeatureVersion,
