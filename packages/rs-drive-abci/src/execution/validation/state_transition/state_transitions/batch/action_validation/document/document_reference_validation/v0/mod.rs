@@ -48,6 +48,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
 use drive::query::TransactionArg;
+use drive::util::storage_flags::StorageFlags;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
@@ -1236,7 +1237,7 @@ fn validate_reference_target_v0(
                     }
                 }
             };
-            let looked_up_document;
+            let mut looked_up_document: Option<(Document, Option<StorageFlags>)> = None;
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
@@ -1257,7 +1258,7 @@ fn validate_reference_target_v0(
                         transaction,
                         platform_version,
                     )?;
-                    looked_up_document.as_ref()
+                    looked_up_document.as_ref().map(|(document, _)| document)
                 }
                 (None, Some(document_id)) => fetched_documents.document(
                     effective_contract_id,
@@ -1451,9 +1452,15 @@ fn validate_reference_target_v0(
                     }
                 }
                 if lookup.consume {
+                    // The document and storage flags the lookup read: the create deletes the
+                    // document from them, without reading it again
+                    let storage_flags = looked_up_document
+                        .as_ref()
+                        .and_then(|(_, storage_flags)| storage_flags.clone());
                     consumed_documents.push(ConsumedLookupDocument {
                         document: ConsumedDocument {
-                            document_id: found.id(),
+                            document: found.clone(),
+                            storage_flags,
                             document_type_name: document_type_name.to_string(),
                         },
                         referenced_id: Identifier::from(referenced_id),

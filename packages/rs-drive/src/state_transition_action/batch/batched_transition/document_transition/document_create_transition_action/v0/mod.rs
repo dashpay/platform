@@ -23,6 +23,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::document_transition::drop_transient_values;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use crate::util::storage_flags::StorageFlags;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 
@@ -73,11 +74,14 @@ pub struct DocumentCreateTransitionActionV0 {
 /// the commitment a `refersTo` lookup with a computed key found, the reference declaring
 /// `consume`. Its
 /// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
-/// the one that owner could have made, and its storage is refunded the same way.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// the one that owner could have made, and its storage is refunded the same way. It carries
+/// the document and storage flags the lookup read, so the delete does not read them again.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConsumedDocument {
-    /// The consumed document's id.
-    pub document_id: Identifier,
+    /// The consumed document, as the lookup read it.
+    pub document: Document,
+    /// The storage flags of the consumed document's stored element, as the lookup read them.
+    pub storage_flags: Option<StorageFlags>,
     /// The consumed document's type, in the create's contract.
     pub document_type_name: String,
 }
