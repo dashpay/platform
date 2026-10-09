@@ -15,8 +15,8 @@
 //!
 //! Field recovery:
 //! * prefix properties — decoded from the value path segments via
-//!   [`DocumentPropertyType::decode_value_for_tree_keys`], the inverse of
-//!   the key encoding the write path used;
+//!   `deserialize_value_for_key` of the protocol version, the inverse of the
+//!   key encoding the write path used;
 //! * the terminal property — decoded from the member key the same way;
 //! * `$ownerId` / `$createdAt` — from whichever position (prefix or
 //!   terminal) the index carries them.

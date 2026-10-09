@@ -6,6 +6,7 @@
 
 use crate::config::DriveConfig;
 use crate::drive::Drive;
+use crate::error::Error;
 use crate::query::drive_document_count_query::drive_dispatcher::{
     DocumentCountRequest, DocumentCountResponse,
 };
@@ -97,9 +98,6 @@ pub(crate) fn insert_grade(
     grade: u8,
     platform_version: &PlatformVersion,
 ) {
-    let document_type = contract
-        .document_type_for_name("grade")
-        .expect("expected the grade type");
     let document: Document = DocumentV0 {
         id: Identifier::new([id; 32]),
         owner_id: Identifier::new([1; 32]),
@@ -107,18 +105,31 @@ pub(crate) fn insert_grade(
         ..Default::default()
     }
     .into();
+    insert_document(drive, contract, "grade", &document, platform_version);
+}
+
+/// Inserts `document` as a document of `document_type_name`.
+pub(crate) fn insert_document(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &Document,
+    platform_version: &PlatformVersion,
+) {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentRefInfo((
-                        &document,
+                        document,
                         Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
                     )),
                     owner_id: None,
                 },
                 contract,
-                document_type,
+                document_type: contract
+                    .document_type_for_name(document_type_name)
+                    .expect("expected the document type"),
             },
             false,
             BlockInfo::default(),
@@ -127,7 +138,7 @@ pub(crate) fn insert_grade(
             platform_version,
             None,
         )
-        .expect("expected to insert the grade document");
+        .expect("expected to insert the document");
 }
 
 pub(crate) fn above_100() -> WhereClause {
@@ -153,7 +164,7 @@ pub(crate) fn count_grades(
     contract: &DataContract,
     where_clause: WhereClause,
     platform_version: &PlatformVersion,
-) -> Result<u64, crate::error::Error> {
+) -> Result<u64, Error> {
     let document_type = contract
         .document_type_for_name("grade")
         .expect("expected the grade type");
@@ -202,33 +213,53 @@ pub(crate) fn count_grades(
     Ok(count)
 }
 
-/// The grades a document query returns, without and with a proof; the
-/// proved documents are checked against the no-proof ones.
+/// The grades a document query returns, without and with a proof.
 pub(crate) fn query_grades(
     drive: &Drive,
     contract: &DataContract,
     sql: &str,
     platform_version: &PlatformVersion,
 ) -> Vec<u8> {
+    query_values(drive, contract, "grade", sql, "grade", platform_version)
+        .into_iter()
+        .map(|grade| u8::try_from(grade).expect("a grade is a u8"))
+        .collect()
+}
+
+/// The values of `property` in the documents of `document_type_name` a
+/// document query returns, without and with a proof; the proved documents are
+/// checked against the others.
+pub(crate) fn query_values(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    sql: &str,
+    property: &str,
+    platform_version: &PlatformVersion,
+) -> Vec<u64> {
     let document_type = contract
-        .document_type_for_name("grade")
-        .expect("expected the grade type");
+        .document_type_for_name(document_type_name)
+        .expect("expected the document type");
+    let value_of = |document: &Document| {
+        document
+            .properties()
+            .get(property)
+            .and_then(|value| value.to_integer::<u64>().ok())
+            .expect("expected the property")
+    };
     let query =
         DriveDocumentQuery::from_sql_expr(sql, contract, Some(&drive.config), platform_version)
             .expect("expected the query to parse");
     let (documents, _, _) = query
         .execute_raw_results_no_proof(drive, None, None, platform_version)
         .expect("expected the query to execute");
-    let grades: Vec<u8> = documents
+    let values: Vec<u64> = documents
         .iter()
         .map(|bytes| {
-            let document = Document::from_bytes(bytes, document_type, platform_version)
-                .expect("expected a document");
-            document
-                .properties()
-                .get("grade")
-                .and_then(|grade| grade.to_integer::<u8>().ok())
-                .expect("expected a grade")
+            value_of(
+                &Document::from_bytes(bytes, document_type, platform_version)
+                    .expect("expected a document"),
+            )
         })
         .collect();
     let (proof, _) = query
@@ -238,18 +269,12 @@ pub(crate) fn query_grades(
     let (_, proved) = query
         .verify_proof(&proof, platform_version)
         .expect("expected the proof to verify");
-    let proved_grades: Vec<u8> = proved
-        .iter()
-        .map(|document| {
-            document
-                .properties()
-                .get("grade")
-                .and_then(|grade| grade.to_integer::<u8>().ok())
-                .expect("expected a grade")
-        })
-        .collect();
-    assert_eq!(proved_grades, grades, "the proof proves the documents");
-    grades
+    assert_eq!(
+        proved.iter().map(value_of).collect::<Vec<u64>>(),
+        values,
+        "the proof proves the documents"
+    );
+    values
 }
 
 #[test]

@@ -782,20 +782,19 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .is_some()
     }
 
-    /// A contested index's value as the paths of its vote poll key it: the
-    /// generation-0 key of [`Self::serialize_value_for_key`], whatever
-    /// generation keys the document type's own indexes. A poll, the contenders
-    /// and votes under it and the vote records of the masternodes that voted
-    /// address one another by these paths, so a poll keeps one path for its
-    /// whole life, across a protocol version that changes the key generation.
+    /// A contested index's value as the paths of its vote poll key it:
+    /// generation 0's key ([`Self::serialize_value_for_key`] before protocol
+    /// version 14), whatever generation keys the document type's own indexes.
+    /// A poll, the contenders and votes under it and the vote records of the
+    /// masternodes that voted address one another by these paths, so a poll
+    /// keeps one path for its whole life, across a protocol version that
+    /// changes the key generation.
     fn serialize_value_for_vote_poll_key(
         &self,
         key_name: &str,
         value: &Value,
-        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let key = self.serialize_value_for_key(key_name, value, platform_version)?;
-        self.tree_key_in_generation_0(key_name, &key, platform_version)
+        self.serialize_value_for_key_v0(key_name, value)
     }
 
     /// Reads a key [`Self::serialize_value_for_vote_poll_key`] wrote.
@@ -803,35 +802,48 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         &self,
         key_name: &str,
         key: &[u8],
-        platform_version: &PlatformVersion,
     ) -> Result<Value, ProtocolError> {
-        let key = self.tree_key_from_generation_0(key_name, key, platform_version)?;
-        self.deserialize_value_for_key(key_name, &key, platform_version)
+        self.deserialize_value_for_key_v0(key_name, key)
     }
 
     /// The key [`Self::serialize_value_for_key`] of `platform_version` writes
     /// for `key_name` for the value a generation-0 `key` holds: the inverse of
-    /// [`Self::tree_key_in_generation_0`]. For the first block of a protocol
-    /// version that changes the key generation, which rewrites the keys an
-    /// earlier generation wrote.
+    /// [`Self::tree_key_in_generation_0`], for the first block of protocol
+    /// version 14, which rewrites the keys generation 0 wrote.
+    ///
+    /// Versioned on `serialize_value_for_key` like its inverse, so a new
+    /// generation needs its own arm in both.
     fn tree_key_from_generation_0(
         &self,
         key_name: &str,
         key: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
-        // Generation 1 only flips the top bit of an unsigned integer key, and
-        // flipping it twice is the identity: each direction is the other
-        self.tree_key_in_generation_0(key_name, key, platform_version)
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .serialize_value_for_key
+        {
+            0 => Ok(key.to_vec()),
+            // Generation 1 differs only by the top bit of an unsigned integer
+            // key, and flipping it again undoes it
+            1 => self.tree_key_in_generation_0(key_name, key, platform_version),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "tree_key_from_generation_0".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
     }
 
     /// `key`, which [`Self::serialize_value_for_key`] of `platform_version`
-    /// wrote for `key_name`, as generation 0 of it writes the same value.
-    ///
-    /// For what must not change with the key generation: a hash or id built
-    /// over key bytes (an indexOnly row commitment, a synthesized `$id`). A
-    /// stored commitment can not be rewritten when the keys are, so those are
-    /// built over generation-0 bytes whatever generation keys the entries.
+    /// wrote for `key_name`, as generation 0 of it writes the same value: for
+    /// a key that keeps generation 0 whatever generation keys the indexes, a
+    /// contested index's value in the path of its vote poll
+    /// ([`Self::serialize_value_for_vote_poll_key`]), when only the key of the
+    /// current generation is at hand.
     ///
     /// Versioned on `serialize_value_for_key`, since it undoes exactly what
     /// that generation changed: unchanged under generation 0, and under
@@ -1760,13 +1772,13 @@ mod tests {
             let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
             let key = document_type
                 .as_ref()
-                .serialize_value_for_vote_poll_key("grade", &Value::U8(200), platform_version)
+                .serialize_value_for_vote_poll_key("grade", &Value::U8(200))
                 .expect("a u8 grade is keyed");
             assert_eq!(key, vec![0x48], "the generation-0 key of 200");
             assert_eq!(
                 document_type
                     .as_ref()
-                    .deserialize_value_for_vote_poll_key("grade", &key, platform_version)
+                    .deserialize_value_for_vote_poll_key("grade", &key)
                     .expect("the key reads back"),
                 Value::U8(200)
             );

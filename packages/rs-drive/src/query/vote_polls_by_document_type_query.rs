@@ -294,7 +294,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     fn indexes_vectors<'b>(
         &self,
         index: &'b Index,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>, &'b IndexProperty), Error> {
         let document_type = self.document_type()?;
         let properties_iter = index.properties.iter();
@@ -305,25 +305,23 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         let mut end_values_vec = vec![];
         let mut ended_start_values = false;
         let mut middle_index_property = None;
+        // A poll keeps its generation-0 keys at every protocol version, here and in the
+        // start-at key and results below. Edited in place: before protocol version 14 these are
+        // what `serialize_value_for_key` and `deserialize_value_for_key` wrote and read, so the
+        // query and its results are the same there
         for index_property in properties_iter {
             if !ended_start_values {
                 if let Some(start_value) = start_values_iter.next() {
-                    let encoded = document_type.serialize_value_for_vote_poll_key(
-                        &index_property.name,
-                        start_value,
-                        platform_version,
-                    )?;
+                    let encoded = document_type
+                        .serialize_value_for_vote_poll_key(&index_property.name, start_value)?;
                     start_values_vec.push(encoded);
                 } else {
                     ended_start_values = true;
                     middle_index_property = Some(index_property);
                 }
             } else if let Some(end_value) = end_values_iter.next() {
-                let encoded = document_type.serialize_value_for_vote_poll_key(
-                    &index_property.name,
-                    end_value,
-                    platform_version,
-                )?;
+                let encoded = document_type
+                    .serialize_value_for_vote_poll_key(&index_property.name, end_value)?;
                 end_values_vec.push(encoded);
             } else {
                 break;
@@ -411,10 +409,11 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                 query.insert_all();
             }
             Some((starts_at_key_bytes, start_at_included)) => {
+                // A poll keeps its generation-0 keys at every protocol version (edited in
+                // place: what `serialize_value_for_key` wrote before protocol version 14)
                 let starts_at_key = self.document_type()?.serialize_value_for_vote_poll_key(
                     &middle_property.name,
                     starts_at_key_bytes,
-                    platform_version,
                 )?;
 
                 match self.order_ascending {
@@ -508,7 +507,9 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                             // the result is in the key because we did not provide any end index values
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  -------
-                            document_type.deserialize_value_for_vote_poll_key(property_name_being_searched.name.as_str(), key.as_slice(), platform_version).map_err(Error::from)
+                            // Generation 0 at every protocol version (edited in place: what
+                            // `deserialize_value_for_key` read before protocol version 14)
+                            document_type.deserialize_value_for_vote_poll_key(property_name_being_searched.name.as_str(), key.as_slice()).map_err(Error::from)
                         } else if path.len() < result_path_index.unwrap() {
 
                             Err(Error::Drive(DriveError::CorruptedCodeExecution("the path length should always be bigger or equal to the result path index")))
@@ -517,7 +518,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  -------
                             let inner_path_value_bytes = path.remove(result_path_index.unwrap());
-                            document_type.deserialize_value_for_vote_poll_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice(), platform_version).map_err(Error::from)
+                            document_type.deserialize_value_for_vote_poll_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice()).map_err(Error::from)
                         }
                     }).collect::<Result<Vec<Value>, Error>>()
             }

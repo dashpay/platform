@@ -2257,7 +2257,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`serialize_value_for_vote_poll_key`), which the masternodes' vote records
 ///     address. `transition_to_version_14` first rewrites every key generation 0
 ///     wrote (`Drive::rekey_unsigned_integer_index_values`), moving each subtree
-///     with its elements and flags. The features of this version that key
+///     with its elements and flags in batches of `max_rekey_batch_insertions`
+///     elements (`SYSTEM_LIMITS_V4`). A rebuilt Merk tree takes another shape, and
+///     GroveDB refuses a node whose subtree sum leaves the signed 64-bit range, so
+///     an index tree whose sums could do that in some shape (only sums of values
+///     near the limits of the range can) keeps its earlier keys rather than fail
+///     the block. The features of this version that key
 ///     integers themselves (an `integerRange` window start, an indexOnly member
 ///     key, its row commitment and synthesized id) use the new keys from the
 ///     start. Earlier versions replay through generation 0.

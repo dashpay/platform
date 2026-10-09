@@ -806,8 +806,10 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// integer type by its plain big-endian bytes
     /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
     /// sort as its values do. Every other key is generation 0's, the `$`
-    /// system fields included: their values never reach the top bit that
-    /// generation 0 flips.
+    /// system fields included: the timestamps and heights they hold never
+    /// reach the top bit that generation 0 flips, so their keys already sort
+    /// as their values do (a query bound past that bit still sorts out of
+    /// place, as before).
     fn serialize_value_for_key_v1(
         &self,
         key: &str,

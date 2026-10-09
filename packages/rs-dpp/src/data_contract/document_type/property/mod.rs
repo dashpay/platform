@@ -3347,44 +3347,19 @@ impl DocumentPropertyType {
     }
 
     /// The tree key of a value, as [`Self::encode_value_for_tree_keys`] writes
-    /// it except for an unsigned integer, which is its plain big-endian bytes.
+    /// it except for an unsigned integer, which is its plain big-endian bytes:
+    /// generation 0's key with the top bit flipped back.
     ///
-    /// The earlier encoding flips an unsigned integer's top bit as if it were
-    /// signed, so every value with that bit set (128 and above for a `u8`)
-    /// sorts below every value without it, and range queries, ordering,
-    /// counts and sums across that point come out wrong. Big-endian bytes of
-    /// one width sort as the numbers do. The width is the same, so a key
-    /// keeps its size.
+    /// Generation 0 flips an unsigned integer's top bit as if it were signed,
+    /// so every value with that bit set (128 and above for a `u8`) sorts below
+    /// every value without it, and range queries, ordering, counts and sums
+    /// across that point come out wrong. Big-endian bytes of one width sort as
+    /// the numbers do. The width is the same, so a key keeps its size.
     pub fn encode_value_for_tree_keys_v1(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
-        if value.is_null() || !self.has_unsigned_integer_tree_key() {
-            return self.encode_value_for_tree_keys(value);
-        }
-        Ok(match self {
-            DocumentPropertyType::U128 => value
-                .to_integer::<u128>()
-                .map_err(ProtocolError::ValueError)?
-                .to_be_bytes()
-                .to_vec(),
-            DocumentPropertyType::U64 => value
-                .to_integer::<u64>()
-                .map_err(ProtocolError::ValueError)?
-                .to_be_bytes()
-                .to_vec(),
-            DocumentPropertyType::U16 => value
-                .to_integer::<u16>()
-                .map_err(ProtocolError::ValueError)?
-                .to_be_bytes()
-                .to_vec(),
-            DocumentPropertyType::U8 => vec![value
-                .to_integer::<u8>()
-                .map_err(ProtocolError::ValueError)?],
-            // U32 and KeyIdWithReference, the remaining unsigned key types
-            _ => value
-                .to_integer::<u32>()
-                .map_err(ProtocolError::ValueError)?
-                .to_be_bytes()
-                .to_vec(),
-        })
+        let key = self.encode_value_for_tree_keys(value)?;
+        Ok(self
+            .unsigned_tree_key_in_other_generation(&key)
+            .unwrap_or(key))
     }
 
     /// Reads a tree key written by [`Self::encode_value_for_tree_keys_v1`].
@@ -3393,31 +3368,16 @@ impl DocumentPropertyType {
         if value.is_empty() || !self.has_unsigned_integer_tree_key() {
             return self.decode_value_for_tree_keys(value);
         }
-        let wrong_width = || {
-            ProtocolError::DecodingError(format!(
-                "could not decode a {} from {} bytes",
-                self.name(),
-                value.len()
-            ))
-        };
-        Ok(match self {
-            DocumentPropertyType::U128 => Value::U128(u128::from_be_bytes(
-                value.try_into().map_err(|_| wrong_width())?,
-            )),
-            DocumentPropertyType::U64 => Value::U64(u64::from_be_bytes(
-                value.try_into().map_err(|_| wrong_width())?,
-            )),
-            DocumentPropertyType::U16 => Value::U16(u16::from_be_bytes(
-                value.try_into().map_err(|_| wrong_width())?,
-            )),
-            DocumentPropertyType::U8 => Value::U8(u8::from_be_bytes(
-                value.try_into().map_err(|_| wrong_width())?,
-            )),
-            // U32 and KeyIdWithReference, the remaining unsigned key types
-            _ => Value::U32(u32::from_be_bytes(
-                value.try_into().map_err(|_| wrong_width())?,
-            )),
-        })
+        let key = self
+            .unsigned_tree_key_in_other_generation(value)
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(format!(
+                    "could not decode a {} from {} bytes",
+                    self.name(),
+                    value.len()
+                ))
+            })?;
+        self.decode_value_for_tree_keys(&key)
     }
 
     /// The key the other tree-key generation writes for the value `key`
@@ -3428,7 +3388,7 @@ impl DocumentPropertyType {
     /// `None` for every other key, which both generations write the same.
     pub fn unsigned_tree_key_in_other_generation(&self, key: &[u8]) -> Option<Vec<u8>> {
         if !self.has_unsigned_integer_tree_key()
-            || self.fixed_tree_key_width() != Some(key.len() as u16)
+            || self.fixed_tree_key_width().map(usize::from) != Some(key.len())
         {
             return None;
         }

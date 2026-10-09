@@ -165,8 +165,9 @@ impl Drive {
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             // The vote poll keys a value as generation 0 does
-            // (`serialize_value_for_vote_poll_key`); the identity wherever
-            // that is the key generation (protocol version 14 and earlier)
+            // (`serialize_value_for_vote_poll_key`), while this version keys the
+            // document's values with generation 1: an unsigned integer key gets
+            // its top bit flipped back
             let document_top_field = document_and_contract_info
                 .owned_document_info
                 .document_info

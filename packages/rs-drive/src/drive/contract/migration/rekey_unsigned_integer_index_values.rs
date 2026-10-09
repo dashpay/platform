@@ -16,10 +16,8 @@ use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::{AggregateData, Element, PathQuery, Query, SizedQuery, Transaction};
 use grovedb_merk::element::reconstruct::ElementReconstructExtensions;
 use grovedb_merk::element::tree_type::ElementTreeTypeExtensions;
-
-/// A child of a tree whose key changes: its key, its new key, the element
-/// stored there and the layout node it is an instance of.
-type Rekeyed<'a> = (Vec<u8>, Vec<u8>, Element, &'a LayoutNode);
+use grovedb_merk::tree_type::TreeType;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Rewrites every index value key that generation 0 of
@@ -29,11 +27,22 @@ impl Drive {
     /// Runs once, on the first block of protocol version 14: from that
     /// version an unsigned value is keyed by its plain big-endian bytes, which
     /// sort as the values do, where generation 0 flipped the top bit as for a
-    /// signed value. Every document type of every contract in state is
-    /// walked through its layout (`document_type_layout`), and each subtree
-    /// under a value key of such a property moves to the new key with its
-    /// elements, flags and tree types as they are. A key keeps its width, so
-    /// nothing changes size.
+    /// signed value. Generation 1 differs only by that flip, so running the
+    /// rewrite again would flip the keys back; `transition_to_version_14`
+    /// calls it only on a chain it has not transitioned before.
+    ///
+    /// Every document type of every contract in state is walked through its
+    /// layout (`document_type_layout`). Each first-level index tree that holds
+    /// such a key is rebuilt: its children move, a few at a time, to their new
+    /// keys, each subtree written again with its elements, flags and tree
+    /// types as they are. A key keeps its width, so nothing changes size.
+    ///
+    /// A rebuilt Merk tree takes another shape, and GroveDB refuses a node
+    /// whose subtree sum leaves the signed 64-bit range, even where the whole
+    /// tree's sum is in it. So an index tree is rebuilt only when every sum
+    /// tree in it keeps its sums in range in any shape; one that could not,
+    /// which only sums of values near the limits of the range make, keeps its
+    /// earlier keys.
     ///
     /// Only the layouts earlier protocol versions write exist when this runs:
     /// the value keys of ordinary index levels. Contest vote polls keep the
@@ -44,162 +53,264 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut start_at = None;
-        let mut contract_count = 0usize;
-        let mut rekeyed_count = 0usize;
-
-        loop {
-            let page =
-                self.fetch_contract_ids(start_at, u16::MAX, Some(transaction), platform_version)?;
-
-            for contract_id in &page {
-                rekeyed_count += self.rekey_unsigned_integer_index_values_of_contract(
-                    *contract_id,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-            contract_count += page.len();
-
-            match page.last() {
-                Some(last_id) if page.len() == u16::MAX as usize => {
-                    start_at = Some((*last_id, false));
+        let contract_count = self.for_each_contract_in_state(
+            transaction,
+            platform_version,
+            |contract_id, fetch_info| {
+                for document_type in fetch_info.contract.document_types().values() {
+                    self.rekey_unsigned_integer_index_values_of_document_type(
+                        contract_id,
+                        document_type.as_ref(),
+                        transaction,
+                        platform_version,
+                    )?;
                 }
-                _ => break,
-            }
-        }
+                Ok(())
+            },
+        )?;
 
         tracing::info!(
             contract_count,
-            rekeyed_count,
             "rewrote the unsigned integer index value keys of every contract in state"
         );
 
         Ok(())
     }
 
-    /// Rewrites the unsigned integer index value keys of one contract's
-    /// document types, returning how many keys moved.
-    fn rekey_unsigned_integer_index_values_of_contract(
+    fn rekey_unsigned_integer_index_values_of_document_type(
         &self,
         contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<usize, Error> {
-        let fetch_info = self
-            .fetch_contract_and_add_operations(
-                contract_id,
-                None,
-                Some(transaction),
-                &mut vec![],
-                platform_version,
-            )?
-            .ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "contract {} is listed under the contracts root but can not be fetched",
-                    hex::encode(contract_id)
-                )))
-            })?;
-
-        let mut rekeyed_count = 0;
-        for document_type in fetch_info.contract.document_types().values() {
-            let document_type = document_type.as_ref();
-            let layout = document_type_layout(document_type, platform_version)?;
-            if !rekeys_within(&layout.root, document_type) {
-                continue;
-            }
-            let path = contract_document_type_path_vec(&contract_id, document_type.name());
-            rekeyed_count += self.rekey_children(
-                &path,
-                &layout.root,
-                document_type,
-                transaction,
-                platform_version,
-            )?;
+    ) -> Result<(), Error> {
+        // Most types index no unsigned property: they need no layout
+        let indexes_unsigned_property = document_type
+            .indexes()
+            .values()
+            .flat_map(|index| &index.properties)
+            .any(|property| document_type.has_unsigned_integer_tree_key(&property.name));
+        if !indexes_unsigned_property {
+            return Ok(());
         }
-        Ok(rekeyed_count)
+
+        let layout = document_type_layout(document_type, platform_version)?;
+        let document_type_path =
+            contract_document_type_path_vec(&contract_id, document_type.name());
+        for index_tree in &layout.root.children {
+            let LayoutKey::Fixed { bytes, .. } = &index_tree.key else {
+                continue;
+            };
+            if rekeys_within(index_tree, document_type) {
+                self.rekey_index_tree(
+                    &document_type_path,
+                    bytes,
+                    index_tree,
+                    document_type,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+        }
+        Ok(())
     }
 
-    /// Rewrites the keys under the tree at `path`, an instance of `node`:
-    /// the children whose keys change move, and the others are walked for
-    /// keys below them that change. Returns how many keys moved.
-    fn rekey_children(
+    /// Rebuilds the first-level index tree `index_tree_key` of the document
+    /// type at `document_type_path`, an instance of `node`, with every key
+    /// below it that changes rewritten.
+    ///
+    /// Its children are moved in groups: the old keys of a group are removed
+    /// in one batch, then the copies are inserted in another, and a group
+    /// closes once it holds `SystemLimits::max_rekey_batch_insertions`
+    /// elements. Under generation 0 a key and the same key with its top bit
+    /// flipped hold two values that trade keys, so the two always move in the
+    /// same group. The document type's tree sums nothing, so taking children
+    /// out of this tree and putting them back changes no aggregate above it.
+    fn rekey_index_tree(
         &self,
-        path: &[Vec<u8>],
+        document_type_path: &[Vec<u8>],
+        index_tree_key: &[u8],
         node: &LayoutNode,
         document_type: DocumentTypeRef,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<usize, Error> {
-        let mut rekeyed: Vec<Rekeyed> = Vec::new();
-        let mut rekeyed_count = 0;
-        for (key, element) in self.stored_children(path, transaction, platform_version)? {
-            let Some(child_node) = child_node(node, &key) else {
-                continue;
-            };
-            if !rekeys_within(child_node, document_type) {
-                continue;
-            }
-            match rekeyed_key(child_node, &key, document_type, platform_version)? {
-                Some(new_key) => rekeyed.push((key, new_key, element, child_node)),
-                None if element.is_any_tree() => {
-                    let mut child_path = path.to_vec();
-                    child_path.push(key);
-                    rekeyed_count += self.rekey_children(
-                        &child_path,
-                        child_node,
-                        document_type,
-                        transaction,
-                        platform_version,
-                    )?;
-                }
-                None => {}
-            }
-        }
-        if rekeyed.is_empty() {
-            return Ok(rekeyed_count);
-        }
-        rekeyed_count += rekeyed.len();
+    ) -> Result<(), Error> {
+        let Some(index_tree) = self.grove_get_raw_optional(
+            document_type_path.into(),
+            index_tree_key,
+            DirectQueryType::StatefulDirectQuery,
+            Some(transaction),
+            &mut vec![],
+            &platform_version.drive,
+        )?
+        else {
+            return Ok(());
+        };
+        let Some(tree_type) = index_tree.tree_type() else {
+            return Ok(());
+        };
+        let mut path = document_type_path.to_vec();
+        path.push(index_tree_key.to_vec());
 
-        // Every old key is removed before any new key is written: under
-        // generation 0, a key and the same key with its top bit flipped hold
-        // two different values, so a new key can be another child's old one
+        if !self.sums_stay_in_range_in_any_shape(&path, tree_type, transaction, platform_version)? {
+            tracing::warn!(
+                path = %path.iter().map(hex::encode).collect::<Vec<_>>().join("/"),
+                "kept the earlier keys of an index tree whose sums could leave the signed \
+                 64-bit range when it is rebuilt"
+            );
+            return Ok(());
+        }
+
+        let max_batch_insertions = platform_version
+            .system_limits
+            .max_rekey_batch_insertions
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "the protocol version that rewrites unsigned index value keys sets \
+                 max_rekey_batch_insertions",
+            )))? as usize;
+
+        let children: BTreeMap<Vec<u8>, Element> = self
+            .stored_children(&path, transaction, platform_version)?
+            .into_iter()
+            .collect();
         let mut removals = GroveDbOpBatch::new();
         let mut insertions = GroveDbOpBatch::new();
-        for (key, new_key, element, child_node) in rekeyed {
-            match element.tree_type() {
-                Some(tree_type) => removals.push(
-                    QualifiedGroveDbOp::delete_tree_op(
-                        path.to_vec(),
-                        key.clone(),
-                        tree_type,
-                        SubelementsDeletionBehavior::DeleteChildren,
-                    )
-                    .dont_check_for_backwards_references(),
-                ),
-                None => removals.add_delete(path.to_vec(), key.clone()),
+        for (key, element) in &children {
+            let Some(child_node) = child_node(node, key) else {
+                continue;
+            };
+            let moves: Vec<(&Vec<u8>, &Element, Vec<u8>)> =
+                match rekeyed_key(child_node, key, document_type, platform_version)? {
+                    Some(new_key) => match children.get_key_value(&new_key) {
+                        // The pair moves when the lower key of the two is reached
+                        Some((partner_key, _)) if partner_key < key => continue,
+                        Some((partner_key, partner)) => {
+                            let partner_new_key = rekeyed_key(
+                                child_node,
+                                partner_key,
+                                document_type,
+                                platform_version,
+                            )?
+                            .unwrap_or_else(|| partner_key.clone());
+                            vec![
+                                (key, element, new_key),
+                                (partner_key, partner, partner_new_key),
+                            ]
+                        }
+                        None => vec![(key, element, new_key)],
+                    },
+                    // The key stays and keys below it change: the subtree is
+                    // written again under it
+                    None if child_node
+                        .children
+                        .iter()
+                        .any(|below| rekeys_within(below, document_type)) =>
+                    {
+                        vec![(key, element, key.clone())]
+                    }
+                    None => continue,
+                };
+            for (key, element, new_key) in moves {
+                match element.tree_type() {
+                    Some(tree_type) => removals.push(
+                        QualifiedGroveDbOp::delete_tree_op(
+                            path.clone(),
+                            key.clone(),
+                            tree_type,
+                            SubelementsDeletionBehavior::DeleteChildren,
+                        )
+                        .dont_check_for_backwards_references(),
+                    ),
+                    None => removals.add_delete(path.clone(), key.clone()),
+                }
+                self.copy_rekeyed(
+                    &path,
+                    key,
+                    element.clone(),
+                    &path,
+                    new_key,
+                    Some(child_node),
+                    document_type,
+                    &mut insertions,
+                    transaction,
+                    platform_version,
+                )?;
             }
-            self.copy_rekeyed(
-                path,
-                &key,
-                element,
-                path,
-                new_key,
-                Some(child_node),
-                document_type,
-                &mut insertions,
-                transaction,
-                platform_version,
-            )?;
+            if insertions.len() >= max_batch_insertions {
+                self.apply_rekey_batches(
+                    &mut removals,
+                    &mut insertions,
+                    transaction,
+                    platform_version,
+                )?;
+            }
         }
-        self.grove_apply_batch(removals, false, Some(transaction), &platform_version.drive)?;
+        self.apply_rekey_batches(
+            &mut removals,
+            &mut insertions,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Applies `removals`, then `insertions`, leaving both empty.
+    fn apply_rekey_batches(
+        &self,
+        removals: &mut GroveDbOpBatch,
+        insertions: &mut GroveDbOpBatch,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if removals.is_empty() {
+            return Ok(());
+        }
         self.grove_apply_batch(
-            insertions,
+            std::mem::take(removals),
             false,
             Some(transaction),
             &platform_version.drive,
         )?;
-        Ok(rekeyed_count)
+        self.grove_apply_batch(
+            std::mem::take(insertions),
+            false,
+            Some(transaction),
+            &platform_version.drive,
+        )
+    }
+
+    /// Whether every tree at or below `path` (a `tree_type` tree), itself
+    /// included, keeps its sums in the signed 64-bit range whatever shape it is
+    /// rebuilt in: the magnitudes of its children's sums add up to at most
+    /// `i64::MAX`, so no part of them, and no partial sum a Merk node computes
+    /// while rebuilding, can leave the range. Counts only grow up to the
+    /// stored total, so they always stay in range.
+    fn sums_stay_in_range_in_any_shape(
+        &self,
+        path: &[Vec<u8>],
+        tree_type: TreeType,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let mut pending = vec![(path.to_vec(), tree_type)];
+        while let Some((path, tree_type)) = pending.pop() {
+            let children = self.stored_children(&path, transaction, platform_version)?;
+            if sums_in_i64(tree_type) {
+                let magnitude = children.iter().fold(0u128, |total, (_, child)| {
+                    total.saturating_add(u128::from(child.sum_value_or_default().unsigned_abs()))
+                });
+                if magnitude > i64::MAX as u128 {
+                    return Ok(false);
+                }
+            }
+            for (key, child) in children {
+                if let Some(child_tree_type) = child.tree_type() {
+                    let mut child_path = path.clone();
+                    child_path.push(key);
+                    pending.push((child_path, child_tree_type));
+                }
+            }
+        }
+        Ok(true)
     }
 
     /// Adds to `insertions` the element stored at `parent` / `key`, written
@@ -344,10 +455,6 @@ fn rekeys_within(node: &LayoutNode, document_type: DocumentTypeRef) -> bool {
             .children
             .iter()
             .any(|child| rekeys_within(child, document_type))
-        || node
-            .alternative
-            .as_ref()
-            .is_some_and(|alternative| rekeys_within(&alternative.node, document_type))
 }
 
 /// The new key of a child keyed `key`, an instance of `node`, when it
@@ -365,62 +472,70 @@ fn rekeyed_key(
     Ok((new_key != key).then_some(new_key))
 }
 
+/// Whether a tree of this type sums its children in a signed 64-bit value.
+fn sums_in_i64(tree_type: TreeType) -> bool {
+    matches!(
+        tree_type,
+        TreeType::SumTree
+            | TreeType::CountSumTree
+            | TreeType::ProvableCountSumTree
+            | TreeType::ProvableSumTree
+            | TreeType::ProvableCountProvableSumTree
+            | TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree
+    )
+}
+
 /// The empty tree of `element`'s type, with its flags and wrapper: what a
 /// batch writes before the children it derives the root key and aggregates
 /// from. `None` for an element that is no Merk tree.
 fn empty_tree_like(element: &Element) -> Option<Element> {
-    match element {
-        Element::NonCounted(inner) => {
-            empty_tree_like(inner).map(|inner| Element::NonCounted(Box::new(inner)))
-        }
-        Element::NotSummed(inner) => {
-            empty_tree_like(inner).map(|inner| Element::NotSummed(Box::new(inner)))
-        }
-        Element::NotCountedOrSummed(inner) => {
-            empty_tree_like(inner).map(|inner| Element::NotCountedOrSummed(Box::new(inner)))
-        }
-        Element::ProvableSumIndexedTree(_, _, _, flags) => Some(Element::ProvableSumIndexedTree(
-            None,
-            None,
-            0,
-            flags.clone(),
-        )),
-        Element::ProvableCountIndexedTree(_, _, _, flags) => Some(
-            Element::ProvableCountIndexedTree(None, None, 0, flags.clone()),
-        ),
-        Element::ProvableCountProvableSumIndexedTree(_, _, _, axes, flags) => {
-            Some(Element::ProvableCountProvableSumIndexedTree(
-                None,
-                0,
-                0,
-                axes.iter().map(|(axis, _)| (*axis, None)).collect(),
-                flags.clone(),
-            ))
-        }
-        element if element.uses_non_merk_data_storage() => None,
-        element => element.reconstruct_with_root_key(None, AggregateData::NoAggregateData),
+    if element.uses_non_merk_data_storage() {
+        return None;
     }
+    element
+        .reconstruct_with_root_key(None, AggregateData::NoAggregateData)
+        .or_else(|| {
+            element.reconstruct_with_two_root_keys(None, None, AggregateData::NoAggregateData)
+        })
+        .or_else(|| {
+            let axes = element
+                .axes()?
+                .iter()
+                .map(|(axis, _)| (*axis, None))
+                .collect();
+            element.reconstruct_with_axes(None, AggregateData::NoAggregateData, axes)
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::votes::paths::VotePollPaths;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use crate::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
     use crate::query::unsigned_index_key_order_tests::{
-        above_100, count_grades, insert_grade, query_grades, setup_grades,
+        above_100, count_grades, insert_document, insert_grade, query_grades, query_values,
+        setup_grades,
     };
-    use crate::query::DriveDocumentQuery;
+    use crate::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::object_size_info::{DataContractOwnedResolvedInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::{DataContract, DataContractFactory};
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::document::{Document, DocumentV0};
     use dpp::identifier::Identifier;
     use dpp::platform_value::{platform_value, Value};
+    use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
+    use dpp::voting::vote_polls::VotePoll;
+    use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+    use dpp::voting::votes::resource_vote::ResourceVote;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     const HIGH: u64 = 1 << 63;
 
@@ -429,7 +544,8 @@ mod tests {
     }
 
     /// Every element under `path`, keyed by its path below it, as it is
-    /// stored: a tree as its type, flags and wrapper, with its aggregates.
+    /// stored: a tree as its type, flags and wrapper, with the aggregates of
+    /// the tree inside any wrapper.
     fn dump(
         drive: &Drive,
         path: &[Vec<u8>],
@@ -444,8 +560,8 @@ mod tests {
             let summary = if element.is_any_tree() {
                 (
                     empty_tree_like(&element).expect("a Merk tree"),
-                    element.count_value_or_default(),
-                    element.sum_value_or_default(),
+                    element.underlying().count_value_or_default(),
+                    element.underlying().sum_value_or_default(),
                 )
             } else {
                 (
@@ -471,6 +587,20 @@ mod tests {
         out
     }
 
+    /// The dump of the document type `name` of `contract`.
+    fn dump_document_type(
+        drive: &Drive,
+        contract: &DataContract,
+        name: &str,
+    ) -> BTreeMap<Vec<Vec<u8>>, (Element, u64, i64)> {
+        let transaction = drive.grove.start_transaction();
+        dump(
+            drive,
+            &contract_document_type_path_vec(contract.id().as_bytes(), name),
+            &transaction,
+        )
+    }
+
     /// `dump`'s path with the value keys of `unsigned` properties (name,
     /// width) given their top bit back: the path generation 1 keys the same
     /// entry under. Index paths alternate property names and values from the
@@ -493,6 +623,18 @@ mod tests {
         path
     }
 
+    /// The dump expected after the rewrite: `before` with the value keys of
+    /// `unsigned` moved.
+    fn rekeyed_dump(
+        before: BTreeMap<Vec<Vec<u8>>, (Element, u64, i64)>,
+        unsigned: &[(&str, usize)],
+    ) -> BTreeMap<Vec<Vec<u8>>, (Element, u64, i64)> {
+        before
+            .into_iter()
+            .map(|(path, summary)| (rekeyed_path(&path, unsigned), summary))
+            .collect()
+    }
+
     fn rekey(drive: &Drive) {
         let transaction = drive.grove.start_transaction();
         drive
@@ -505,29 +647,63 @@ mod tests {
             .expect("expected to commit");
     }
 
-    fn document_type_path(contract: &DataContract, name: &str) -> Vec<Vec<u8>> {
-        contract_document_type_path_vec(contract.id().as_bytes(), name)
+    /// A drive at protocol version 13 holding `contract`.
+    fn setup_contract_at_13(contract: &DataContract) -> Drive {
+        let platform_version = protocol_version_13();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .apply_contract(
+                contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        drive
+    }
+
+    /// A contract with one document type `name`, built at protocol version 13.
+    fn contract_at_13(owner: u8, name: &str, document_type: Value) -> DataContract {
+        DataContractFactory::new(13)
+            .expect("expected a contract factory")
+            .create_with_value_config(
+                Identifier::new([owner; 32]),
+                0,
+                Value::Map(vec![(Value::Text(name.to_string()), document_type)]),
+                None,
+                None,
+            )
+            .expect("expected the contract")
+            .data_contract_owned()
+    }
+
+    fn document(id: u8, properties: Vec<(&str, Value)>) -> Document {
+        DocumentV0 {
+            id: Identifier::new([id; 32]),
+            owner_id: Identifier::new([1; 32]),
+            properties: properties
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value))
+                .collect(),
+            ..Default::default()
+        }
+        .into()
     }
 
     #[test]
     fn should_rekey_grades_written_before_protocol_version_14() {
         let (drive, contract) = setup_grades(protocol_version_13());
-        let path = document_type_path(&contract, "grade");
-        let transaction = drive.grove.start_transaction();
-        let before = dump(&drive, &path, &transaction);
-        drop(transaction);
+        let before = dump_document_type(&drive, &contract, "grade");
 
         rekey(&drive);
 
-        let transaction = drive.grove.start_transaction();
-        let after = dump(&drive, &path, &transaction);
-        let expected: BTreeMap<_, _> = before
-            .into_iter()
-            .map(|(path, summary)| (rekeyed_path(&path, &[("grade", 1)]), summary))
-            .collect();
-        assert_eq!(after, expected, "only the grade keys change");
-        drop(transaction);
-
+        assert_eq!(
+            dump_document_type(&drive, &contract, "grade"),
+            rekeyed_dump(before, &[("grade", 1)]),
+            "only the grade keys change"
+        );
         let platform_version = PlatformVersion::latest();
         assert_eq!(
             count_grades(&drive, &contract, above_100(), platform_version)
@@ -557,157 +733,67 @@ mod tests {
         );
     }
 
-    /// The `item` contract: a u64 `amount` (`minimum` alone picks u64) under a
+    /// The `item` type: a u64 `amount` (`minimum` alone picks u64) under a
     /// string prefix, an optional u16 `rank`, and a unique index led by the
     /// amount.
-    fn item_contract(platform_version: &PlatformVersion) -> DataContract {
-        let factory = DataContractFactory::new(platform_version.protocol_version)
-            .expect("expected a contract factory");
-        let item = platform_value!({
-            "type": "object",
-            "properties": {
-                "category": {"type": "string", "maxLength": 10, "position": 0},
-                "amount": {"type": "integer", "minimum": 0, "position": 1},
-                "rank": {"type": "integer", "minimum": 0, "maximum": 60000, "position": 2},
-                "label": {"type": "string", "maxLength": 10, "position": 3},
-            },
-            "required": ["category", "amount", "label"],
-            "indices": [
-                {
-                    "name": "byCategoryAmount",
-                    "properties": [{"category": "asc"}, {"amount": "asc"}],
-                    "countable": "countable",
+    fn item_contract() -> DataContract {
+        contract_at_13(
+            8,
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "maxLength": 10, "position": 0},
+                    "amount": {"type": "integer", "minimum": 0, "position": 1},
+                    "rank": {"type": "integer", "minimum": 0, "maximum": 60000, "position": 2},
+                    "label": {"type": "string", "maxLength": 10, "position": 3},
                 },
-                {"name": "byRank", "properties": [{"rank": "asc"}]},
-                {
-                    "name": "byAmountLabel",
-                    "properties": [{"amount": "asc"}, {"label": "asc"}],
-                    "unique": true,
-                },
-            ],
-            "additionalProperties": false,
-        });
-        factory
-            .create_with_value_config(
-                Identifier::new([8; 32]),
-                0,
-                platform_value!({ "item": item }),
-                None,
-                None,
-            )
-            .expect("expected the item contract")
-            .data_contract_owned()
+                "required": ["category", "amount", "label"],
+                "indices": [
+                    {
+                        "name": "byCategoryAmount",
+                        "properties": [{"category": "asc"}, {"amount": "asc"}],
+                        "countable": "countable",
+                    },
+                    {"name": "byRank", "properties": [{"rank": "asc"}]},
+                    {
+                        "name": "byAmountLabel",
+                        "properties": [{"amount": "asc"}, {"label": "asc"}],
+                        "unique": true,
+                    },
+                ],
+                "additionalProperties": false,
+            }),
+        )
     }
 
     fn item(id: u8, category: &str, amount: u64, rank: Option<u16>, label: &str) -> Document {
-        let mut properties = BTreeMap::from([
-            ("category".to_string(), Value::Text(category.to_string())),
-            ("amount".to_string(), Value::U64(amount)),
-            ("label".to_string(), Value::Text(label.to_string())),
-        ]);
+        let mut properties = vec![
+            ("category", Value::Text(category.to_string())),
+            ("amount", Value::U64(amount)),
+            ("label", Value::Text(label.to_string())),
+        ];
         if let Some(rank) = rank {
-            properties.insert("rank".to_string(), Value::U16(rank));
+            properties.push(("rank", Value::U16(rank)));
         }
-        DocumentV0 {
-            id: Identifier::new([id; 32]),
-            owner_id: Identifier::new([1; 32]),
-            properties,
-            ..Default::default()
-        }
-        .into()
+        document(id, properties)
     }
 
-    fn insert_item(
-        drive: &Drive,
-        contract: &DataContract,
-        document: &Document,
-        platform_version: &PlatformVersion,
-    ) {
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((
-                            document,
-                            Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
-                        )),
-                        owner_id: None,
-                    },
-                    contract,
-                    document_type: contract
-                        .document_type_for_name("item")
-                        .expect("expected the item type"),
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("expected to insert the item");
-    }
-
-    /// The `amount`s, or with `rank` the `rank`s, a query returns, without
-    /// and with a proof.
     fn query_items(drive: &Drive, contract: &DataContract, sql: &str, property: &str) -> Vec<u64> {
-        let platform_version = PlatformVersion::latest();
-        let document_type = contract
-            .document_type_for_name("item")
-            .expect("expected the item type");
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, contract, Some(&drive.config), platform_version)
-                .expect("expected the query to parse");
-        let (documents, _, _) = query
-            .execute_raw_results_no_proof(drive, None, None, platform_version)
-            .expect("expected the query to execute");
-        let values: Vec<u64> = documents
-            .iter()
-            .map(|bytes| {
-                Document::from_bytes(bytes, document_type, platform_version)
-                    .expect("expected a document")
-                    .properties()
-                    .get(property)
-                    .and_then(|value| value.to_integer::<u64>().ok())
-                    .expect("expected the property")
-            })
-            .collect();
-        let (proof, _) = query
-            .clone()
-            .execute_with_proof(drive, None, None, platform_version)
-            .expect("expected the query to prove");
-        let (_, proved) = query
-            .verify_proof(&proof, platform_version)
-            .expect("expected the proof to verify");
-        let proved: Vec<u64> = proved
-            .iter()
-            .map(|document| {
-                document
-                    .properties()
-                    .get(property)
-                    .and_then(|value| value.to_integer::<u64>().ok())
-                    .expect("expected the property")
-            })
-            .collect();
-        assert_eq!(proved, values, "the proof proves the documents");
-        values
+        query_values(
+            drive,
+            contract,
+            "item",
+            sql,
+            property,
+            PlatformVersion::latest(),
+        )
     }
 
     #[test]
     fn should_rekey_nested_unique_and_null_layouts_and_swap_colliding_keys() {
-        let platform_version = protocol_version_13();
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = item_contract(platform_version);
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("expected to apply the item contract");
+        let contract = item_contract();
+        let drive = setup_contract_at_13(&contract);
         // 7 and HIGH + 7, and the ranks 3 and 32771, trade keys between the
         // two generations
         for document in [
@@ -717,24 +803,17 @@ mod tests {
             item(4, "b", 300, Some(3), "w"),
             item(5, "a", HIGH + 300, None, "v"),
         ] {
-            insert_item(&drive, &contract, &document, platform_version);
+            insert_document(&drive, &contract, "item", &document, protocol_version_13());
         }
-        let path = document_type_path(&contract, "item");
-        let transaction = drive.grove.start_transaction();
-        let before = dump(&drive, &path, &transaction);
-        drop(transaction);
+        let before = dump_document_type(&drive, &contract, "item");
 
         rekey(&drive);
 
-        let transaction = drive.grove.start_transaction();
-        let after = dump(&drive, &path, &transaction);
-        let expected: BTreeMap<_, _> = before
-            .into_iter()
-            .map(|(path, summary)| (rekeyed_path(&path, &[("amount", 8), ("rank", 2)]), summary))
-            .collect();
-        assert_eq!(after, expected, "only the amount and rank keys change");
-        drop(transaction);
-
+        assert_eq!(
+            dump_document_type(&drive, &contract, "item"),
+            rekeyed_dump(before, &[("amount", 8), ("rank", 2)]),
+            "only the amount and rank keys change"
+        );
         assert_eq!(
             query_items(
                 &drive,
@@ -780,9 +859,10 @@ mod tests {
                 None,
             )
             .expect("expected to delete a rewritten item");
-        insert_item(
+        insert_document(
             &drive,
             &contract,
+            "item",
             &item(6, "a", HIGH, Some(32768), "u"),
             platform_version,
         );
@@ -838,5 +918,304 @@ mod tests {
             ),
             vec![3, 32768, 40000]
         );
+    }
+
+    /// A `score` type summing a signed `weight` by a u8 `grade`, both on its
+    /// own (`byGrade`) and under a range-summable `[grade, tag]` continuation,
+    /// which a summing value tree holds behind a wrapper that keeps it out of
+    /// the sum.
+    fn score_contract(weight: Value) -> DataContract {
+        contract_at_13(
+            9,
+            "score",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                    "weight": weight,
+                    "tag": {"type": "string", "maxLength": 10, "position": 2},
+                },
+                "required": ["grade", "weight", "tag"],
+                "indices": [
+                    {
+                        "name": "byGrade",
+                        "properties": [{"grade": "asc"}],
+                        "summable": "weight",
+                        "rangeSummable": true,
+                    },
+                    {
+                        "name": "byGradeTag",
+                        "properties": [{"grade": "asc"}, {"tag": "asc"}],
+                        "summable": "weight",
+                        "rangeSummable": true,
+                    },
+                ],
+                "additionalProperties": false,
+            }),
+        )
+    }
+
+    fn score(id: u8, grade: u8, weight: i64, tag: &str) -> Document {
+        document(
+            id,
+            vec![
+                ("grade", Value::U8(grade)),
+                ("weight", Value::I64(weight)),
+                ("tag", Value::Text(tag.to_string())),
+            ],
+        )
+    }
+
+    #[test]
+    fn should_rekey_sum_trees_and_the_wrapped_continuations_under_them() {
+        let contract = score_contract(platform_value!(
+            {"type": "integer", "minimum": -1000, "maximum": 1000, "position": 1}
+        ));
+        let drive = setup_contract_at_13(&contract);
+        for (id, grade, weight, tag) in [
+            (1, 5, 10, "a"),
+            (2, 100, -20, "b"),
+            (3, 200, 30, "a"),
+            (4, 255, -40, "c"),
+            (5, 200, 50, "d"),
+        ] {
+            insert_document(
+                &drive,
+                &contract,
+                "score",
+                &score(id, grade, weight, tag),
+                protocol_version_13(),
+            );
+        }
+        let before = dump_document_type(&drive, &contract, "score");
+        assert!(
+            before.values().any(|(element, ..)| element.is_wrapped()),
+            "the continuations sit behind a wrapper"
+        );
+
+        rekey(&drive);
+
+        assert_eq!(
+            dump_document_type(&drive, &contract, "score"),
+            rekeyed_dump(before, &[("grade", 1)]),
+            "only the grade keys change, sums and wrappers included"
+        );
+        assert_eq!(
+            query_values(
+                &drive,
+                &contract,
+                "score",
+                "select * from score where grade > 100 order by grade asc",
+                "grade",
+                PlatformVersion::latest(),
+            ),
+            vec![200, 200, 255]
+        );
+    }
+
+    /// The sums of these grades fit, but a tree rebuilt in the new key order
+    /// would hold grades 1 and 2 in one subtree summing past `i64::MAX`.
+    #[test]
+    fn should_keep_the_keys_of_an_index_whose_sums_could_leave_the_range_when_rebuilt() {
+        const M: i64 = 1 << 62;
+        let contract = score_contract(platform_value!({"type": "integer", "position": 1}));
+        let drive = setup_contract_at_13(&contract);
+        for (id, grade, weight) in [(1, 1, M), (2, 128, -M), (3, 2, M), (4, 3, -M)] {
+            insert_document(
+                &drive,
+                &contract,
+                "score",
+                &score(id, grade, weight, "a"),
+                protocol_version_13(),
+            );
+        }
+        let before = dump_document_type(&drive, &contract, "score");
+
+        rekey(&drive);
+
+        assert_eq!(
+            dump_document_type(&drive, &contract, "score"),
+            before,
+            "the index keeps its earlier keys"
+        );
+    }
+
+    /// A `seat` type whose numbers (a u8) are contested.
+    fn seat_contract() -> DataContract {
+        contract_at_13(
+            10,
+            "seat",
+            platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "number": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                },
+                "required": ["number"],
+                "indices": [{
+                    "name": "byNumber",
+                    "properties": [{"number": "asc"}],
+                    "unique": true,
+                    "contested": {"resolution": 0},
+                }],
+                "additionalProperties": false,
+            }),
+        )
+    }
+
+    fn add_seat_contender(
+        drive: &Drive,
+        vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+        owner: u8,
+        starts_the_contest: bool,
+        platform_version: &PlatformVersion,
+    ) {
+        let owner_id = Identifier::new([owner; 32]);
+        let document: Document = DocumentV0 {
+            id: Identifier::new([owner; 32]),
+            owner_id,
+            properties: BTreeMap::from([("number".to_string(), Value::U8(200))]),
+            ..Default::default()
+        }
+        .into();
+        let block_info = BlockInfo::default();
+        drive
+            .add_contested_document(
+                OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(owner_id.to_buffer()),
+                },
+                vote_poll.clone(),
+                false,
+                starts_the_contest.then(|| {
+                    ContestedDocumentVotePollStoredInfo::new(block_info, platform_version)
+                        .expect("expected the poll's stored info")
+                }),
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the contender");
+    }
+
+    /// A contest on an unsigned value started, and voted on, before protocol
+    /// version 14 is joined after it at the same poll, keeps the vote, and
+    /// lists and proves its value as it is.
+    #[test]
+    fn should_keep_a_contest_on_an_unsigned_value_at_its_poll_across_the_upgrade() {
+        let contract = seat_contract();
+        let drive = setup_contract_at_13(&contract);
+        let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
+            document_type_name: "seat".to_string(),
+            index_name: "byNumber".to_string(),
+            index_values: vec![Value::U8(200)],
+        };
+        add_seat_contender(&drive, &vote_poll, 21, true, protocol_version_13());
+        let voter = [9; 32];
+        let towards_first = ResourceVoteChoice::TowardsIdentity(Identifier::new([21; 32]));
+        drive
+            .register_contested_resource_identity_vote(
+                voter,
+                1,
+                vote_poll.clone(),
+                towards_first,
+                None,
+                &BlockInfo::default(),
+                None,
+                protocol_version_13(),
+            )
+            .expect("expected to record the vote");
+
+        rekey(&drive);
+
+        let platform_version = PlatformVersion::latest();
+        add_seat_contender(&drive, &vote_poll, 22, false, platform_version);
+        let contenders_path = vote_poll
+            .contenders_path(platform_version)
+            .expect("expected the contenders path");
+        assert_eq!(
+            contenders_path,
+            vote_poll
+                .contenders_path(protocol_version_13())
+                .expect("expected the contenders path"),
+            "the poll keeps its path"
+        );
+        let transaction = drive.grove.start_transaction();
+        let contenders: Vec<Vec<u8>> = drive
+            .stored_children(&contenders_path, &transaction, platform_version)
+            .expect("expected the contenders")
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert!(contenders.contains(&vec![21; 32]), "the first contender");
+        assert!(contenders.contains(&vec![22; 32]), "the second contender");
+        let voting_path = vote_poll
+            .contender_voting_path(&towards_first, platform_version)
+            .expect("expected the voting path");
+        let voters: Vec<Vec<u8>> = drive
+            .stored_children(&voting_path, &transaction, platform_version)
+            .expect("expected the voters")
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!(voters, vec![voter.to_vec()], "the vote cast before");
+        drop(transaction);
+
+        let listing = VotePollsByDocumentTypeQuery {
+            contract_id: contract.id(),
+            document_type_name: "seat".to_string(),
+            index_name: "byNumber".to_string(),
+            start_index_values: vec![],
+            end_index_values: vec![],
+            start_at_value: None,
+            limit: None,
+            order_ascending: true,
+        };
+        let contested_values = listing
+            .execute_no_proof(&drive, None, &mut vec![], platform_version)
+            .expect("expected the contested values");
+        assert_eq!(contested_values, vec![Value::U8(200)]);
+        let proof = listing
+            .clone()
+            .execute_with_proof(&drive, None, &mut vec![], platform_version)
+            .expect("expected the contested values proof");
+        let (_, proved_values) = listing
+            .resolve_with_provided_borrowed_contract(&contract)
+            .expect("expected to resolve the listing")
+            .verify_contests_proof(&proof, platform_version)
+            .expect("expected the proof to verify");
+        assert_eq!(proved_values, vec![Value::U8(200)]);
+
+        // The voter's record of the vote still names the poll's value
+        let votes_given = ContestedResourceVotesGivenByIdentityQuery {
+            identity_id: Identifier::new(voter),
+            offset: None,
+            limit: None,
+            start_at: None,
+            order_ascending: true,
+        };
+        let (proof, _) = votes_given
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected the votes given proof");
+        let known_contract = Arc::new(contract.clone());
+        let (_, votes): (_, Vec<(Identifier, ResourceVote)>) = votes_given
+            .verify_identity_votes_given_proof(
+                &proof,
+                &|_| Ok(Some(known_contract.clone())),
+                platform_version,
+            )
+            .expect("expected the proof to verify");
+        let [(_, vote)] = votes.as_slice() else {
+            panic!("expected the one vote, got {votes:?}");
+        };
+        let VotePoll::ContestedDocumentResourceVotePoll(poll) = vote.vote_poll();
+        assert_eq!(poll.index_values, vec![Value::U8(200)]);
+        assert_eq!(vote.resource_vote_choice(), towards_first);
     }
 }
