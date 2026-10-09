@@ -1,5 +1,6 @@
 use crate::Value;
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
 /* ========================================================= *
  *   Trait: EqualUnderlyingData                              *
  * ========================================================= */

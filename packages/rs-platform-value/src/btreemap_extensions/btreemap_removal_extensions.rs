@@ -1,5 +1,7 @@
 use crate::{BinaryData, Bytes20, Bytes32, Error, Identifier, Value};
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 pub trait BTreeValueRemoveFromMapHelper {
     fn remove_optional_string(&mut self, key: &str) -> Result<Option<String>, Error>;
