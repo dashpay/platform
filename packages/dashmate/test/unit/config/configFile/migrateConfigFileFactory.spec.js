@@ -342,6 +342,36 @@ describe('migrateConfigFileFactory', () => {
     });
   });
 
+  it('should add the quorum list reload interval to a 5.0.0-beta.3 config, short only on local networks', async () => {
+    // Loading is what fails without it: the schema requires the option.
+    const fromVersion = '5.0.0-beta.3';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    // `dashmate setup local` runs the service on `local_seed`, a config of its
+    // own next to the `local` preset.
+    configFileData.configs.local_seed = structuredClone(configFileData.configs.local);
+    configFileData.configs.local_seed.group = 'local';
+    for (const options of Object.values(configFileData.configs)) {
+      delete options.platform.quorumList.cacheTtlSeconds;
+    }
+    configFileData.configs.testnet.platform.quorumList.cacheTtlSeconds = 5;
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.local.platform.quorumList.cacheTtlSeconds).to.equal(1);
+    expect(migrated.configs.local_seed.platform.quorumList.cacheTtlSeconds).to.equal(1);
+    expect(migrated.configs.base.platform.quorumList.cacheTtlSeconds).to.equal(60);
+    expect(migrated.configs.mainnet.platform.quorumList.cacheTtlSeconds).to.equal(60);
+    // An interval the operator chose is left alone.
+    expect(migrated.configs.testnet.platform.quorumList.cacheTtlSeconds).to.equal(5);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It
