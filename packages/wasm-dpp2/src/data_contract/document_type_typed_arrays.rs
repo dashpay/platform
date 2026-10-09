@@ -27,12 +27,15 @@ const DOCUMENT_TYPED_ARRAY_PROPERTY_TS: &'static str = r#"
  *
  * `type` names the element kind as DPP parses it: `byteArray` is an
  * `items` schema with `byteArray: true`, and `identifier` one that also
- * carries the identifier `contentMediaType`. The bound names are the schema
- * keywords' own: `minLength` / `maxLength` count a string element's
- * characters, `minItems` / `maxItems` a byte array element's bytes,
- * `minimum` / `maximum` an integer or number element's range, and `enum`
- * the values an element must be one of, in declared order. A bound is
- * absent when the schema omits it.
+ * carries the identifier `contentMediaType`. From protocol version 14 the
+ * schema may write them as the shorthands `{ type: 'bytes', size }` (a
+ * `byteArray` with `minItems` and `maxItems` both `size`) and
+ * `{ type: 'identifier' }`, which parse to the same kinds. The bound
+ * names are the schema keywords' own: `minLength` / `maxLength` count a
+ * string element's characters, `minItems` / `maxItems` a byte array
+ * element's bytes, `minimum` / `maximum` an integer or number element's
+ * range, and `enum` the values an element must be one of, in declared
+ * order. A bound is absent when the schema omits it.
  */
 export type DocumentTypedArrayItem =
   | { type: 'integer'; minimum?: number; maximum?: number; enum?: number[] }

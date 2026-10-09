@@ -26,6 +26,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
@@ -165,12 +166,31 @@ impl DataContract {
             // If $defs is updated we need to make sure that our data contract is still compatible
             // with previously created data
             if old_defs_map != new_defs_map {
+                // A property type shorthand in a definition is compared as the
+                // long form it stands for, as the parse reads it, so rewriting
+                // a definition from one spelling to the other is no change.
+                // Inert before protocol version 14, where
+                // `expand_property_type_shorthands` is `None` and rewrites
+                // nothing: the definitions are compared as they always were.
+                let old_expanded_defs = DocumentType::expand_schema_defs_property_type_shorthands(
+                    old_defs_map,
+                    false,
+                    platform_version,
+                )
+                .map_err(ProtocolError::DataContractError)?;
+                let new_expanded_defs = DocumentType::expand_schema_defs_property_type_shorthands(
+                    new_defs_map,
+                    false,
+                    platform_version,
+                )
+                .map_err(ProtocolError::DataContractError)?;
+
                 // both new and old $defs already validated as a part of new and old contract
-                let old_defs_json = Value::from(old_defs_map)
+                let old_defs_json = Value::from(old_expanded_defs.as_ref().unwrap_or(old_defs_map))
                     .try_into_validating_json()
                     .map_err(ProtocolError::ValueError)?;
 
-                let new_defs_json = Value::from(new_defs_map)
+                let new_defs_json = Value::from(new_expanded_defs.as_ref().unwrap_or(new_defs_map))
                     .try_into_validating_json()
                     .map_err(ProtocolError::ValueError)?;
 
