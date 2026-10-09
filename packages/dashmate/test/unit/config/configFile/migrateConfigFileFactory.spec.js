@@ -342,6 +342,40 @@ describe('migrateConfigFileFactory', () => {
     });
   });
 
+  it('should render a migrated legacy config before and after enabling Tor', async () => {
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const baseConfig = container.resolve('defaultConfigs').get('base');
+    const renderServiceTemplates = container.resolve('renderServiceTemplates');
+
+    for (const fromVersion of ['4.1.0', '4.1.1', '4.2.0-dev.1']) {
+      const configFileData = createConfigFile().toObject();
+      configFileData.configFormatVersion = fromVersion;
+      const devnetConfig = new Config('devnet', baseConfig.getStoredOptions());
+      devnetConfig.set('network', 'devnet');
+      configFileData.configs.devnet = devnetConfig.getStoredOptions();
+      for (const options of Object.values(configFileData.configs)) {
+        delete options.core.tor;
+      }
+
+      const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+      for (const [name, options] of Object.entries(migrated.configs)) {
+        const config = new Config(name, options);
+        const disabledConf = renderServiceTemplates(config)['core/dash.conf'];
+        expect(disabledConf).to.match(/^listenonion=0$/m);
+        expect(disabledConf.match(/^bind=.*$/gm)).to.deep.equal(['bind=0.0.0.0']);
+
+        config.set('core.tor.enabled', true);
+        const enabledConf = renderServiceTemplates(config)['core/dash.conf'];
+        expect(enabledConf).to.match(/^listenonion=1$/m);
+        expect(enabledConf.match(/^bind=.*$/gm)).to.deep.equal([
+          'bind=0.0.0.0',
+          'bind=127.0.0.1=onion',
+        ]);
+      }
+    }
+  });
+
   it('should add the quorum list reload interval to a 5.0.0-beta.3 config, short only on local networks', async () => {
     // Loading is what fails without it: the schema requires the option.
     const fromVersion = '5.0.0-beta.3';
