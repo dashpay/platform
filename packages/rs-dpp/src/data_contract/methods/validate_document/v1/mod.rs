@@ -126,8 +126,7 @@ impl DataContract {
                 &root_schema,
                 false,
                 platform_version,
-            )
-            .map_err(ProtocolError::DataContractError)?
+            )?
             .unwrap_or(root_schema);
 
             let root_json_schema = root_schema

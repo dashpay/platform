@@ -394,7 +394,9 @@ fn parse_generation_3(
     // and the `$ref` walks included, reads the expanded schema and `$defs`,
     // so a shorthand parses to exactly what its long form parses to. The
     // document type keeps the schema as sent (restored before returning),
-    // since that is what the contract stores, serializes and proves.
+    // since that is what the contract stores, serializes and proves. The parse
+    // of a whole contract hands down `$defs` it already expanded, which the
+    // scan here finds nothing to rewrite in.
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {
             DocumentType::expand_schema_defs_property_type_shorthands(
@@ -403,17 +405,14 @@ fn parse_generation_3(
                 platform_version,
             )
         })
-        .transpose()
-        .map_err(consensus_or_protocol_data_contract_error)?
+        .transpose()?
         .flatten();
     let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
     let (schema, schema_as_sent) = match DocumentType::expand_property_type_shorthands(
         &schema,
         full_validation,
         platform_version,
-    )
-    .map_err(consensus_or_protocol_data_contract_error)?
-    {
+    )? {
         Some(expanded_schema) => (expanded_schema, Some(schema)),
         None => (schema, None),
     };

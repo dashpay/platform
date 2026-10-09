@@ -439,14 +439,12 @@ impl DocumentTypeRef<'_> {
         // version 14, where `expand_property_type_shorthands` is `None` and
         // rewrites nothing: the schemas are compared as they always were.
         let old_expanded_schema =
-            DocumentType::expand_property_type_shorthands(self.schema(), false, platform_version)
-                .map_err(ProtocolError::DataContractError)?;
+            DocumentType::expand_property_type_shorthands(self.schema(), false, platform_version)?;
         let new_expanded_schema = DocumentType::expand_property_type_shorthands(
             new_document_type.schema(),
             false,
             platform_version,
-        )
-        .map_err(ProtocolError::DataContractError)?;
+        )?;
         let old_schema = old_expanded_schema.as_ref().unwrap_or(self.schema());
         let new_schema = new_expanded_schema
             .as_ref()

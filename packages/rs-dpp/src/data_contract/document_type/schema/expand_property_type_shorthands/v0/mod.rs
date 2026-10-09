@@ -50,27 +50,52 @@ fn shorthand_of(map: &[(Value, Value)]) -> Option<Shorthand> {
     }
 }
 
-/// Queues the property schemas directly below the property schema `map`: the
-/// members its `properties` declares and the element schema of its `items`.
-/// A `refersTo`, an `enum` or any other keyword's value is never read, so a key
-/// named `type` inside one is never taken for a property's type.
-fn queue_child_schemas<'a>(map: &'a [(Value, Value)], to_visit: &mut Vec<&'a Value>) {
-    for (key, value) in map {
-        match key.as_text() {
-            Some(property_names::PROPERTIES) => {
-                if let Some(members) = value.as_map() {
-                    to_visit.extend(members.iter().map(|(_, member)| member));
-                }
-            }
-            Some(property_names::ITEMS) if value.is_map() => to_visit.push(value),
-            _ => {}
-        }
+/// How property schemas sit below one key of an object holding them.
+enum Children {
+    /// The values of a map (`properties`, `$defs`): a property schema each,
+    /// named by its key.
+    Members,
+    /// The value itself (`items`): the element schema of a typed array.
+    Element,
+}
+
+/// The property schemas below `key` of a property schema: the members its
+/// `properties` declares and the element schema of its `items`. The one rule
+/// both walks follow. A `refersTo`, an `enum` or any other keyword's value is
+/// never read, so a key named `type` inside one is never taken for a
+/// property's type.
+fn children_below(key: &Value, value: &Value) -> Option<Children> {
+    match key.as_text()? {
+        property_names::PROPERTIES if value.is_map() => Some(Children::Members),
+        property_names::ITEMS if value.is_map() => Some(Children::Element),
+        _ => None,
     }
 }
 
-/// Whether a property schema among `roots`, or below one of them, declares a
-/// shorthand. Walked without recursion: a schema reaches this before the depth
-/// check bounds its nesting.
+/// The property schemas below `key` at the top of a document type schema, or
+/// of an object holding them as one does (the root schema built from one, a
+/// `$defs` wrapper): the members of its `properties`, named as they are, and
+/// of its `$defs`, named `$defs.<name>`. Returns the prefix of their names.
+fn top_level_prefix(key: &Value, value: &Value) -> Option<&'static str> {
+    match key.as_text()? {
+        property_names::PROPERTIES if value.is_map() => Some(""),
+        contract_property_names::DEFINITIONS if value.is_map() => Some("$defs."),
+        _ => None,
+    }
+}
+
+/// The values of the map `value`, none when it is no map.
+fn members(value: &Value) -> impl Iterator<Item = &Value> {
+    value
+        .as_map()
+        .into_iter()
+        .flatten()
+        .map(|(_, member)| member)
+}
+
+/// Whether a property schema among `to_visit`, or below one of them, declares
+/// a shorthand. The walk keeps its own stack and adds no recursion; it does
+/// not bound the nesting either, which is the depth check's job, later.
 fn holds_shorthand(mut to_visit: Vec<&Value>) -> bool {
     while let Some(schema) = to_visit.pop() {
         let Some(map) = schema.as_map() else {
@@ -79,15 +104,20 @@ fn holds_shorthand(mut to_visit: Vec<&Value>) -> bool {
         if shorthand_of(map).is_some() {
             return true;
         }
-        queue_child_schemas(map, &mut to_visit);
+        for (key, value) in map {
+            match children_below(key, value) {
+                Some(Children::Members) => to_visit.extend(members(value)),
+                Some(Children::Element) => to_visit.push(value),
+                None => {}
+            }
+        }
     }
     false
 }
 
 /// Rewrites every shorthand among the property schemas `to_visit` holds, and
 /// below them, in place; each is paired with where it is, for the errors.
-/// Walked without recursion, as [`holds_shorthand`], and below the same
-/// keywords ([`queue_child_schemas`]).
+/// Walks as [`holds_shorthand`] does, below the keys [`children_below`] names.
 fn expand_in_place(
     mut to_visit: Vec<(String, &mut Value)>,
     full_validation: bool,
@@ -101,8 +131,8 @@ fn expand_in_place(
             expand_shorthand(map, shorthand, &location, full_validation, platform_version)?;
         }
         for (key, value) in map {
-            match key.as_text() {
-                Some(property_names::PROPERTIES) => {
+            match children_below(key, value) {
+                Some(Children::Members) => {
                     if let Value::Map(members) = value {
                         for (member_key, member) in members {
                             let name = member_key.as_text().unwrap_or_default();
@@ -110,10 +140,8 @@ fn expand_in_place(
                         }
                     }
                 }
-                Some(property_names::ITEMS) if value.is_map() => {
-                    to_visit.push((format!("{location}[]"), value));
-                }
-                _ => {}
+                Some(Children::Element) => to_visit.push((format!("{location}[]"), value)),
+                None => {}
             }
         }
     }
@@ -187,49 +215,51 @@ fn expand_shorthand(
 /// `max_field_value_size`, the most bytes any document field may hold, so a
 /// larger size could never be filled. The upper bound is read from the tables
 /// and, like every such bound, checked under full validation only, so a
-/// contract already stored keeps parsing whatever a later table says; a size
-/// that is no integer from 1 to 65535 (the range of a byte array's length)
-/// can not be expanded at all and is refused on every parse.
+/// contract already stored keeps parsing whatever a later table says; without
+/// full validation the bound is 65535, the most a byte array's length can be,
+/// past which a size can not be expanded at all.
 fn bytes_size(
     map: &[(Value, Value)],
     location: &str,
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<u16, DataContractError> {
-    let max_field_value_size = platform_version.system_limits.max_field_value_size;
-    let out_of_range = || {
-        DataContractError::InvalidContractStructure(format!(
-            "property \"{location}\" declares type \"bytes\" with a size that is not an integer \
-             from 1 to {max_field_value_size}, the most bytes a document field may hold"
-        ))
+    let (max_size, bound) = if full_validation {
+        (
+            platform_version
+                .system_limits
+                .max_field_value_size
+                .min(u32::from(u16::MAX)),
+            "the most bytes a document field may hold",
+        )
+    } else {
+        (u32::from(u16::MAX), "the most bytes a byte array can hold")
     };
     let Some(size) = last_value(map, SIZE) else {
         return Err(DataContractError::InvalidContractStructure(format!(
             "property \"{location}\" declares type \"bytes\" without a size: a byte array of \
-             exactly that many bytes, from 1 to {max_field_value_size}"
+             exactly that many bytes, from 1 to {max_size}"
         )));
     };
-    let size = size
-        .to_integer::<u16>()
+    size.to_integer::<u32>()
         .ok()
-        .filter(|size| *size > 0)
-        .ok_or_else(out_of_range)?;
-    if full_validation && u32::from(size) > max_field_value_size {
-        return Err(out_of_range());
-    }
-    Ok(size)
+        .filter(|size| (1..=max_size).contains(size))
+        .and_then(|size| u16::try_from(size).ok())
+        .ok_or_else(|| {
+            DataContractError::InvalidContractStructure(format!(
+                "property \"{location}\" declares type \"bytes\" with a size that is not an \
+                 integer from 1 to {max_size}, {bound}"
+            ))
+        })
 }
 
-/// The property schemas of a document type schema, or of an object holding
-/// them as one does, each with where it is: the values of its `properties`, by
-/// name, and of its `$defs`, as `$defs.<name>`.
+/// The property schemas at the top of `schema`, as [`top_level_prefix`]
+/// names them, each with where it is.
 fn top_level_schemas(schema: &mut [(Value, Value)]) -> Vec<(String, &mut Value)> {
     let mut schemas = Vec::new();
     for (key, value) in schema {
-        let prefix = match key.as_text() {
-            Some(property_names::PROPERTIES) => "",
-            Some(contract_property_names::DEFINITIONS) => "$defs.",
-            _ => continue,
+        let Some(prefix) = top_level_prefix(key, value) else {
+            continue;
         };
         if let Value::Map(members) = value {
             for (member_key, member) in members {
@@ -250,17 +280,11 @@ pub(super) fn expand_property_type_shorthands_v0(
     let Some(map) = schema.as_map() else {
         return Ok(None);
     };
-    let mut roots = Vec::new();
-    for (key, value) in map {
-        if matches!(
-            key.as_text(),
-            Some(property_names::PROPERTIES | contract_property_names::DEFINITIONS)
-        ) {
-            if let Some(members) = value.as_map() {
-                roots.extend(members.iter().map(|(_, member)| member));
-            }
-        }
-    }
+    let roots = map
+        .iter()
+        .filter(|(key, value)| top_level_prefix(key, value).is_some())
+        .flat_map(|(_, value)| members(value))
+        .collect();
     if !holds_shorthand(roots) {
         return Ok(None);
     }

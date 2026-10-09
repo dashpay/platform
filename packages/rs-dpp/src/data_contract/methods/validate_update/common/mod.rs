@@ -176,14 +176,12 @@ impl DataContract {
                     old_defs_map,
                     false,
                     platform_version,
-                )
-                .map_err(ProtocolError::DataContractError)?;
+                )?;
                 let new_expanded_defs = DocumentType::expand_schema_defs_property_type_shorthands(
                     new_defs_map,
                     false,
                     platform_version,
-                )
-                .map_err(ProtocolError::DataContractError)?;
+                )?;
 
                 // both new and old $defs already validated as a part of new and old contract
                 let old_defs_json = Value::from(old_expanded_defs.as_ref().unwrap_or(old_defs_map))

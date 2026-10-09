@@ -8,9 +8,11 @@
 use super::immutable_tests::{
     expect_structure_error, parse_dispatched, parse_dispatched_with_defs,
 };
+use super::refusal_test_support::contract_value;
 use super::*;
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::BasicError;
+use crate::consensus::state::state_error::StateError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -151,20 +153,14 @@ fn parse_payment(
     )
 }
 
-fn contract_value(version: u32, schema: Value, defs: BTreeMap<String, Value>) -> Value {
-    platform_value!({
-        "$formatVersion": "1",
-        "id": Value::Identifier([7; 32]),
-        "ownerId": Value::Identifier([8; 32]),
-        "version": version,
-        "schemaDefs": Value::from(defs),
-        "documentSchemas": { "payment": schema },
-    })
+/// A contract whose `payment` type is `schema`, with `defs` as its `$defs`.
+fn payment_contract_value(version: u32, schema: Value, defs: BTreeMap<String, Value>) -> Value {
+    contract_value(version, platform_value!({ "payment": schema }), Some(defs))
 }
 
 fn payment_contract(shorthand: bool) -> DataContract {
     DataContract::from_value(
-        contract_value(1, payment_schema(shorthand), payment_defs(shorthand)),
+        payment_contract_value(1, payment_schema(shorthand), payment_defs(shorthand)),
         true,
         PlatformVersion::latest(),
     )
@@ -613,8 +609,16 @@ fn should_refuse_the_shorthands_at_protocol_version_13() {
         "owner".to_string(),
         platform_value!({ "type": "identifier" }),
     )]);
-    parse_dispatched_with_defs(schema, Some(&defs), platform_version_13, true)
-        .expect_err("meta-schema v2 refuses the definition");
+    match parse_dispatched_with_defs(schema, Some(&defs), platform_version_13, true) {
+        Err(ProtocolError::ConsensusError(error)) => assert!(
+            matches!(
+                *error,
+                ConsensusError::BasicError(BasicError::JsonSchemaError(_))
+            ),
+            "{error:?}"
+        ),
+        other => panic!("expected meta-schema v2 to refuse the definition, got {other:?}"),
+    }
 }
 
 /// An update rewriting a property, or a definition, from one spelling to the
@@ -624,7 +628,7 @@ fn should_accept_an_update_between_the_two_spellings_as_no_change() {
     let platform_version = PlatformVersion::latest();
     let contract = |version: u32, schema: Value, defs: BTreeMap<String, Value>| {
         DataContract::from_value(
-            contract_value(version, schema, defs),
+            payment_contract_value(version, schema, defs),
             true,
             platform_version,
         )
@@ -660,27 +664,48 @@ fn should_accept_an_update_between_the_two_spellings_as_no_change() {
             .expect("the path exists");
         contract(2, schema, payment_defs(true))
     };
-    for (path, replacement) in [
-        // An identifier is no plain 32-byte array
-        (
-            "properties.recipientId",
-            platform_value!({ "type": "bytes", "size": 32, "position": 0 }),
+    // An identifier is no plain 32-byte array: refused by the schema
+    // comparison, at the keyword the long form drops
+    let result = old
+        .validate_update(
+            &changed(
+                "properties.recipientId",
+                platform_value!({ "type": "bytes", "size": 32, "position": 0 }),
+            ),
+            &BlockInfo::default(),
+            platform_version,
+        )
+        .expect("the update is judged");
+    assert!(
+        result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(error))
+                if error.property_path() == "/properties/recipientId/contentMediaType"
+        )),
+        "{:?}",
+        result.errors
+    );
+    // nor is a fixed size another: refused as a change of the stored layout,
+    // naming the long form's `minItems` and `maxItems`
+    let result = old
+        .validate_update(
+            &changed(
+                "properties.memo.properties.digest",
+                platform_value!({ "type": "bytes", "size": 32, "position": 1 }),
+            ),
+            &BlockInfo::default(),
+            platform_version,
+        )
+        .expect("the update is judged");
+    assert!(
+        matches!(
+            result.errors.first(),
+            Some(ConsensusError::StateError(StateError::DocumentTypeUpdateError(error)))
+                if error.additional_message().contains("minItems")
         ),
-        // nor is a fixed size another
-        (
-            "properties.memo.properties.digest",
-            platform_value!({ "type": "bytes", "size": 32, "position": 1 }),
-        ),
-    ] {
-        let result = old
-            .validate_update(
-                &changed(path, replacement),
-                &BlockInfo::default(),
-                platform_version,
-            )
-            .expect("the update is judged");
-        assert!(!result.is_valid(), "{path} changed and was accepted");
-    }
+        "{:?}",
+        result.errors
+    );
 
     // A definition changed from an identifier to plain bytes
     let new = contract(
@@ -708,7 +733,7 @@ fn should_judge_updates_at_protocol_version_13_as_before() {
     let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
     let contract = |version: u32, schema: Value, defs: BTreeMap<String, Value>| {
         DataContract::from_value(
-            contract_value(version, schema, defs),
+            payment_contract_value(version, schema, defs),
             true,
             platform_version_13,
         )
@@ -761,4 +786,89 @@ fn should_judge_updates_at_protocol_version_13_as_before() {
         sponsor(long_bytes(32, platform_value!({}))),
     );
     assert!(!judge(&definition_changed).is_valid());
+}
+
+/// A property schema repeating `type` is read by its last entry, as the
+/// parser's map and the JSON the meta-schema reads both take it: a shorthand
+/// before another type is no shorthand, and one after it is.
+#[test]
+fn should_read_a_repeated_type_by_its_last_entry() {
+    let property = |types: [&str; 2]| {
+        Value::Map(vec![
+            (Value::Text("type".into()), Value::Text(types[0].into())),
+            (Value::Text("type".into()), Value::Text(types[1].into())),
+            (Value::Text("maxLength".into()), Value::U64(10)),
+            (Value::Text("position".into()), Value::U64(0)),
+        ])
+    };
+    let parse = |property: Value| {
+        parse_dispatched(
+            platform_value!({
+                "type": "object",
+                "properties": { "value": property },
+                "additionalProperties": false
+            }),
+            PlatformVersion::latest(),
+            false,
+        )
+    };
+
+    let string_last = parse(property(["identifier", "string"])).expect("a string parses");
+    assert!(matches!(
+        string_last
+            .flattened_properties()
+            .get("value")
+            .map(|property| &property.property_type),
+        Some(DocumentPropertyType::String(_))
+    ));
+
+    let identifier_last = parse(property(["string", "identifier"])).expect("an identifier parses");
+    assert_eq!(
+        identifier_last
+            .flattened_properties()
+            .get("value")
+            .map(|property| &property.property_type),
+        Some(&DocumentPropertyType::Identifier)
+    );
+}
+
+/// A `$ref` may name a property inside a definition; the definition was
+/// expanded whole, so a shorthand there reads as its long form.
+#[test]
+fn should_read_a_shorthand_reached_by_a_ref_below_a_definition() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "authorId": { "$ref": "#/$defs/memo/properties/author", "position": 0 }
+        },
+        "additionalProperties": false
+    });
+    let defs = BTreeMap::from([(
+        "memo".to_string(),
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "author": { "type": "identifier", "position": 0 },
+                "digest": { "type": "bytes", "size": 20, "position": 1 }
+            },
+            "additionalProperties": false
+        }),
+    )]);
+    for full_validation in [true, false] {
+        let document_type = parse_dispatched_with_defs(
+            schema.clone(),
+            Some(&defs),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|error| panic!("full validation {full_validation}: {error}"));
+        assert_eq!(
+            document_type
+                .flattened_properties()
+                .get("authorId")
+                .map(|property| &property.property_type),
+            Some(&DocumentPropertyType::Identifier),
+            "full validation {full_validation}"
+        );
+    }
 }

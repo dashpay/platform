@@ -44,6 +44,23 @@ impl DocumentType {
             ));
         }
 
+        // Protocol version 14 and later: a property type shorthand in the contract's `$defs` is
+        // read as the long form it stands for, expanded once here for every document type's
+        // parse (which then finds nothing left to rewrite) and the checks below. Inert before
+        // 14: `expand_property_type_shorthands` is `None` there, rewrites nothing, and the
+        // definitions are passed on as given.
+        let expanded_schema_defs = schema_defs
+            .map(|schema_defs| {
+                DocumentType::expand_schema_defs_property_type_shorthands(
+                    schema_defs,
+                    full_validation,
+                    platform_version,
+                )
+            })
+            .transpose()?
+            .flatten();
+        let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
+
         for (name, schema) in document_schemas.into_iter() {
             let document_type = match platform_version
                 .dpp

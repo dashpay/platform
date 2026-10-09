@@ -1,7 +1,8 @@
 mod v0;
 
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::errors::DataContractError;
+use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -26,7 +27,8 @@ impl DocumentType {
     /// `size` from 1 to `max_field_value_size` (the largest value any document
     /// field may hold, so a larger size could never be filled), the bound
     /// checked under `full_validation` only, like every other bound read from
-    /// the tables (`InvalidContractStructure`, 10231).
+    /// the tables (`InvalidContractStructure`, 10231, a consensus error in a
+    /// build with validation).
     ///
     /// Returns `None` when there is nothing to rewrite, so the caller keeps the
     /// schema it holds. The contract keeps the schema as sent: this is a view
@@ -42,7 +44,7 @@ impl DocumentType {
         schema: &Value,
         full_validation: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<Value>, DataContractError> {
+    ) -> Result<Option<Value>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions
@@ -53,10 +55,13 @@ impl DocumentType {
             None => Ok(None),
             Some(0) => {
                 v0::expand_property_type_shorthands_v0(schema, full_validation, platform_version)
+                    .map_err(consensus_or_protocol_data_contract_error)
             }
-            Some(version) => Err(DataContractError::Unsupported(format!(
-                "expand_property_type_shorthands version {version} is not supported"
-            ))),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentType::expand_property_type_shorthands".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -68,7 +73,7 @@ impl DocumentType {
         schema_defs: &BTreeMap<String, Value>,
         full_validation: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<BTreeMap<String, Value>>, DataContractError> {
+    ) -> Result<Option<BTreeMap<String, Value>>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions
@@ -81,10 +86,13 @@ impl DocumentType {
                 schema_defs,
                 full_validation,
                 platform_version,
-            ),
-            Some(version) => Err(DataContractError::Unsupported(format!(
-                "expand_property_type_shorthands version {version} is not supported"
-            ))),
+            )
+            .map_err(consensus_or_protocol_data_contract_error),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentType::expand_schema_defs_property_type_shorthands".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 }
@@ -92,6 +100,11 @@ impl DocumentType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "validation")]
+    use crate::consensus::basic::BasicError;
+    #[cfg(feature = "validation")]
+    use crate::consensus::ConsensusError;
+    use crate::data_contract::errors::DataContractError;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
@@ -103,15 +116,30 @@ mod tests {
         })
     }
 
-    fn expand(schema: &Value) -> Result<Option<Value>, DataContractError> {
+    fn expand(schema: &Value) -> Result<Option<Value>, ProtocolError> {
         DocumentType::expand_property_type_shorthands(schema, true, PlatformVersion::latest())
     }
 
-    fn refusal(schema: &Value) -> String {
-        match expand(schema) {
-            Err(DataContractError::InvalidContractStructure(message)) => message,
+    /// The message of the `InvalidContractStructure` (10231) `result` refuses with.
+    fn refusal_message<T: std::fmt::Debug>(result: Result<T, ProtocolError>) -> String {
+        match result {
+            #[cfg(feature = "validation")]
+            Err(ProtocolError::ConsensusError(error)) => match *error {
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(message),
+                )) => message,
+                other => panic!("expected InvalidContractStructure, got {other:?}"),
+            },
+            #[cfg(not(feature = "validation"))]
+            Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                message,
+            ))) => message,
             other => panic!("expected InvalidContractStructure, got {other:?}"),
         }
+    }
+
+    fn refusal(schema: &Value) -> String {
+        refusal_message(expand(schema))
     }
 
     #[test]
@@ -357,6 +385,56 @@ mod tests {
             "hash": { "type": "bytes", "size": max_field_value_size, "position": 0 }
         }));
         assert_matches!(expand(&largest), Ok(Some(_)));
+    }
+
+    /// Without full validation a size is refused only past 65535, and the
+    /// message says that bound, not the table's.
+    #[test]
+    fn should_state_the_bound_of_the_path_that_refused_a_size() {
+        let schema = schema_with(platform_value!({
+            "hash": { "type": "bytes", "size": 70000, "position": 0 }
+        }));
+        let message = refusal_message(DocumentType::expand_property_type_shorthands(
+            &schema,
+            false,
+            PlatformVersion::latest(),
+        ));
+        assert!(message.contains("from 1 to 65535"), "{message}");
+
+        let max_field_value_size = PlatformVersion::latest().system_limits.max_field_value_size;
+        let message = refusal(&schema);
+        assert!(
+            message.contains(&format!("from 1 to {max_field_value_size}")),
+            "{message}"
+        );
+    }
+
+    /// A table naming a generation this build does not know is the node's
+    /// fault, not the contract's: an internal error, never a refusal.
+    #[test]
+    fn should_report_an_unknown_generation_as_a_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .expand_property_type_shorthands = Some(1);
+        let schema = schema_with(platform_value!({
+            "id": { "type": "identifier", "position": 0 }
+        }));
+        assert_matches!(
+            DocumentType::expand_property_type_shorthands(&schema, true, &platform_version),
+            Err(ProtocolError::UnknownVersionMismatch { received: 1, .. })
+        );
+        assert_matches!(
+            DocumentType::expand_schema_defs_property_type_shorthands(
+                &BTreeMap::new(),
+                true,
+                &platform_version
+            ),
+            Err(ProtocolError::UnknownVersionMismatch { received: 1, .. })
+        );
     }
 
     #[test]

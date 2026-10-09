@@ -3,7 +3,8 @@
 //! registered by a signed contract create and stored as sent; documents are
 //! created against the contract read back from state, refused when a value
 //! has the wrong length, and queried by the value of each shorthand, with and
-//! without a proof.
+//! without a proof. A signed contract update rewriting both properties in
+//! their long form is no change, and the documents keep answering.
 
 use super::*;
 
@@ -24,47 +25,77 @@ mod property_type_shorthand_tests {
     };
     use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse};
     use dpp::consensus::basic::BasicError;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::DocumentPropertyType;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::IdentityPublicKey;
+    use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::platform_value;
     use dpp::prelude::DataContract;
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    /// A `payment` type keyed by the shorthands: who it pays (an
-    /// identifier) and the transaction that paid it (32 bytes), each read by
-    /// an index, the transaction hash a unique one.
+    /// A `payment` type keyed by who it pays (an identifier) and the
+    /// transaction that paid it (32 bytes), each read by an index, the
+    /// transaction hash a unique one; written with the shorthands
+    /// (`shorthand`) or in full.
+    fn payment_schema(shorthand: bool) -> Value {
+        let (recipient, tx_hash) = if shorthand {
+            (
+                platform_value!({ "type": "identifier", "position": 1 }),
+                platform_value!({ "type": "bytes", "size": 32, "position": 2 }),
+            )
+        } else {
+            (
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1
+                }),
+                platform_value!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 2
+                }),
+            )
+        };
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "amount": { "type": "integer", "minimum": 1, "maximum": 1000000, "position": 0 },
+                "recipientId": recipient,
+                "txHash": tx_hash
+            },
+            "indices": [
+                { "name": "byRecipient", "properties": [{ "recipientId": "asc" }] },
+                { "name": "byTxHash", "properties": [{ "txHash": "asc" }], "unique": true }
+            ],
+            "required": ["amount", "recipientId", "txHash"],
+            "additionalProperties": false
+        })
+    }
+
     fn payment_contract_value(contract_id: Identifier, owner_id: Identifier) -> Value {
         platform_value!({
             "$formatVersion": "1",
             "id": contract_id,
             "ownerId": owner_id,
             "version": 1,
-            "documentSchemas": {
-                "payment": {
-                    "type": "object",
-                    "properties": {
-                        "amount": { "type": "integer", "minimum": 1, "maximum": 1000000, "position": 0 },
-                        "recipientId": { "type": "identifier", "position": 1 },
-                        "txHash": { "type": "bytes", "size": 32, "position": 2 }
-                    },
-                    "indices": [
-                        { "name": "byRecipient", "properties": [{ "recipientId": "asc" }] },
-                        { "name": "byTxHash", "properties": [{ "txHash": "asc" }], "unique": true }
-                    ],
-                    "required": ["amount", "recipientId", "txHash"],
-                    "additionalProperties": false
-                }
-            }
+            "documentSchemas": { "payment": payment_schema(true) }
         })
     }
 
@@ -72,6 +103,7 @@ mod property_type_shorthand_tests {
         platform: TempPlatform<MockCoreRPCLike>,
         signer: SimpleSigner,
         key: IdentityPublicKey,
+        identity: Identity,
         owner: Identifier,
         /// The contract as the create sent it
         sent: DataContract,
@@ -115,20 +147,14 @@ mod property_type_shorthand_tests {
                 "a contract written with the shorthands registers",
             );
 
-            let stored = platform
-                .drive
-                .fetch_contract(contract_id.to_buffer(), None, None, None, platform_version)
-                .unwrap()
-                .expect("the contract is stored")
-                .unwrap()
-                .contract
-                .clone();
+            let stored = Self::fetch_contract(&platform, contract_id);
 
             Self {
                 platform,
                 signer,
                 key,
                 owner: identity.id(),
+                identity,
                 sent,
                 stored,
                 // The create set the owner's nonce for the contract to the
@@ -136,6 +162,64 @@ mod property_type_shorthand_tests {
                 next_nonce: identity_nonce + 1,
                 rng: StdRng::seed_from_u64(978),
             }
+        }
+
+        /// The contract as Drive holds it, parsed as a contract read from state is.
+        fn fetch_contract(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract_id: Identifier,
+        ) -> DataContract {
+            platform
+                .drive
+                .fetch_contract(
+                    contract_id.to_buffer(),
+                    None,
+                    None,
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .unwrap()
+                .expect("the contract is stored")
+                .unwrap()
+                .contract
+                .clone()
+        }
+
+        /// Sends a signed update rewriting `recipientId` and `txHash` in their
+        /// long form, then reads the contract back from state.
+        async fn update_to_the_long_form(&mut self) {
+            let platform_version = PlatformVersion::latest();
+            let mut updated = self.sent.clone();
+            updated.set_version(2);
+            updated
+                .set_document_schema(
+                    "payment",
+                    payment_schema(false),
+                    true,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("the long form registers");
+            let nonce = self.next_nonce;
+            self.next_nonce += 1;
+            let update = DataContractUpdateTransition::new_from_data_contract(
+                updated,
+                &self.identity.clone().into_partial_identity_info(),
+                self.key.id(),
+                nonce,
+                0,
+                &self.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the contract update");
+            let platform_state = self.platform.state.load();
+            assert_successful(
+                &process_and_commit(&self.platform, &platform_state, &update, platform_version),
+                "rewriting the shorthands in full is no change",
+            );
+            self.stored = Self::fetch_contract(&self.platform, self.stored.id());
         }
 
         async fn create(&mut self, recipient: Value, tx_hash: Value) -> (Document, bool) {
@@ -366,6 +450,38 @@ mod property_type_shorthand_tests {
                 ids(&fixture.query("txHash", Value::Bytes(vec![2; 32]), prove)),
                 ids(&[second.clone()]),
                 "the payment by its transaction hash, prove {prove}"
+            );
+        }
+
+        // An update spelling both properties in full changes nothing: it is
+        // accepted, the contract now stores the long form, and the documents
+        // written under the shorthands answer as before
+        fixture.update_to_the_long_form().await;
+        let stored_schema = fixture
+            .stored
+            .document_schemas()
+            .get("payment")
+            .copied()
+            .cloned()
+            .expect("the payment schema");
+        assert_eq!(
+            stored_schema
+                .get_value_at_path("properties.txHash")
+                .expect("txHash")
+                .get_optional_str("type")
+                .expect("a type"),
+            Some("array")
+        );
+        for prove in [false, true] {
+            assert_eq!(
+                ids(&fixture.query("recipientId", Value::Identifier(alice.to_buffer()), prove)),
+                ids(&[first.clone(), second.clone()]),
+                "payments to alice after the update, prove {prove}"
+            );
+            assert_eq!(
+                ids(&fixture.query("txHash", Value::Bytes(vec![3; 32]), prove)),
+                ids(&[third.clone()]),
+                "the payment by its transaction hash after the update, prove {prove}"
             );
         }
     }
