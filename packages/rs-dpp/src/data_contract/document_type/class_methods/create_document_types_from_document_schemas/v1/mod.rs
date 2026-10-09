@@ -46,10 +46,12 @@ impl DocumentType {
 
         // Protocol version 14 and later: a property type shorthand in the contract's `$defs` is
         // read as the long form it stands for, expanded once here for every document type's
-        // parse (which then finds nothing left to rewrite) and the checks below. Inert before
-        // 14: `expand_property_type_shorthands` is `None` there, rewrites nothing, and the
-        // definitions are passed on as given.
+        // parse (which then finds nothing left to rewrite) and the checks below. A contract
+        // without document types reads no definition, so its `$defs` stay as sent, unchecked,
+        // as before 14. Inert before 14: `expand_property_type_shorthands` is `None` there,
+        // rewrites nothing, and the definitions are passed on as given.
         let expanded_schema_defs = schema_defs
+            .filter(|_| !document_schemas.is_empty())
             .map(|schema_defs| {
                 DocumentType::expand_schema_defs_property_type_shorthands(
                     schema_defs,

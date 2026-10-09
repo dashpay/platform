@@ -21,14 +21,18 @@ impl DocumentType {
     /// [`DocumentType::enrich_with_base_schema`] builds from one, or any other
     /// object whose `properties` and `$defs` hold property schemas. A shorthand
     /// is read on every property schema below them: the members of an object,
-    /// at any depth, and the `items` of a typed array. A property schema may
-    /// not write `byteArray`, `minItems`, `maxItems` or `contentMediaType`
-    /// beside a shorthand, nor `size` beside `identifier`, and `bytes` needs a
-    /// `size` from 1 to `max_field_value_size` (the largest value any document
-    /// field may hold, so a larger size could never be filled), the bound
-    /// checked under `full_validation` only, like every other bound read from
-    /// the tables (`InvalidContractStructure`, 10231, a consensus error in a
-    /// build with validation).
+    /// at any depth, and the `items` of a typed array. Under `full_validation`
+    /// (registration) a property schema may not write `byteArray`, `minItems`,
+    /// `maxItems` or `contentMediaType` beside a shorthand, nor `size` beside
+    /// `identifier`, and `bytes` needs a `size` from 1 to `max_field_value_size`
+    /// (the largest value any document field may hold, so a larger size could
+    /// never be filled): `InvalidContractStructure`, 10231, a consensus error in
+    /// a build with validation. Without full validation nothing is refused, and
+    /// a shorthand that can not be rewritten is left as sent: a contract read
+    /// back from state was judged when it was written, and one stored before
+    /// protocol version 14 can only hold such a shorthand where no reader looks
+    /// (the definitions of a contract without document types, an entry a
+    /// repeated key shadows), so it keeps loading.
     ///
     /// Returns `None` when there is nothing to rewrite, so the caller keeps the
     /// schema it holds. The contract keeps the schema as sent: this is a view
@@ -387,26 +391,49 @@ mod tests {
         assert_matches!(expand(&largest), Ok(Some(_)));
     }
 
-    /// Without full validation a size is refused only past 65535, and the
-    /// message says that bound, not the table's.
+    /// Without full validation nothing is refused: a shorthand that can not
+    /// be rewritten is left exactly as sent, while the others beside it are
+    /// still rewritten.
     #[test]
-    fn should_state_the_bound_of_the_path_that_refused_a_size() {
-        let schema = schema_with(platform_value!({
-            "hash": { "type": "bytes", "size": 70000, "position": 0 }
-        }));
-        let message = refusal_message(DocumentType::expand_property_type_shorthands(
-            &schema,
-            false,
-            PlatformVersion::latest(),
-        ));
-        assert!(message.contains("from 1 to 65535"), "{message}");
-
-        let max_field_value_size = PlatformVersion::latest().system_limits.max_field_value_size;
-        let message = refusal(&schema);
-        assert!(
-            message.contains(&format!("from 1 to {max_field_value_size}")),
-            "{message}"
-        );
+    fn should_leave_a_shorthand_it_can_not_rewrite_as_sent_without_full_validation() {
+        let unwritable = [
+            platform_value!({ "type": "bytes", "position": 1 }),
+            platform_value!({ "type": "bytes", "size": 0, "position": 1 }),
+            platform_value!({ "type": "bytes", "size": 70000, "position": 1 }),
+            platform_value!({ "type": "identifier", "size": 32, "position": 1 }),
+            platform_value!({ "type": "identifier", "minItems": 32, "position": 1 }),
+        ];
+        for property in unwritable {
+            let schema = schema_with(platform_value!({
+                "id": { "type": "identifier", "position": 0 },
+                "odd": property.clone()
+            }));
+            let expanded = DocumentType::expand_property_type_shorthands(
+                &schema,
+                false,
+                PlatformVersion::latest(),
+            )
+            .expect("nothing is refused without full validation")
+            .expect("the identifier beside it is rewritten");
+            assert_eq!(
+                expanded
+                    .get_value_at_path("properties.odd")
+                    .expect("the property"),
+                &property,
+                "left as sent"
+            );
+            assert_eq!(
+                expanded
+                    .get_value_at_path("properties.id")
+                    .expect("the property")
+                    .get_optional_str("type")
+                    .ok()
+                    .flatten(),
+                Some("array")
+            );
+            // Registration refuses it
+            refusal(&schema);
+        }
     }
 
     /// A table naming a generation this build does not know is the node's

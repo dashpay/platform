@@ -2285,15 +2285,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     generation 0) expands the old and the new document type schemas and
 ///     `$defs` before diffing, so rewriting a property between the two
 ///     spellings is no change. The document type, the stored contract and the
-///     transition keep the schema as sent. Refused (10231) on every parse:
-///     `byteArray`, `minItems`, `maxItems` or `contentMediaType` beside a
-///     shorthand, `size` on `identifier`, and `bytes` without a `size` from 1
-///     to 65535; under full validation, a `size` above
-///     `SYSTEM_LIMITS_V4.max_field_value_size` (5120). The schema validation
-///     fee is charged on the long form. Inert before this version: the
-///     expansion rewrites nothing there, meta-schemas v0 to v2 refuse both
-///     names (no JSON Schema type), and parser generations 0 to 2 refuse them
-///     as unsupported property types.
+///     transition keep the schema as sent. Refused (10231) under full
+///     validation: `byteArray`, `minItems`, `maxItems` or `contentMediaType`
+///     beside a shorthand, `size` on `identifier`, and `bytes` without a
+///     `size` from 1 to `SYSTEM_LIMITS_V4.max_field_value_size` (5120).
+///     Without full validation nothing is refused and a shorthand that can not
+///     be rewritten is left as sent, so a contract stored before this version
+///     keeps loading even where it holds one no reader looks at (the `$defs`
+///     of a contract without document types, which are left unexpanded, or an
+///     entry a repeated key shadows), as the upgrade's read of every stored
+///     contract requires. The schema validation fee is charged on the long
+///     form. Inert before this version: the expansion rewrites nothing there,
+///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
+///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

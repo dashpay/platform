@@ -118,6 +118,15 @@ fn holds_shorthand(mut to_visit: Vec<&Value>) -> bool {
 /// Rewrites every shorthand among the property schemas `to_visit` holds, and
 /// below them, in place; each is paired with where it is, for the errors.
 /// Walks as [`holds_shorthand`] does, below the keys [`children_below`] names.
+///
+/// Only full validation refuses. Without it the schema is one being read, not
+/// registered: a contract read back from state, which was judged when it was
+/// written, or one only parsed (check_tx, a client). A shorthand that can not
+/// be rewritten there is left as sent. In a contract stored before protocol
+/// version 14 it can only sit where no reader looks (the definitions of a
+/// contract without document types, an entry a repeated key shadows), since
+/// every earlier meta-schema and parser refuses both type names wherever they
+/// read one; anywhere else the parser still refuses it as an unknown type.
 fn expand_in_place(
     mut to_visit: Vec<(String, &mut Value)>,
     full_validation: bool,
@@ -128,7 +137,13 @@ fn expand_in_place(
             continue;
         };
         if let Some(shorthand) = shorthand_of(map) {
-            expand_shorthand(map, shorthand, &location, full_validation, platform_version)?;
+            // `expand_shorthand` refuses before it changes anything, so a
+            // shorthand it refuses stays as sent
+            match expand_shorthand(map, shorthand, &location, full_validation, platform_version) {
+                Ok(()) => {}
+                Err(_) if !full_validation => {}
+                Err(error) => return Err(error),
+            }
         }
         for (key, value) in map {
             match children_below(key, value) {
@@ -216,24 +231,18 @@ fn expand_shorthand(
 /// larger size could never be filled. The upper bound is read from the tables
 /// and, like every such bound, checked under full validation only, so a
 /// contract already stored keeps parsing whatever a later table says; without
-/// full validation the bound is 65535, the most a byte array's length can be,
-/// past which a size can not be expanded at all.
+/// full validation the size only has to fit a byte array's length (65535), and
+/// a refusal there is not reported ([`expand_in_place`]).
 fn bytes_size(
     map: &[(Value, Value)],
     location: &str,
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<u16, DataContractError> {
-    let (max_size, bound) = if full_validation {
-        (
-            platform_version
-                .system_limits
-                .max_field_value_size
-                .min(u32::from(u16::MAX)),
-            "the most bytes a document field may hold",
-        )
+    let max_size = if full_validation {
+        u16::try_from(platform_version.system_limits.max_field_value_size).unwrap_or(u16::MAX)
     } else {
-        (u32::from(u16::MAX), "the most bytes a byte array can hold")
+        u16::MAX
     };
     let Some(size) = last_value(map, SIZE) else {
         return Err(DataContractError::InvalidContractStructure(format!(
@@ -241,14 +250,13 @@ fn bytes_size(
              exactly that many bytes, from 1 to {max_size}"
         )));
     };
-    size.to_integer::<u32>()
+    size.to_integer::<u16>()
         .ok()
         .filter(|size| (1..=max_size).contains(size))
-        .and_then(|size| u16::try_from(size).ok())
         .ok_or_else(|| {
             DataContractError::InvalidContractStructure(format!(
                 "property \"{location}\" declares type \"bytes\" with a size that is not an \
-                 integer from 1 to {max_size}, {bound}"
+                 integer from 1 to {max_size}, the most bytes a document field may hold"
             ))
         })
 }

@@ -308,6 +308,11 @@ mod property_type_shorthand_tests {
                 .stored
                 .document_type_for_name("payment")
                 .expect("the payment type");
+            assert_eq!(
+                matches!(&result, Some(get_documents_response_v0::Result::Proof(_))),
+                prove,
+                "response kind must match the requested proof mode"
+            );
             match result {
                 Some(get_documents_response_v0::Result::Documents(documents)) => documents
                     .documents

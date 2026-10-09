@@ -8,12 +8,14 @@
 use super::immutable_tests::{
     expect_structure_error, parse_dispatched, parse_dispatched_with_defs,
 };
-use super::refusal_test_support::contract_value;
+use super::refusal_test_support::{contract_value, CONTRACT_ID};
 use super::*;
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::state_error::StateError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::property::ByteArrayPropertySizes;
@@ -21,11 +23,13 @@ use crate::data_contract::document_type::property_constraints::DocumentSystemVal
 use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
+use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::{Document, DocumentV0};
 use crate::serialization::{
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
     PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
@@ -486,12 +490,16 @@ fn should_refuse_a_long_form_keyword_beside_a_shorthand() {
                 "properties": { "value": property },
                 "additionalProperties": false
             });
-            for full_validation in [true, false] {
-                expect_structure_error(
-                    parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
-                    &format!("writes its own {keyword}"),
-                );
-            }
+            expect_structure_error(
+                parse_dispatched(schema.clone(), PlatformVersion::latest(), true),
+                &format!("writes its own {keyword}"),
+            );
+            // Without full validation the shorthand is left as sent, and the
+            // parser refuses the type it does not know
+            expect_structure_error(
+                parse_dispatched(schema, PlatformVersion::latest(), false),
+                "unsupported property type",
+            );
         }
     }
 }
@@ -521,12 +529,14 @@ fn should_refuse_size_on_an_identifier_and_bytes_without_a_size() {
             "properties": { "value": property },
             "additionalProperties": false
         });
-        for full_validation in [true, false] {
-            expect_structure_error(
-                parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
-                needle,
-            );
-        }
+        expect_structure_error(
+            parse_dispatched(schema.clone(), PlatformVersion::latest(), true),
+            needle,
+        );
+        expect_structure_error(
+            parse_dispatched(schema, PlatformVersion::latest(), false),
+            "unsupported property type",
+        );
     }
 }
 
@@ -869,6 +879,159 @@ fn should_read_a_shorthand_reached_by_a_ref_below_a_definition() {
                 .map(|property| &property.property_type),
             Some(&DocumentPropertyType::Identifier),
             "full validation {full_validation}"
+        );
+    }
+}
+
+/// Contracts protocol version 13 registers although they hold a
+/// shorthand-shaped value no reader looks at: the definitions of a contract
+/// without document types, which no meta-schema ever checks, a top-level
+/// property name repeated (the parse and the JSON keep the last entry), and a
+/// repeated `properties` keyword of an object (likewise).
+fn contracts_with_unread_shorthands(
+    platform_version: &PlatformVersion,
+) -> Vec<(&'static str, DataContractInSerializationFormat)> {
+    let text = |text: &str| Value::Text(text.to_string());
+    let format = |document_schemas: BTreeMap<String, Value>,
+                  schema_defs: Option<BTreeMap<String, Value>>,
+                  tokens: BTreeMap<u16, TokenConfiguration>| {
+        DataContractInSerializationFormat::V1(DataContractInSerializationFormatV1 {
+            id: Identifier::new(CONTRACT_ID),
+            config: DataContractConfig::default_for_version(platform_version)
+                .expect("a default config"),
+            version: 1,
+            owner_id: Identifier::new([8; 32]),
+            schema_defs,
+            document_schemas,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens,
+            keywords: vec![],
+            description: None,
+        })
+    };
+
+    let token_only = format(
+        BTreeMap::new(),
+        Some(BTreeMap::from([
+            ("unused".to_string(), platform_value!({ "type": "bytes" })),
+            (
+                "odd".to_string(),
+                platform_value!({ "type": "identifier", "size": 32 }),
+            ),
+        ])),
+        BTreeMap::from([(
+            0,
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+        )]),
+    );
+
+    let repeated_property = format(
+        BTreeMap::from([(
+            "note".to_string(),
+            Value::Map(vec![
+                (text("type"), text("object")),
+                (
+                    text("properties"),
+                    Value::Map(vec![
+                        (
+                            text("value"),
+                            platform_value!({ "type": "bytes", "position": 0 }),
+                        ),
+                        (
+                            text("value"),
+                            platform_value!({ "type": "string", "maxLength": 10, "position": 0 }),
+                        ),
+                    ]),
+                ),
+                (text("additionalProperties"), Value::Bool(false)),
+            ]),
+        )]),
+        None,
+        BTreeMap::new(),
+    );
+
+    let shadowed_keyword = format(
+        BTreeMap::from([(
+            "note".to_string(),
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "meta": Value::Map(vec![
+                        (text("type"), text("object")),
+                        (text("position"), Value::U64(0)),
+                        (
+                            text("properties"),
+                            platform_value!({ "x": { "type": "bytes", "position": 0 } }),
+                        ),
+                        (
+                            text("properties"),
+                            platform_value!({ "x": { "type": "string", "maxLength": 10, "position": 0 } }),
+                        ),
+                        (text("additionalProperties"), Value::Bool(false)),
+                    ])
+                },
+                "additionalProperties": false
+            }),
+        )]),
+        None,
+        BTreeMap::new(),
+    );
+
+    vec![
+        ("token-only definitions", token_only),
+        ("repeated property name", repeated_property),
+        ("shadowed properties keyword", shadowed_keyword),
+    ]
+}
+
+/// Read back from state at protocol version 14, where only full validation
+/// refuses, a contract stored before it keeps loading with its schema as
+/// stored: the upgrade reads every stored contract (the contract version
+/// items it writes), so one that failed would stop the first block of 14.
+/// Registering the same contract at 14 is still refused where it is checked.
+#[test]
+fn should_read_back_at_protocol_version_14_a_contract_stored_before_it_with_unread_shorthands() {
+    let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
+    let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+    for (case, format) in contracts_with_unread_shorthands(platform_version_13) {
+        let registered = DataContract::try_from_platform_versioned(
+            format.clone(),
+            true,
+            &mut vec![],
+            platform_version_13,
+        )
+        .unwrap_or_else(|error| panic!("{case}: protocol version 13 registers it: {error}"));
+        let bytes = registered
+            .serialize_to_bytes_with_platform_version(platform_version_13)
+            .unwrap_or_else(|error| panic!("{case}: it serializes: {error}"));
+
+        let stored =
+            DataContract::versioned_deserialize_trusted(&bytes, false, platform_version_14)
+                .unwrap_or_else(|error| {
+                    panic!("{case}: read back at protocol version 14: {error}")
+                });
+        assert_eq!(
+            stored.document_schemas(),
+            registered.document_schemas(),
+            "{case}: the schemas stay as stored"
+        );
+        assert_eq!(
+            stored.schema_defs(),
+            registered.schema_defs(),
+            "{case}: the definitions stay as stored"
+        );
+        assert_eq!(
+            stored
+                .serialize_to_bytes_with_platform_version(platform_version_13)
+                .unwrap_or_else(|error| panic!("{case}: it serializes again: {error}")),
+            bytes,
+            "{case}: the stored bytes"
         );
     }
 }
