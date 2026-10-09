@@ -1967,7 +1967,7 @@ mod tests {
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
             // contract bytes; the DPNS v3 preorder type the update copies in has its own
             // (its per-owner index, `$createdAtBlockHeight` required)
-            27003089990
+            27003077990
         );
 
         let check_result = platform

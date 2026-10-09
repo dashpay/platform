@@ -893,17 +893,22 @@ mod tests {
 
     #[tokio::test]
     async fn should_fetch_again_a_dpns_contract_parsed_under_an_older_protocol_version() {
-        // The refresh failed: the SDK is still at 13 when the response, proved at the latest
-        // version, is parsed, and parsing DPNS v3 under 13 drops the salt's reference. The
-        // response teaches the SDK the latest version, so the next one is parsed under it.
+        // The refresh failed: the SDK is still at 13 when the first response, proved at the
+        // latest version, is parsed, so what it holds is read under the older version (here
+        // DPNS v2, which declares no preorder hash). The response teaches the SDK the latest
+        // version, so the next one is parsed under it.
         let sdk_version = Cell::new(13);
         let fetches = Cell::new(0);
         let dpns_contract = dpns_contract_proved_at_parsed_version(
             || sdk_version.get(),
             || {
                 fetches.set(fetches.get() + 1);
-                let dpns_contract =
-                    dpns_contract_decoded_under(PlatformVersion::latest(), sdk_version.get());
+                let stored_at = if sdk_version.get() == 13 {
+                    PlatformVersion::get(13).expect("protocol version 13")
+                } else {
+                    PlatformVersion::latest()
+                };
+                let dpns_contract = dpns_contract_decoded_under(stored_at, sdk_version.get());
                 sdk_version.set(LATEST_VERSION);
                 ready(Ok((Some(dpns_contract), proved_at(LATEST_VERSION))))
             },
@@ -912,10 +917,6 @@ mod tests {
         .expect("the second response is taken");
 
         assert_eq!(fetches.get(), 2);
-        assert!(!declares_the_preorder_hash(&dpns_contract_decoded_under(
-            PlatformVersion::latest(),
-            13
-        )));
         assert!(declares_the_preorder_hash(&dpns_contract));
     }
 

@@ -83,10 +83,8 @@
         "description": "Generated: parentDomainName normalized like normalizedLabel"
       },
       "preorderSalt": {
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
+        "type": "bytes",
+        "size": 32,
         "position": 4,
         "description": "Salt of the writer's preorder, made in an earlier block; the create deletes it",
         "refersTo": {
@@ -115,12 +113,8 @@
         "type": "object",
         "properties": {
           "identity": {
-            "type": "array",
-            "byteArray": true,
-            "minItems": 32,
-            "maxItems": 32,
+            "type": "identifier",
             "position": 1,
-            "contentMediaType": "application/x.dash.dpp.identifier",
             "description": "Identity the name resolves to; its owner's at creation"
           }
         },
@@ -199,10 +193,8 @@
     ],
     "properties": {
       "saltedDomainHash": {
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
+        "type": "bytes",
+        "size": 32,
         "position": 0,
         "description": "sha256d of owner id, salt, normalized label, '.' and parent domain name"
       }
