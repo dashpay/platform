@@ -1599,8 +1599,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the document is found by that property holding the SHA-256 of the
 ///     SHA-256 of the params' bytes joined in order, a property path of the
 ///     document (the property carrying the reference included),
-///     `{ "const": text }`, or `"."` for a value without a path (each element
-///     of a typed array, the writer, the creator), a string counting as its
+///     `{ "const": text }`, `"."` for a value without a path (each element
+///     of a typed array, the writer, the creator), or `"$ownerId"` for the
+///     writer's id (`LookupKeyParam::Writer`), a string counting as its
 ///     UTF-8, a byte array as its bytes, an identifier as its 32 bytes. The
 ///     parser holds the function as the lookup's computed key
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
@@ -1619,7 +1620,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     function the reference may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
-///     40142; a found document recording none meets a minimum of 1 only, 89), and
+///     40142), and
 ///     `consume`, which deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
 ///     it elsewhere refused with 40120). The hash is computed once per key and
@@ -1628,7 +1629,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     on the create alone, may sit on an `immutable` property, which
 ///     `validate_no_immutable_deletable_element_references` otherwise refuses.
 ///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
-///     writer's own, and `consume` requires it, into the declaring contract,
+///     writer's own, and so does a `findBy` entry `{"$ownerId": "$ownerId"}`
+///     through a unique index over the owner and the hash, which beside a
+///     function a transferable referring type may declare too, the key being
+///     judged on the create alone; `consume` requires one of the two, into the declaring contract,
 ///     on a type whose owners may delete, that keeps no history, declares no
 ///     delete token cost or delete action fee and requires no stricter
 ///     signature security level than the declaring type; batch advanced
@@ -1643,8 +1647,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
 ///     `deletableDocument` target through a function, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
-///     one. The declaration reproduces the DPNS preorder hash of a name under
-///     a parent byte for byte, and DPNS v3 declares it (89). See
+///     one. DPNS v3 declares such a reveal (89). See
 ///     `book/src/data-model/documents.md`.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
@@ -2247,38 +2250,40 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 89. **DPNS v3 checks a name's create with keywords**:
 ///     `SYSTEM_DATA_CONTRACT_VERSIONS_V3` selects DPNS contract v3, loaded at
-///     genesis (which still inserts the `dash` top-level domain) and re-stored
-///     by `transition_to_version_14` with `apply_contract`. Its `domain`
+///     genesis (which still inserts the `dash` top-level domain). Its `domain`
 ///     generates `normalizedLabel` and `normalizedParentDomainName` with
 ///     `sys.stringTransformations.homographSafeASCII` (53; a value sent that
 ///     differs is `DocumentPropertyNotGeneratedError`, 10424). Its
 ///     `preorderSalt` reveals the writer's own `preorder` from an earlier block
-///     and deletes it, the storage refunded to the writer (61: `findBy` the
-///     sha256d of the salt, the normalized label, `"."` and the parent,
-///     `where` `$ownerId`, `minimumAgeBlocks: 1`, `consume`; refused with 40120,
-///     40127 or 40142). The rule `recordsIdentityIsOwner` (`$transferredAt`
-///     equal to `$createdAt` implies `records.identity` equal to `$ownerId`)
-///     holds a new name's identity record to its owner (10422); a transfer or
-///     a purchase in a later block, judged with its own time, no longer reads
-///     the record, and one in the block that created the name is refused. The
-///     `domain` sets `canBeDeleted: false` and the `preorder` requires
-///     `$createdAtBlockHeight`; property positions, the transient list and the
-///     stored encoding are v2's, so stored domains and preorders decode
-///     unchanged. `create_domain_data_trigger` 2
+///     and deletes it, the storage refunded to the writer (61: `findBy`
+///     `$ownerId` and the sha256d of the writer's id, the salt, the normalized
+///     label, `"."` and the parent, `minimumAgeBlocks: 1`, `consume`; refused
+///     with 40120 or 40142). Preorders are unique per owner (`ownerAndSaltedHash`
+///     over `$ownerId` and `saltedDomainHash`, replacing `saltedHash`), so a
+///     copy of a pending preorder neither blocks it nor, its hash binding the
+///     owner, lets the copier reveal the name once the salt is public. The rule
+///     `recordsIdentityIsOwner` (`$transferredAt` equal to `$createdAt` implies
+///     `records.identity` equal to `$ownerId`) holds a new name's identity
+///     record to its owner (10422); a transfer or a purchase in a later block,
+///     judged with its own time, no longer reads the record, and one in the
+///     block that created the name is refused. The `domain` sets
+///     `canBeDeleted: false` and the `preorder` requires
+///     `$createdAtBlockHeight`; the `domain`'s property positions, transient
+///     list and stored encoding are v2's, so stored domains decode unchanged.
+///     `transition_to_version_14` re-stores DPNS through
+///     `Drive::apply_contract_rebuilding_document_types`: every preorder made
+///     before the upgrade is deleted, unrefunded, and the `preorder` type is
+///     rebuilt as the contract update creates a type it adds, the layout a
+///     chain born at this version has. `create_domain_data_trigger` 2
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`) keeps only the parent domain
 ///     checks: a top-level domain only by the contract owner, the parent
 ///     present, no subdomains allowed under a name, and the parent's subdomain
 ///     rule. Data trigger bindings 2, in place, drop the `domain` Replace and
 ///     Delete rejects; `documentsMutable` and `canBeDeleted` false refuse both
-///     (`InvalidDocumentTransitionActionError`, 10404). The reference
-///     validation 0, in place, lets a found document recording no
-///     `$createdAtBlockHeight` meet `minimumAgeBlocks: 1` and no larger
-///     minimum: an update can not make a system field required, so only a
-///     system contract a protocol upgrade re-stored holds such documents, all
-///     written in some block before the upgrade's, and the preorders made
-///     before this version stay revealable. Inert before this version: only
-///     the version 14 parser produces a `minimumAgeBlocks`, and the earlier
-///     tables select DPNS v1 or v2, trigger 0 or 1 and bindings 0 or 1.
+///     (`InvalidDocumentTransitionActionError`, 10404). The writer reaches the
+///     computed key's preimage through `hash_lookup_key`, in place in reference
+///     validation 0 and batch state 0, inert before this version: only
+///     meta-schema v3 admits a computed key, and the `"$ownerId"` param.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

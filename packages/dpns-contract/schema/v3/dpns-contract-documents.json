@@ -93,9 +93,11 @@
           "type": "deletableDocument",
           "documentType": "preorder",
           "findBy": {
+            "$ownerId": "$ownerId",
             "saltedDomainHash": {
               "function": "sys.hash.sha256d",
               "params": [
+                "$ownerId",
                 "preorderSalt",
                 "normalizedLabel",
                 {
@@ -104,9 +106,6 @@
                 "parentDomainName"
               ]
             }
-          },
-          "where": {
-            "$ownerId": "$ownerId"
           },
           "minimumAgeBlocks": 1,
           "consume": true
@@ -186,8 +185,11 @@
     "type": "object",
     "indices": [
       {
-        "name": "saltedHash",
+        "name": "ownerAndSaltedHash",
         "properties": [
+          {
+            "$ownerId": "asc"
+          },
           {
             "saltedDomainHash": "asc"
           }
@@ -202,7 +204,7 @@
         "minItems": 32,
         "maxItems": 32,
         "position": 0,
-        "description": "sha256d of salt, normalized label, '.' and parent domain name"
+        "description": "sha256d of owner id, salt, normalized label, '.' and parent domain name"
       }
     },
     "required": [

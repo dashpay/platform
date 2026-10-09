@@ -55,18 +55,49 @@ mod tests {
         salt: [u8; 32],
     ) -> (DocumentOp, DocumentOp) {
         let normalized_label = convert_to_homograph_safe_chars(label);
-        // sha256d(salt ++ normalizedLabel ++ "." ++ parentDomainName)
-        let mut salted_domain_name = salt.to_vec();
-        salted_domain_name.extend(normalized_label.as_bytes());
-        salted_domain_name.extend(b".dash");
+        let domain_values: BTreeMap<String, Value> = BTreeMap::from([
+            ("label".into(), label.into()),
+            ("normalizedLabel".into(), normalized_label.clone().into()),
+            ("parentDomainName".into(), "dash".into()),
+            ("normalizedParentDomainName".into(), "dash".into()),
+            ("preorderSalt".into(), salt.into()),
+            (
+                "records".into(),
+                BTreeMap::from([("identity", Value::from(owner_id))]).into(),
+            ),
+        ]);
+        // The hash the domain's `preorderSalt` declares from DPNS v3 (the owner's id, the
+        // salt, the normalized label, "." and the parent); before it, of the salt and
+        // `<normalizedLabel>.dash`
+        let domain_type = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+        let declared_key = domain_type
+            .flattened_properties()
+            .get("preorderSalt")
+            .and_then(|property| property.revealed_reference.as_ref())
+            .and_then(|target| target.as_any_document_reference())
+            .and_then(|declaration| declaration.lookup)
+            .and_then(|lookup| lookup.hash_key())
+            .map(|(_, key)| key);
+        let salted_domain_hash = match declared_key {
+            Some(key) => {
+                key.key_value(domain_type, None, owner_id, &domain_values)
+                    .expect("expected the preorder hash")
+                    .0
+            }
+            None => {
+                let mut salted_domain_name = salt.to_vec();
+                salted_domain_name.extend(normalized_label.as_bytes());
+                salted_domain_name.extend(b".dash");
+                hash_double(salted_domain_name)
+            }
+        };
 
         let preorder_op = DocumentOp {
             contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([(
-                    "saltedDomainHash".into(),
-                    hash_double(salted_domain_name).into(),
-                )]),
+                BTreeMap::from([("saltedDomainHash".into(), salted_domain_hash.into())]),
                 Some(owner_id),
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
@@ -80,17 +111,7 @@ mod tests {
         let domain_op = DocumentOp {
             contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([
-                    ("label".into(), label.into()),
-                    ("normalizedLabel".into(), normalized_label.into()),
-                    ("parentDomainName".into(), "dash".into()),
-                    ("normalizedParentDomainName".into(), "dash".into()),
-                    ("preorderSalt".into(), salt.into()),
-                    (
-                        "records".into(),
-                        BTreeMap::from([("identity", Value::from(owner_id))]).into(),
-                    ),
-                ]),
+                domain_values,
                 Some(owner_id),
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,

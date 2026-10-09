@@ -39,6 +39,10 @@ describe('Platform', () => {
             create: this.sinon.stub(),
             broadcast: this.sinon.stub(),
           },
+          // A DPNS contract declaring no preorder hash: the hash of the salt and the name
+          contracts: {
+            get: this.sinon.stub().resolves(null),
+          },
           initialize: this.sinon.stub(),
         };
 
@@ -145,6 +149,42 @@ describe('Platform', () => {
             },
           },
         ]);
+      });
+
+      it('should hash the params the DPNS contract declares', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves({
+          getDocumentSchema: () => ({
+            properties: {
+              preorderSalt: {
+                refersTo: {
+                  findBy: {
+                    saltedDomainHash: {
+                      function: 'sys.hash.sha256d',
+                      params: ['$ownerId', 'preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+                    },
+                  },
+                },
+              },
+            },
+          }),
+        });
+
+        await register.call(platformMock, 'User.dash', {
+          identity: identityId,
+        }, identityMock);
+
+        // sha256d(owner id ++ salt ++ 'user' ++ '.' ++ 'dash')
+        const sha256 = (data) => cryptoModule.createHash('sha256').update(data).digest();
+        const expected = sha256(sha256(Buffer.concat([
+          identityId.toBuffer(),
+          Buffer.alloc(32),
+          Buffer.from('user.dash'),
+        ])));
+        expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.equal(
+          expected.toString('hex'),
+        );
       });
 
       it('should fail if DPNS app have no contract set up', async () => {

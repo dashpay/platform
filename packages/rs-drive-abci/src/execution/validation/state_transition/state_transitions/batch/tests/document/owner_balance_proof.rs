@@ -7,6 +7,7 @@
 use super::*;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::MockCoreRPCLike;
+use crate::test::helpers::dpns::dpns_salted_domain_hash;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::document::Document;
@@ -18,7 +19,6 @@ use dpp::state_transition::batch_transition::document_create_transition::Documen
 use dpp::state_transition::batch_transition::{BatchTransitionV0, DocumentCreateTransition};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use dpp::util::hash::hash_double;
 use dpp::util::strings::convert_to_homograph_safe_chars;
 use drive::drive::Drive;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
@@ -523,8 +523,13 @@ async fn should_prove_the_owner_balance_next_to_a_contested_document() {
     // DPNS registers a name in two steps: the salted preorder, then the domain.
     let name = "quantum";
     let salt: [u8; 32] = rng.gen();
-    let mut salted_domain = salt.to_vec();
-    salted_domain.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
+    let salted_domain_hash = dpns_salted_domain_hash(
+        identity.id(),
+        &salt,
+        &convert_to_homograph_safe_chars(name),
+        "dash",
+        platform_version,
+    );
     let preorder_entropy = Bytes32::random_with_rng(&mut rng);
     let mut preorder_document = preorder
         .random_document_with_identifier_and_entropy(
@@ -536,7 +541,7 @@ async fn should_prove_the_owner_balance_next_to_a_contested_document() {
             platform_version,
         )
         .expect("expected a random preorder document");
-    preorder_document.set("saltedDomainHash", hash_double(salted_domain).into());
+    preorder_document.set("saltedDomainHash", salted_domain_hash.into());
     preorder_document
         .set_id_for_creation(preorder, &preorder_entropy.0, 2, platform_version)
         .expect("expected to set the preorder id");

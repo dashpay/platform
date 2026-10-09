@@ -14,6 +14,8 @@ use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -54,6 +56,45 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
     // sha256d already does double SHA256
     let hash = sha256d::Hash::hash(&data);
     hash.to_byte_array()
+}
+
+/// The `saltedDomainHash` a preorder by `owner_id` commits to, for a domain
+/// carrying `domain_properties` (its `preorderSalt`, labels and parent), as the
+/// DPNS contract the network runs declares it. From DPNS v3 the domain's
+/// `preorderSalt` reveals the hash of the writer's id, the salt, the normalized
+/// label, `"."` and the parent, and the declaration computes it, as the platform
+/// does; before it the hash is of the salt and `<normalizedLabel>.dash`.
+fn salted_domain_hash(
+    domain_document_type: DocumentTypeRef,
+    owner_id: Identifier,
+    salt: [u8; 32],
+    normalized_label: &str,
+    domain_properties: &BTreeMap<String, Value>,
+) -> Result<[u8; 32], Error> {
+    let declared_key = domain_document_type
+        .flattened_properties()
+        .get("preorderSalt")
+        .and_then(|property| property.revealed_reference.as_ref())
+        .and_then(|target| target.as_any_document_reference())
+        .and_then(|declaration| declaration.lookup)
+        .and_then(|lookup| lookup.hash_key())
+        .map(|(_, key)| key);
+    match declared_key {
+        Some(key) => key
+            .key_value(domain_document_type, None, owner_id, domain_properties)
+            .map(|(hash, _)| hash)
+            .map_err(|error| {
+                Error::Generic(format!(
+                    "cannot compute the DPNS preorder hash: {} {}",
+                    error.param, error.reason
+                ))
+            }),
+        None => {
+            let mut salted_domain_buffer = salt.to_vec();
+            salted_domain_buffer.extend(format!("{normalized_label}.dash").as_bytes());
+            Ok(hash_double(salted_domain_buffer))
+        }
+    }
 }
 
 /// Callback type for preorder document
@@ -168,12 +209,46 @@ impl Sdk {
         let preorder_id = Identifier::default();
         let domain_id = Identifier::default();
 
-        // Create salted domain hash for preorder
         let normalized_label = convert_to_homograph_safe_chars(&input.label);
-        let mut salted_domain_buffer: Vec<u8> = vec![];
-        salted_domain_buffer.extend(salt);
-        salted_domain_buffer.extend((normalized_label.clone() + ".dash").as_bytes());
-        let salted_domain_hash = hash_double(salted_domain_buffer);
+        let domain_properties = BTreeMap::from([
+            (
+                "parentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            ("label".to_string(), Value::Text(input.label.clone())),
+            (
+                "normalizedLabel".to_string(),
+                Value::Text(normalized_label.clone()),
+            ),
+            ("preorderSalt".to_string(), Value::Bytes32(salt)),
+            (
+                "records".to_string(),
+                Value::Map(vec![(
+                    Value::Text("identity".to_string()),
+                    Value::Identifier(identity_id.to_buffer()),
+                )]),
+            ),
+            (
+                "subdomainRules".to_string(),
+                Value::Map(vec![(
+                    Value::Text("allowSubdomains".to_string()),
+                    Value::Bool(false),
+                )]),
+            ),
+        ]);
+
+        // The salted domain hash the preorder commits to
+        let salted_domain_hash = salted_domain_hash(
+            domain_document_type,
+            identity_id,
+            salt,
+            &normalized_label,
+            &domain_properties,
+        )?;
 
         // Create preorder document
         let preorder_document = Document::V0(DocumentV0 {
@@ -204,36 +279,7 @@ impl Sdk {
             contract_version: None,
             id: domain_id,
             owner_id: identity_id,
-            properties: BTreeMap::from([
-                (
-                    "parentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                (
-                    "normalizedParentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                ("label".to_string(), Value::Text(input.label.clone())),
-                (
-                    "normalizedLabel".to_string(),
-                    Value::Text(normalized_label.clone()),
-                ),
-                ("preorderSalt".to_string(), Value::Bytes32(salt)),
-                (
-                    "records".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("identity".to_string()),
-                        Value::Identifier(identity_id.to_buffer()),
-                    )]),
-                ),
-                (
-                    "subdomainRules".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("allowSubdomains".to_string()),
-                        Value::Bool(false),
-                    )]),
-                ),
-            ]),
+            properties: domain_properties,
             revision: None,
             created_at: None,
             updated_at: None,

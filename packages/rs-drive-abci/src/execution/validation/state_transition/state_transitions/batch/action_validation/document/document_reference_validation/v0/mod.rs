@@ -366,10 +366,17 @@ fn validate_document_type_references_v0(
                 // Hashed and billed once here, the property named by its path in
                 // the key's params, and handed to the lookup as its key. The create's
                 // structure validation refused a value it could not reveal, before
-                // any read
-                let Some(billed_key) =
-                    hash_lookup_key(key, document_type, None, document_data, execution_context)
-                else {
+                // any read. The writer is passed in place in generation 0, inert
+                // before protocol version 14: only meta-schema v3 admits a computed
+                // key at all, and the `"$ownerId"` param that reads the writer
+                let Some(billed_key) = hash_lookup_key(
+                    key,
+                    document_type,
+                    None,
+                    owner_id,
+                    document_data,
+                    execution_context,
+                ) else {
                     return preimage_invalid();
                 };
                 let result = validate_reference_v0(
@@ -1426,22 +1433,15 @@ fn validate_reference_target_v0(
             // The commitment a computed key found: it must be old enough, and the create
             // deletes it when the reference consumes it. Its age is judged in blocks, from its
             // `$createdAtBlockHeight` (registration demands the type record one) to the
-            // block of the create, so 1 means an earlier block. A document recording none
-            // meets a minimum of 1 and no larger one: a contract update cannot make a system
-            // field required, so it was written before a protocol upgrade re-stored a system
-            // contract whose type now records one (DPNS v3's preorder at protocol version 14),
-            // and the upgrade runs before the first transition of its block, so the document
-            // is from an earlier block, how much earlier unknown. Only a lookup the protocol
-            // version 14 parser produced has either, so no earlier protocol version reaches this
+            // block of the create, so 1 means an earlier block; a document recording none
+            // never meets it. Only a lookup the protocol version 14 parser produced has
+            // either
             if let (Some(lookup), Some(found)) = (lookup, referenced_document) {
                 if let Some(blocks) = lookup.minimum_age_blocks {
-                    let old_enough = match found.created_at_block_height() {
-                        Some(created_at) => block_info
-                            .height
-                            .checked_sub(created_at)
-                            .is_some_and(|age| age >= u64::from(blocks)),
-                        None => blocks == 1,
-                    };
+                    let old_enough = found
+                        .created_at_block_height()
+                        .and_then(|created_at| block_info.height.checked_sub(created_at))
+                        .is_some_and(|age| age >= u64::from(blocks));
                     if !old_enough {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             ReferencedDocumentRequirementNotMetError::new(

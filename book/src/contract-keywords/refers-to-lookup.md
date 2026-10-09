@@ -91,7 +91,7 @@ A `permanentDocument` found by `findBy` never dangles. Its referenced documents 
 - when a property `findBy` reads changed, and then every value, every element included;
 - when the referring value of a `where` entry changed, or on every replace for a `where` entry whose value is `"$ownerId"`.
 
-A key part read from `"$ownerId"` never triggers a check: only a type whose documents keep their writer may read it.
+A key part read from `"$ownerId"` never triggers a check: only a type whose documents keep their writer may read it, or a key with a [function](#commit-and-reveal), judged on the create alone.
 
 A `deletableDocument` found by `findBy` promises less. Once the document a key found is deleted, a new document filed later under the same key makes the reference hold again, with different content, where an id reference to a deleted document stays dead. So it means "a document with this key exists now", which is what a membership gate needs. Every replace checks it again, whether or not the replace touched it, and no `immutable` property may hold one. The moderation charters contract's `resignationRequest` uses one to accept a writer who has an `addedModerator` document for the charter at the time of writing, as the alternative to being an elected member (see [Writer and Creator References](owner-refers-to.md)).
 
@@ -128,38 +128,40 @@ One `findBy` entry may hold a function: `"<referenced property>": { "function": 
     "type": "deletableDocument",
     "documentType": "preorder",
     "findBy": {
+      "$ownerId": "$ownerId",
       "saltedDomainHash": {
         "function": "sys.hash.sha256d",
-        "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
+        "params": ["$ownerId", "preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
       }
     },
-    "where": { "$ownerId": "$ownerId" },
     "minimumAgeBlocks": 1,
     "consume": true
   }
 }
 ```
 
-The salt must reveal a `preorder` whose `saltedDomainHash` is the sha256d of the salt, the normalized label, a dot and the parent. `findBy` names `saltedDomainHash` alone, the whole of the `preorder` type's unique `saltedHash` index. The `where` entry makes it the writer's own preorder, `minimumAgeBlocks: 1` one created in an earlier block, and `consume: true` deletes it with the create. As SQL:
+The salt must reveal the writer's own `preorder` whose `saltedDomainHash` is the sha256d of the writer's id, the salt, the normalized label, a dot and the parent. `findBy` names `$ownerId` and `saltedDomainHash`, the whole of the `preorder` type's unique `ownerAndSaltedHash` index, so every identity has its own preorders and a copy of someone else's never collides with theirs. `minimumAgeBlocks: 1` asks for one created in an earlier block, and `consume: true` deletes it with the create. As SQL:
 
 ```sql
 SELECT * FROM preorder
-WHERE saltedDomainHash =                                     -- findBy
-      sha256d(:preorderSalt || :normalizedLabel || '.' || :parentDomainName)
-  AND $ownerId = :writer                                     -- where
+WHERE $ownerId = :writer                                     -- findBy
+  AND saltedDomainHash =                                     -- findBy
+      sha256d(:writer || :preorderSalt || :normalizedLabel || '.' || :parentDomainName)
   AND $createdAtBlockHeight <= :createHeight - 1             -- minimumAgeBlocks
 -- then the create deletes the row found                     -- consume
 ```
 
-- **Params.** A property path reads the document being created, the property carrying the reference included; `{ "const": text }` is fixed text of 1 to 64 bytes; `"."` is the value carrying the reference where it has no path (each element of a typed array, the writer, the creator); 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
+Hashing the writer matters as much as keying by it. A copy of a pending preorder, stored under the copier's own key, commits to the identity that made it, so the copier, who learns the salt from that identity's reveal, still finds nothing when revealing the same name.
+
+- **Params.** A property path reads the document being created, the property carrying the reference included; `{ "const": text }` is fixed text of 1 to 64 bytes; `"."` is the value carrying the reference where it has no path (each element of a typed array, the writer, the creator); `"$ownerId"` is the writer's id; 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
 - **One function.** `findBy` holds at most one function, and the property it fills must be a byte array of exactly 32 bytes.
 - **Carrier.** A string or byte array property may carry a `refersTo` only this way, and keeps its type. The value carrying the reference fills the key exactly once, as a `"."` entry or a param; a param names a property by its path, never as `"."`. In `ownerRefersTo` and `creatorRefersTo` the value may be left out beside a function.
 - **Judged once.** A function's key is checked when the document is created, never on a replace, so every stored value it reads must be fixed once written, the carrier included (listed under `immutable` on a mutable type, and required when it is a `deletableDocument` reference by id, which a replace may otherwise clear once its document is deleted). The `where` entries are judged with it, so each referring property they name must be fixed once written too, or transient. On a type whose documents can be replaced it may not be an operand of an `anyOf`, which would then hold on every replace. Params may be transient: they are read from the create. The hash is billed as the double SHA-256 it is, by the blocks it hashes, beside the document fetch.
 
 `minimumAgeBlocks` and `consume` sit on the `refersTo`, beside `findBy`: they describe the document `findBy` finds, and need a function in it.
 
-- **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`. A commitment recording no creation height meets `minimumAgeBlocks: 1` and no larger value: a contract update can not make a system field required, so only a system contract a protocol upgrade re-stored holds such documents, all written in some block before the upgrade's. DPNS preorders made before protocol version 14 are revealed this way.
-- **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only on a `deletableDocument` reference with the `where` entry `"$ownerId": "$ownerId"`, into a type of the same contract whose owner may delete its documents (`canBeDeleted: true`) or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, see [Deletion](deletion.md#canbedeleted)), that declares no delete token cost or delete action fee and no [`deleteConstraints`](deletion.md#deleteconstraints) (no delete transition charges or judges them), and that requires no stricter signature security level than the revealing type. A contract-bound key signing the create must be allowed to act on the consumed type too (`ContractBoundedKeyOutOfBoundsError`, 20014).
+- **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`.
+- **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only on a `deletableDocument` reference that makes the writer the commitment's owner, by the `where` entry `"$ownerId": "$ownerId"` or the `findBy` entry `"$ownerId": "$ownerId"`, into a type of the same contract whose owner may delete its documents (`canBeDeleted: true`) or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, see [Deletion](deletion.md#canbedeleted)), that declares no delete token cost or delete action fee and no [`deleteConstraints`](deletion.md#deleteconstraints) (no delete transition charges or judges them), and that requires no stricter signature security level than the revealing type. A contract-bound key signing the create must be allowed to act on the consumed type too (`ContractBoundedKeyOutOfBoundsError`, 20014).
 
 A create missing a param, or with a value holding its separator, is refused before any read (`DocumentReferencePreimageInvalidError`, 10423). No commitment is `ReferencedEntityNotFoundError` (40120), another identity's `ReferencedDocumentPropertyMismatchError` (40127), and one too young `ReferencedDocumentRequirementNotMetError` (40142). The [Documents chapter](../data-model/documents.md#commit-and-reveal-a-findby-function) has the full rules.
 
@@ -171,7 +173,7 @@ A create missing a param, or with a value holding its separator, is refused befo
 - The reference's own value is read exactly once, as a `"."` entry or as a param of a [function](#commit-and-reveal). Without it every value would find the same document. Only `ownerRefersTo` or `creatorRefersTo` may leave it out, beside a function.
 - Every other source is `"$ownerId"`, a property path or a function. No other `$` name is accepted, and a path may not name the reference property itself: write `"."` for that.
 - A property an entry reads must exist on the referring type, be required (and so must every object around it), not be `transient` or inside a transient object, and hold a single value, not an object or an array. `findBy` never runs with a missing key part, and a reader can assemble the same key from the stored document. A function's params follow [their own rules](#commit-and-reveal): they may be transient or optional, since they are read from the create alone.
-- A `"$ownerId"` source needs a referring type whose documents can be neither transferred nor traded: a transfer or a purchase would move the writer part of the key without a write.
+- A `"$ownerId"` source needs a referring type whose documents can be neither transferred nor traded, unless the `findBy` holds a [function](#commit-and-reveal): a transfer or a purchase would move the writer part of the key without a write, but a key with a function is judged on the create alone.
 - A `deletableDocument` found by `findBy` may not sit under an `immutable` property, alone or as an operand of an expression: every replace checks it again, so once its document is deleted the property would have to change. One whose key a [function](#commit-and-reveal) computes is the exception: it is checked on the create alone, and its carrier must be fixed once written.
 - `{ "$id": ... }` is allowed only with [`inList`](refers-to-list-element.md), as the only entry.
 

@@ -510,7 +510,7 @@ A document type whose documents can be transferred or traded declares `creatorRe
 
 ### Commit and reveal (a `findBy` function)
 
-One `findBy` entry may hold a function instead of a source: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds a hash of values the document being created reveals. The platform fills that property of the key with the hash to find the referenced document, so the function computes a key part. The document it finds is a commitment made earlier, so the reference is a commit and reveal: the document may be created only while a commitment to values it carries exists. The function is a system function, as in [`generatedFrom`](#generated-properties-generatedfrom), from the `sys.hash` namespace; `sys.hash.sha256d`, the SHA-256 of the SHA-256, is the one there is. DPNS name registration is a commit and reveal of this kind: a `preorder` holds `saltedDomainHash` under a unique index. Before protocol version 14 the `domain` create trigger hashed what the domain reveals and looked for it; from 14, DPNS contract v3 declares it on the salt the domain reveals:
+One `findBy` entry may hold a function instead of a source: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds a hash of values the document being created reveals. The platform fills that property of the key with the hash to find the referenced document, so the function computes a key part. The document it finds is a commitment made earlier, so the reference is a commit and reveal: the document may be created only while a commitment to values it carries exists. The function is a system function, as in [`generatedFrom`](#generated-properties-generatedfrom), from the `sys.hash` namespace; `sys.hash.sha256d`, the SHA-256 of the SHA-256, is the one there is. DPNS name registration is a commit and reveal of this kind: a `preorder` holds `saltedDomainHash` under a unique index. Before protocol version 14 the `domain` create trigger hashed what the domain reveals and looked for it; from 14, DPNS contract v3 declares it on the salt the domain reveals, its preorders unique per owner:
 
 ```json
 "preorder": {
@@ -523,7 +523,11 @@ One `findBy` entry may hold a function instead of a source: `"<referenced proper
     }
   },
   "indices": [
-    { "name": "saltedHash", "properties": [{ "saltedDomainHash": "asc" }], "unique": true }
+    {
+      "name": "ownerAndSaltedHash",
+      "properties": [{ "$ownerId": "asc" }, { "saltedDomainHash": "asc" }],
+      "unique": true
+    }
   ],
   "required": ["$createdAtBlockHeight", "saltedDomainHash"],
   "additionalProperties": false
@@ -537,12 +541,12 @@ One `findBy` entry may hold a function instead of a source: `"<referenced proper
         "type": "deletableDocument",
         "documentType": "preorder",
         "findBy": {
+          "$ownerId": "$ownerId",
           "saltedDomainHash": {
             "function": "sys.hash.sha256d",
-            "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
+            "params": ["$ownerId", "preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
           }
         },
-        "where": { "$ownerId": "$ownerId" },
         "minimumAgeBlocks": 1,
         "consume": true
       }
@@ -552,7 +556,7 @@ One `findBy` entry may hold a function instead of a source: `"<referenced proper
 }
 ```
 
-reads: the salt refers to a `preorder`, found by its `saltedDomainHash` (the whole of its unique `saltedHash` index), that the writer owns (the `where` entry), created in an earlier block, whose `saltedDomainHash` is the sha256d of the salt, the normalized label, a dot and the parent; creating the domain deletes that preorder. The hash is byte for byte the one the create trigger computed for a name under a parent before protocol version 14 (`create_domain_data_trigger_v1`), so the preorders made before it are found. On an index of several properties, `findBy` maps the others beside the function entry as usual.
+reads: the salt refers to the writer's own `preorder` (the `$ownerId` entry, the writer), found by its owner and `saltedDomainHash` (the whole of its unique `ownerAndSaltedHash` index), created in an earlier block, whose `saltedDomainHash` is the sha256d of the writer's id, the salt, the normalized label, a dot and the parent; creating the domain deletes that preorder. Keying by the owner keeps a copy of someone's preorder from colliding with theirs, and hashing the owner keeps the copier from revealing the name with it once the salt is public. The trigger before protocol version 14 hashed the salt, the normalized label, a dot and the parent only; the preorders made before it are deleted when the version activates. On an index of several properties, `findBy` maps the others beside the function entry as usual.
 
 A string or byte array property may carry a `refersTo` only this way: its value is not an id, so its declaration must be a `permanentDocument` or `deletableDocument` reference found by a `findBy` function, and the property keeps its type (the meta-schema admits a `refersTo` with `findBy` on a string or byte array). The value carrying the reference must fill the key exactly once: as a `"."` entry or as a param of the function. A param names a single property carrying the reference by its path, as the salt above; `"."` in the params stands only for a value without a path of its own: each element of a typed array, the writer of an `ownerRefersTo`, the creator of a `creatorRefersTo`. The writer and the creator may also be left out beside a function, since the declaration applies to every create.
 
@@ -562,16 +566,16 @@ The preimage is the bytes of the params joined in order with nothing between the
 - `{ "const": text }`: fixed UTF-8 text, 1 to 64 bytes;
 - `"."`: the value carrying the reference, where it has no path, read the same way.
 
-1 to 16 params. System values such as `"$ownerId"` are not params. Plain concatenation is ambiguous when two variable-length params meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length param (a string, or a byte array whose size is not fixed) with another variable-length param anywhere after it must be followed directly by a one-byte `const`, its separator, and a create whose value for that param holds the separator byte is refused. Each preimage then splits into its params one way only. Integers and other kinds are not params. A path that passes through a map holding a key more than once is refused, as for `generatedFrom`.
+1 to 16 params, `"$ownerId"` among them for the writer's 32-byte id; no other system value is a param. Plain concatenation is ambiguous when two variable-length params meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length param (a string, or a byte array whose size is not fixed) with another variable-length param anywhere after it must be followed directly by a one-byte `const`, its separator, and a create whose value for that param holds the separator byte is refused. Each preimage then splits into its params one way only. Integers and other kinds are not params. A path that passes through a map holding a key more than once is refused, as for `generatedFrom`.
 
 The document such a key finds is judged once, when the document is created:
 
 - A param may be transient (the DPNS salt is), since it is read from the create transition, and optional, since a create missing one is refused. Every stored value `findBy` reads, params and other entries alike, must be fixed once written (the type is immutable or lists the property under `immutable`), and so must a stored property carrying the reference, set when the document is created (not listed under `immutableAllowSetting`). Such a `deletableDocument` found by `findBy` may sit on an `immutable` property, which one re-validated on every replace may not. A replace leaves the reference alone: nothing it reads can have changed, and the commitment may be gone. The declaration's `where` entries are judged with it, on the create alone, so each referring property they name must be fixed once written the same way, or transient. On a document type whose documents can be replaced, such a reference may not be an operand of an `anyOf`: judged on the create alone, it would hold on every replace, whichever operand held on the create.
 - `creatorRefersTo` takes a `deletableDocument` target only through a function.
 - `findBy` holds at most one function. The property it fills must be a byte array of exactly the hash's size, 32 bytes for `sys.hash.sha256d`. Beside `findBy`, on the `refersTo`, the reference may then declare what it asks of the document `findBy` finds (both are refused without a function in `findBy`):
-  - `minimumAgeBlocks`: the found document's `$createdAtBlockHeight` must be at least that many blocks below the height of the create. `1` means an earlier block, so a commitment and its reveal cannot share a block. The referenced type must list `$createdAtBlockHeight` in `required`. A document recording no creation height meets a minimum of `1` and no larger one: a contract update can not make a system field required, so only a system contract a protocol upgrade re-stored holds such documents, and the upgrade runs before the first transition of its block, so they are from an earlier block, how much earlier unknown. The DPNS preorders made before protocol version 14 are the ones there are.
-  - `consume: true`: the create deletes the found document in the same state transition, its storage refunded to its owner as a delete by that owner would be. Only on a `deletableDocument` reference whose `where` holds the entry `"$ownerId": "$ownerId"`, into a document type of the declaring contract whose owner may delete its documents (`canBeDeleted: true`), or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). No delete transition is charged for the consumed document, so its type may declare no delete token cost and no delete action fee, and the key signing the create deletes it, so its type may not require a stricter signature security level than the declaring type.
-- Whose commitment it is, is the `where` entry `"$ownerId": "$ownerId"` beside the function: the writer must own the document found. Without it anyone who learns a preimage may reveal it.
+  - `minimumAgeBlocks`: the found document's `$createdAtBlockHeight` must be at least that many blocks below the height of the create. `1` means an earlier block, so a commitment and its reveal cannot share a block. The referenced type must list `$createdAtBlockHeight` in `required`; a document recording no creation height never meets it.
+  - `consume: true`: the create deletes the found document in the same state transition, its storage refunded to its owner as a delete by that owner would be. Only on a `deletableDocument` reference whose `where` or `findBy` holds the entry `"$ownerId": "$ownerId"`, into a document type of the declaring contract whose owner may delete its documents (`canBeDeleted: true`), or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). No delete transition is charged for the consumed document, so its type may declare no delete token cost and no delete action fee, and the key signing the create deletes it, so its type may not require a stricter signature security level than the declaring type.
+- Whose commitment it is, is the entry `"$ownerId": "$ownerId"` beside the function, in `where` or in `findBy`: the writer must own the document found. Without it anyone who learns a preimage may reveal it. In `findBy` it needs a unique index over the owner and the hash, which also keeps one identity's commitments from colliding with another's; it may sit there on a referring type whose documents change owner, since the key is judged on the create alone. A commitment that should be revealed by its maker only also hashes `"$ownerId"`: a copy stored under another owner then commits to the maker, not the copier.
 
 What is refused, and where:
 

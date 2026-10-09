@@ -48,20 +48,51 @@ export async function register(
 
   const isSecondLevelDomain = normalizedParentDomainName.length > 0;
 
-  // The preorder commits to the normalized label, a dot and the parent domain
-  // name as sent: the hash the platform checks the domain's preorderSalt against
-  const fullDomainName = `${normalizedLabel}.${parentDomainName}`;
-
-  const saltedDomainHash = hash(
-    Buffer.concat([
-      preorderSalt,
-      Buffer.from(fullDomainName),
-    ]),
-  );
-
   if (!this.client.getApps().has('dpns')) {
     throw new Error('DPNS is required to register a new name.');
   }
+
+  // The preorder commits to the hash the platform checks the domain's
+  // preorderSalt against. From DPNS v3 the contract declares it: the params of
+  // the salt's findBy function (the writer's id, the salt, the normalized label,
+  // '.' and the parent domain name as sent). Before it, the salt and
+  // `${normalizedLabel}.${parentDomainName}`.
+  const { contractId } = this.client.getApps().get('dpns');
+  const dpnsContract = await this.contracts.get(contractId);
+  const domainSchema = dpnsContract ? dpnsContract.getDocumentSchema('domain') : undefined;
+  const hashParams = domainSchema?.properties?.preorderSalt?.refersTo
+    ?.findBy?.saltedDomainHash?.params;
+
+  const paramBytes = (param: any): Buffer => {
+    if (typeof param === 'object' && param !== null) {
+      return Buffer.from(param.const);
+    }
+    switch (param) {
+      case '$ownerId':
+        return Buffer.from(identity.getId().toBuffer());
+      case 'preorderSalt':
+        return preorderSalt;
+      case 'label':
+        return Buffer.from(label);
+      case 'normalizedLabel':
+        return Buffer.from(normalizedLabel);
+      case 'parentDomainName':
+        return Buffer.from(parentDomainName);
+      case 'normalizedParentDomainName':
+        return Buffer.from(normalizedParentDomainName);
+      default:
+        throw new Error(`Unknown DPNS preorder hash param ${param}`);
+    }
+  };
+
+  const saltedDomainHash = hash(
+    Array.isArray(hashParams)
+      ? Buffer.concat(hashParams.map(paramBytes))
+      : Buffer.concat([
+        preorderSalt,
+        Buffer.from(`${normalizedLabel}.${parentDomainName}`),
+      ]),
+  );
 
   // 1. Create preorder document
   const preorderDocument = await this.documents.create(

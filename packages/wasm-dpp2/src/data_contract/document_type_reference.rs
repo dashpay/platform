@@ -430,6 +430,7 @@ fn find_by_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsVa
                 set_field(&object, "const", &JsValue::from_str(text), path)?;
                 object.into()
             }
+            LookupKeyParam::Writer => JsValue::from_str("$ownerId"),
         };
         params.push(&param_value);
     }

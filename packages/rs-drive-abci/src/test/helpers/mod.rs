@@ -1,6 +1,9 @@
 /// Contract group fixtures
 #[cfg(test)]
 pub mod contract_groups;
+/// DPNS fixtures
+#[cfg(test)]
+pub mod dpns;
 /// Test helpers
 #[cfg(test)]
 pub mod fast_forward_to_block;

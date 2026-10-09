@@ -126,6 +126,7 @@ pub(crate) mod test_helpers;
 #[cfg(test)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::dpns::dpns_salted_domain_hash;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contracts::SystemDataContract;
@@ -1350,17 +1351,21 @@ pub(in crate::execution) mod tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            document_1.owner_id(),
+            &salt_1,
+            &convert_to_homograph_safe_chars(name),
+            "dash",
+            platform_version,
+        );
 
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
+        let salted_domain_hash_2 = dpns_salted_domain_hash(
+            document_2.owner_id(),
+            &salt_2,
+            &convert_to_homograph_safe_chars(name),
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
         preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
@@ -1981,11 +1986,13 @@ pub(in crate::execution) mod tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            document_1.owner_id(),
+            &salt_1,
+            &convert_to_homograph_safe_chars(name),
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 

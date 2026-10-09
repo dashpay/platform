@@ -23,6 +23,7 @@ mod creation_tests {
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::util::hash::hash_double;
+    use crate::test::helpers::dpns::dpns_salted_domain_hash;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund;
@@ -834,17 +835,21 @@ mod creation_tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            preorder_document_1.owner_id(),
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
+        let salted_domain_hash_2 = dpns_salted_domain_hash(
+            preorder_document_2.owner_id(),
+            &salt_2,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
         preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
@@ -1276,11 +1281,13 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            preorder_document_1.owner_id(),
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
@@ -1560,11 +1567,13 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            preorder_document_1.owner_id(),
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
@@ -1854,13 +1863,16 @@ mod creation_tests {
 
         let salt_3: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_3: Vec<u8> = vec![];
-        salted_domain_buffer_3.extend(salt_3);
-        salted_domain_buffer_3.extend("quantum.dash".as_bytes());
-
         preorder_document_3.set(
             "saltedDomainHash",
-            hash_double(salted_domain_buffer_3).into(),
+            dpns_salted_domain_hash(
+                preorder_document_3.owner_id(),
+                &salt_3,
+                "quantum",
+                "dash",
+                platform_version,
+            )
+            .into(),
         );
 
         document_3.set("preorderSalt", salt_3.into());
@@ -2137,11 +2149,13 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            preorder_document_1.owner_id(),
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
@@ -2563,29 +2577,37 @@ mod creation_tests {
         let salt_3: [u8; 32] = rng.gen();
         let salt_4: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+        let salted_domain_hash_1 = dpns_salted_domain_hash(
+            preorder_document_1.owner_id(),
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+        let salted_domain_hash_2 = dpns_salted_domain_hash(
+            preorder_document_2.owner_id(),
+            &salt_2,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend("quantum.dash".as_bytes());
+        let salted_domain_hash_3 = dpns_salted_domain_hash(
+            preorder_document_3_on_identity_1.owner_id(),
+            &salt_3,
+            "cry",
+            "dash",
+            platform_version,
+        );
 
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
-
-        let mut salted_domain_buffer_3: Vec<u8> = vec![];
-        salted_domain_buffer_3.extend(salt_3);
-        salted_domain_buffer_3.extend("cry.dash".as_bytes());
-
-        let salted_domain_hash_3 = hash_double(salted_domain_buffer_3);
-
-        let mut salted_domain_buffer_4: Vec<u8> = vec![];
-        salted_domain_buffer_4.extend(salt_4);
-        salted_domain_buffer_4.extend(format!("{non_contested_normalized_label}.dash").as_bytes());
-
-        let salted_domain_hash_4 = hash_double(salted_domain_buffer_4);
+        let salted_domain_hash_4 = dpns_salted_domain_hash(
+            preorder_document_4_on_identity_1.owner_id(),
+            &salt_4,
+            &non_contested_normalized_label,
+            "dash",
+            platform_version,
+        );
 
         preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
         preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
@@ -3207,22 +3229,27 @@ mod creation_tests {
         let contested_salt: [u8; 32] = rng.gen();
         let non_contested_salt: [u8; 32] = rng.gen();
 
-        let mut contested_salted_domain_buffer: Vec<u8> = vec![];
-        contested_salted_domain_buffer.extend(contested_salt);
-        contested_salted_domain_buffer.extend(format!("{contested_label}.dash").as_bytes());
-
-        let mut non_contested_salted_domain_buffer: Vec<u8> = vec![];
-        non_contested_salted_domain_buffer.extend(non_contested_salt);
-        non_contested_salted_domain_buffer
-            .extend(format!("{non_contested_normalized_label}.dash").as_bytes());
-
         contested_preorder_document.set(
             "saltedDomainHash",
-            hash_double(contested_salted_domain_buffer).into(),
+            dpns_salted_domain_hash(
+                contested_preorder_document.owner_id(),
+                &contested_salt,
+                contested_label,
+                "dash",
+                platform_version,
+            )
+            .into(),
         );
         non_contested_preorder_document.set(
             "saltedDomainHash",
-            hash_double(non_contested_salted_domain_buffer).into(),
+            dpns_salted_domain_hash(
+                non_contested_preorder_document.owner_id(),
+                &non_contested_salt,
+                non_contested_normalized_label,
+                "dash",
+                platform_version,
+            )
+            .into(),
         );
         contested_document.set("preorderSalt", contested_salt.into());
         non_contested_document.set("preorderSalt", non_contested_salt.into());

@@ -10,9 +10,9 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // `distributionType`, written for once-per-identity distribution claims.
 // The DPNS contract v3 checks a domain create with schema keywords instead of
 // most of its data trigger: generated normalized names, the reveal and
-// deletion of the writer's own preorder from an earlier block, and the new
-// domain's identity record held to its owner. Domains can no longer be
-// deleted. v2 (dashpay: 1, withdrawals: 1, token_history: 1, dpns: 2) remains
+// deletion of the writer's own preorder from an earlier block (preorders unique
+// per owner, their hash binding the owner), and the new domain's identity record
+// held to its owner. Domains can no longer be deleted. v2 (dashpay: 1, withdrawals: 1, token_history: 1, dpns: 2) remains
 // for PROTOCOL_VERSION_13 chain replay.
 //
 // The app-connect contract (app_connect: 1) also activates with

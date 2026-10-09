@@ -9,6 +9,7 @@ use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
+use dpp::system_data_contracts::dpns_contract::v1::document_types::preorder;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
@@ -743,17 +744,18 @@ impl<C> Platform<C> {
         // DPNS contract v3: a domain create generates its normalized names, reveals and
         // deletes the writer's own preorder from an earlier block, and holds its identity
         // record to its owner, all by schema keywords; the create data trigger keeps only
-        // the parent domain checks. Preorders made before this block record no
-        // `$createdAtBlockHeight` and stay revealable: a document recording none meets
-        // `minimumAgeBlocks: 1`, the preorder reveal's.
+        // the parent domain checks. Its preorders are unique per owner, which no contract
+        // update can turn a unique index into, so the `preorder` type is rebuilt: every
+        // preorder made before this block is deleted, unrefunded, and the type laid out as
+        // a fresh chain registering DPNS v3 lays it out.
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
 
-        self.drive.apply_contract(
+        self.drive.apply_contract_rebuilding_document_types(
             &dpns_contract,
-            *block_info,
-            true,
+            &[preorder::NAME],
+            block_info,
             None,
-            Some(transaction),
+            transaction,
             platform_version,
         )?;
 

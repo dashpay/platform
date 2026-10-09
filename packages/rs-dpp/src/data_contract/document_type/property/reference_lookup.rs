@@ -431,12 +431,14 @@ impl DocumentReferenceLookup {
                     continue;
                 }
                 LookupKeySource::OwnerId => {
-                    if owner_can_change(declaring) {
+                    // A lookup with a computed key is judged when the document is created
+                    // only, so a later transfer or purchase moving the writer moves no key
+                    if !computed && owner_can_change(declaring) {
                         return Some(format!(
                             "findBy \"{index_property}\" reads \"$ownerId\", which a transfer or \
                              a purchase of the referring document changes without re-validating \
                              the reference: findBy may read the writer only on a document type \
-                             that cannot be transferred or traded"
+                             that cannot be transferred or traded, or beside a function"
                         ));
                     }
                     continue;

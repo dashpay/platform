@@ -15,29 +15,28 @@ mod dpns_v3_tests {
         create_dpns_name_contest_give_key_info, perform_votes_multi,
     };
     use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::dpns::dpns_salted_domain_hash;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::state::data_trigger::DataTriggerError;
-    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
-    use dpp::platform_value::string_encoding::Encoding;
     use dpp::prelude::{Identifier, IdentityNonce};
     use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
     use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
     use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
     use dpp::state_transition::StateTransition;
     use dpp::system_data_contracts::dpns_contract;
-    use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
+    use drive::drive::RootTree;
+    use drive::grovedb::Element;
     use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
-    use drive::util::storage_flags::StorageFlags;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use simple_signer::signer::SimpleSigner;
@@ -192,24 +191,10 @@ mod dpns_v3_tests {
             absent: &[&str],
             height: u64,
         ) -> (Document, StateTransitionExecutionResult) {
-            let dpns = self.dpns();
-            self.create_in(&dpns, who, type_name, values, absent, height)
-                .await
-        }
-
-        /// [`Self::create`] of a document of `contract`.
-        async fn create_in(
-            &mut self,
-            contract: &DataContract,
-            who: Who,
-            type_name: &str,
-            values: &[(&str, Value)],
-            absent: &[&str],
-            height: u64,
-        ) -> (Document, StateTransitionExecutionResult) {
             let platform_version = self.platform_version;
             let owner_id = self.id(who);
-            let document_type = contract
+            let dpns = self.dpns();
+            let document_type = dpns
                 .document_type_for_name(type_name)
                 .expect("expected the document type");
             let entropy = Bytes32::random_with_rng(&mut self.rng);
@@ -290,7 +275,14 @@ mod dpns_v3_tests {
                     "preorder",
                     &[(
                         "saltedDomainHash",
-                        salted_domain_hash(&salt, label, parent).into(),
+                        dpns_salted_domain_hash(
+                            self.id(who),
+                            &salt,
+                            &convert_to_homograph_safe_chars(label),
+                            parent,
+                            self.platform_version,
+                        )
+                        .into(),
                     )],
                     &[],
                     height,
@@ -378,15 +370,30 @@ mod dpns_v3_tests {
             .pop()
         }
 
-        /// The preorder whose salted hash is `preorder`'s, if still stored.
+        /// The stored preorder `preorder` is, found by its unique index: its owner
+        /// and salted hash from DPNS v3, its salted hash before it.
         fn stored_preorder(&self, preorder: &Document) -> Option<Document> {
             let salted_domain_hash = preorder
                 .properties()
                 .get("saltedDomainHash")
                 .expect("expected the preorder's salted hash")
                 .clone();
-            self.query("preorder", &[("saltedDomainHash", salted_domain_hash)])
+            if self.platform_version.system_data_contracts.dpns >= 3 {
+                self.query(
+                    "preorder",
+                    &[
+                        (
+                            "$ownerId",
+                            Value::Identifier(preorder.owner_id().to_buffer()),
+                        ),
+                        ("saltedDomainHash", salted_domain_hash),
+                    ],
+                )
                 .pop()
+            } else {
+                self.query("preorder", &[("saltedDomainHash", salted_domain_hash)])
+                    .pop()
+            }
         }
 
         /// Runs the protocol version 14 activation at block `height` on a
@@ -487,76 +494,32 @@ mod dpns_v3_tests {
             .documents_owned()
     }
 
-    /// Registers a contract, owned by Alice, whose `claim` reveals a DPNS preorder
-    /// (`preorderSalt` refers to it, found by the same hash) at least
-    /// `minimum_age_blocks` old, and returns it.
-    fn register_preorder_claims_contract(
-        fixture: &DpnsFixture,
-        minimum_age_blocks: u32,
-    ) -> DataContract {
-        let contract_json = serde_json::json!({
-            "$formatVersion": "1",
-            "id": Identifier::new([0x5C; 32]).to_string(Encoding::Base58),
-            "ownerId": fixture.id(Who::Alice).to_string(Encoding::Base58),
-            "version": 1,
-            "documentSchemas": {
-                "claim": {
-                    "type": "object",
-                    "documentsMutable": false,
-                    "canBeDeleted": false,
-                    "properties": {
-                        "label": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
-                        "parent": { "type": "string", "maxLength": 63, "position": 1 },
-                        "preorderSalt": {
-                            "type": "array",
-                            "byteArray": true,
-                            "minItems": 32,
-                            "maxItems": 32,
-                            "position": 2,
-                            "refersTo": {
-                                "type": "deletableDocument",
-                                "contractId": SystemDataContract::DPNS.id().to_string(Encoding::Base58),
-                                "documentType": "preorder",
-                                "findBy": {
-                                    "saltedDomainHash": {
-                                        "function": "sys.hash.sha256d",
-                                        "params": ["preorderSalt", "label", { "const": "." }, "parent"]
-                                    }
-                                },
-                                "minimumAgeBlocks": minimum_age_blocks
-                            }
-                        }
-                    },
-                    "required": ["label", "parent", "preorderSalt"],
-                    "additionalProperties": false
-                }
-            }
-        });
-        let contract = DataContract::from_json(contract_json, true, fixture.platform_version)
-            .expect("expected to parse the claims contract");
-        fixture
-            .platform
-            .drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                fixture.platform_version,
-            )
-            .expect("expected to apply the claims contract");
-        contract
-    }
-
-    /// The commitment a preorder stores, as every client computes it:
-    /// `sha256d(salt ++ normalizedLabel ++ "." ++ parentDomainName)`.
-    fn salted_domain_hash(salt: &[u8; 32], label: &str, parent: &str) -> [u8; 32] {
-        let mut buffer = salt.to_vec();
-        buffer.extend(convert_to_homograph_safe_chars(label).as_bytes());
-        buffer.extend(b".");
-        buffer.extend(parent.as_bytes());
-        hash_double(buffer)
+    /// The elements laying out the DPNS `preorder` type: its tree, its primary key
+    /// tree, its `ownerAndSaltedHash` index tree, and whatever its v2 `saltedHash`
+    /// index left under `saltedDomainHash`.
+    fn preorder_type_layout(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> (Element, Element, Element, Option<Element>) {
+        let dpns_id = SystemDataContract::DPNS.id().to_buffer();
+        let documents_root: &[u8] = Into::<&[u8; 1]>::into(RootTree::DataContractDocuments);
+        let documents_path: [&[u8]; 3] = [documents_root, &dpns_id, &[1]];
+        let type_path: [&[u8]; 4] = [documents_root, &dpns_id, &[1], b"preorder"];
+        let grove_version = &platform_version.drive.grove_version;
+        let get = |path: &[&[u8]], key: &[u8]| {
+            platform
+                .drive
+                .grove
+                .get_raw_optional(path.into(), key, None, grove_version)
+                .unwrap()
+                .expect("expected to read the preorder layout")
+        };
+        (
+            get(&documents_path, b"preorder").expect("expected the preorder type tree"),
+            get(&type_path, &[0]).expect("expected the primary key tree"),
+            get(&type_path, b"$ownerId").expect("expected the owner index tree"),
+            get(&type_path, b"saltedDomainHash"),
+        )
     }
 
     /// The consensus error of a refused write, printed with its code.
@@ -668,16 +631,85 @@ mod dpns_v3_tests {
             .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
             .await;
 
-        // Bob read Alice's salt off her domain create and races it
+        // Bob read Alice's salt off her domain create and races it: his reveal hashes his
+        // own id and looks among his own preorders, so it finds nothing
         let (_, result) = fixture
             .domain(Who::Bob, salt, "quantum7", "dash", &[], &[], REVEAL_HEIGHT)
             .await;
         assert_matches!(
             refusal(&result),
-            ConsensusError::StateError(StateError::ReferencedDocumentPropertyMismatchError(_))
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
         );
         assert!(fixture.name("quantum7").is_none());
         assert!(fixture.stored_preorder(&preorder).is_some());
+    }
+
+    /// Preorders are unique per owner and their hash binds the owner, so a copy of
+    /// someone's preorder is harmless: stored first, it does not stop the owner's own
+    /// preorder, and the copier, who learns the salt from the owner's reveal, cannot
+    /// reveal the name with it.
+    #[tokio::test]
+    async fn should_neither_block_nor_reveal_a_name_with_a_copied_preorder() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let alice = fixture.id(Who::Alice);
+        let salt: [u8; 32] = fixture.rng.gen();
+        let alice_hash =
+            dpns_salted_domain_hash(alice, &salt, "quantum7", "dash", fixture.platform_version);
+
+        // Bob copies Alice's pending commitment, and his copy lands first
+        let (copy, result) = fixture
+            .create(
+                Who::Bob,
+                "preorder",
+                &[("saltedDomainHash", alice_hash.into())],
+                &[],
+                PREORDER_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let preorder = fixture
+            .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
+            .await;
+
+        // Bob races Alice's reveal with her salt and his copy
+        let (_, result) = fixture
+            .domain(Who::Bob, salt, "quantum7", "dash", &[], &[], REVEAL_HEIGHT)
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
+        );
+
+        let (_, result) = fixture
+            .domain(
+                Who::Alice,
+                salt,
+                "quantum7",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            fixture
+                .name("quantum7")
+                .expect("expected the name")
+                .owner_id(),
+            alice
+        );
+        assert!(fixture.stored_preorder(&preorder).is_none());
+        assert!(
+            fixture.stored_preorder(&copy).is_some(),
+            "the copy is Bob's, untouched"
+        );
     }
 
     #[tokio::test]
@@ -938,12 +970,13 @@ mod dpns_v3_tests {
         );
     }
 
-    /// A chain upgraded from protocol version 13: DPNS is re-stored as v3,
-    /// every domain and preorder written under v2 decodes unchanged, and a
-    /// preorder made before the upgrade, which records no creation height, is
-    /// old enough to reveal.
+    /// A chain upgraded from protocol version 13: DPNS is re-stored as v3, every
+    /// domain written under v2 decodes unchanged, and the `preorder` type is
+    /// rebuilt: every preorder made before the upgrade is gone, a pending one can
+    /// no longer be revealed, and the type is laid out exactly as on a chain born
+    /// at protocol version 14.
     #[tokio::test]
-    async fn should_decode_v2_documents_and_reveal_a_v2_preorder_after_the_upgrade() {
+    async fn should_decode_v2_domains_and_rebuild_the_preorders_at_the_upgrade() {
         let mut fixture = DpnsFixture::new(13);
 
         let (_, registered, result) = fixture.register(Who::Bob, "quantum7", &[], &[]).await;
@@ -957,13 +990,10 @@ mod dpns_v3_tests {
             .await;
 
         let v2_domain = fixture.name("quantum7").expect("expected the v2 domain");
-        let v2_preorder = fixture
-            .stored_preorder(&pending)
-            .expect("expected the v2 preorder");
         assert_eq!(v2_domain.id(), registered.id());
-        assert_eq!(v2_preorder.created_at_block_height(), None);
-        let v2_dpns = fixture.dpns();
-        assert!(v2_dpns
+        assert!(fixture.stored_preorder(&pending).is_some());
+        assert!(fixture
+            .dpns()
             .document_type_for_name("domain")
             .expect("expected the domain document type")
             .documents_can_be_deleted());
@@ -971,10 +1001,10 @@ mod dpns_v3_tests {
         fixture.activate_protocol_version_14(20);
 
         let v3_dpns = fixture.dpns();
-        let v3_domain_type = v3_dpns
+        assert!(!v3_dpns
             .document_type_for_name("domain")
-            .expect("expected the domain document type");
-        assert!(!v3_domain_type.documents_can_be_deleted());
+            .expect("expected the domain document type")
+            .documents_can_be_deleted());
         assert!(v3_dpns
             .document_type_for_name("preorder")
             .expect("expected the preorder document type")
@@ -985,53 +1015,27 @@ mod dpns_v3_tests {
             v2_domain,
             "a domain written under v2 decodes unchanged under v3"
         );
+
+        // The rebuilt preorder type holds nothing and is laid out as a chain born at
+        // protocol version 14 lays it out
+        assert!(fixture.stored_preorder(&pending).is_none());
+        let born_at_14 = DpnsFixture::new(14);
         assert_eq!(
-            fixture
-                .stored_preorder(&pending)
-                .expect("expected the preorder"),
-            v2_preorder,
-            "a preorder written under v2 decodes unchanged under v3"
+            preorder_type_layout(&fixture.platform, fixture.platform_version),
+            preorder_type_layout(&born_at_14.platform, born_at_14.platform_version)
         );
 
-        // Another contract revealing DPNS preorders, three blocks old at least: the upgrade
-        // shows only that a preorder recording no height is from an earlier block, so
-        // Alice's, made a block before the upgrade, meets no minimum above 1
-        let claims = register_preorder_claims_contract(&fixture, 3);
-        let (_, result) = fixture
-            .create_in(
-                &claims,
-                Who::Alice,
-                "claim",
-                &[
-                    ("label", Value::Text("quantum8".into())),
-                    ("parent", Value::Text("dash".into())),
-                    ("preorderSalt", salt.into()),
-                ],
-                &[],
-                21,
-            )
-            .await;
-        assert_matches!(
-            refusal(&result),
-            ConsensusError::StateError(StateError::ReferencedDocumentRequirementNotMetError(e))
-                if e.field() == "minimumAgeBlocks" && e.required() == "3"
-        );
-
-        // DPNS asks for one block, which it is
+        // Alice's pending preorder is gone, so she preorders again
         let (_, result) = fixture
             .domain(Who::Alice, salt, "quantum8", "dash", &[], &[], 21)
             .await;
         assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
+            refusal(&result),
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
         );
-        assert!(fixture.name("quantum8").is_some());
-        assert!(fixture.stored_preorder(&pending).is_none());
-
-        // A preorder made from protocol version 14 on records its height
         let salt: [u8; 32] = fixture.rng.gen();
         let preorder = fixture
-            .preorder(Who::Alice, salt, "quantum9", "dash", 22)
+            .preorder(Who::Alice, salt, "quantum8", "dash", 22)
             .await;
         assert_eq!(
             fixture
@@ -1040,6 +1044,14 @@ mod dpns_v3_tests {
                 .created_at_block_height(),
             Some(22)
         );
+        let (_, result) = fixture
+            .domain(Who::Alice, salt, "quantum8", "dash", &[], &[], 23)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.stored_preorder(&preorder).is_none());
     }
 
     /// A chain born at protocol version 14 stores DPNS v3 and still inserts
@@ -1147,7 +1159,13 @@ mod dpns_v3_tests {
                 query_dpns(
                     &platform,
                     "preorder",
-                    &[("saltedDomainHash", salted_domain_hash)],
+                    &[
+                        (
+                            "$ownerId",
+                            Value::Identifier(preorder.owner_id().to_buffer())
+                        ),
+                        ("saltedDomainHash", salted_domain_hash),
+                    ],
                     platform_version,
                 )
                 .is_empty(),
@@ -1258,7 +1276,7 @@ mod dpns_v3_tests {
             measured,
             vec![
                 (1_876_280, 42_660_000, 0),
-                (2_318_400, 42_687_000, 15_181_239)
+                (2_525_540, 42_687_000, 15_181_239)
             ]
         );
     }

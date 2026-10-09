@@ -1029,13 +1029,13 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
+    use crate::test::helpers::dpns::dpns_salted_domain_hash;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use drive::query::drive_document_average_query::{
         AverageMode, DocumentAverageRequest, DocumentAverageResponse,
@@ -1130,11 +1130,13 @@ mod dpns_username_transfer_tests {
 
         let salt: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer: Vec<u8> = vec![];
-        salted_domain_buffer.extend(salt);
-        salted_domain_buffer.extend((normalized_label + ".dash").as_bytes());
-
-        let salted_domain_hash = hash_double(salted_domain_buffer);
+        let salted_domain_hash = dpns_salted_domain_hash(
+            document.owner_id(),
+            &salt,
+            &normalized_label,
+            "dash",
+            platform_version,
+        );
 
         preorder_document.set("saltedDomainHash", salted_domain_hash.into());
         document.set("preorderSalt", salt.into());

@@ -1966,8 +1966,8 @@ mod tests {
             // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
             // contract bytes; the DPNS v3 preorder type the update copies in has its own
-            // (shorter descriptions, `$createdAtBlockHeight` required)
-            27003082310
+            // (its per-owner index, `$createdAtBlockHeight` required)
+            27003089990
         );
 
         let check_result = platform

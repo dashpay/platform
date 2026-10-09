@@ -60,7 +60,7 @@
       }
     },
     "findByFunction": {
-      "description": "The function of a findBy entry, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, the value of the referenced property the entry names that finds the document. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; or \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo). See findBy for what the computed key means.",
+      "description": "The function of a findBy entry, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, the value of the referenced property the entry names that finds the document. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo); or \"$ownerId\", the writer's 32-byte id, which binds the commitment to the identity that may reveal it. See findBy for what the computed key means.",
       "type": "object",
       "properties": {
         "function": {
@@ -75,6 +75,10 @@
               {
                 "type": "string",
                 "const": "."
+              },
+              {
+                "type": "string",
+                "const": "$ownerId"
               },
               {
                 "type": "string",
