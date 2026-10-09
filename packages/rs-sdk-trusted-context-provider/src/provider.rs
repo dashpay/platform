@@ -41,6 +41,8 @@ use futures::future::{BoxFuture, FutureExt};
 use lru::LruCache;
 use reqwest::Client;
 use serde::Deserialize;
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 #[cfg(all(
@@ -49,6 +51,8 @@ use std::error::Error as StdError;
 ))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
+#[cfg(test)]
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -58,8 +62,11 @@ use url::Url;
 const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[cfg(test)]
+type QuorumInsertGate = (SyncSender<()>, Receiver<()>);
+
+#[cfg(test)]
 thread_local! {
-    static QUORUM_INSERT_BARRIER: std::cell::RefCell<Option<Arc<std::sync::Barrier>>> = const { std::cell::RefCell::new(None) };
+    static QUORUM_INSERT_GATE: RefCell<Option<QuorumInsertGate>> = const { RefCell::new(None) };
 }
 
 /// A trusted HTTP-based context provider that fetches quorum information
@@ -479,9 +486,12 @@ impl TrustedHttpContextProvider {
             cache.put(*quorum_hash, quorum.clone());
         }
         #[cfg(test)]
-        QUORUM_INSERT_BARRIER.with(|barrier| {
-            if let Some(barrier) = barrier.borrow().as_ref() {
-                barrier.wait();
+        QUORUM_INSERT_GATE.with(|gate| {
+            if let Some((inserted, release)) = gate.borrow().as_ref() {
+                inserted.send(()).expect("report destination insertion");
+                release
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("release cache cleanup after both insertions");
             }
         });
         // Remove unusable entries that could shadow the repaired key, but
@@ -1225,7 +1235,7 @@ mod tests {
     use dpp::bls_signatures::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
-    use std::sync::Barrier;
+    use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1770,6 +1780,8 @@ mod tests {
         server.join().expect("mock quorum server must finish");
     }
 
+    /// An unusable current-list match must not hide a usable previous-list
+    /// key, and the repaired cache must serve synchronous verification.
     #[tokio::test]
     async fn should_use_a_valid_previous_key_when_the_current_list_overlaps_with_a_malformed_key() {
         let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
@@ -1794,10 +1806,12 @@ mod tests {
         server.join().expect("mock quorum server must finish");
     }
 
+    /// Concurrent opposite-list repairs must retain a usable cached key
+    /// after both callers report successful acquisition.
     #[test]
     fn should_keep_a_fetched_key_during_opposite_list_cache_repairs() {
         let provider = provider_for("http://127.0.0.1:1".to_string());
-        let barrier = Arc::new(Barrier::new(2));
+        let (inserted, insertions) = mpsc::sync_channel(2);
         let quorum = QuorumData {
             quorum_hash: hex::encode([0x11; 32]),
             key: hex::encode(quorum_key(0x41)),
@@ -1808,10 +1822,13 @@ mod tests {
             .into_iter()
             .map(|current| {
                 let provider = provider.clone();
-                let barrier = Arc::clone(&barrier);
+                let inserted = inserted.clone();
+                let (release, cleanup) = mpsc::sync_channel(1);
                 let quorum = quorum.clone();
-                thread::spawn(move || {
-                    QUORUM_INSERT_BARRIER.with(|slot| *slot.borrow_mut() = Some(barrier));
+                let worker = thread::spawn(move || {
+                    QUORUM_INSERT_GATE.with(|slot| {
+                        *slot.borrow_mut() = Some((inserted, cleanup));
+                    });
                     let fetched = FetchedQuorums {
                         current: Ok(if current {
                             vec![quorum.clone()]
@@ -1823,10 +1840,20 @@ mod tests {
                     provider
                         .listed_key(&fetched, &[0x11; 32])
                         .expect("the opposite-list snapshot supplies a usable key")
-                })
+                });
+                (release, worker)
             })
             .collect();
-        for worker in workers {
+        drop(inserted);
+        for _ in 0..2 {
+            insertions
+                .recv_timeout(Duration::from_secs(5))
+                .expect("both workers must insert before either cleans up");
+        }
+        for (release, _) in &workers {
+            release.send(()).expect("release cache repair cleanup");
+        }
+        for (_, worker) in workers {
             assert_eq!(
                 worker.join().expect("cache repair worker finishes"),
                 Some(quorum_key(0x41))

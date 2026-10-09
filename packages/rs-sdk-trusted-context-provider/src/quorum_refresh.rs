@@ -52,7 +52,7 @@ impl FetchedQuorums {
         }
     }
 
-    /// Matching quorums from both lists, current first, with their list origin.
+    /// Matching quorums from both lists, current first; true means current.
     pub(crate) fn matching<'a>(
         &'a self,
         quorum_hash: &'a [u8; 32],
