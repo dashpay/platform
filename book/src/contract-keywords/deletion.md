@@ -82,7 +82,7 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 }
 ```
 
-A preorder stays until the name registration that reveals it consumes it (the `preorderSalt` declaration in [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). Its owner can not take it back with a delete.
+A preorder of this type stays until the name registration that reveals it consumes it (the `preorderSalt` declaration in [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). Its owner can not take it back with a delete. DPNS v3's own `preorder` declares the same index but `canBeDeleted: true`, so its owner may still delete a preorder it no longer wants; this example is the stricter variant.
 
 - A delete transition of such a document is refused (`InvalidDocumentTransitionActionError`, 10404), as for `false`.
 - A consume deletes it as a delete by its owner would, its storage refunded to the owner.
