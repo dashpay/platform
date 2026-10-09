@@ -71,7 +71,9 @@ pub struct TokenConfigurationV1 {
     pub transferable: bool,
 }
 
-fn default_transferable() -> bool {
+/// The value of an omitted `transferable`: every token is transferable unless its configuration
+/// says otherwise.
+pub fn default_transferable() -> bool {
     true
 }
 

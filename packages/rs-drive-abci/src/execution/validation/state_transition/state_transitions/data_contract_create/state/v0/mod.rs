@@ -1,7 +1,9 @@
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::non_transferable_token_cost::external_non_transferable_token_cost_error;
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_depth::validate_document_schemas_depth_for_check_tx;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::consensus::ConsensusError;
 use dpp::block::block_info::BlockInfo;
 use std::collections::BTreeSet;
 
@@ -14,7 +16,6 @@ use dpp::consensus::state::identity::identity_for_token_configuration_not_found_
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{
     InvalidTokenPositionStateError, PreProgrammedDistributionTimestampInPastError,
-    TokenNotTransferableError,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
@@ -25,12 +26,11 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::tokens::calculate_token_id;
 use dpp::ProtocolError;
 
 use crate::error::execution::ExecutionError;
@@ -354,45 +354,38 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     if let Some(fetch_info) = contract_fetch_info.1 {
                         let contract_tokens = fetch_info.contract.tokens();
                         for token_position in &token_positions {
-                            if !contract_tokens.contains_key(token_position) {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                    StateTransitionAction::BumpIdentityNonceAction(
-                                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                                    ),
-                                    vec![StateError::InvalidTokenPositionStateError(
-                                        InvalidTokenPositionStateError::new(
-                                            contract_tokens.last_key_value().map(|(token_contract_position,_)| *token_contract_position),
-                                            *token_position,
+                            let error: ConsensusError = match contract_tokens.get(token_position) {
+                                None => StateError::InvalidTokenPositionStateError(
+                                    InvalidTokenPositionStateError::new(
+                                        contract_tokens.last_key_value().map(
+                                            |(token_contract_position, _)| *token_contract_position,
                                         ),
-                                    )
-                                        .into()],
-                                ));
-                            }
-                            // An external token cost always pays the contract owner (an external
-                            // burn is refused when the schema is parsed), which a non-transferable
-                            // token forbids. Inert before protocol version 14: only a format 1
-                            // token configuration is non-transferable, and the pre-activation
-                            // gate refuses that format on every earlier version, so no stored
-                            // contract an earlier version reads here holds one.
-                            if contract_tokens
-                                .get(token_position)
-                                .is_some_and(|configuration| !configuration.is_transferable())
-                            {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                    StateTransitionAction::BumpIdentityNonceAction(
-                                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                        *token_position,
                                     ),
-                                    vec![TokenNotTransferableError::new(
-                                        calculate_token_id(contract_id.as_bytes(), *token_position)
-                                            .into(),
-                                        format!(
-                                            "document type {} token cost paid to the contract owner",
-                                            document_type.name()
-                                        ),
+                                )
+                                .into(),
+                                // An external token cost always pays the contract owner (an
+                                // external burn is refused when the schema is parsed), which a
+                                // non-transferable token forbids. Inert before protocol version
+                                // 14: only a format 1 token configuration is non-transferable, and
+                                // the pre-activation gate refuses that format on every earlier
+                                // version, so no stored contract an earlier version reads here
+                                // holds one.
+                                Some(configuration) if !configuration.is_transferable() => {
+                                    external_non_transferable_token_cost_error(
+                                        document_type,
+                                        contract_id,
+                                        *token_position,
                                     )
-                                    .into()],
-                                ));
-                            }
+                                }
+                                Some(_) => continue,
+                            };
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                StateTransitionAction::BumpIdentityNonceAction(
+                                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                ),
+                                vec![error],
+                            ));
                         }
                     } else {
                         let bump_action = StateTransitionAction::BumpIdentityNonceAction(

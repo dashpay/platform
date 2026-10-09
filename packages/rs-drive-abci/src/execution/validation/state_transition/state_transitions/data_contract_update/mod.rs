@@ -1863,6 +1863,12 @@ mod tests {
 
     mod token_tests {
         use super::*;
+        use crate::execution::validation::state_transition::tests::{
+            create_token_contract_with_owner_identity, make_token_non_transferable,
+        };
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::platform_value::platform_value;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::UnpaidConsensusError;
         use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
         use dpp::balances::credits::TokenAmount;
@@ -2032,12 +2038,6 @@ mod tests {
         /// (protocol version 14).
         #[tokio::test]
         async fn should_refuse_an_update_adding_a_type_paying_an_external_non_transferable_token() {
-            use crate::execution::validation::state_transition::tests::create_token_contract_with_owner_identity;
-            use dpp::consensus::codes::ErrorWithCode;
-            use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
-            use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-            use dpp::platform_value::platform_value;
-
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -2054,9 +2054,7 @@ mod tests {
             let (token_contract, token_id) = create_token_contract_with_owner_identity(
                 &mut platform,
                 token_contract_owner.id(),
-                Some(|token_configuration: &mut TokenConfiguration| {
-                    token_configuration.set_transferable(false)
-                }),
+                Some(make_token_non_transferable),
                 None,
                 None,
                 None,
@@ -2142,7 +2140,9 @@ mod tests {
                         StateError::TokenNotTransferableError(inner)
                     ),
                     ..
-                }] if *inner.token_id() == token_id && error.code() == 40726
+                }] if *inner.token_id() == token_id
+                    && inner.action() == "document type tip's create token cost (it pays the contract owner)"
+                    && error.code() == 40726
             );
         }
 

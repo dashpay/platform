@@ -17,6 +17,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v1::{
     TokenConfigurationV1Getters, TokenConfigurationV1Setters,
 };
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration::v1::default_transferable;
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
 use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
@@ -44,10 +45,6 @@ struct TokenConfigurationOptions {
     minimum_pool_notes_for_outgoing: Option<u64>,
     #[serde(default = "default_transferable")]
     transferable: bool,
-}
-
-fn default_transferable() -> bool {
-    true
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -130,31 +127,23 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 
 impl_try_from_js_value!(TokenConfigurationWasm, "TokenConfiguration");
 
-/// Writes the shielded pool's outgoing notes threshold, which only a configuration that has a
-/// pool carries at all.
+/// Writes the shielded pool's outgoing notes threshold through
+/// `TokenConfiguration::set_minimum_pool_notes_for_outgoing`, which only a configuration that
+/// has a pool accepts.
 ///
-/// A threshold asked for on a token without a pool is refused rather than stored. The only
-/// place to keep it would be a format-version-1 configuration with no pool, which contradicts
-/// how the two are kept canonical — a token without a pool serializes as format version 0, so
-/// that every protocol version accepts it — and which nothing would ever read. Dropping it
-/// quietly is worse still: the caller asked for a guard and would get none.
+/// A threshold asked for on a token without a pool is refused rather than dropped quietly: the
+/// caller asked for a guard and would get none.
 fn write_minimum_pool_notes_for_outgoing(
     configuration: &mut TokenConfiguration,
     minimum_pool_notes_for_outgoing: Option<u64>,
 ) -> WasmDppResult<()> {
-    match configuration {
-        // A format-version-1 configuration without a pool (a non-transferable token) has no
-        // threshold to hold either.
-        TokenConfiguration::V1(v1) if v1.has_shielded_pool => {
-            v1.minimum_pool_notes_for_outgoing = minimum_pool_notes_for_outgoing;
-            Ok(())
-        }
-        // Clearing a threshold a pool-less token never had leaves it as it already is.
-        _ if minimum_pool_notes_for_outgoing.is_none() => Ok(()),
-        _ => Err(WasmDppError::invalid_argument(
+    if configuration.set_minimum_pool_notes_for_outgoing(minimum_pool_notes_for_outgoing) {
+        Ok(())
+    } else {
+        Err(WasmDppError::invalid_argument(
             "'minimumPoolNotesForOutgoing' needs 'hasShieldedPool': a token without a shielded \
              pool holds no notes to count",
-        )),
+        ))
     }
 }
 

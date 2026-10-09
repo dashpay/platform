@@ -484,7 +484,7 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                             bump_action,
                             vec![TokenNotTransferableError::new(
                                 token_transition_action.base().token_id(),
-                                "transfer".to_string(),
+                                "a token transfer".to_string(),
                             )
                             .into()],
                         ));

@@ -9,8 +9,9 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 /// The token's configuration sets `transferable: false`, and the refused operation would move
-/// it to another identity: a `TokenTransfer`, or a contract whose document type pays the token
-/// to its own owner.
+/// it to another identity: a `TokenTransfer` ("a token transfer"), a contract whose document
+/// type pays the token to its own owner (naming the type and the `tokenCost` actions), or a
+/// document payment to the contract owner in the contract's own such token.
 #[derive(
     Error,
     Debug,
@@ -24,7 +25,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("Token {token_id} is not transferable: {action} refused")]
+#[error("Token {token_id} is not transferable, so {action} is refused")]
 #[platform_serialize(unversioned)]
 pub struct TokenNotTransferableError {
     /*

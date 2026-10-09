@@ -895,12 +895,16 @@ mod non_transferable_tests {
     use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::ConsensusError;
     use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+    use crate::group::action_taker::{ActionGoal, ActionTaker};
+    use crate::prelude::Identifier;
 
     fn transferable() -> TokenConfiguration {
         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
     }
 
-    fn non_transferable() -> TokenConfiguration {
+    pub(super) fn non_transferable() -> TokenConfiguration {
         let mut configuration = transferable();
         configuration.set_transferable(false);
         configuration
@@ -963,6 +967,96 @@ mod non_transferable_tests {
         );
     }
 
+    /// Removing the pool of a non-transferable token keeps it at V1, so the threshold and its
+    /// rules, which only apply to a pool, are cleared rather than left on a token without one,
+    /// whichever of the two flags is set first.
+    #[test]
+    fn should_clear_the_pool_threshold_when_a_non_transferable_token_loses_its_pool() {
+        let pooled_with_threshold = || {
+            let mut configuration = transferable();
+            configuration.set_has_shielded_pool(true);
+            assert!(configuration.set_minimum_pool_notes_for_outgoing(Some(9)));
+            let TokenConfiguration::V1(v1) = &mut configuration else {
+                panic!("a pooled configuration is V1");
+            };
+            v1.minimum_pool_notes_for_outgoing_change_rules
+                .set_authorized_to_make_change_action_takers(AuthorizedActionTakers::ContractOwner);
+            configuration
+        };
+
+        let mut transferable_first = pooled_with_threshold();
+        transferable_first.set_transferable(false);
+        transferable_first.set_has_shielded_pool(false);
+
+        let mut pool_first = pooled_with_threshold();
+        pool_first.set_has_shielded_pool(false);
+        pool_first.set_transferable(false);
+
+        for configuration in [transferable_first, pool_first] {
+            assert_eq!(configuration, non_transferable());
+            assert_eq!(configuration.minimum_pool_notes_for_outgoing(), 0);
+        }
+    }
+
+    /// The threshold setter takes a threshold only on a token with a pool and always clears.
+    #[test]
+    fn should_set_a_pool_threshold_only_on_a_token_with_a_pool() {
+        let mut configuration = non_transferable();
+        assert!(!configuration.set_minimum_pool_notes_for_outgoing(Some(5)));
+        assert_eq!(configuration, non_transferable());
+        assert!(configuration.set_minimum_pool_notes_for_outgoing(None));
+
+        let mut unpooled = transferable();
+        assert!(!unpooled.set_minimum_pool_notes_for_outgoing(Some(5)));
+        assert!(unpooled.set_minimum_pool_notes_for_outgoing(None));
+        assert_eq!(unpooled, transferable());
+
+        configuration.set_has_shielded_pool(true);
+        assert!(configuration.set_minimum_pool_notes_for_outgoing(Some(5)));
+        assert_eq!(configuration.minimum_pool_notes_for_outgoing(), 5);
+    }
+
+    /// A non-transferable token is V1 without a pool, so V1 alone no longer means a pool: the
+    /// threshold items are refused on it even when its threshold rules name the actor.
+    #[test]
+    fn should_refuse_the_pool_threshold_items_on_a_token_without_a_pool() {
+        let owner = Identifier::from([1; 32]);
+        let mut configuration = non_transferable();
+        let TokenConfiguration::V1(v1) = &mut configuration else {
+            panic!("a non-transferable configuration is V1");
+        };
+        v1.minimum_pool_notes_for_outgoing_change_rules =
+            ChangeControlRules::V0(ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                changing_authorized_action_takers_to_no_one_allowed: true,
+                changing_admin_action_takers_to_no_one_allowed: true,
+                self_changing_admin_action_takers_allowed: true,
+            });
+
+        for change in [
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(10),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                AuthorizedActionTakers::NoOne,
+            ),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(
+                AuthorizedActionTakers::NoOne,
+            ),
+        ] {
+            assert!(
+                !configuration.can_apply_token_configuration_item(
+                    &change,
+                    &owner,
+                    None,
+                    &BTreeMap::new(),
+                    &ActionTaker::SingleIdentity(owner),
+                    ActionGoal::ActionCompletion,
+                ),
+                "{change} must be refused on a token without a pool"
+            );
+        }
+    }
+
     #[test]
     fn should_round_trip_a_non_transferable_configuration_through_bincode() {
         let configuration = non_transferable();
@@ -982,16 +1076,10 @@ mod non_transferable_tests {
     feature = "serde-conversion"
 ))]
 mod non_transferable_json_tests {
+    use super::non_transferable_tests::non_transferable;
     use super::*;
     use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use crate::serialization::{JsonConvertible, ValueConvertible};
-
-    fn non_transferable() -> TokenConfiguration {
-        let mut configuration =
-            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
-        configuration.set_transferable(false);
-        configuration
-    }
 
     #[test]
     fn should_write_transferable_false_and_read_it_back_on_both_wires() {

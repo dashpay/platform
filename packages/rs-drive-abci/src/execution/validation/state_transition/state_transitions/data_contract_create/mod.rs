@@ -3552,15 +3552,12 @@ mod tests {
     /// documents, and only by being burned; it cannot have a shielded pool.
     mod non_transferable_tokens {
         use super::*;
+        use crate::execution::validation::state_transition::tests::make_token_non_transferable;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
         use dpp::consensus::codes::ErrorWithCode;
         use dpp::consensus::state::state_error::StateError;
         use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
-
-        fn make_non_transferable(token_configuration: &mut TokenConfiguration) {
-            token_configuration.set_transferable(false);
-        }
 
         /// Registers the card game with its gold token (position 0) changed by
         /// `modify_gold_token`, and the card's create cost set to `card_cost` in both the parsed
@@ -3570,8 +3567,8 @@ mod tests {
             platform: &mut TempPlatform<MockCoreRPCLike>,
             modify_gold_token: impl FnOnce(&mut TokenConfiguration),
             card_cost: DocumentActionTokenCost,
+            platform_version: &PlatformVersion,
         ) -> Vec<StateTransitionExecutionResult> {
-            let platform_version = PlatformVersion::latest();
             let platform_state = platform.state.load();
 
             let (identity, contract_signer, contract_key) =
@@ -3685,6 +3682,35 @@ mod tests {
             }
         }
 
+        /// The in-place edits behind these refusals (the token cost parser and the create and
+        /// update state validation 0) cannot change protocol version 13: a non-transferable
+        /// token is a format 1 configuration, which the pre-activation gate refuses there,
+        /// unpaid, before any of them runs.
+        #[tokio::test]
+        async fn should_still_refuse_a_non_transferable_token_as_an_unsupported_format_at_protocol_version_13(
+        ) {
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(13)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let results = register_card_game(
+                &mut platform,
+                make_token_non_transferable,
+                own_gold_cost(DocumentActionTokenEffect::TransferTokenToContractOwner),
+                platform_version,
+            )
+            .await;
+
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::UnsupportedVersionError(error))
+                )] if error.received_version() == 1 && error.max_version() == 0
+            );
+        }
+
         #[tokio::test]
         async fn should_register_a_contract_burning_its_own_non_transferable_token() {
             let mut platform = TestPlatformBuilder::new()
@@ -3693,8 +3719,9 @@ mod tests {
 
             let results = register_card_game(
                 &mut platform,
-                make_non_transferable,
+                make_token_non_transferable,
                 own_gold_cost(DocumentActionTokenEffect::BurnToken),
+                PlatformVersion::latest(),
             )
             .await;
 
@@ -3712,8 +3739,9 @@ mod tests {
 
             let results = register_card_game(
                 &mut platform,
-                make_non_transferable,
+                make_token_non_transferable,
                 own_gold_cost(DocumentActionTokenEffect::TransferTokenToContractOwner),
+                PlatformVersion::latest(),
             )
             .await;
 
@@ -3742,7 +3770,7 @@ mod tests {
             let (token_contract, token_id) = create_token_contract_with_owner_identity(
                 &mut platform,
                 token_contract_owner.id(),
-                Some(make_non_transferable),
+                Some(make_token_non_transferable),
                 None,
                 None,
                 None,
@@ -3760,6 +3788,7 @@ mod tests {
                     gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
                     optional: false,
                 },
+                PlatformVersion::latest(),
             )
             .await;
 
@@ -3770,7 +3799,9 @@ mod tests {
                         StateError::TokenNotTransferableError(inner)
                     ),
                     ..
-                }] if *inner.token_id() == token_id && error.code() == 40726
+                }] if *inner.token_id() == token_id
+                    && inner.action() == "document type card's create token cost (it pays the contract owner)"
+                    && error.code() == 40726
             );
         }
 
@@ -3787,6 +3818,7 @@ mod tests {
                     gold.set_transferable(false);
                 },
                 own_gold_cost(DocumentActionTokenEffect::BurnToken),
+                PlatformVersion::latest(),
             )
             .await;
 

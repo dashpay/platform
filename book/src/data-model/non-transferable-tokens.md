@@ -28,8 +28,9 @@ contract update cannot change an existing token's configuration.
 ## What a non-transferable token still does
 
 - **Minting.** The minting rules decide who mints and whether they may choose the destination,
-  as for any token. This is how an issuer hands the token out; a base supply would sit with the
-  contract owner, who cannot send it on either.
+  as for any token. This is how an issuer hands the token out; a base supply is minted to
+  `newTokensDestinationIdentity`, or to the contract owner when that is unset, and whoever
+  receives it cannot send it on either.
 - **Distributions and claims.** Perpetual, pre-programmed and once-per-identity distributions mint
   to their recipients.
 - **Direct purchase.** A purchase mints the tokens to the buyer and pays the price in credits.
@@ -42,7 +43,7 @@ contract update cannot change an existing token's configuration.
 | Operation | Refused with | Where |
 |---|---|---|
 | A `TokenTransfer` of the token | `TokenNotTransferableError` (40726) | Batch advanced structure validation, from the contract the action carries: the mempool refuses it, and a block charges the signer and bumps the nonce |
-| A document type of the token's own contract charging it with `effect: 0` (pay the contract owner) | `NonTransferableTokenPaymentMustBurnError` (10280) | Contract create and update, when the document type is parsed |
+| A document type of the token's own contract charging it with `effect: 0` (pay the contract owner) | `NonTransferableTokenPaymentMustBurnError` (10280) | Contract create and update, when the document type is parsed. A document payment refuses it again (`TokenNotTransferableError`, 40726) from the configuration the contract already carries, so a contract that bypassed registration cannot pay with it either |
 | A document type of another contract charging it | `TokenNotTransferableError` (40726) | Contract create and update state validation, which already reads the token's contract to check the token exists. Such a cost always pays the contract owner, since another contract's token cannot be burned (10261) |
 | `hasShieldedPool: true` | `NonTransferableTokenShieldedPoolError` (10279) | Contract create and update, before anything is charged |
 
@@ -50,8 +51,14 @@ A shielded pool is refused because a note spent inside the pool can be unshielde
 identity, so shielding and unshielding would move the token between holders.
 
 Every rule is checked when the contract is registered or when the transfer arrives, and the flag
-cannot change afterwards, so a document payment never has to look the flag up: a document type
-that could pay the owner in a non-transferable token is never registered.
+cannot change afterwards: a document type that could pay the owner in a non-transferable token
+is never registered. A payment in the contract's own token checks the flag again at no read
+cost; another contract's token is not read at payment time, since a cost in it was refused at
+registration.
+
+A non-transferable token has no pool, so the `TokenConfigUpdate` items that change the pool's
+`minimumPoolNotesForOutgoing` and its rules are refused for it, even though its configuration is
+format version 1.
 
 ## Why not pause the token
 

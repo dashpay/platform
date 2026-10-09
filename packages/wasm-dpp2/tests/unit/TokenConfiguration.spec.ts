@@ -390,6 +390,29 @@ describe('TokenConfiguration', () => {
       expect(config.formatVersion).to.equal(1);
     });
 
+    it('should clear the threshold when a non-transferable token loses its shielded pool', () => {
+      const config = createConfiguration({
+        transferable: false,
+        hasShieldedPool: true,
+        minimumPoolNotesForOutgoing: BigInt(5),
+      });
+
+      config.hasShieldedPool = false;
+
+      expect(config.transferable).to.equal(false);
+      expect(config.formatVersion).to.equal(1);
+      expect(config.minimumPoolNotesForOutgoing).to.equal(BigInt(0));
+    });
+
+    it('should accept clearing the threshold of a non-transferable token without a pool', () => {
+      const config = createConfiguration({ transferable: false });
+
+      config.minimumPoolNotesForOutgoing = undefined;
+
+      expect(config.minimumPoolNotesForOutgoing).to.equal(BigInt(0));
+      expect(config.formatVersion).to.equal(1);
+    });
+
     it('should refuse a threshold for a non-transferable token without a shielded pool', () => {
       expect(() => createConfiguration({
         transferable: false,
