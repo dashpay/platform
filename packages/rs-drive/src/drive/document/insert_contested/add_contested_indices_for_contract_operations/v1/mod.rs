@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use crate::drive::votes::paths::{
     vote_contested_resource_contract_documents_indexes_path_vec,
@@ -163,6 +164,10 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
+            // The vote poll keys a value as generation 0 does
+            // (`serialize_value_for_vote_poll_key`), while this version keys the
+            // document's values with generation 1: an unsigned integer key gets
+            // its top bit flipped back
             let document_top_field = document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -173,6 +178,17 @@ impl Drive {
                     None, //we should never need this in contested documents
                     platform_version,
                 )?
+                .map(|key| match key {
+                    DriveKeyInfo::Key(key) => document_type
+                        .tree_key_in_generation_0(name, &key, platform_version)
+                        .map(DriveKeyInfo::Key),
+                    DriveKeyInfo::KeyRef(key) => document_type
+                        .tree_key_in_generation_0(name, key, platform_version)
+                        .map(DriveKeyInfo::Key),
+                    // An estimate sizes the key, the same in every generation
+                    estimated @ DriveKeyInfo::KeySize(_) => Ok(estimated),
+                })
+                .transpose()?
                 .unwrap_or_default();
 
             // here we are inserting an empty tree that will have a subtree of all other index properties

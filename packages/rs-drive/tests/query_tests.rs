@@ -7306,10 +7306,14 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash, and keys unsigned integer
+        // values by their big-endian bytes: this fixture parses the withdrawal type with sized
+        // integers (switching them off afterwards leaves the parsed types), so its `status`,
+        // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
+        // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
-            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
+            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
+            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7389,10 +7393,14 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash, and keys unsigned integer
+        // values by their big-endian bytes: this fixture parses the withdrawal type with sized
+        // integers (switching them off afterwards leaves the parsed types), so its `status`,
+        // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
+        // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
-            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
+            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
+            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7496,10 +7504,14 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash, and keys unsigned integer
+        // values by their big-endian bytes: this fixture parses the withdrawal type with sized
+        // integers (switching them off afterwards leaves the parsed types), so its `status`,
+        // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
+        // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            109, 94, 81, 146, 239, 237, 28, 46, 210, 171, 153, 171, 112, 216, 19, 132, 82, 105,
-            210, 204, 151, 61, 102, 108, 59, 235, 169, 185, 129, 34, 46, 20,
+            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
+            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);

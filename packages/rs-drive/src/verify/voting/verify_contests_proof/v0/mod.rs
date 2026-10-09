@@ -57,11 +57,13 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                     // the result is in the key because we did not provide any end index values
                     // like this  <------ start index values (path) --->    Key
                     // properties ------- --------- --------- ----------  -------
+                    // A poll keeps its generation-0 keys at every protocol version. Edited in
+                    // place: before protocol version 14 this is what
+                    // `deserialize_value_for_key` read, so the values are the same there
                     document_type
-                        .deserialize_value_for_key(
+                        .deserialize_value_for_vote_poll_key(
                             property_name_being_searched.name.as_str(),
                             key.as_slice(),
-                            platform_version,
                         )
                         .map_err(Error::from)
                 } else if path.len() < result_path_index.unwrap() {
@@ -74,10 +76,9 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                     // properties ------- --------- --------- ----------  -------
                     let inner_path_value_bytes = path.remove(result_path_index.unwrap());
                     document_type
-                        .deserialize_value_for_key(
+                        .deserialize_value_for_vote_poll_key(
                             property_name_being_searched.name.as_str(),
                             inner_path_value_bytes.as_slice(),
-                            platform_version,
                         )
                         .map_err(Error::from)
                 }

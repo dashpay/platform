@@ -3104,7 +3104,12 @@ impl DocumentPropertyType {
         }
     }
 
-    // Given a field type and a value this function chooses and executes the right encoding method
+    /// The tree key of a value as `serialize_value_for_key` 0 (protocol
+    /// version 13 and earlier) writes it. It flips the top bit of an unsigned
+    /// integer as for a signed one, so an unsigned property's values from the
+    /// middle of its range up sort below the rest; from protocol version 14 a
+    /// property is keyed by [`Self::encode_value_for_tree_keys_v1`]. Still
+    /// the encoding of an indexOnly entry payload, which is a value, not a key.
     pub fn encode_value_for_tree_keys(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
         if value.is_null() {
             return Ok(vec![]);
@@ -3323,6 +3328,80 @@ impl DocumentPropertyType {
                 ),
             )),
         }
+    }
+
+    /// Whether a value of this type is keyed as an unsigned integer: the
+    /// types whose tree key changes between [`Self::encode_value_for_tree_keys`]
+    /// and [`Self::encode_value_for_tree_keys_v1`]. Every other type is keyed
+    /// the same by both.
+    pub fn has_unsigned_integer_tree_key(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::U128
+                | DocumentPropertyType::U64
+                | DocumentPropertyType::U32
+                | DocumentPropertyType::KeyIdWithReference(_)
+                | DocumentPropertyType::U16
+                | DocumentPropertyType::U8
+        )
+    }
+
+    /// The tree key of a value, as [`Self::encode_value_for_tree_keys`] writes
+    /// it except for an unsigned integer, which is its plain big-endian bytes:
+    /// generation 0's key with the top bit flipped back.
+    ///
+    /// Generation 0 flips an unsigned integer's top bit as if it were signed,
+    /// so every value with that bit set (128 and above for a `u8`) sorts below
+    /// every value without it, and range queries, ordering, counts and sums
+    /// across that point come out wrong. Big-endian bytes of one width sort as
+    /// the numbers do. The width is the same, so a key keeps its size.
+    pub fn encode_value_for_tree_keys_v1(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
+        let mut key = self.encode_value_for_tree_keys(value)?;
+        // Flipped in the key generation 0 wrote; a null value's empty key stays as it is
+        if self.has_unsigned_integer_tree_key()
+            && self.fixed_tree_key_width().map(usize::from) == Some(key.len())
+        {
+            if let Some(top) = key.first_mut() {
+                *top ^= 0b1000_0000;
+            }
+        }
+        Ok(key)
+    }
+
+    /// Reads a tree key written by [`Self::encode_value_for_tree_keys_v1`].
+    /// An unsigned integer key must be exactly its type's width.
+    pub fn decode_value_for_tree_keys_v1(&self, value: &[u8]) -> Result<Value, ProtocolError> {
+        if value.is_empty() || !self.has_unsigned_integer_tree_key() {
+            return self.decode_value_for_tree_keys(value);
+        }
+        let key = self
+            .unsigned_tree_key_in_other_generation(value)
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(format!(
+                    "could not decode a {} from {} bytes",
+                    self.name(),
+                    value.len()
+                ))
+            })?;
+        self.decode_value_for_tree_keys(&key)
+    }
+
+    /// The key the other tree-key generation writes for the value `key`
+    /// holds: for an unsigned integer key of its type's exact width, the same
+    /// bytes with the top bit flipped, since that flip is all that tells
+    /// [`Self::encode_value_for_tree_keys`] from
+    /// [`Self::encode_value_for_tree_keys_v1`] (each the other's inverse).
+    /// `None` for every other key, which both generations write the same.
+    pub fn unsigned_tree_key_in_other_generation(&self, key: &[u8]) -> Option<Vec<u8>> {
+        if !self.has_unsigned_integer_tree_key()
+            || self.fixed_tree_key_width().map(usize::from) != Some(key.len())
+        {
+            return None;
+        }
+        let mut key = key.to_vec();
+        // Every unsigned key type is at least one byte wide
+        *key.first_mut()? ^= 0b1000_0000;
+        Some(key)
     }
 
     // Given a field type and a value this function chooses and executes the right encoding method
@@ -3746,7 +3825,6 @@ impl DocumentPropertyType {
     }
 
     pub fn encode_u16(val: u16) -> Vec<u8> {
-        //todo this should just be to_be_bytes (and for all unsigned integers)
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
 
@@ -5338,6 +5416,136 @@ mod tests {
         for window in encoded.windows(2) {
             assert!(window[0] < window[1], "sort order not preserved for u64");
         }
+    }
+
+    /// Values of every unsigned key type across its whole range, in order,
+    /// each with its type.
+    fn unsigned_values_in_order() -> Vec<(DocumentPropertyType, Vec<Value>)> {
+        vec![
+            (
+                DocumentPropertyType::U8,
+                [0u8, 1, 127, 128, 129, 254, 255].map(Value::U8).to_vec(),
+            ),
+            (
+                DocumentPropertyType::U16,
+                [0u16, 1, 0x7FFF, 0x8000, 0xFFFF].map(Value::U16).to_vec(),
+            ),
+            (
+                DocumentPropertyType::U32,
+                [0u32, 1, 0x7FFF_FFFF, 0x8000_0000, u32::MAX]
+                    .map(Value::U32)
+                    .to_vec(),
+            ),
+            (
+                DocumentPropertyType::U64,
+                [0u64, 1, i64::MAX as u64, 1 << 63, u64::MAX]
+                    .map(Value::U64)
+                    .to_vec(),
+            ),
+            (
+                DocumentPropertyType::U128,
+                [0u128, 1, i128::MAX as u128, 1 << 127, u128::MAX]
+                    .map(Value::U128)
+                    .to_vec(),
+            ),
+        ]
+    }
+
+    #[test]
+    fn should_key_unsigned_values_in_value_order_in_generation_1() {
+        for (property_type, values) in unsigned_values_in_order() {
+            let keys: Vec<Vec<u8>> = values
+                .iter()
+                .map(|value| {
+                    property_type
+                        .encode_value_for_tree_keys_v1(value)
+                        .expect("the value is keyed")
+                })
+                .collect();
+            assert!(
+                keys.windows(2).all(|pair| pair[0] < pair[1]),
+                "{} keys out of order: {keys:?}",
+                property_type.name()
+            );
+            for (key, value) in keys.iter().zip(&values) {
+                assert_eq!(
+                    Some(key.len() as u16),
+                    property_type.fixed_tree_key_width(),
+                    "the key keeps its type's width"
+                );
+                assert_eq!(
+                    &property_type
+                        .decode_value_for_tree_keys_v1(key)
+                        .expect("the key reads back"),
+                    value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_map_every_generation_0_unsigned_key_to_its_generation_1_key() {
+        for (property_type, values) in unsigned_values_in_order() {
+            for value in values {
+                let old = property_type
+                    .encode_value_for_tree_keys(&value)
+                    .expect("the value is keyed");
+                let new = property_type
+                    .encode_value_for_tree_keys_v1(&value)
+                    .expect("the value is keyed");
+                assert_eq!(
+                    property_type.unsigned_tree_key_in_other_generation(&old),
+                    Some(new)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_key_every_other_type_the_same_in_both_generations() {
+        let cases = [
+            (DocumentPropertyType::I8, Value::I8(-3)),
+            (DocumentPropertyType::I64, Value::I64(i64::MIN)),
+            (DocumentPropertyType::Date, Value::U64(1_700_000_000_000)),
+            (DocumentPropertyType::F64, Value::Float(-1.5)),
+            (DocumentPropertyType::Boolean, Value::Bool(true)),
+            (DocumentPropertyType::Identifier, Value::Identifier([7; 32])),
+            (DocumentPropertyType::U8, Value::Null),
+        ];
+        for (property_type, value) in cases {
+            let key = property_type
+                .encode_value_for_tree_keys(&value)
+                .expect("the value is keyed");
+            assert_eq!(
+                property_type
+                    .encode_value_for_tree_keys_v1(&value)
+                    .expect("the value is keyed"),
+                key
+            );
+            assert_eq!(
+                property_type.unsigned_tree_key_in_other_generation(&key),
+                None
+            );
+        }
+        // A null unsigned key and one of the wrong width keep their bytes
+        assert_eq!(
+            DocumentPropertyType::U16.unsigned_tree_key_in_other_generation(&[]),
+            None
+        );
+        assert_eq!(
+            DocumentPropertyType::U16.unsigned_tree_key_in_other_generation(&[1]),
+            None
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_generation_1_unsigned_key_of_the_wrong_width() {
+        assert!(DocumentPropertyType::U32
+            .decode_value_for_tree_keys_v1(&[0, 0, 1])
+            .is_err());
+        assert!(DocumentPropertyType::U8
+            .decode_value_for_tree_keys_v1(&[0, 1])
+            .is_err());
     }
 
     #[test]

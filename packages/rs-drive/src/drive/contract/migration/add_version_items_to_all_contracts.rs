@@ -2,8 +2,8 @@ use crate::drive::contract::paths::{
     contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
 };
 use crate::drive::contract::version_item::encode_contract_version;
+use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::storage_flags::StorageFlags;
@@ -26,25 +26,18 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut start_at = None;
-        let mut contract_count = 0usize;
-
-        loop {
-            let page =
-                self.fetch_contract_ids(start_at, u16::MAX, Some(transaction), platform_version)?;
-
-            for contract_id in &page {
-                self.add_version_item_to_contract(*contract_id, transaction, platform_version)?;
-            }
-            contract_count += page.len();
-
-            match page.last() {
-                Some(last_id) if page.len() == u16::MAX as usize => {
-                    start_at = Some((*last_id, false));
-                }
-                _ => break,
-            }
-        }
+        let contract_count = self.for_each_contract_in_state(
+            transaction,
+            platform_version,
+            |contract_id, fetch_info| {
+                self.add_version_item_to_contract(
+                    contract_id,
+                    fetch_info,
+                    transaction,
+                    platform_version,
+                )
+            },
+        )?;
 
         tracing::info!(
             contract_count,
@@ -57,24 +50,10 @@ impl Drive {
     fn add_version_item_to_contract(
         &self,
         contract_id: [u8; 32],
+        fetch_info: &DataContractFetchInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let fetch_info = self
-            .fetch_contract_and_add_operations(
-                contract_id,
-                None,
-                Some(transaction),
-                &mut vec![],
-                platform_version,
-            )?
-            .ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "contract {} is listed under the contracts root but can not be fetched",
-                    hex::encode(contract_id)
-                )))
-            })?;
-
         let element_flags = fetch_info
             .storage_flags
             .as_ref()

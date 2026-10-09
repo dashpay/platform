@@ -115,8 +115,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             // for replay at protocol versions <= 13.
             index_for_types: 1,
             max_size: 0,
-            serialize_value_for_key: 0,
-            deserialize_value_for_key: 0,
+            serialize_value_for_key: 1, // changed: a property (or derived index property) of an unsigned integer type is keyed by its plain big-endian bytes, so its keys sort as its values do; generation 0 flipped the top bit as for a signed value. The `$` system fields keep their keys
+            deserialize_value_for_key: 1, // changed: reads the generation 1 keys
             validate_distinct_from: Some(0), // changed: `validate_distinct_from_properties` refuses a document whose `distinctFrom` property equals what it must differ from (DocumentPropertyNotDistinctError, 10419); None before this version, where no property can carry the keyword
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
             validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result
