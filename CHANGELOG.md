@@ -2,6 +2,8 @@
 
 ### Fixed
 
+- **platform-wallet-ffi:** adapt platform node ID derivation to the updated
+  rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
 
