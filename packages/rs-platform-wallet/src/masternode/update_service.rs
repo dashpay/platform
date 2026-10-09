@@ -309,7 +309,7 @@ pub(crate) fn prepare_update_service_placeholder(
         })?;
         (
             Some(ProviderMasternodeType::HighPerformance as u16),
-            Some(PlatformNodeId::from_canonical_bytes(node_id)),
+            Some(PlatformNodeId::from_byte_array(node_id)),
             Some(p2p_port),
             Some(http_port),
         )
@@ -619,9 +619,7 @@ mod tests {
         );
         assert_eq!(
             payload.platform_node_id,
-            entry
-                .platform_node_id
-                .map(PlatformNodeId::from_canonical_bytes)
+            entry.platform_node_id.map(PlatformNodeId::from_byte_array)
         );
         assert_eq!(payload.platform_p2p_port, Some(26656));
         assert_eq!(payload.platform_http_port, entry.platform_http_port);
