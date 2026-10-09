@@ -57,7 +57,8 @@ trees are created when a contract with the flag is inserted or updated.
 ## Configuration
 
 `TokenConfiguration` gains a format version 1. It adds `hasShieldedPool: bool`, the optional
-`minimumPoolNotesForOutgoing` and the `minimumPoolNotesForOutgoingChangeRules` that govern it.
+`minimumPoolNotesForOutgoing` and the `minimumPoolNotesForOutgoingChangeRules` that govern it,
+and `transferable` ([Non-Transferable Tokens](non-transferable-tokens.md)).
 A version 0 configuration behaves as `hasShieldedPool: false`.
 
 `minimumPoolNotesForOutgoing` is how many notes a pool must hold before tokens may leave it.
@@ -87,6 +88,9 @@ balances, a token with `hasShieldedPool` must disable them permanently: `freezeR
 `unfreezeRules` and `destroyFrozenFundsRules` must each authorize no one to take the action and
 have no admin action takers, so no later configuration update can switch them on. Contract
 create and update reject anything else with `TokenShieldedPoolIncompatibleRulesError` (10278).
+A pooled token must also be transferable: a note spent inside the pool can be unshielded to any
+identity, so contract create and update reject `transferable: false` with a pool
+(`NonTransferableTokenShieldedPoolError`, 10279).
 Pausing still works: every pool operation, inflows included (shield, mint, claim and purchase
 into the pool) and outflows (unshield, shielded transfer, burn from the pool), is rejected while
 the token is paused. A pooled token can never freeze an account, so the pool validators read and bill no

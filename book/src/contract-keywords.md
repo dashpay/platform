@@ -238,7 +238,7 @@ A rule is one condition, in `propertyConstraints` and in `deleteConstraints` ali
 | `not` | a condition | The condition does not hold. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `ifThen`, `ifThenElse` | `[if, then]`, `[if, then, else]` | The second condition holds when the first does (and, for `ifThenElse`, the third when it does not); only the branch taken is evaluated. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `notIn` | `[a, [values]]` | `a` takes none of the listed values. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
-| `startsWith`, `endsWith` | `[text, affix]` | A string starts or ends with another, byte for byte. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `startsWith`, `endsWith` | `[text, affix]` | A string starts or ends with another, byte for byte; or a byte array with another, or with a hex constant. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions), [Byte arrays](contract-keywords/property-constraints.md#byte-arrays) |
 | `contains` | `[array, value]` | A typed array holds an element equal to the value. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 
 Expressions:
@@ -254,8 +254,10 @@ Expressions:
 | `ifAbsent` | `[path, default]` | The property's value, or the default when left out (an integer, or a string for a string property). | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `length`, `byteLength` | a string path | A string's length in characters, or in UTF-8 bytes. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `count` | an array path | The elements of a typed array, or the bytes of a byte array. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
+| `countPresent` | `[path, path, ...]` | How many of two or more properties the document holds, each as `present` tests it. | 14 | [How many of a group](contract-keywords/property-constraints.md#how-many-of-a-group) |
+| `byteAt` | `[path, index]` | The byte, 0 to 255, at an index of a byte array; 0 when the array does not hold it or is left out. | 14 | [Byte arrays](contract-keywords/property-constraints.md#byte-arrays) |
 | `$createdAt`, `$updatedAt`, `$transferredAt`, `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight`, `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight` | a path | A time or height the document records, when listed in `required`. | 14 | [Times and heights](contract-keywords/property-constraints.md#times-and-heights) |
-| `const` | a string | A string constant, or a base58 identifier, as one side of `equal` or `notEqual`. | 14 | [Strings](contract-keywords/property-constraints.md#strings) |
+| `const` | a string | A string constant, or a base58 identifier, as one side of `equal` or `notEqual`; hex digits as one side of a `startsWith` or `endsWith` of byte arrays. | 14 | [Strings](contract-keywords/property-constraints.md#strings) |
 | `$ownerId` | | The document's owner, as an identifier side. | 14 | [Identifiers and $ownerId](contract-keywords/property-constraints.md#identifiers-and-ownerid) |
 | `$id` | | The document's id, as the value a `countOf` or `sumOf` filter matches by: `{ "pollId": "$id" }`, the documents pointing at it. | 14 | [Totals of other documents](contract-keywords/property-constraints.md#totals-of-other-documents) |
 

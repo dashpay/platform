@@ -2857,7 +2857,9 @@ fn apply_delete_constraints_v0(
 /// `flattened_properties` in an `equal`, `notEqual` or `in`: as a string or as
 /// an identifier, `None` as an integer (or not at all). A typed array compares
 /// as its elements do, in a `contains`; anywhere else the reads refuse an array
-/// where a string or an identifier belongs.
+/// where a string or an identifier belongs. A byte array property is
+/// `EqualityKind::Bytes`, which only a `startsWith` or an `endsWith` tests; a
+/// typed array of byte arrays compares as nothing does.
 pub(super) fn property_equality_kind(
     flattened_properties: &IndexMap<String, DocumentProperty>,
     path: &str,
@@ -2872,6 +2874,7 @@ pub(super) fn property_equality_kind(
         .map(|property| &property.property_type)
     {
         Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(DocumentPropertyType::ByteArray(_)) => Some(EqualityKind::Bytes),
         Some(property_type) => equality_kind(property_type),
         None => None,
     }
@@ -2924,6 +2927,7 @@ pub(super) fn validate_property_constraint_reads(
             PropertyRead::Length => "measures",
             PropertyRead::Count => "counts the items of",
             PropertyRead::Elements(_) => "looks in",
+            PropertyRead::Bytes { .. } => "reads the bytes of",
         };
         match read {
             PropertyRead::Value => match document_type
@@ -2957,6 +2961,13 @@ pub(super) fn validate_property_constraint_reads(
                          integer or boolean: an identifier property is compared, by equal or \
                          notEqual, with a {{ \"const\": base58 }} or another identifier \
                          property, or with the identifiers an in lists"
+                    )));
+                }
+                // A byte array is read a byte at a time
+                Some(DocumentPropertyType::ByteArray(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type byteArray, not integer \
+                         or boolean: byteAt reads one of its bytes, and count how many it holds"
                     )));
                 }
                 Some(other) => {
@@ -3100,6 +3111,46 @@ pub(super) fn validate_property_constraint_reads(
                     return Err(structure_error(format!(
                         "{subject} looks in \"{path}\", which is not an array property \
                          of the document type (a nested one is named by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Bytes { extent } => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                // A byte past the most the array may hold is never there
+                Some(DocumentPropertyType::ByteArray(sizes)) => {
+                    if let Some(max_size) = sizes
+                        .max_size
+                        .filter(|max_size| extent > usize::from(*max_size))
+                    {
+                        return Err(structure_error(format!(
+                            "{subject} reads \"{path}\" as at least {extent} bytes long, but \
+                             its maxItems is {max_size}: the byte a byteAt reads, or the \
+                             constant it must start or end with, is never there"
+                        )));
+                    }
+                }
+                Some(property_type) if property_type.is_identifier() => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which has type identifier, \
+                         not byteArray: an identifier property is compared whole, by equal, \
+                         notEqual or in"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which has type {}, not \
+                         byteArray",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which is not a byte array \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
                     )));
                 }
             },

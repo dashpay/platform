@@ -17,6 +17,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v1::{
     TokenConfigurationV1Getters, TokenConfigurationV1Setters,
 };
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration::v1::default_transferable;
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
 use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
@@ -42,6 +43,8 @@ struct TokenConfigurationOptions {
     has_shielded_pool: bool,
     #[serde(default)]
     minimum_pool_notes_for_outgoing: Option<u64>,
+    #[serde(default = "default_transferable")]
+    transferable: bool,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -88,6 +91,15 @@ export interface TokenConfigurationOptions {
      * afterwards with a TokenConfigUpdate, under its own change control rules.
      */
     minimumPoolNotesForOutgoing?: bigint;
+    /**
+     * Whether holders may move the token to another identity (protocol version 14+).
+     * Defaults to true. false produces a format-version-1 token configuration and cannot
+     * change after creation: every TokenTransfer is refused, a document type may charge the
+     * token only by burning it (so only its own contract's document types can use it), and
+     * the token cannot have a shielded pool. Minting, claims, direct purchases, burns and
+     * freezes work as configured.
+     */
+    transferable?: boolean;
 }
 "#;
 
@@ -115,29 +127,23 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 
 impl_try_from_js_value!(TokenConfigurationWasm, "TokenConfiguration");
 
-/// Writes the shielded pool's outgoing notes threshold, which only a configuration that has a
-/// pool carries at all.
+/// Writes the shielded pool's outgoing notes threshold through
+/// `TokenConfiguration::set_minimum_pool_notes_for_outgoing`, which only a configuration that
+/// has a pool accepts.
 ///
-/// A threshold asked for on a token without a pool is refused rather than stored. The only
-/// place to keep it would be a format-version-1 configuration with no pool, which contradicts
-/// how the two are kept canonical — a token without a pool serializes as format version 0, so
-/// that every protocol version accepts it — and which nothing would ever read. Dropping it
-/// quietly is worse still: the caller asked for a guard and would get none.
+/// A threshold asked for on a token without a pool is refused rather than dropped quietly: the
+/// caller asked for a guard and would get none.
 fn write_minimum_pool_notes_for_outgoing(
     configuration: &mut TokenConfiguration,
     minimum_pool_notes_for_outgoing: Option<u64>,
 ) -> WasmDppResult<()> {
-    match configuration {
-        TokenConfiguration::V1(v1) => {
-            v1.minimum_pool_notes_for_outgoing = minimum_pool_notes_for_outgoing;
-            Ok(())
-        }
-        // Clearing a threshold a pool-less token never had leaves it as it already is.
-        TokenConfiguration::V0(_) if minimum_pool_notes_for_outgoing.is_none() => Ok(()),
-        TokenConfiguration::V0(_) => Err(WasmDppError::invalid_argument(
+    if configuration.set_minimum_pool_notes_for_outgoing(minimum_pool_notes_for_outgoing) {
+        Ok(())
+    } else {
+        Err(WasmDppError::invalid_argument(
             "'minimumPoolNotesForOutgoing' needs 'hasShieldedPool': a token without a shielded \
              pool holds no notes to count",
-        )),
+        ))
     }
 }
 
@@ -200,6 +206,9 @@ impl TokenConfigurationWasm {
 
         if opts.has_shielded_pool {
             configuration.set_has_shielded_pool(true);
+        }
+        if !opts.transferable {
+            configuration.set_transferable(false);
         }
 
         // After the pool, since only a pooled configuration has somewhere to keep a threshold.
@@ -267,7 +276,15 @@ impl TokenConfigurationWasm {
         self.0.has_shielded_pool()
     }
 
-    /// The token configuration format version: 0 without a shielded pool, 1 with one.
+    /// Whether holders may move the token to another identity. Always true for format
+    /// version 0 configurations.
+    #[wasm_bindgen(getter = "transferable")]
+    pub fn transferable(&self) -> bool {
+        self.0.is_transferable()
+    }
+
+    /// The token configuration format version: 0 for a transferable token without a shielded
+    /// pool, 1 for one with a pool or a non-transferable token.
     #[wasm_bindgen(getter = "formatVersion")]
     pub fn format_version(&self) -> u16 {
         self.0.format_version()
@@ -389,11 +406,18 @@ impl TokenConfigurationWasm {
 
     /// Enabling upgrades a format-version-0 configuration to version 1 in place.
     ///
-    /// Disabling downgrades it back to version 0 and takes any
+    /// Disabling downgrades a transferable token back to version 0 and takes any
     /// `minimumPoolNotesForOutgoing` with it, since a token without a pool keeps no threshold.
     #[wasm_bindgen(setter = "hasShieldedPool")]
     pub fn set_has_shielded_pool(&mut self, has_shielded_pool: bool) {
         self.0.set_has_shielded_pool(has_shielded_pool)
+    }
+
+    /// `false` upgrades a format-version-0 configuration to version 1 in place; `true` on a
+    /// token without a shielded pool downgrades it back to version 0.
+    #[wasm_bindgen(setter = "transferable")]
+    pub fn set_transferable(&mut self, transferable: bool) {
+        self.0.set_transferable(transferable)
     }
 
     /// `undefined` or `null` removes the threshold. Throws for a token that has no shielded

@@ -8,10 +8,11 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::token::token_shielded_pool_common::validate_token_not_paused;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::token::IdentityTokenAccountFrozenError;
+use dpp::consensus::state::token::{IdentityTokenAccountFrozenError, TokenNotTransferableError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::identifier::Identifier;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
@@ -42,8 +43,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 
 impl DocumentBaseTransitionActionStateValidationV2 for DocumentBaseTransitionAction {
     /// Version 2 (protocol version 14): transparent payments retain payer freeze and balance
-    /// checks, then enforce pause and the actual issuer's frozen-recipient policy for token
-    /// movements. Elided owner self-payments retain only the payer checks; pool payments
+    /// checks, refuse paying the contract owner in the contract's own non-transferable token,
+    /// then enforce pause and the actual issuer's frozen-recipient policy for token movements. Elided owner self-payments retain only the payer checks; pool payments
     /// retain their separate shielded validation.
     fn validate_state_v2(
         &self,
@@ -82,6 +83,30 @@ impl DocumentBaseTransitionActionStateValidationV2 for DocumentBaseTransitionAct
             && owner_id == recipient_id
         {
             return Ok(validation_result);
+        }
+
+        // A non-transferable token pays only by burning. Registration refuses any other cost in
+        // one and the flag is fixed at creation; this holds the rule at payment time too for the
+        // contract's own tokens, whose configuration is already in hand, so nothing is read.
+        if effect == DocumentActionTokenEffect::TransferTokenToContractOwner {
+            let contract = &self.data_contract_fetch_info_ref().contract;
+            let own_non_transferable = contract.tokens().iter().any(|(position, configuration)| {
+                !configuration.is_transferable()
+                    && calculate_token_id(contract.id().as_bytes(), *position)
+                        == token_id.to_buffer()
+            });
+            if own_non_transferable {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    TokenNotTransferableError::new(
+                        token_id,
+                        format!(
+                            "a document {} token payment to the contract owner",
+                            transition_type
+                        ),
+                    )
+                    .into(),
+                ));
+            }
         }
 
         let validation_result = validate_token_not_paused(

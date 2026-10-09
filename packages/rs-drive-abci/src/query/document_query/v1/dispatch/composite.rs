@@ -397,8 +397,8 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{
-        removal_of, remove_post_by_moderator, setup_platform, store_data_contract, store_document,
-        with_moderated_posts,
+        assert_invalid_argument_status, removal_of, remove_post_by_moderator, setup_platform,
+        store_data_contract, store_document, with_moderated_posts,
     };
     use dapi_grpc::platform::v0::get_documents_request::document_field_value;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
@@ -1037,5 +1037,53 @@ mod tests {
             "expected Unsupported, got {:?}",
             result.errors
         );
+    }
+
+    /// A by-ids page's `$id IN` values are the client's: more than 100 of them, or values that
+    /// are not identifiers, are refused as the plain query refuses them, not as a node fault.
+    #[test]
+    fn should_refuse_a_malformed_by_ids_page_as_invalid_argument() {
+        let (platform, state, version, feed, dashpay) = setup_feed_state();
+        let too_many: Vec<ProtoDocumentFieldValue> = (0..101u8)
+            .map(|i| ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::BytesValue(vec![i; 32])),
+            })
+            .collect();
+        let not_identifiers: Vec<ProtoDocumentFieldValue> = (0..3u64)
+            .map(|i| ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::Uint64Value(i)),
+            })
+            .collect();
+
+        for (values, expected) in [
+            (too_many, "at most 100 values"),
+            (not_identifiers, "must contain identifiers"),
+        ] {
+            for prove in [false, true] {
+                let mut request =
+                    composite_request(prove, feed.id().to_vec(), dashpay.id().to_vec());
+                request.where_clauses = vec![ProtoWhereClause {
+                    field: "$id".to_string(),
+                    operator: ProtoWhereOperator::In as i32,
+                    value: Some(ProtoDocumentFieldValue {
+                        variant: Some(document_field_value::Variant::List(
+                            document_field_value::ValueList {
+                                values: values.clone(),
+                            },
+                        )),
+                    }),
+                    integer_range: None,
+                    time_range: None,
+                }];
+                request.limit = Some(100);
+
+                let status = assert_invalid_argument_status(
+                    platform
+                        .platform
+                        .query_documents_v1(request, &state, version),
+                );
+                assert!(status.message().contains(expected), "{}", status.message());
+            }
+        }
     }
 }

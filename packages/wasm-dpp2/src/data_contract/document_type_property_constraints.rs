@@ -3,10 +3,12 @@
 //! onward.
 //!
 //! A rule is a condition: a comparison of integer expressions (sizes of
-//! strings and arrays included), a membership test (`in`), a comparison of a string or an identifier property (or
-//! `$ownerId`, the document's owner) with constants or with another property
-//! of its kind, a presence test (`present`, `absent`), or `anyOf`, `allOf` or
-//! `not` over conditions. Consensus evaluates every rule on each create and
+//! strings and arrays, and single bytes of byte arrays, included), a
+//! membership test (`in`), a comparison of a string or an identifier property
+//! (or `$ownerId`, the document's owner) with constants or with another
+//! property of its kind, a test of whether a string or a byte array starts or ends
+//! with another (`startsWith`, `endsWith`), a presence test (`present`,
+//! `absent`), or `anyOf`, `allOf` or `not` over conditions. Consensus evaluates every rule on each create and
 //! replace, and the rules reading `$ownerId` on each transfer and purchase,
 //! refusing a broken one with `DocumentPropertyConstraintViolatedError`
 //! (basic code 10422). What this module adds is *discovery* ("which rules does
@@ -50,6 +52,13 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  *   and the UTF-8 bytes of a string property; `count`: the items of an array
  *   property, or the bytes of a byte array property. Each is 0 when the
  *   document leaves the property out;
+ * - `countPresent`: how many of two or more properties, no two alike, the
+ *   document holds, each as `present` tests it, so
+ *   `{ equal: [{ countPresent: ['email', 'phone', 'handle'] }, 1] }` asks
+ *   for exactly one of them;
+ * - `byteAt`: the byte, 0 to 255, at an index (counted from 0, up to 65535)
+ *   of a byte array property, 0 when the array does not hold it or the
+ *   document leaves the array out;
  * - `countOf` and `sumOf`: a total read from state, how many documents of a
  *   type of the same contract match a filter, or the total of an integer
  *   property over them, as the type's count or sum trees keep it once the
@@ -73,6 +82,8 @@ export type PropertyConstraintExpression =
   | { length: string }
   | { byteLength: string }
   | { count: string }
+  | { countPresent: string[] }
+  | { byteAt: [path: string, index: number] }
   | { countOf: [documentType: string] | [documentType: string, filter: PropertyConstraintAggregateFilter] }
   | {
     sumOf:
@@ -92,15 +103,18 @@ export type PropertyConstraintAggregateFilter = Record<
 >;
 
 /**
- * One side of a comparison of strings or identifiers.
+ * One side of a comparison of strings or identifiers, or of a `startsWith` or
+ * `endsWith` of strings or byte arrays.
  *
- * - a string: the dotted path of a string or an identifier property, or
- *   `"$ownerId"`, the document's owner, an identifier;
- * - `const`: a string constant, or a base58 identifier beside an identifier
- *   property or `$ownerId`;
+ * - a string: the dotted path of a string, an identifier or a byte array
+ *   property, or `"$ownerId"`, the document's owner, an identifier;
+ * - `const`: a string constant, a base58 identifier beside an identifier
+ *   property or `$ownerId`, or hex digits, two a byte, beside a byte array
+ *   property in a `startsWith` or `endsWith`;
  * - `ifAbsent`: a string property with the string it takes when left out.
  *
- * A property the document leaves out without a default equals nothing.
+ * A property the document leaves out without a default equals nothing, and
+ * a byte array left out starts and ends with nothing.
  */
 export type PropertyConstraintEqualityOperand =
   | string
@@ -116,7 +130,8 @@ export type PropertyConstraintEqualityOperand =
  *   string or identifier property (or `$ownerId`) and two or more distinct
  *   strings or base58 identifiers;
  * - `startsWith` / `endsWith`: two strings, a `const` or a string property
- *   each, the first starting or ending with the second, byte for byte;
+ *   each, the first starting or ending with the second, byte for byte; or
+ *   two byte arrays, a byte array property or a `const` of hex digits each;
  * - `contains`: a typed array property and the value one of its elements must
  *   equal, an integer expression, a string or an identifier operand as its
  *   elements are; an array the document leaves out holds nothing;
@@ -150,10 +165,11 @@ export type PropertyConstraintCondition =
 
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in
- * `present` or `absent`, `text` compared with strings, `identifier` compared
- * with identifiers, `length` by the size of a string (`length` or
- * `byteLength`), `count` by the items of an array or byte array, `elements`
- * by the elements a `contains` looks among.
+ * `present`, `absent` or `countPresent`, `text` compared with strings,
+ * `identifier` compared with identifiers, `length` by the size of a string
+ * (`length` or `byteLength`), `count` by the items of an array or byte array,
+ * `elements` by the elements a `contains` looks among, `bytes` by the bytes of
+ * a byte array (`byteAt`, or a `startsWith` or `endsWith` of byte arrays).
  */
 export type PropertyConstraintReadKind =
   | 'value'
@@ -162,7 +178,8 @@ export type PropertyConstraintReadKind =
   | 'identifier'
   | 'length'
   | 'count'
-  | 'elements';
+  | 'elements'
+  | 'bytes';
 
 /**
  * A system time or height a rule reads: the block time in milliseconds
@@ -283,6 +300,7 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Length => "length",
         PropertyRead::Count => "count",
         PropertyRead::Elements(_) => "elements",
+        PropertyRead::Bytes { .. } => "bytes",
     }
 }
 

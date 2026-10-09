@@ -1057,7 +1057,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
 ///     UTF-8 bytes of a string property, and `count`, the items
 ///     of an array or byte array property, each 0 for a property the document
-///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     leaves out, `countPresent`, how many of two or more distinct properties
+///     of any type the document holds, each as `present` tests it, so a rule
+///     bounds how many of a group are set, and the system times and heights `$createdAt`, `$updatedAt`
 ///     and `$transferredAt` (block times in milliseconds), each also with
 ///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
 ///     last update (create, replace, price update) and last transfer (create,
@@ -1117,11 +1119,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (none on an indexOnly type), every path compared with identifiers an
 ///     identifier property, every path compared with strings a string property
 ///     (whose `enum`, if it declares one, lists every constant it is compared
-///     with), and every path `present` or `absent` tests a property of any
-///     type, none transient nor inside a transient object; that every
+///     with), and every path `present`, `absent` or `countPresent` tests a
+///     property of any type, none transient nor inside a transient object; that every
 ///     comparison and `in` reads a property or the owner; that nothing is
 ///     compared with itself; that strings and identifiers are only compared for
-///     equality, and never with each other; that no `in` lists a value twice;
+///     equality, and never with each other; that no `in` lists a value twice
+///     and no `countPresent` a path twice;
 ///     that an `anyOf` or `allOf` holds none directly of its own kind and a
 ///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
 ///     no owner, reads no `$ownerId`; and that no condition or operand nests
@@ -1130,7 +1133,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
 ///     comparison, `in`, listed value, `const`, presence test and logical
-///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     operator counting as one, a `countPresent` as one plus one per path), and that no `anyOf` or `allOf` lists the same
 ///     condition twice, and at most `max_property_constraint_aggregates` (4)
 ///     distinct totals per type; once every type is parsed, that a tree keeps
 ///     each total (`documentsCountable` or `documentsSummable`, or an index
@@ -2211,6 +2214,58 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     execution, exponential. Verdict, depth and size are unchanged for
 ///     schemas without a scalar `$ref` target; earlier versions replay
 ///     through generation 0.
+///
+/// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
+///     validation 0, in place, judges every rule of the restored type after uniqueness
+///     and before constructing restoration operations. The retained document supplies
+///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     adds it to the live totals as an insertion, with no contribution from its removal
+///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
+///     (10422) in a block, charging the moderator and consuming its nonce while leaving
+///     the document absent and the removal record unrestored. Mempool admission refuses
+///     it without persisting fees or a nonce change. Types without rules retain their fees.
+///     Full property schema validation and `deleteConstraints` are not added to restore.
+///     Earlier versions are unchanged: contract moderation is inactive before version 14.
+///
+/// 88. **Rules that read the bytes of a byte array**: the `propertyConstraints`
+///     grammar (item 39; meta-schema v3 and `parse_property_constraints` 0, in
+///     place) gains a `byteAt` integer operand, `{ "byteAt": [path, index] }`,
+///     the byte (0 to 255) at a literal index from 0 to 65535 of a byte array
+///     property, 0 when the array does not hold it or the document leaves it
+///     out, one node; and `startsWith` and `endsWith` test byte arrays when a
+///     side names a byte array property, the other a `{ "const": hex }` or
+///     another byte array property, three nodes, not holding for an array left
+///     out (`PropertyConstraint::BytesAffix`). Parser generation 3 refuses a read
+///     of anything but a stored byte array property, an index at or past its
+///     `maxItems`, a constant longer than it, a constant that is not an even
+///     number of hex digits, a default for a byte array, and an `equal`,
+///     `notEqual`, `in` or `contains` of one (10231). `immutable` conditions,
+///     `retractedWhen` and `deleteConstraints` read bytes the same way.
+///     Inert before this version: the earlier meta-schemas refuse
+///     `propertyConstraints` and their parsers ignore it.
+///
+/// 89. **Non-transferable tokens**: a format 1 token configuration
+///     (`TokenConfigurationV1`) gains `transferable`, `true` when absent and
+///     fixed at creation (no `TokenConfigUpdate` item). With `false` the batch
+///     advanced structure validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses every `TokenTransfer` from the contract the action carries
+///     (`TokenNotTransferableError`, 40726, paid, and in check tx); the
+///     document type parser, in place, refuses a cost in the contract's own
+///     such token that pays the contract owner instead of burning it
+///     (`NonTransferableTokenPaymentMustBurnError`, 10280); data contract
+///     create and update state validation 0, in place, refuse a cost in
+///     another contract's such token (40726), reusing the read that checks the
+///     token exists, external burns being refused already (10261);
+///     document-base state validation 2 refuses a payment to the contract
+///     owner in the contract's own such token again (40726), from the
+///     configuration in hand; `validate_shielded_pool_rules` refuses it with a
+///     shielded pool (`NonTransferableTokenShieldedPoolError`, 10279, unpaid
+///     at the pre-activation gate); and the pool threshold
+///     `TokenConfigUpdate` items are refused on a format 1 configuration
+///     without a pool. Mints, claims, direct purchases, burns, freezes and
+///     burn payments for the contract's own documents are unchanged.
+///     Inert before this version: only format 1 can be non-transferable, and
+///     the pre-activation gate refuses that format on every earlier version.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

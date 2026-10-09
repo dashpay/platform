@@ -1856,6 +1856,8 @@ impl DocumentType {
 }
 
 #[cfg(all(test, feature = "validation"))]
+mod byte_array_reads_tests;
+#[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
@@ -1896,6 +1898,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod non_transferable_token_cost_tests;
 #[cfg(test)]
 mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
