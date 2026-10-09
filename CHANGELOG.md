@@ -20,8 +20,10 @@
 ### Changed
 
 - **Rust dependencies:** pin rust-dashcore to `fix/legacy-serde-bls-node-id`
-  (`e6873e95`), restoring legacy BLS public-key and canonical PlatformNodeId
-  serialization, and preserving the pre-v4 coinbase payload Serde layout.
+  ([rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149),
+  `8fe0a381`), restoring legacy BLS public-key and canonical PlatformNodeId
+  serialization, and preserving the pre-v4 coinbase payload Serde layout. Adapt
+  WASM private-key hex decoding to the removal of `dashcore_hashes::hex`.
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
 
