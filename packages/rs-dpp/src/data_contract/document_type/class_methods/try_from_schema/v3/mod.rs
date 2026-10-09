@@ -525,6 +525,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::OWNER_REFERS_TO,
         "the writer",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -532,6 +533,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::CREATOR_REFERS_TO,
         "the creator",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -1805,7 +1807,7 @@ fn validate_no_immutable_deletable_element_references(
             matches!(
                 leaf,
                 DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
-                    if !lookup.is_checked_on_create_only()
+                    if !lookup.is_checked_on_create_only(document_type.documents_mutable)
             )
         });
         if !deletable_lookup

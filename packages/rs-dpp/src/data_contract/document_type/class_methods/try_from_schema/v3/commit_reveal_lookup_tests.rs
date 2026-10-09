@@ -284,7 +284,9 @@ fn should_parse_a_function_pair_that_demands_nothing_more() {
     };
     assert_eq!(lookup, dpns_lookup(None, false));
     assert!(property_agreement.is_empty());
-    assert!(lookup.is_checked_on_create_only());
+    // A computed key is judged on the create alone even on a type whose documents can be
+    // replaced
+    assert!(lookup.is_checked_on_create_only(true));
 }
 
 #[test]
@@ -339,19 +341,38 @@ fn should_parse_a_creator_function_reading_the_creator_or_nothing() {
 }
 
 #[test]
-fn should_refuse_a_deletable_creator_lookup_without_a_computed_key() {
+fn should_refuse_a_deletable_creator_lookup_without_a_computed_key_on_a_replaceable_type() {
     // The creator's gate on a deletable document would outlive a transfer:
-    // only a computed key, judged on the create alone, is admitted
-    assert_refused(
-        contract(dpns_contract_with_creator_reference(json!({
+    // only a reference judged on the create alone is admitted
+    let mut contract_value =
+        with_identifier_preorder_key(dpns_contract_with_creator_reference(json!({
             "type": "deletableDocument",
             "documentType": "preorder",
             "findBy": {
                 "saltedDomainHash": "."
             }
-        }))),
-        "does not take a deletableDocument reference unless its findBy key is computed",
+        })));
+    contract_value["documentSchemas"]["domain"]["documentsMutable"] = json!(true);
+    assert_refused(
+        contract(contract_value),
+        "does not take a deletableDocument reference unless it is judged on the create alone",
     );
+}
+
+#[test]
+fn should_parse_a_deletable_creator_lookup_without_a_computed_key_on_a_type_never_replaced() {
+    // The domain's documents are never replaced, so the creator's lookup is judged on the
+    // create alone, as a computed key is
+    contract(with_identifier_preorder_key(
+        dpns_contract_with_creator_reference(json!({
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "findBy": {
+                "saltedDomainHash": "."
+            }
+        })),
+    ))
+    .expect("a creator lookup on a type never replaced should parse");
 }
 
 #[test]
@@ -453,32 +474,78 @@ fn should_refuse_a_function_that_computes_no_find_by_key() {
     );
 }
 
+/// A `domain` declaring `refers_to` on an identifier `referrerId`, its documents replaceable
+/// or not.
+fn referrer_contract(refers_to: serde_json::Value, documents_mutable: bool) -> serde_json::Value {
+    let mut contract_value = dpns_contract_carried_by(
+        "referrerId",
+        json!({
+            "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier", "position": 6
+        }),
+        refers_to,
+    );
+    contract_value["documentSchemas"]["domain"]["documentsMutable"] = json!(documents_mutable);
+    with_identifier_preorder_key(contract_value)
+}
+
+/// `contract_value` with the preorder's `saltedDomainHash` an identifier, so a plain `findBy`
+/// filling it from an identifier finds a value of the same kind.
+fn with_identifier_preorder_key(mut contract_value: serde_json::Value) -> serde_json::Value {
+    contract_value["documentSchemas"]["preorder"]["properties"]["saltedDomainHash"]
+        ["contentMediaType"] = json!("application/x.dash.dpp.identifier");
+    contract_value
+}
+
+/// A plain `findBy` the writer's own document, with `extra` merged in.
+fn plain_owned_lookup(extra: serde_json::Value) -> serde_json::Value {
+    let mut refers_to = json!({
+        "type": "deletableDocument",
+        "documentType": "preorder",
+        "findBy": { "saltedDomainHash": "." },
+        "where": { "$ownerId": "$ownerId" }
+    });
+    merge(&mut refers_to, extra);
+    refers_to
+}
+
 #[test]
-fn should_refuse_age_and_consume_without_a_function() {
-    let referrer = |refers_to: serde_json::Value| {
-        dpns_contract_carried_by(
-            "referrerId",
-            json!({
-                "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-                "contentMediaType": "application/x.dash.dpp.identifier", "position": 6
-            }),
-            refers_to,
-        )
+fn should_parse_age_and_consume_without_a_function_on_a_type_never_replaced() {
+    // The domain's documents are never replaced, so its plain lookup is judged on the create
+    // alone, as a computed key is, and may declare both
+    let parsed = contract(referrer_contract(
+        plain_owned_lookup(json!({ "minimumAgeBlocks": 1, "consume": true })),
+        false,
+    ))
+    .expect("age and consume on a type never replaced should parse");
+    let reference = match domain_references(&parsed).as_slice() {
+        [(path, PropertyReference::Value(target))] if path == "referrerId" => (*target).clone(),
+        other => panic!("expected referrerId's reference alone, got {other:?}"),
     };
-    // A key read as is finds no commitment
+    let DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. } = reference else {
+        panic!("expected a deletable lookup");
+    };
+    assert_eq!(lookup.minimum_age_blocks, Some(1));
+    assert!(lookup.consume);
+    assert!(lookup.hash_key().is_none());
+    assert!(lookup.is_checked_on_create_only(false));
+    assert!(!lookup.is_checked_on_create_only(true));
+}
+
+#[test]
+fn should_refuse_age_and_consume_without_a_function_on_a_type_whose_documents_can_be_replaced() {
+    // A replace judges the plain lookup again, so it is not judged on the create alone
     for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
-        let mut refers_to = json!({
-            "type": "deletableDocument",
-            "documentType": "preorder",
-            "findBy": { "saltedDomainHash": "." },
-            "where": { "$ownerId": "$ownerId" }
-        });
-        merge(&mut refers_to, extra);
         assert_refused_by_the_parser(
-            referrer(refers_to),
-            "need a findBy function computing the key",
+            referrer_contract(plain_owned_lookup(extra), true),
+            "the reference must be judged on the create alone",
         );
     }
+}
+
+#[test]
+fn should_refuse_age_and_consume_without_find_by() {
+    let referrer = |refers_to: serde_json::Value| referrer_contract(refers_to, false);
     // Nor does a reference without findBy
     assert_refused_by_the_parser(
         referrer(json!({
