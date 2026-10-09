@@ -436,7 +436,7 @@ impl TrustedHttpContextProvider {
                 .map_err(|error| with_causes(&error)),
         };
         if let Some(reason) = fetched.incomplete() {
-            tracing::warn!(%reason, "quorum list refresh failed");
+            tracing::warn!(%reason, "quorum list refresh is incomplete");
         }
         fetched
     }
@@ -1706,7 +1706,7 @@ mod tests {
                 matches!(
                     &fetched,
                     Err(ContextProviderError::QuorumSourceUnavailable(reason))
-                        if reason.contains(invalid_hash)
+                        if reason.contains(invalid_hash) && reason.contains("invalid quorum hash")
                 ),
                 "an uninterpretable trusted hash cannot establish absence: {fetched:?}"
             );
@@ -1720,7 +1720,8 @@ mod tests {
         assert_uninterpretable_hash_is_source_unavailable("zz").await;
     }
 
-    /// A decodable hash must still identify a full 32-byte quorum.
+    /// A wrong-length trusted hash leaves the quorum source unavailable,
+    /// rather than establishing that the requested quorum is absent.
     #[tokio::test]
     async fn should_treat_wrong_length_quorum_hashes_as_an_incomplete_source() {
         assert_uninterpretable_hash_is_source_unavailable("11").await;

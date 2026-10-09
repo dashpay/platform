@@ -1019,11 +1019,14 @@ mod tests {
         let (current, previous) = if malformed_current {
             (malformed, empty_previous_list())
         } else {
+            let malformed: serde_json::Value = serde_json::from_str(&malformed).unwrap();
             (
                 r#"{"success":true,"data":[]}"#.to_string(),
-                malformed
-                    .replace("\"data\":[", "\"data\":{\"height\":1,\"quorums\":[")
-                    .replace("]}", "]}}"),
+                serde_json::json!({
+                    "success": true,
+                    "data": {"height": 1, "quorums": malformed["data"]}
+                })
+                .to_string(),
             )
         };
         let (base_url, service) = quorum_service(vec![

@@ -85,7 +85,7 @@ where
         address_list,
         settings,
         future_factory_fn,
-        is_quorum_source_unavailable,
+        attempt_has_quorum_source_failure,
     )
     .await
 }
@@ -95,7 +95,9 @@ where
 /// says nothing about the node, so it is not banned through the health ladder;
 /// it is stepped over briefly, because another node may be signed by a quorum
 /// the provider already holds.
-fn is_quorum_source_unavailable(error: &Error) -> bool {
+/// This checks one attempt's error; retry-exhaustion wrappers describe the
+/// completed retry loop and must not trigger another attempt here.
+fn attempt_has_quorum_source_failure(error: &Error) -> bool {
     matches!(
         error,
         Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))

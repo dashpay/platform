@@ -139,9 +139,9 @@ pub enum Error {
 }
 
 impl Error {
-    /// Whether the trusted quorum source failed, including retry exhaustion
-    /// around its original error. Bindings use this category independently
-    /// of node-health retryability.
+    /// Whether this error is a trusted quorum-source failure, looking through
+    /// nested retry-exhaustion wrappers. This is distinct from
+    /// [`CanRetry::can_retry`] and does not affect node-ban attribution.
     pub fn is_quorum_source_unavailable(&self) -> bool {
         match self {
             Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_)) => true,
@@ -454,6 +454,30 @@ pub enum StaleNodeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only the typed source failure, including nested retry exhaustion,
+    /// receives source attribution; sibling variants and messages do not.
+    #[test]
+    fn should_identify_only_typed_quorum_source_failures_through_retry_exhaustion() {
+        let mut source = Error::ContextProviderError(
+            ContextProviderError::QuorumSourceUnavailable("offline".to_string()),
+        );
+        assert!(source.is_quorum_source_unavailable());
+        for _ in 0..2 {
+            source = Error::NoAvailableAddressesToRetry(Box::new(source));
+            assert!(source.is_quorum_source_unavailable());
+        }
+        for unrelated in [
+            Error::ContextProviderError(ContextProviderError::InvalidQuorum(
+                "quorum source unavailable".to_string(),
+            )),
+            Error::Generic("QuorumSourceUnavailable: quorum source unavailable".to_string()),
+        ] {
+            assert!(!unrelated.is_quorum_source_unavailable());
+            let wrapped = Error::NoAvailableAddressesToRetry(Box::new(unrelated));
+            assert!(!wrapped.is_quorum_source_unavailable());
+        }
+    }
 
     mod from_dapi_client_error {
         use super::*;
