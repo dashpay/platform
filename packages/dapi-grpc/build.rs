@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use prost_build::{Config, Service, ServiceGenerator};
 use tonic_prost_build::Builder;
 
 const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
@@ -80,6 +81,30 @@ struct MappingConfig {
     out_dir: PathBuf,
     builder: Builder,
     proto_includes: Vec<PathBuf>,
+    server_generation: bool,
+}
+
+/// Generate clients and servers separately so their codecs can preserve decode direction.
+struct ClientServerGenerator {
+    client: Box<dyn ServiceGenerator>,
+    server: Box<dyn ServiceGenerator>,
+}
+
+impl ServiceGenerator for ClientServerGenerator {
+    fn generate(&mut self, service: Service, buf: &mut String) {
+        self.client.generate(service.clone(), buf);
+        self.server.generate(service, buf);
+    }
+
+    fn finalize(&mut self, buf: &mut String) {
+        self.client.finalize(buf);
+        self.server.finalize(buf);
+    }
+
+    fn finalize_package(&mut self, package: &str, buf: &mut String) {
+        self.client.finalize_package(package, buf);
+        self.server.finalize_package(package, buf);
+    }
 }
 
 fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
@@ -526,6 +551,7 @@ impl MappingConfig {
             out_dir,
             builder,
             proto_includes: vec![abs_path(&PathBuf::from("protos"))],
+            server_generation: matches!(typ, ImplType::Server),
         }
     }
 
@@ -569,8 +595,26 @@ impl MappingConfig {
         }
         create_dir_all(&self.out_dir)?;
 
-        self.builder
-            .compile_protos(&[self.protobuf_file], &self.proto_includes)
+        if self.server_generation {
+            let client = self.builder.clone().build_server(false).service_generator();
+            let server = self
+                .builder
+                .clone()
+                .build_client(false)
+                .codec_path("crate::request_codec::RequestCodec")
+                .service_generator();
+            let mut config = Config::new();
+            config.service_generator(Box::new(ClientServerGenerator { client, server }));
+
+            // Disable the outer generators to retain the supplied composite generator.
+            self.builder
+                .build_client(false)
+                .build_server(false)
+                .compile_with_config(config, &[self.protobuf_file], &self.proto_includes)
+        } else {
+            self.builder
+                .compile_protos(&[self.protobuf_file], &self.proto_includes)
+        }
     }
 }
 
