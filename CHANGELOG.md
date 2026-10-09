@@ -4,6 +4,11 @@
 
 * **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
 
+### Fixed
+
+- **platform-test-suite:** retry proof reads while the local quorum sidecar publishes
+  a rotated key, with a bounded wait and full proof verification on each attempt.
+
 ## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
 
 
