@@ -640,8 +640,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index,
             } => {
                 match self
-                    .create_funded_asset_lock_proof_observed(
-                        amount_duffs,
+                    .create_funded_asset_lock_proof_pooled(
+                        super::build::AssetLockBuildAmount::Exact(amount_duffs),
+                        &crate::ASSET_LOCK_FUNDING_SOURCES,
                         account_index,
                         funding_type,
                         destination_index,
@@ -674,9 +675,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Same pipeline as `FromWalletBalance`, with drain amount
                 // semantics and the caller-picked funding account family.
                 match self
-                    .create_funded_asset_lock_proof_with_funding_observed(
+                    .create_funded_asset_lock_proof_pooled(
                         super::build::AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
-                        account,
+                        &[account.into()],
+                        account.account_index(),
                         funding_type,
                         destination_index,
                         asset_lock_signer,

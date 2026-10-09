@@ -11,19 +11,19 @@
 //!    signature doesn't change when DPP grows multi-output Orchard
 //!    bundles for Type 18; see [`validate_shielded_recipients`]).
 //! 2. **Resolve funding** — delegate to the shared
-//!    [`AssetLockManager::resolve_funding_with_is_timeout_fallback`].
-//!    The Orchard bundle is proved concurrently, on the blocking pool:
-//!    it commits to the locked outpoint and value, not to the lock proof,
-//!    so the proof starts once the asset-lock transaction is broadcast
-//!    instead of after its InstantSend lock arrives.
+//!    `AssetLockManager::resolve_funding_observing_out_point`.
+//!    The Orchard bundle commits to the locked outpoint, not to the lock
+//!    proof, so it is proved on the blocking pool as soon as the outpoint
+//!    is known (the lock is broadcast, or a resumed lock passes its
+//!    checks), while the InstantSend lock is awaited.
 //! 3. **Submit** — wrap the build-and-broadcast in
 //!    `submit_with_cl_height_retry`; each attempt wraps the proved bundle
 //!    with [`ProvedShieldFromAssetLockBundle::build_transition_with_signer`]
 //!    so the asset-lock-proof signature is routed through the external
 //!    `key_wallet::signer::Signer` (the host never sees the raw key).
 //!    IS→CL fallback fires on Platform-side IS rejection
-//!    (`is_instant_lock_proof_invalid`); it and the CL-height retries reuse
-//!    the proved bundle rather than proving again.
+//!    (`is_instant_lock_proof_invalid`); every attempt re-signs the one
+//!    proved bundle rather than proving again.
 //! 4. **Finalize lock state** — a verified submit consumes the tracked
 //!    outpoint. An unauthenticated "already consumed" rejection is recorded
 //!    only as nonterminal consumption-unknown state after Core ChainLock
@@ -41,11 +41,8 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::broadcaster::TransactionBroadcaster;
-use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::error::is_instant_lock_proof_invalid;
@@ -107,11 +104,9 @@ impl PlatformWallet {
     /// * `asset_lock_signer` — External signer for the outer ECDSA
     ///   signature on the state transition. The raw key never crosses
     ///   the FFI boundary.
-    /// * `prover` — Orchard prover (holds the Halo 2 proving key). Owned
-    ///   (`'static`) because the proof runs on tokio's blocking pool, and
-    ///   starts as soon as the asset-lock transaction is broadcast — while
-    ///   the InstantSend lock is awaited — rather than after it. Pass
-    ///   `&CachedOrchardProver` (a `&'static` to the zero-sized handle).
+    /// * `prover` — Orchard prover (holds the Halo 2 proving key).
+    ///   `Copy + 'static` because the proof runs on tokio's blocking pool
+    ///   while the InstantSend lock is awaited. Pass `&CachedOrchardProver`.
     /// * `surplus_output` — Optional platform address that receives the
     ///   asset-lock surplus (`lock_value − shield_amount − pool_fee`).
     ///
@@ -156,12 +151,15 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
-        P: OrchardProver + Send + Sync + 'static,
+        P: OrchardProver + Copy + Send + 'static,
     {
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
+        // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
+        // SAME flat fee consensus charges (`transform_into_action` Step 3b).
+        let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
@@ -190,7 +188,6 @@ impl PlatformWallet {
                      {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
                     ))
                 })?;
-            let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
             if lock_credits <= pool_fee_credits {
                 return Err(PlatformWalletError::ShieldedBuildError(format!(
                     "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
@@ -216,7 +213,6 @@ impl PlatformWallet {
                 account,
                 minimum_lock_duffs: _,
             } => {
-                let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
                 let minimum_lock_duffs = pool_fee_credits / CREDITS_PER_DUFF + 1;
                 AssetLockFunding::DrainAccountBalance {
                     account,
@@ -238,9 +234,8 @@ impl PlatformWallet {
         // Prefer the bound account whose IVK recognizes the recipient address
         // (the sent-note row then lands under that account); fall back to the
         // lowest bound account, or `None` (unrecoverable out_ciphertext) if
-        // the shielded sub-wallet isn't bound. Read once, before the funding
-        // resolves, so the speculative proof and any re-proof commit to the
-        // same OVK.
+        // the shielded sub-wallet isn't bound. Read before the funding
+        // resolves: the bundle may be proved before then.
         let sender_ovk = {
             let guard = self.shielded_keys.read().await;
             guard.as_ref().and_then(|keys| {
@@ -255,20 +250,24 @@ impl PlatformWallet {
             })
         };
 
-        // Proves the Orchard bundle for a target (outpoint, amount, protocol
-        // version) — on the blocking pool, see `ProofTask`.
-        let prove: ProveFn<ProvedShieldFromAssetLockBundle> = Arc::new(move |target| {
-            ProvedShieldFromAssetLockBundle::prove(
-                &recipient,
-                target.shield_amount,
-                target.out_point,
-                &prover,
-                [0u8; 36],
-                sender_ovk.clone(),
-                dummy_outputs,
-                target.platform_version,
-            )
-        });
+        // Proves the Orchard bundle on the blocking pool, so the seconds of
+        // Halo 2 work never occupy an async worker.
+        let platform_version = self.sdk.version();
+        let spawn_proof = |out_point, shield_amount| {
+            let sender_ovk = sender_ovk.clone();
+            tokio::task::spawn_blocking(move || {
+                ProvedShieldFromAssetLockBundle::prove(
+                    &recipient,
+                    shield_amount,
+                    out_point,
+                    &prover,
+                    [0u8; 36],
+                    sender_ovk,
+                    dummy_outputs,
+                    platform_version,
+                )
+            })
+        };
 
         // Step 2: resolve funding. `AssetLockShieldedAddressTopUp`
         // selects the BIP44 funding family dedicated to shielded
@@ -280,15 +279,28 @@ impl PlatformWallet {
         // persistence/UI tag (`fundingTypeRaw == 5`).
         // `destination_index = 0` is unused for this funding type.
         //
-        // The Orchard bundle commits to the locked outpoint and value but not
-        // to the lock's proof (see `ProvedShieldFromAssetLockBundle`), and
-        // both are known once the asset-lock transaction is broadcast. So the
-        // proof — seconds of CPU — starts then, on the blocking pool, and runs
-        // while the resolver waits for the InstantSend lock; the submit below
-        // picks it up if the resolved lock is the one it was proved for. If
-        // the resolution fails, dropping the speculative task discards it.
+        // The bundle commits to the locked outpoint and the shield amount
+        // but not to the lock's proof (see `ProvedShieldFromAssetLockBundle`),
+        // and both are known once the lock is committed to this call. So the proof starts
+        // then and runs while the resolver waits for the InstantSend lock.
+        // Its amount is read from the tracked row, as the lock proof does
+        // not exist yet; Step 3 uses the proof only if it was made for the
+        // resolved outpoint and amount. A proof nobody uses is detached: it
+        // cannot be interrupted, and its result is dropped when it finishes.
         let (out_point_tx, out_point_rx) = tokio::sync::oneshot::channel();
-        let (resolution, speculative) = resolve_while_proving(
+        let speculate = async {
+            let out_point = out_point_rx.await.ok()?;
+            let value_duffs = tracked_lock_value_duffs(self, &out_point).await.ok()?;
+            let value_credits = value_duffs.checked_mul(CREDITS_PER_DUFF)?;
+            let shield_amount = shield_amount_after_fee(value_credits, pool_fee_credits).ok()?;
+            Some((
+                out_point,
+                shield_amount,
+                spawn_proof(out_point, shield_amount),
+            ))
+        };
+        // `try_join!` so a failed resolution returns at once.
+        let (resolution, speculative) = tokio::try_join!(
             self.asset_locks.resolve_funding_observing_out_point(
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
@@ -298,10 +310,8 @@ impl PlatformWallet {
                     let _ = out_point_tx.send(out_point);
                 },
             ),
-            out_point_rx,
-            |out_point| self.start_speculative_shield_proof(out_point, num_actions, &prove),
-        )
-        .await?;
+            async { Ok(speculate.await) },
+        )?;
         let ResolvedFunding {
             proof,
             path,
@@ -338,7 +348,9 @@ impl PlatformWallet {
         // signing. The wallet is the right place: it already has the
         // lock value (from the IS proof's TxOut, or from the asset-
         // lock manager's tracked row for CL-only paths) and the
-        // protocol min-fee constant (from `PlatformVersion`).
+        // protocol min-fee constant (from `PlatformVersion`). Deriving
+        // `shield_amount = lock_value − pool_fee` reserves room for the
+        // fee and pins the consensus surplus to exactly zero.
         //
         // Single-recipient + `None` semantics today: the recipient
         // receives `lock_value - pool_fee`. Future multi-recipient
@@ -348,11 +360,6 @@ impl PlatformWallet {
         // builder.
         let asset_lock_value_credits =
             lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
-        // `pool_fee = compute_minimum_shielded_fee(2) + asset_lock_base_cost` — the SAME flat fee
-        // consensus charges (`transform_into_action` Step 3b). Deriving `shield_amount =
-        // lock_value − pool_fee` reserves room for the fee and pins the consensus surplus
-        // (`lock_value − shield_amount − pool_fee`) to exactly zero.
-        let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
         let shield_amount = shield_amount_after_fee(asset_lock_value_credits, pool_fee_credits)?;
 
         // Surplus is structurally zero in this remainder flow (`shield_amount == lock_value −
@@ -364,9 +371,7 @@ impl PlatformWallet {
             .and_then(|v| v.checked_sub(pool_fee_credits))
             .unwrap_or(0);
         if surplus_output.is_none() {
-            let implicit_fee_cap = self
-                .sdk
-                .version()
+            let implicit_fee_cap = platform_version
                 .drive_abci
                 .validation_and_processing
                 .event_constants
@@ -388,8 +393,8 @@ impl PlatformWallet {
         // the same outpoint.
         //
         // Every attempt — the first, each CL-height retry, the IS→CL
-        // fallback — reuses the one proved bundle (`BundleCache`): none of
-        // them changes the outpoint or the amount the proof commits to.
+        // fallback — re-signs the one proved bundle: none of them changes
+        // the outpoint or the amount the proof commits to.
         //
         // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
         // is a no-op, so the wrapper's bump cannot diversify the ST hash
@@ -398,8 +403,16 @@ impl PlatformWallet {
         // bundle with randomized RedPallas signatures. If that signing is
         // ever made deterministic, retries need another diversifier.
         let proof_out_point = out_point_from_proof(&proof);
+        let proving = match speculative {
+            Some((out_point, amount, proving))
+                if out_point == proof_out_point && amount == shield_amount =>
+            {
+                proving
+            }
+            _ => spawn_proof(proof_out_point, shield_amount),
+        };
+        let bundle = join_proof(proving).await?;
         let sdk = self.sdk.clone();
-        let bundles = tokio::sync::Mutex::new(BundleCache::new(prove, speculative));
         // Serialized actions of the bundle that actually landed — fed to
         // the live activity recorder below. Each attempt re-signs the
         // bundle, so only the landed attempt's actions (signatures
@@ -408,8 +421,7 @@ impl PlatformWallet {
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             build_and_broadcast_shielded(
                 sdk.clone(),
-                &bundles,
-                shield_amount,
+                &bundle,
                 proof.clone(),
                 path.clone(),
                 asset_lock_signer,
@@ -443,8 +455,7 @@ impl PlatformWallet {
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     build_and_broadcast_shielded(
                         sdk.clone(),
-                        &bundles,
-                        shield_amount,
+                        &bundle,
                         chain_proof.clone(),
                         path.clone(),
                         asset_lock_signer,
@@ -457,13 +468,10 @@ impl PlatformWallet {
             }
             Err(e) => (Err(e), proof.clone()),
         };
-        // Release the proved bundle (and, if no attempt ever needed it, the
-        // speculative proof) before the reconciliation awaits below. The
-        // bundle holds its signing secrets (`ProvedShieldFromAssetLockBundle`)
-        // from the moment it is proved — possibly through the 300 s
-        // InstantSend window and an unbounded ChainLock wait — and this is
-        // where they go; every early return above drops them the same way.
-        drop(bundles);
+        // Release the proved bundle's signing secrets
+        // (`ProvedShieldFromAssetLockBundle`) before the reconciliation
+        // awaits below.
+        drop(bundle);
 
         // Whichever proof was submitted, a persisted Chain proof Platform
         // places the transaction outside of must come off the row — including
@@ -539,42 +547,6 @@ impl PlatformWallet {
         Ok(())
     }
 
-    /// Start proving the bundle for the asset lock at `out_point` while its
-    /// InstantSend lock is still awaited (see [`ProofTask`]).
-    ///
-    /// The amount is derived exactly as after the resolution — the lock's
-    /// value minus the pool fee — but from the tracked row, as the lock proof
-    /// does not exist yet. Returns `None`, starting nothing, when the value is
-    /// unknown or cannot fund the shield; the resolved path then reports that
-    /// as it always has. A proof started for a target the resolved lock does
-    /// not match is discarded, never used.
-    async fn start_speculative_shield_proof(
-        &self,
-        out_point: dashcore::OutPoint,
-        num_actions: usize,
-        prove: &ProveFn<ProvedShieldFromAssetLockBundle>,
-    ) -> Option<ProofTask<ProvedShieldFromAssetLockBundle>> {
-        let value_duffs = tracked_asset_lock_value_duffs(&self.asset_locks, &out_point)
-            .await
-            .ok()?;
-        let value_credits = value_duffs.checked_mul(CREDITS_PER_DUFF)?;
-        let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions).ok()?;
-        let shield_amount = shield_amount_after_fee(value_credits, pool_fee_credits).ok()?;
-        tracing::debug!(
-            %out_point,
-            shield_amount,
-            "proving the shield-from-asset-lock bundle while the asset lock proof is awaited"
-        );
-        Some(ProofTask::spawn(
-            BundleTarget {
-                out_point,
-                shield_amount,
-                platform_version: self.sdk.version(),
-            },
-            Arc::clone(prove),
-        ))
-    }
-
     /// The flat pool fee for a `ShieldFromAssetLock` (Type 18) state
     /// transition, in credits.
     ///
@@ -628,13 +600,11 @@ impl PlatformWallet {
     /// over the landed bundle's `actions`.
     ///
     /// Deliberately records ONLY the landed bundle (no Pending row before
-    /// broadcast, no Failed row after): the attempts usually share one
-    /// proved bundle, but an attempt may need a fresh proof (a protocol
-    /// upgrade between attempts changes the binding), and a fresh proof has
-    /// different output cmxs — and the activity id is keyed to those cmxs.
-    /// A pre-broadcast Pending row would then orphan (unconfirmable
-    /// forever, its cmxs never on-chain) whenever the re-proved attempt is
-    /// the one that lands. In-flight and failed Type 18s are
+    /// broadcast, no Failed row after): the activity id is keyed to the
+    /// bundle's output cmxs, and a call that fails leaves its lock to a
+    /// resume that proves a fresh bundle with different cmxs. A
+    /// pre-broadcast Pending row would then orphan (unconfirmable
+    /// forever, its cmxs never on-chain). In-flight and failed Type 18s are
     /// surfaced through the tracked asset-lock lifecycle instead
     /// (Built/Broadcast/Locked/Consumed + the resumable-funding UI),
     /// which tracks the L1 lock — the artifact that actually carries the
@@ -715,34 +685,33 @@ impl PlatformWallet {
 /// Look up the asset-lock value in credits.
 ///
 /// Preference order:
-/// 1. If the proof is `Instant`, read the credit output from the
-///    transaction the proof carries — no manager lookup needed.
+/// 1. If the proof is `Instant`, read directly from
+///    `InstantAssetLockProof::output().value` — no manager lookup
+///    needed.
 /// 2. Otherwise (the IS-timeout-fallback path produced a CL proof
 ///    that doesn't carry the tx output), look up the tracked
-///    asset-lock row by outpoint and read it from its transaction.
-///
-/// Both go through [`credit_output_duffs`], as does the speculative
-/// proof's amount (`start_speculative_shield_proof`), so a bundle proved
-/// before the lock proof existed is proved for the amount computed here.
+///    asset-lock row by outpoint.
 async fn lookup_asset_lock_value_credits(
     wallet: &PlatformWallet,
     proof: &AssetLockProof,
     tracked_out_point: Option<&dashcore::OutPoint>,
 ) -> Result<Credits, PlatformWalletError> {
     let duffs = match proof {
-        AssetLockProof::Instant(is) => credit_output_duffs(is.transaction(), is.output_index())
-            .ok_or_else(|| {
+        AssetLockProof::Instant(is) => {
+            let out = is.output().ok_or_else(|| {
                 PlatformWalletError::AddressSync(
                     "InstantAssetLockProof has no output at the indicated index".to_string(),
                 )
-            })?,
+            })?;
+            out.value
+        }
         AssetLockProof::Chain(_) => {
             let op = tracked_out_point.ok_or_else(|| {
                 PlatformWalletError::AddressSync(
                     "ChainAssetLockProof but no tracked outpoint to look up value".to_string(),
                 )
             })?;
-            tracked_asset_lock_value_duffs(&wallet.asset_locks, op).await?
+            tracked_lock_value_duffs(wallet, op).await?
         }
     };
     duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
@@ -752,49 +721,35 @@ async fn lookup_asset_lock_value_credits(
     })
 }
 
-/// The value of the tracked asset lock at `out_point`, in duffs: its
-/// transaction's credit output at the outpoint's index (see
-/// [`credit_output_duffs`]).
-async fn tracked_asset_lock_value_duffs<B: TransactionBroadcaster + ?Sized>(
-    asset_locks: &AssetLockManager<B>,
+/// The value, in duffs, of the tracked asset lock at `out_point`.
+async fn tracked_lock_value_duffs(
+    wallet: &PlatformWallet,
     out_point: &dashcore::OutPoint,
 ) -> Result<u64, PlatformWalletError> {
-    asset_locks
-        .read_tracked_lock(out_point, |lock| {
-            credit_output_duffs(&lock.transaction, out_point.vout)
-        })
-        .await
+    let locks: Vec<TrackedAssetLock> = wallet.asset_locks.list_tracked_locks().await;
+    locks
+        .iter()
+        .find(|l| l.out_point == *out_point)
+        .map(|l| l.amount)
         .ok_or_else(|| {
             PlatformWalletError::AddressSync(format!(
                 "tracked asset lock {} not found in manager",
                 out_point
             ))
-        })?
-        .ok_or_else(|| {
-            PlatformWalletError::AddressSync(format!(
-                "tracked asset lock {} has no credit output at index {}",
-                out_point, out_point.vout
-            ))
         })
 }
 
-/// The value, in duffs, that an asset lock on `transaction` at `output_index`
-/// locks: the payload's `credit_outputs[output_index]` — the output
-/// `InstantAssetLockProof::output` names and consensus credits. `None` when
-/// the transaction carries no such credit output.
-///
-/// Not the tracked row's `amount`, which sums all credit outputs (the same
-/// number for the single-output locks this wallet builds). Reading the output
-/// on both paths keeps the speculative and the resolved amounts equal.
-fn credit_output_duffs(transaction: &dashcore::Transaction, output_index: u32) -> Option<u64> {
-    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-
-    match &transaction.special_transaction_payload {
-        Some(TransactionPayload::AssetLockPayloadType(payload)) => payload
-            .credit_outputs
-            .get(output_index as usize)
-            .map(|output| output.value),
-        _ => None,
+/// Wait for a bundle proof started with `spawn_blocking`.
+async fn join_proof(
+    proving: tokio::task::JoinHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>,
+) -> Result<ProvedShieldFromAssetLockBundle, PlatformWalletError> {
+    match proving.await {
+        Ok(proved) => proved.map_err(|e| PlatformWalletError::Sdk(e.into())),
+        // Re-raise a proving panic exactly as if it had run inline.
+        Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+        Err(_) => Err(PlatformWalletError::ShieldedBuildError(
+            "Orchard proof generation was cancelled".to_string(),
+        )),
     }
 }
 
@@ -802,17 +757,14 @@ fn credit_output_duffs(transaction: &dashcore::Transaction, output_index: u32) -
 ///
 /// Extracted so `submit_with_cl_height_retry`'s closure stays compact
 /// and the IS→CL fallback path can re-call it with the upgraded proof.
-/// The Orchard bundle comes from `bundles`: the one already proved for
-/// this lock (reused across attempts), else a fresh proof.
+/// Each call re-signs the proved `bundle` around `proof`.
 ///
 /// On success returns the **landed** bundle's serialized Orchard actions
 /// so the orchestrator can record a live `ShieldFromAssetLock` activity
 /// entry over the exact bundle that committed.
-#[allow(clippy::too_many_arguments)]
 async fn build_and_broadcast_shielded<AS>(
     sdk: std::sync::Arc<dash_sdk::Sdk>,
-    bundles: &tokio::sync::Mutex<BundleCache<ProvedShieldFromAssetLockBundle>>,
-    shield_amount: Credits,
+    bundle: &ProvedShieldFromAssetLockBundle,
     proof: AssetLockProof,
     path: ::key_wallet::bip32::DerivationPath,
     asset_lock_signer: &AS,
@@ -825,15 +777,7 @@ where
     use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
 
-    // One version for the whole attempt: the bundle's binding is checked
-    // against the same rules the transition is assembled under.
     let platform_version = sdk.version();
-    let target = BundleTarget {
-        out_point: out_point_from_proof(&proof),
-        shield_amount,
-        platform_version,
-    };
-    let bundle = bundles.lock().await.bundle_for(target).await?;
     let st = bundle
         .build_transition_with_signer(
             proof,
@@ -884,188 +828,6 @@ fn shield_amount_after_fee(
         ));
     }
     Ok(shield_amount)
-}
-
-// ---------------------------------------------------------------------------
-// Proving the Orchard bundle off the async runtime, ahead of the lock proof
-// ---------------------------------------------------------------------------
-
-/// Everything a `ShieldFromAssetLock` bundle is proved for that can differ
-/// between the speculative proof and a submission attempt. The recipient,
-/// sender OVK, memo and filler count are fixed for the whole call and live in
-/// the [`ProveFn`].
-#[derive(Clone, Copy)]
-struct BundleTarget {
-    /// The locked outpoint — the bundle's sighash binds it.
-    out_point: dashcore::OutPoint,
-    /// The value the bundle moves into the pool.
-    shield_amount: Credits,
-    /// The protocol version whose binding rules the bundle is proved under.
-    /// Compared by number: an SDK protocol-version change between the
-    /// speculative proof and an attempt re-proves even when the binding is
-    /// unchanged — conservative, and rare (it takes a protocol upgrade during
-    /// the call).
-    platform_version: &'static dpp::version::PlatformVersion,
-}
-
-impl PartialEq for BundleTarget {
-    fn eq(&self, other: &Self) -> bool {
-        self.out_point == other.out_point
-            && self.shield_amount == other.shield_amount
-            && self.platform_version.protocol_version == other.platform_version.protocol_version
-    }
-}
-
-/// Proves a bundle for a target. Blocking and CPU-heavy: only ever run on
-/// tokio's blocking pool, through [`ProofTask`].
-type ProveFn<B> = Arc<dyn Fn(BundleTarget) -> Result<B, ProtocolError> + Send + Sync>;
-
-/// A bundle proof running on tokio's blocking pool, so it never occupies an
-/// async worker.
-///
-/// Dropping the task cancels it: a proof that has not started yet never runs
-/// (the task is aborted, and the job checks a cancellation flag before
-/// proving), and the result of one already running — Halo 2 proving cannot be
-/// interrupted — is dropped, together with the inputs the job holds, as soon
-/// as it finishes. Nothing waits for a cancelled proof and nothing is
-/// persisted from it.
-struct ProofTask<B> {
-    target: BundleTarget,
-    cancelled: Arc<AtomicBool>,
-    /// `Some` until the proof has been joined.
-    handle: Option<tokio::task::JoinHandle<Option<Result<B, ProtocolError>>>>,
-}
-
-impl<B: Send + 'static> ProofTask<B> {
-    fn spawn(target: BundleTarget, prove: ProveFn<B>) -> Self {
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let job_cancelled = Arc::clone(&cancelled);
-        let handle = tokio::task::spawn_blocking(move || {
-            (!job_cancelled.load(Ordering::Acquire)).then(|| prove(target))
-        });
-        Self {
-            target,
-            cancelled,
-            handle: Some(handle),
-        }
-    }
-
-    /// Wait for the proof. Cancellation-safe: dropping this future drops the
-    /// task, which cancels the proof.
-    async fn join(mut self) -> Result<B, ProtocolError> {
-        let joined = self
-            .handle
-            .as_mut()
-            .expect("the handle is present until the proof is joined")
-            .await;
-        self.handle = None;
-        match joined {
-            Ok(Some(result)) => result,
-            // Re-raise a proving panic exactly as if it had run inline.
-            Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
-            // The flag is only set on drop, so `Ok(None)` is unreachable
-            // while this task is alive; a cancelled join is the runtime
-            // shutting down.
-            Ok(None) | Err(_) => Err(ProtocolError::ShieldedBuildError(
-                "Orchard proof generation was cancelled".to_string(),
-            )),
-        }
-    }
-}
-
-impl<B> Drop for ProofTask<B> {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            self.cancelled.store(true, Ordering::Release);
-            handle.abort();
-        }
-    }
-}
-
-/// The proved bundle the submission attempts of one funding call share.
-///
-/// Holds the bundle's signing secrets (see `ProvedShieldFromAssetLockBundle`)
-/// in memory only, until the submission attempts end; they are dropped with
-/// the cache.
-///
-/// Holds the speculative proof started while the lock proof was awaited
-/// and, once joined or freshly proved, the bundle itself. Every attempt asks
-/// for the bundle of its target; a bundle is reused only for an identical
-/// target (same outpoint, amount and protocol version), so a reused bundle
-/// commits to exactly what a fresh proof would. Anything else — a
-/// speculative proof for another outpoint or amount, a protocol upgrade
-/// between attempts — is discarded and proved afresh.
-struct BundleCache<B> {
-    prove: ProveFn<B>,
-    speculative: Option<ProofTask<B>>,
-    proved: Option<(BundleTarget, Arc<B>)>,
-}
-
-impl<B: Send + Sync + 'static> BundleCache<B> {
-    fn new(prove: ProveFn<B>, speculative: Option<ProofTask<B>>) -> Self {
-        Self {
-            prove,
-            speculative,
-            proved: None,
-        }
-    }
-
-    async fn bundle_for(&mut self, target: BundleTarget) -> Result<Arc<B>, ProtocolError> {
-        if let Some((proved_for, bundle)) = &self.proved {
-            if *proved_for == target {
-                tracing::debug!(
-                    out_point = %target.out_point,
-                    "reusing the proved shield-from-asset-lock bundle for this attempt"
-                );
-                return Ok(Arc::clone(bundle));
-            }
-        }
-        let task = match self.speculative.take() {
-            Some(task) if task.target == target => task,
-            Some(stale) => {
-                // Rare (the lock's value or the protocol version changed under
-                // the call), but it forfeits the overlap: make it visible.
-                tracing::info!(
-                    speculative_out_point = %stale.target.out_point,
-                    speculative_amount = stale.target.shield_amount,
-                    out_point = %target.out_point,
-                    shield_amount = target.shield_amount,
-                    "discarding a speculative shield-from-asset-lock proof made for other inputs"
-                );
-                ProofTask::spawn(target, Arc::clone(&self.prove))
-            }
-            None => ProofTask::spawn(target, Arc::clone(&self.prove)),
-        };
-        let bundle = Arc::new(task.join().await?);
-        self.proved = Some((target, Arc::clone(&bundle)));
-        Ok(bundle)
-    }
-}
-
-/// Drive `resolve` (funding resolution, whose proof wait is the slow part) to
-/// completion while `speculate` starts a proof as soon as `out_point` delivers
-/// the lock's outpoint. `speculate` must only *start* the proof (return its
-/// [`ProofTask`]), not wait for it, so this returns as soon as `resolve` does.
-///
-/// If `resolve` fails, the speculative task is dropped here — cancelling the
-/// proof — and the error is returned. If `resolve` never reports an outpoint
-/// (its sender is dropped), no proof is started.
-async fn resolve_while_proving<R, E, B, S, SF>(
-    resolve: impl std::future::Future<Output = Result<R, E>>,
-    out_point: tokio::sync::oneshot::Receiver<dashcore::OutPoint>,
-    speculate: S,
-) -> Result<(R, Option<ProofTask<B>>), E>
-where
-    S: FnOnce(dashcore::OutPoint) -> SF,
-    SF: std::future::Future<Output = Option<ProofTask<B>>>,
-{
-    let speculation = async move {
-        let out_point = out_point.await.ok()?;
-        speculate(out_point).await
-    };
-    // `try_join!` so a failed resolution returns at once, dropping a
-    // speculative startup still in flight (or the proof it started).
-    tokio::try_join!(resolve, async { Ok(speculation.await) })
 }
 
 /// Pre-flight check for the recipient list.
@@ -1334,69 +1096,6 @@ mod tests {
             )
             .into(),
         )))
-    }
-
-    /// The speculative and the ChainLock paths read a tracked lock's own
-    /// credit output at the outpoint's index, as the InstantSend path reads
-    /// it from the proof — not the row's `amount`, which sums all outputs.
-    #[tokio::test]
-    async fn tracked_lock_value_is_its_indexed_credit_output() {
-        use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
-        use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-        use dashcore::{InstantLock, ScriptBuf, Transaction, TxOut};
-        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-
-        let ctx = consumption_report_context().await;
-        let credit_output = |value| TxOut {
-            value,
-            script_pubkey: ScriptBuf::new(),
-        };
-        let transaction = Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
-                AssetLockPayload {
-                    version: 0,
-                    credit_outputs: vec![credit_output(100_000), credit_output(200_000)],
-                },
-            )),
-        };
-        let out_point = OutPoint::new(transaction.txid(), 1);
-        ctx.wallet_manager
-            .write()
-            .await
-            .get_wallet_info_mut(&ctx.wallet_id)
-            .expect("wallet")
-            .tracked_asset_locks
-            .insert(
-                out_point,
-                TrackedAssetLock {
-                    out_point,
-                    transaction: transaction.clone(),
-                    account_index: 0,
-                    funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
-                    identity_index: 0,
-                    amount: 300_000,
-                    status: AssetLockStatus::ChainLocked,
-                    proof: None,
-                },
-            );
-
-        let tracked = tracked_asset_lock_value_duffs(&ctx.manager, &out_point)
-            .await
-            .expect("tracked lock value");
-        assert_eq!(tracked, 200_000);
-        let instant = InstantAssetLockProof::new(InstantLock::default(), transaction, 1);
-        assert_eq!(
-            credit_output_duffs(instant.transaction(), instant.output_index()),
-            Some(tracked)
-        );
-        let untracked = OutPoint::new(out_point.txid, 2);
-        assert!(tracked_asset_lock_value_duffs(&ctx.manager, &untracked)
-            .await
-            .is_err());
     }
 
     #[tokio::test]
@@ -1693,178 +1392,5 @@ mod tests {
             .get(&ctx.out_point)
             .expect("tracked lock");
         assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
-    }
-
-    // -- Proving the bundle while the InstantSend lock is awaited ---------
-    //
-    // A fake prover stands in for Halo 2: the "bundle" is the amount it was
-    // proved for.
-
-    mod proof_pipeline {
-        use std::sync::atomic::AtomicUsize;
-        use std::time::Duration;
-
-        use dpp::version::PlatformVersion;
-        use tokio::sync::oneshot;
-
-        use super::*;
-
-        const AMOUNT: Credits = 1_000_000;
-
-        fn target(shield_amount: Credits) -> BundleTarget {
-            BundleTarget {
-                out_point: OutPoint::from([7u8; 36]),
-                shield_amount,
-                platform_version: PlatformVersion::latest(),
-            }
-        }
-
-        fn counting_prover(calls: &Arc<AtomicUsize>) -> ProveFn<Credits> {
-            let calls = Arc::clone(calls);
-            Arc::new(move |target: BundleTarget| {
-                calls.fetch_add(1, Ordering::SeqCst);
-                Ok(target.shield_amount)
-            })
-        }
-
-        /// The InstantSend lock is only delivered once the proof is running,
-        /// and the proof only finishes once the lock has been delivered, so
-        /// this completes only if the two overlap.
-        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-        async fn should_prove_while_the_lock_is_awaited() {
-            let (proof_started_tx, proof_started_rx) = oneshot::channel::<()>();
-            let (lock_delivered_tx, lock_delivered_rx) = std::sync::mpsc::channel::<()>();
-            let proof_started_tx = Mutex::new(Some(proof_started_tx));
-            let lock_delivered_rx = Mutex::new(lock_delivered_rx);
-            let prove: ProveFn<Credits> = Arc::new(move |target: BundleTarget| {
-                if let Some(tx) = proof_started_tx.lock().unwrap().take() {
-                    let _ = tx.send(());
-                }
-                lock_delivered_rx
-                    .lock()
-                    .unwrap()
-                    .recv()
-                    .expect("lock delivered");
-                Ok(target.shield_amount)
-            });
-
-            let (out_point_tx, out_point_rx) = oneshot::channel();
-            let resolve = async move {
-                let _ = out_point_tx.send(target(AMOUNT).out_point);
-                proof_started_rx.await.expect("proof started");
-                lock_delivered_tx.send(()).unwrap();
-                Ok::<_, PlatformWalletError>(())
-            };
-            let bundle = tokio::time::timeout(Duration::from_secs(30), async {
-                let ((), speculative) = resolve_while_proving(resolve, out_point_rx, |out_point| {
-                    let task = ProofTask::spawn(
-                        BundleTarget {
-                            out_point,
-                            ..target(AMOUNT)
-                        },
-                        Arc::clone(&prove),
-                    );
-                    std::future::ready(Some(task))
-                })
-                .await
-                .expect("resolution");
-                assert!(speculative.is_some());
-                BundleCache::new(Arc::clone(&prove), speculative)
-                    .bundle_for(target(AMOUNT))
-                    .await
-                    .expect("proof")
-            })
-            .await
-            .expect("the proof and the lock wait did not overlap");
-            assert_eq!(*bundle, AMOUNT);
-        }
-
-        /// A resolution that fails after reporting the outpoint returns its
-        /// error without waiting for a speculative startup still in flight.
-        #[tokio::test]
-        async fn should_return_a_resolution_error_without_waiting_for_speculation() {
-            let (out_point_tx, out_point_rx) = oneshot::channel();
-            let resolve = async move {
-                let _ = out_point_tx.send(target(AMOUNT).out_point);
-                tokio::task::yield_now().await;
-                Err::<(), _>(PlatformWalletError::ShieldedBuildError(
-                    "lock wait failed".into(),
-                ))
-            };
-            let result = tokio::time::timeout(
-                Duration::from_secs(10),
-                resolve_while_proving(resolve, out_point_rx, |_| {
-                    std::future::pending::<Option<ProofTask<Credits>>>()
-                }),
-            )
-            .await
-            .expect("a failed resolution must not wait for speculative startup");
-            assert!(result.is_err());
-        }
-
-        /// Every submission attempt of one call — the first, the IS→CL
-        /// fallback, the CL-height retries — asks for the same target and gets
-        /// the speculative bundle. A changed amount or protocol version is
-        /// proved afresh.
-        #[tokio::test]
-        async fn should_prove_once_per_target() {
-            let calls = Arc::new(AtomicUsize::new(0));
-            let prove = counting_prover(&calls);
-            let speculative = ProofTask::spawn(target(AMOUNT), Arc::clone(&prove));
-            let mut cache = BundleCache::new(prove, Some(speculative));
-
-            let first = cache.bundle_for(target(AMOUNT)).await.expect("proof");
-            for _ in 0..3 {
-                let again = cache.bundle_for(target(AMOUNT)).await.expect("proof");
-                assert!(Arc::ptr_eq(&first, &again));
-            }
-            assert_eq!(calls.load(Ordering::SeqCst), 1);
-
-            let other_amount = cache.bundle_for(target(AMOUNT - 1)).await.expect("proof");
-            assert_eq!(*other_amount, AMOUNT - 1);
-            assert_eq!(calls.load(Ordering::SeqCst), 2);
-            let other_version = BundleTarget {
-                platform_version: PlatformVersion::first(),
-                ..target(AMOUNT - 1)
-            };
-            cache.bundle_for(other_version).await.expect("proof");
-            assert_eq!(calls.load(Ordering::SeqCst), 3);
-        }
-
-        #[tokio::test]
-        async fn should_not_use_a_speculative_proof_for_other_inputs() {
-            let prove = counting_prover(&Arc::new(AtomicUsize::new(0)));
-            let speculative = ProofTask::spawn(target(AMOUNT + 1), Arc::clone(&prove));
-            let bundle = BundleCache::new(prove, Some(speculative))
-                .bundle_for(target(AMOUNT))
-                .await
-                .expect("proof");
-            assert_eq!(*bundle, AMOUNT);
-        }
-
-        /// A proof cancelled before a blocking thread picks it up never runs.
-        #[test]
-        fn should_never_run_a_proof_cancelled_before_it_starts() {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .max_blocking_threads(1)
-                .enable_all()
-                .build()
-                .expect("runtime");
-            runtime.block_on(async {
-                let calls = Arc::new(AtomicUsize::new(0));
-                // Occupy the only blocking thread so the proof stays queued.
-                let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
-                let blocker = tokio::task::spawn_blocking(move || {
-                    let _ = release_rx.recv();
-                });
-                drop(ProofTask::spawn(target(AMOUNT), counting_prover(&calls)));
-                release_tx.send(()).unwrap();
-                blocker.await.unwrap();
-                // The queue is FIFO: once this runs, the cancelled job has had
-                // its turn.
-                tokio::task::spawn_blocking(|| ()).await.unwrap();
-                assert_eq!(calls.load(Ordering::SeqCst), 0);
-            });
-        }
     }
 }
