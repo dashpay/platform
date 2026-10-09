@@ -27,6 +27,8 @@ use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
+#[cfg(not(target_arch = "wasm32"))]
+use rs_dapi_client::transport::Socks5Proxy;
 pub use rs_dapi_client::Address;
 pub use rs_dapi_client::AddressBanInfo;
 pub use rs_dapi_client::AddressList;
@@ -873,6 +875,10 @@ pub struct SdkBuilder {
     /// CA certificate to use for TLS connections.
     #[cfg(not(target_arch = "wasm32"))]
     ca_certificate: Option<Certificate>,
+
+    /// SOCKS5 proxy every DAPI connection is tunnelled through.
+    #[cfg(not(target_arch = "wasm32"))]
+    proxy: Option<Socks5Proxy>,
 }
 
 impl Default for SdkBuilder {
@@ -916,6 +922,8 @@ impl Default for SdkBuilder {
             protocol_version_observer: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy: None,
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -1017,6 +1025,17 @@ impl SdkBuilder {
         let cert = Certificate::from_pem(pem);
 
         Ok(self.with_ca_certificate(cert))
+    }
+
+    /// Tunnel every DAPI connection through a SOCKS5 proxy.
+    ///
+    /// There is no fallback to a direct connection. See
+    /// [DapiClient::with_proxy] for how proxy failures are handled. Core RPC
+    /// connections made for [SdkBuilder::with_core] are not proxied.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_proxy(mut self, proxy: Socks5Proxy) -> Self {
+        self.proxy = Some(proxy);
+        self
     }
 
     /// Configure request settings.
@@ -1229,6 +1248,10 @@ impl SdkBuilder {
                 if let Some(pem) = self.ca_certificate {
                     dapi = dapi.with_ca_certificate(pem);
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(proxy) = self.proxy {
+                    dapi = dapi.with_proxy(proxy);
+                }
 
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
@@ -1386,6 +1409,27 @@ mod test {
     const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
     /// Testnet Evo masternodes expose the Platform HTTP endpoint on 1443.
     const TESTNET_PLATFORM_HTTP_PORT: u16 = 1443;
+
+    #[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]
+    #[test]
+    fn with_proxy_reaches_the_dapi_client() {
+        use rs_dapi_client::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
+
+        let proxy = Socks5Proxy {
+            endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+            auth: Socks5Auth::RandomPerConnection,
+        };
+        let sdk = SdkBuilder::new("https://127.0.0.1:1443".parse().expect("address list"))
+            .with_context_provider(dash_context_provider::MockContextProvider::new())
+            .with_proxy(proxy.clone())
+            .build()
+            .expect("sdk");
+
+        match &sdk.inner {
+            super::SdkInstance::Dapi { dapi } => assert_eq!(dapi.proxy, Some(proxy)),
+            super::SdkInstance::Mock { .. } => panic!("expected a network SDK"),
+        }
+    }
 
     #[test]
     fn new_testnet_sources_bootstrap_from_seeds() {
