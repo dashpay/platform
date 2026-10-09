@@ -8,6 +8,8 @@
 use super::LimitQuery;
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::{error::Error, mock::MockResponse, platform::query::Query, sync::retry, Sdk};
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::Version as IdentityVotesRequestVersion;
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::Version as VotePollsRequestVersion;
 use dapi_grpc::platform::v0::{
     GetAddressesInfosRequest, GetContestedResourceIdentityVotesRequest,
     GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
@@ -31,6 +33,7 @@ use dpp::{
 };
 use dpp::{data_contract::DataContract, tokens::token_pricing_schedule::TokenPricingSchedule};
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
@@ -113,6 +116,14 @@ where
 
     /// Wire-encoded request that hits the network.
     type Request: TransportRequest;
+
+    /// Prepare the owned query before deriving its wire request and verifying its proof.
+    ///
+    /// Implementations can bind request defaults so execution and proof verification
+    /// use the same query. Other queries are preserved by default.
+    fn prepare_query(query: Self::Query) -> Self::Query {
+        query
+    }
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -219,7 +230,8 @@ where
         request_settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
         let settings = sdk.query_settings();
-        let owned_rich: <Self as FetchMany<K, O>>::Query = query.query(&settings)?;
+        let owned_rich: <Self as FetchMany<K, O>>::Query =
+            Self::prepare_query(query.query(&settings)?);
         let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
@@ -515,6 +527,15 @@ impl FetchMany<usize, Voters> for Voter {
 impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
     type Query = GetContestedResourceIdentityVotesRequest;
     type Request = GetContestedResourceIdentityVotesRequest;
+
+    fn prepare_query(mut query: Self::Query) -> Self::Query {
+        if let Some(IdentityVotesRequestVersion::V0(v0)) = query.version.as_mut() {
+            if v0.prove && v0.limit.is_none() {
+                v0.limit = Some(DEFAULT_QUERY_LIMIT as u32);
+            }
+        }
+        query
+    }
 }
 
 //
@@ -526,6 +547,15 @@ impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
     type Query = GetVotePollsByEndDateRequest;
     type Request = GetVotePollsByEndDateRequest;
+
+    fn prepare_query(mut query: Self::Query) -> Self::Query {
+        if let Some(VotePollsRequestVersion::V0(v0)) = query.version.as_mut() {
+            if v0.prove && v0.limit.is_none() {
+                v0.limit = Some(DEFAULT_QUERY_LIMIT as u32);
+            }
+        }
+        query
+    }
 }
 
 //
