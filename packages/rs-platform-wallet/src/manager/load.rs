@@ -13,6 +13,10 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dpp::prelude::Identifier;
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
 
@@ -233,6 +237,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 dashpay_backfill,
                 rewind_barrier: Default::default(),
             };
+            // A restored outbound-account marker says the contact's external
+            // account was built from its current xpub, which suppresses the
+            // startup rebuild. It must not vouch for a pool the host kept
+            // across a rotation: the host replaces the account's xpub but may
+            // keep the old pool's addresses, and `send_payment` hands out a
+            // pooled address before deriving a new one. So any external pool
+            // holding an address its current xpub does not derive loses its
+            // contact's marker, and the first contact sweep rebuilds it from
+            // the current xpub, as every cold start did before the marker
+            // was persisted (dashpay/platform#4302 review).
+            let distrusted =
+                distrust_markers_of_foreign_external_pools(&wallet, &mut platform_info);
+            if distrusted > 0 {
+                tracing::warn!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    contacts = distrusted,
+                    "load: restored DashPay external pools hold addresses their current xpub \
+                     does not derive; their accounts will be rebuilt"
+                );
+            }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
             // chainlock dispatcher promotion-evicts a restored spender
@@ -1353,6 +1377,74 @@ mod idempotent_load_tests {
             "and out of the inner manager, so a retry can re-insert it"
         );
     }
+}
+
+/// Clear the outbound-account marker of every established contact whose
+/// restored DashPay external pool holds an address the account's current
+/// xpub (on `wallet`) does not derive at that index, so the contact sweep
+/// rebuilds the account instead of trusting the pool. Returns how many
+/// markers were cleared.
+fn distrust_markers_of_foreign_external_pools(
+    wallet: &key_wallet::Wallet,
+    info: &mut PlatformWalletInfo,
+) -> usize {
+    let foreign: Vec<_> = info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .iter()
+        .filter(|(key, managed)| {
+            wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(key)
+                .is_some_and(|account| {
+                    managed
+                        .managed_account_type()
+                        .address_pools()
+                        .into_iter()
+                        .any(|pool| !pool_derives_from(pool, &account.account_xpub))
+                })
+        })
+        .map(|(key, _)| *key)
+        .collect();
+    let mut cleared = 0;
+    for key in foreign {
+        let owner = Identifier::from(key.user_identity_id);
+        let contact = Identifier::from(key.friend_identity_id);
+        let marker = info
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .and_then(|managed| managed.established_contact_mut(&contact))
+            .and_then(|established| established.external_account_reference.take());
+        if marker.is_some() {
+            cleared += 1;
+        }
+    }
+    cleared
+}
+
+/// Whether every address in `pool` is the one `xpub` derives at its index —
+/// checked by regenerating a scratch pool with the same layout.
+fn pool_derives_from(pool: &AddressPool, xpub: &ExtendedPubKey) -> bool {
+    let Some(highest) = pool.highest_generated else {
+        return true;
+    };
+    let mut derived = AddressPool::new_without_generation(
+        pool.base_path.clone(),
+        pool.pool_type,
+        pool.gap_limit,
+        pool.network,
+    );
+    if derived
+        .generate_addresses(highest.saturating_add(1), &KeySource::Public(*xpub), true)
+        .is_err()
+    {
+        return false;
+    }
+    pool.addresses
+        .iter()
+        .all(|(index, info)| derived.address_at_index(*index).as_ref() == Some(&info.address))
 }
 
 #[cfg(test)]

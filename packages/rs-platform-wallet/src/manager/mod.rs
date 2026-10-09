@@ -26,8 +26,9 @@ use tokio_util::sync::CancellationToken;
 use key_wallet_manager::WalletManager;
 
 use crate::changeset::{
-    spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet, DashPayBackfillRecord,
-    DurableCursor, DurableCursors, PlatformWalletChangeSet, PlatformWalletPersistence,
+    persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
+    DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -673,10 +674,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// watched. The entry follows the cursor only once the round is
     /// committed, so a lower cursor owed later is measured against it.
     ///
-    /// A backend whose `store` only buffers (`store_commits_inline()` false)
-    /// gets no record at all, the same as the rescan sweep gives it: only an
-    /// empty one is written, and flushed before the wallet is published, so a
-    /// record an earlier run left cannot outlive this one.
+    /// A backend that cannot hold the record durably
+    /// ([`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage):
+    /// not inline, or not atomic) gets no record at all, the same as the
+    /// rescan sweep gives it: only an empty one is written — committed with a
+    /// `flush` where `store` only buffers — before the wallet is published,
+    /// so a record an earlier run left cannot outlive this one.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn settle_published_backfill(
         &self,
@@ -688,10 +691,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         snapshot_cursor: u32,
     ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
         let inline = self.persister.store_commits_inline();
+        let durable = persists_backfill_coverage(&*self.persister);
         let predecessor = durable_cursors.contains_key(&wallet_id);
         let held_on_host = !record.is_empty() || dropped;
-        let record = if inline { record } else { DashPayBackfillRecord::default() };
-        if !(dropped || predecessor || (!inline && held_on_host)) {
+        let record = if durable {
+            record
+        } else {
+            DashPayBackfillRecord::default()
+        };
+        if !(dropped || predecessor || (!durable && held_on_host)) {
             return Ok(record);
         }
         let host_cursor = durable_cursors
@@ -703,7 +711,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             covered = record.covered.len(),
             dropped,
             predecessor,
-            inline,
+            durable,
             cursor = ?cursor,
             "the host's DashPay backfill record is replaced with the one this wallet \
              carries before the wallet is published"
@@ -734,7 +742,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "failed to commit the replaced DashPay backfill record; \
                      the wallet was not published"
                 );
-                PlatformWalletError::Persistence(e.to_string())
+                PlatformWalletError::from_flush_failure(e)
             })?;
         }
         if let Some(cursor) = cursor {

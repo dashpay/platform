@@ -50,7 +50,9 @@ pub use core_bridge::{
     spawn_wallet_event_adapter, spawn_wallet_event_adapter_with_durable_cursors, DurableCursor,
     DurableCursorState, DurableCursors, RetiredBarrier,
 };
-pub use dashpay_backfill::{DashPayBackfillCoveredContact, DashPayBackfillRecord};
+pub use dashpay_backfill::{
+    persists_backfill_coverage, DashPayBackfillCoveredContact, DashPayBackfillRecord,
+};
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use identity_scan_state::IdentityScanStateEntry;
 pub use merge::Merge;

@@ -81,6 +81,12 @@ impl WalletPersister {
         self.inner.store_commits_inline()
     }
 
+    /// Whether the backend can hold a durable DashPay backfill record (see
+    /// [`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage)).
+    pub(crate) fn persists_backfill_coverage(&self) -> bool {
+        crate::changeset::persists_backfill_coverage(self.inner.as_ref())
+    }
+
     /// Feature-specific persistence contracts exposed by the backend.
     pub(crate) fn persistence_capabilities(&self) -> PersistenceCapabilities {
         self.inner.persistence_capabilities()

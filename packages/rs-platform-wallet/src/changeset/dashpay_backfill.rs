@@ -21,6 +21,8 @@
 
 use dpp::prelude::Identifier;
 
+use super::{PersistenceCapabilities, PlatformWalletPersistence};
+
 /// One receival account the backfill covers, and the height it covers it
 /// from.
 ///
@@ -139,6 +141,26 @@ pub struct DashPayBackfillRecord {
     /// one a retry with no rewind of its own would produce.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub unpersisted_extent: Option<(u32, u32)>,
+}
+
+/// Whether `persister` can hold a durable [`DashPayBackfillRecord`].
+///
+/// The record vouches for the cursor written in the same round, so both
+/// halves have to land together or not at all, and be on disk once `store`
+/// returns. That takes a backend whose `store` is the commit
+/// ([`store_commits_inline`](PlatformWalletPersistence::store_commits_inline))
+/// AND that attests [`PersistenceCapabilities::ATOMIC_CHANGESETS`]: an
+/// inline but non-atomic backend could keep the coverage after rejecting
+/// the cursor, and a buffering one could still drop the round at `flush`.
+/// Any other backend gets session-only coverage — the pre-record guard.
+pub fn persists_backfill_coverage<P>(persister: &P) -> bool
+where
+    P: PlatformWalletPersistence + ?Sized,
+{
+    persister.store_commits_inline()
+        && persister
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
 }
 
 /// The persisted fields of a [`DashPayBackfillRecord`] as serde reads them,

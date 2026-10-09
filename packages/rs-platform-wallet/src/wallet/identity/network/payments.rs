@@ -338,13 +338,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //   that never landed — so nothing is stored at all: the in-memory
         //   rewind still runs the rescan, and the next launch re-runs it,
         //   which is the pre-record behaviour;
-        // - a backend whose `store` only buffers (`store_commits_inline()`
-        //   false) commits at a later `flush` that can still fail and drop the
-        //   round. A record "stored" there is not on disk, and neither is the
-        //   cursor it vouches for, so nothing would tell this pass whether the
-        //   coverage it installs is durable. Such a backend gets no record at
-        //   all: the pass runs in memory only, exactly the pre-record guard.
-        //   Coverage is durable only where the store is the commit.
+        // - a backend that cannot hold the record durably gets none at all
+        //   (`persists_backfill_coverage`): one whose `store` only buffers
+        //   commits at a later `flush` that can still drop the round, and one
+        //   that is not atomic can keep the coverage after rejecting the
+        //   cursor it vouches for. The pass then runs in memory only, exactly
+        //   the pre-record guard.
         let mut staged = info.dashpay_backfill.clone();
         staged.retain(|owner, contact, account_index| {
             receival_accounts
@@ -384,7 +383,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         info.dashpay_backfill.unpersisted_cursor_epoch = Some(info.rewind_barrier.epoch());
         info.dashpay_backfill.unpersisted_extent = extent;
         let faulted = self.sync_fault.load(std::sync::atomic::Ordering::Relaxed);
-        let stored = if !self.persister.store_commits_inline() {
+        let stored = if !self.persister.persists_backfill_coverage() {
             Ok(false)
         } else if faulted {
             Err(None)
@@ -1916,11 +1915,25 @@ mod tests {
         buffered: Mutex<bool>,
         /// When set, every `flush` fails.
         fail_flushes: Mutex<bool>,
+        /// When set, the backend does not attest `ATOMIC_CHANGESETS`.
+        non_atomic: Mutex<bool>,
+        /// When set, a round carrying both a cursor and a backfill record
+        /// keeps the record and then fails on the cursor — the partial write
+        /// a non-atomic backend is allowed to leave.
+        partial_rounds: Mutex<bool>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
         fn store_commits_inline(&self) -> bool {
             !*self.buffered.lock().unwrap()
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            if *self.non_atomic.lock().unwrap() {
+                crate::changeset::PersistenceCapabilities::NONE
+            } else {
+                crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS
+            }
         }
 
         fn store(
@@ -1934,13 +1947,30 @@ mod tests {
             if std::mem::take(&mut *self.panic_next_store.lock().unwrap()) {
                 panic!("recording persister: injected store panic");
             }
+            if *self.partial_rounds.lock().unwrap()
+                && changeset.dashpay_backfill.is_some()
+                && changeset
+                    .core
+                    .as_ref()
+                    .is_some_and(|core| core.synced_height.is_some())
+            {
+                let kept = PlatformWalletChangeSet {
+                    dashpay_backfill: changeset.dashpay_backfill,
+                    ..PlatformWalletChangeSet::default()
+                };
+                self.stores.lock().unwrap().push((wallet_id, kept));
+                return Err(PersistenceError::backend("injected cursor write failure"));
+            }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
             if *self.fail_flushes.lock().unwrap() {
-                return Err(PersistenceError::backend("injected flush failure"));
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "injected flush failure",
+                ));
             }
             Ok(())
         }
@@ -3298,6 +3328,10 @@ mod tests {
     impl PlatformWalletPersistence for ReloadPersister {
         fn store_commits_inline(&self) -> bool {
             true
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS
         }
 
         fn store(
@@ -4833,6 +4867,214 @@ mod tests {
         );
     }
 
+    /// Inline is not enough: a backend that does not attest atomic
+    /// changesets may keep the coverage of a round and then reject the cursor
+    /// it vouches for, and a crash before the retry would restore coverage
+    /// beside the old cursor. Such a backend gets session-only coverage, like
+    /// a buffering one, so there is never a partial round to leave behind
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_non_atomic_backend_keeps_the_backfill_record_in_memory_only() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        *persister.non_atomic.lock().unwrap() = true;
+        *persister.partial_rounds.lock().unwrap() = true;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 100, 100).await;
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        persister.stores.lock().unwrap().clear();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let dashpay = wallet.identity().dashpay();
+        assert_eq!(
+            dashpay.reconcile_dashpay_rescan().await.expect("reconcile"),
+            Some(100)
+        );
+        assert_eq!(
+            dashpay.reconcile_dashpay_rescan().await.expect("reconcile"),
+            None,
+            "the in-memory guard still holds for the session"
+        );
+        assert!(
+            last_stored_record(&persister.stores.lock().unwrap()).is_none(),
+            "no record reaches a backend that could keep it without its cursor"
+        );
+        let snapshot =
+            reload_snapshot(&manager, wallet_id, owner, 1_000, Some(Default::default())).await;
+        let (restarted, _, _) = reload(snapshot).await;
+        assert_eq!(
+            restarted
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet")
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile after reload"),
+            Some(100),
+            "a relaunch rewinds again: slow, never lossy"
+        );
+    }
+
+    /// [`ReloadPersister`] behind an inline backend that does not attest
+    /// atomic changesets.
+    struct NonAtomicHost(Arc<ReloadPersister>);
+
+    impl PlatformWalletPersistence for NonAtomicHost {
+        fn store_commits_inline(&self) -> bool {
+            true
+        }
+
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.0.store(wallet_id, changeset)
+        }
+
+        fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+            self.0.flush(wallet_id)
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            self.0.load()
+        }
+    }
+
+    /// A non-atomic backend that still holds a record from an earlier run
+    /// must not have it trusted, nor left behind: the load carries no record
+    /// and replaces the host's with an empty one before publishing.
+    #[tokio::test]
+    async fn loading_on_a_non_atomic_backend_invalidates_the_hosts_record() {
+        let (donor, donor_persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        establish_receival_contact(
+            &donor,
+            &donor_persister,
+            wallet_id,
+            owner,
+            contact,
+            200,
+            200,
+        )
+        .await;
+        let mut record = crate::changeset::DashPayBackfillRecord::default();
+        record.record_pass(800, None, [(owner, contact, 0, 200)]);
+        let host = Arc::new(reload_snapshot(&donor, wallet_id, owner, 800, Some(record)).await);
+        drop(donor);
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NonAtomicHost(Arc::clone(&host))),
+            handler,
+        ));
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the snapshot must load");
+        first_store_is_an_empty_record(&host.stores.lock().unwrap());
+        let wm = manager.wallet_manager.read().await;
+        assert!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .dashpay_backfill
+                .is_empty(),
+            "the restored record is not trusted in memory either"
+        );
+    }
+
+    /// A restored outbound-account marker suppresses the startup rebuild, so
+    /// it must not vouch for a pool its account's xpub does not derive. A
+    /// host that replaced the xpub on rotation but kept the old pool's rows
+    /// would otherwise hand out pre-rotation addresses on the next send.
+    /// The load clears the marker for such a pool, and the contact sweep
+    /// rebuilds the account from the current xpub (dashpay/platform#4302
+    /// review).
+    #[tokio::test]
+    async fn a_restored_marker_is_not_trusted_over_a_pool_its_current_xpub_does_not_derive() {
+        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0x01; 32]);
+        let shared_key = [0x55u8; 32];
+        let encrypted = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
+            let incoming = ContactRequest::new(contact, owner, 0, 0, 7, encrypted.clone(), 100, 0);
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+        }
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner,
+                &bare_identity(contact.to_buffer()),
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register outbound");
+        iw.dashpay()
+            .note_external_account_registered(&owner, &contact, &encrypted)
+            .await;
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+
+        for (rotated, marker) in [(false, Some(7)), (true, None)] {
+            let mut snapshot = reload_snapshot(&manager, wallet_id, owner, 1_000, None).await;
+            if rotated {
+                // The host replaced the account's xpub and kept the old rows.
+                snapshot
+                    .wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .get_mut(&key)
+                    .expect("outbound account")
+                    .account_xpub = test_receiving_xpub(&contact, &owner);
+            }
+            let (restarted, _, _) = reload(snapshot).await;
+            let wm = restarted.wallet_manager.read().await;
+            let established = wm
+                .get_wallet_info(&wallet_id)
+                .expect("info")
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("owner")
+                .dashpay()
+                .established_contacts()[&contact]
+                .clone();
+            assert_eq!(
+                established.external_account_reference, marker,
+                "rotated: {rotated}"
+            );
+            assert_eq!(
+                external_account_needs_rebuild(&established, true),
+                rotated,
+                "only a pool the current xpub does not derive is rebuilt"
+            );
+        }
+    }
+
     /// On a buffering backend the pre-publication replacement is committed
     /// with a `flush` before the wallet becomes visible, and a failed flush
     /// fails the registration rather than publishing over a replacement that
@@ -4868,9 +5110,17 @@ mod tests {
                 Some(101),
             )
         };
+        let error = match create().await {
+            Ok(_) => panic!("the replacement did not commit, so the wallet is not published"),
+            Err(error) => error,
+        };
         assert!(
-            create().await.is_err(),
-            "the replacement did not commit, so the wallet is not published"
+            matches!(
+                &error,
+                crate::error::PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Transient)
+            ),
+            "the flush failure keeps its own type and kind: {error:?}"
         );
         assert!(manager.get_wallet(&wallet_id).await.is_none());
 
