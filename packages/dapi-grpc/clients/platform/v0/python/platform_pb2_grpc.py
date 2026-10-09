@@ -379,6 +379,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedNullifiersResponse.FromString,
                 )
+        self.subscribeToStateTransitions = channel.unary_stream(
+                '/org.dash.platform.dapi.v0.Platform/subscribeToStateTransitions',
+                request_serializer=platform__pb2.SubscribeToStateTransitionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.SubscribeToStateTransitionsResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -829,6 +834,16 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def subscribeToStateTransitions(self, request, context):
+        """Streams every committed, successfully executed state transition that matches
+        one of the request's filters, block by block, from a chosen height onward.
+        Served by DAPI from the Tenderdash block store; see
+        `SubscribeToStateTransitionsResponse` for the stream contract.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1196,6 +1211,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getShieldedNullifiers,
                     request_deserializer=platform__pb2.GetShieldedNullifiersRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedNullifiersResponse.SerializeToString,
+            ),
+            'subscribeToStateTransitions': grpc.unary_stream_rpc_method_handler(
+                    servicer.subscribeToStateTransitions,
+                    request_deserializer=platform__pb2.SubscribeToStateTransitionsRequest.FromString,
+                    response_serializer=platform__pb2.SubscribeToStateTransitionsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -2445,5 +2465,22 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
             platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
             platform__pb2.GetShieldedNullifiersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def subscribeToStateTransitions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(request, target, '/org.dash.platform.dapi.v0.Platform/subscribeToStateTransitions',
+            platform__pb2.SubscribeToStateTransitionsRequest.SerializeToString,
+            platform__pb2.SubscribeToStateTransitionsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

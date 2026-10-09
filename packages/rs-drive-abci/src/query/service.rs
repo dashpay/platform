@@ -70,8 +70,10 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    SubscribeToStateTransitionsRequest, SubscribeToStateTransitionsResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
+use dapi_grpc::tonic::codegen::BoxStream;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::sync::atomic::Ordering;
@@ -276,6 +278,16 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
 
 #[async_trait]
 impl PlatformService for QueryService {
+    // Served by DAPI from the Tenderdash block store, not by Drive.
+    type subscribeToStateTransitionsStream = BoxStream<SubscribeToStateTransitionsResponse>;
+
+    async fn subscribe_to_state_transitions(
+        &self,
+        _request: Request<SubscribeToStateTransitionsRequest>,
+    ) -> Result<Response<Self::subscribeToStateTransitionsStream>, Status> {
+        respond_with_unimplemented("subscribe_to_state_transitions")
+    }
+
     async fn broadcast_state_transition(
         &self,
         _request: Request<BroadcastStateTransitionRequest>,

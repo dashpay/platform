@@ -37,7 +37,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -49,7 +51,7 @@ use dpp::state_transition::batch_transition::document_replace_transition::v0::v0
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
+use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereClause, WhereOperator};
 use crate::error::query::QuerySyntaxError;
 use dpp::platform_value::ValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -136,6 +138,37 @@ pub enum DocumentActionMatchClauses {
     },
 }
 
+#[cfg(any(feature = "server", feature = "verify"))]
+impl DocumentActionMatchClauses {
+    /// Every clause set the action carries, original-document clauses first.
+    pub fn clause_sets(&self) -> Vec<&InternalClauses> {
+        match self {
+            DocumentActionMatchClauses::Create {
+                new_document_clauses,
+            } => vec![new_document_clauses],
+            DocumentActionMatchClauses::Replace {
+                original_document_clauses,
+                new_document_clauses,
+            } => vec![original_document_clauses, new_document_clauses],
+            DocumentActionMatchClauses::Delete {
+                original_document_clauses,
+            }
+            | DocumentActionMatchClauses::Transfer {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::Purchase {
+                original_document_clauses,
+                ..
+            } => vec![original_document_clauses],
+        }
+    }
+}
+
 impl DriveDocumentQueryFilter<'_> {
     /// Check a transition using only transition-level constraints.
     ///
@@ -176,10 +209,19 @@ impl DriveDocumentQueryFilter<'_> {
                     new_document_clauses,
                 } = &self.action_clauses
                 {
+                    // No clause reads the document: skip building its stored form.
+                    if new_document_clauses.is_empty() {
+                        return TransitionCheckResult::Pass;
+                    }
                     let Some(data) = self.data_as_stored(create.data(), platform_version) else {
                         return TransitionCheckResult::Fail;
                     };
-                    if self.evaluate_clauses(new_document_clauses, &id_value, &data) {
+                    if self.evaluate_clauses(
+                        new_document_clauses,
+                        &id_value,
+                        &data,
+                        Some(platform_version),
+                    ) {
                         TransitionCheckResult::Pass
                     } else {
                         TransitionCheckResult::Fail
@@ -201,7 +243,12 @@ impl DriveDocumentQueryFilter<'_> {
                         else {
                             return TransitionCheckResult::Fail;
                         };
-                        self.evaluate_clauses(new_document_clauses, &id_value, &data)
+                        self.evaluate_clauses(
+                            new_document_clauses,
+                            &id_value,
+                            &data,
+                            Some(platform_version),
+                        )
                     };
                     if !final_ok {
                         return TransitionCheckResult::Fail;
@@ -214,6 +261,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -237,6 +285,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -269,6 +318,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -301,6 +351,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -333,6 +384,7 @@ impl DriveDocumentQueryFilter<'_> {
                             original_document_clauses,
                             &id_value,
                             &BTreeMap::new(),
+                            None,
                         ) {
                             return TransitionCheckResult::Pass;
                         }
@@ -358,7 +410,12 @@ impl DriveDocumentQueryFilter<'_> {
                     else {
                         return TransitionCheckResult::Fail;
                     };
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &values) {
+                    if self.evaluate_clauses(
+                        original_document_clauses,
+                        &id_value,
+                        &values,
+                        Some(platform_version),
+                    ) {
                         TransitionCheckResult::Pass
                     } else {
                         TransitionCheckResult::Fail
@@ -401,10 +458,12 @@ impl DriveDocumentQueryFilter<'_> {
                 ..
             } => {
                 let id_value: Value = original_document.id().into();
+                // A stored document's properties already carry the types its schema gives them.
                 self.evaluate_clauses(
                     original_document_clauses,
                     &id_value,
                     original_document.properties(),
+                    None,
                 )
             }
             _ => false,
@@ -429,12 +488,21 @@ impl DriveDocumentQueryFilter<'_> {
     }
 
     /// Single clause evaluator used by both transition and original-document paths.
+    ///
+    /// With `platform_version`, each value a clause reads is first brought to the form the
+    /// document type stores ([`canonical_value_for_key`]): a transition keeps whichever
+    /// encoding its submitter chose (an identifier as bytes, a `u8` property as `U64`), while
+    /// clause values were canonicalized once by
+    /// [`Self::canonicalize_clause_values`]. A value that does not encode as its property
+    /// fails the clause. `None` is for data that is already canonical, such as a stored
+    /// document's properties.
     #[cfg(any(feature = "server", feature = "verify"))]
     fn evaluate_clauses(
         &self,
         clauses: &InternalClauses,
         document_id_value: &Value,
         document_data: &BTreeMap<String, Value>,
+        platform_version: Option<&PlatformVersion>,
     ) -> bool {
         // Primary key IN clause
         if let Some(primary_key_in_clause) = &clauses.primary_key_in_clause {
@@ -450,43 +518,125 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // In clauses
-        for in_clause in &clauses.in_clauses {
-            let field_value = get_value_by_path(document_data, &in_clause.field);
-            if let Some(value) = field_value {
-                if !in_clause.matches_value(value) {
-                    return false;
-                }
-            } else {
+        let document_type = match platform_version {
+            Some(_) => match self
+                .contract
+                .document_type_optional_for_name(&self.document_type_name)
+            {
+                Some(document_type) => Some(document_type),
+                None => return false,
+            },
+            None => None,
+        };
+        let field_matches = |clause: &WhereClause| {
+            let Some(value) = get_value_by_path(document_data, &clause.field) else {
+                return false;
+            };
+            // `Value` orders null after every number, so a null value would satisfy `> n`; an
+            // ordered comparison never matches null, while equality and IN still can.
+            if value.is_null()
+                && !matches!(clause.operator, WhereOperator::Equal | WhereOperator::In)
+            {
                 return false;
             }
-        }
-
-        // Range clause
-        if let Some(range_clause) = &clauses.range_clause {
-            let field_value = get_value_by_path(document_data, &range_clause.field);
-            if let Some(value) = field_value {
-                if !range_clause.matches_value(value) {
-                    return false;
+            match (document_type, platform_version) {
+                (Some(document_type), Some(platform_version)) => {
+                    match canonical_value_for_key(
+                        document_type,
+                        &clause.field,
+                        value,
+                        platform_version,
+                    ) {
+                        Some(canonical) => clause.matches_value(&canonical),
+                        None => false,
+                    }
                 }
-            } else {
-                return false;
+                _ => clause.matches_value(value),
+            }
+        };
+
+        clauses.in_clauses.iter().all(&field_matches)
+            && clauses.range_clause.iter().all(&field_matches)
+            && clauses.equal_clauses.values().all(&field_matches)
+    }
+
+    /// Bring every clause value to the form the document type stores its field in, so
+    /// [`Self::matches_document_transition`] compares like with like: an identifier given as
+    /// bytes or base58 text becomes `Value::Identifier`, an integer takes its property's
+    /// width, `IN` and `BETWEEN*` operands are converted element-wise. Clauses on the
+    /// recipient or buyer (`owner_clause`) are read as identifiers and `price_clause` as
+    /// `U64`. Call it before [`Self::validate`], which checks the canonical types.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn canonicalize_clause_values(
+        &mut self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), QuerySyntaxError> {
+        let contract = self.contract;
+        let document_type = contract
+            .document_type_optional_for_name(&self.document_type_name)
+            .ok_or(QuerySyntaxError::DocumentTypeNotFound(
+                "unknown document type",
+            ))?;
+        let (clause_sets, scalar_clause): (Vec<&mut InternalClauses>, _) =
+            match &mut self.action_clauses {
+                DocumentActionMatchClauses::Create {
+                    new_document_clauses,
+                } => (vec![new_document_clauses], None),
+                DocumentActionMatchClauses::Replace {
+                    original_document_clauses,
+                    new_document_clauses,
+                } => (vec![original_document_clauses, new_document_clauses], None),
+                DocumentActionMatchClauses::Delete {
+                    original_document_clauses,
+                } => (vec![original_document_clauses], None),
+                DocumentActionMatchClauses::Transfer {
+                    original_document_clauses,
+                    owner_clause,
+                }
+                | DocumentActionMatchClauses::Purchase {
+                    original_document_clauses,
+                    owner_clause,
+                } => (
+                    vec![original_document_clauses],
+                    owner_clause.as_mut().map(|clause| ("$ownerId", clause)),
+                ),
+                DocumentActionMatchClauses::UpdatePrice {
+                    original_document_clauses,
+                    price_clause,
+                } => (
+                    vec![original_document_clauses],
+                    price_clause.as_mut().map(|clause| ("$price", clause)),
+                ),
+            };
+        for clauses in clause_sets {
+            let InternalClauses {
+                primary_key_in_clause,
+                primary_key_equal_clause,
+                in_clauses,
+                range_clause,
+                equal_clauses,
+            } = clauses;
+            for clause in primary_key_in_clause
+                .iter_mut()
+                .chain(primary_key_equal_clause.iter_mut())
+                .chain(in_clauses.iter_mut())
+                .chain(range_clause.iter_mut())
+                .chain(equal_clauses.values_mut())
+            {
+                canonicalize_where_clause(document_type, clause, platform_version)?;
             }
         }
-
-        // Equal clauses
-        for (field, equal_clause) in &clauses.equal_clauses {
-            let field_value = get_value_by_path(document_data, field);
-            if let Some(value) = field_value {
-                if !equal_clause.matches_value(value) {
-                    return false;
+        if let Some((key, clause)) = scalar_clause {
+            clause.value = canonical_operand(clause.operator, &clause.value, |value| {
+                if key == "$price" {
+                    value.to_integer::<u64>().ok().map(Value::U64)
+                } else {
+                    canonical_value_for_key(document_type, key, value, platform_version)
+                        .map(Cow::into_owned)
                 }
-            } else {
-                return false;
-            }
+            })?;
         }
-
-        true
+        Ok(())
     }
 
     /// Validate the filter structure and clauses.
@@ -503,6 +653,21 @@ impl DriveDocumentQueryFilter<'_> {
                 QuerySyntaxError::DocumentTypeNotFound("unknown document type"),
             );
         };
+
+        // Document data carries no `$`-prefixed system fields, so a clause on one (other than
+        // the primary-key `$id` clauses) could never match.
+        if self
+            .action_clauses
+            .clause_sets()
+            .into_iter()
+            .any(InternalClauses::names_system_field)
+        {
+            return QuerySyntaxSimpleValidationResult::new_with_error(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "filter clauses may not name a `$` system field other than `$id`",
+                ),
+            );
+        }
 
         match &self.action_clauses {
             DocumentActionMatchClauses::Create {
@@ -570,6 +735,18 @@ impl DriveDocumentQueryFilter<'_> {
                     }
                 }
                 if let Some(price) = price_clause {
+                    // IN candidates are bounded and distinct, like any IN clause's; checked here,
+                    // after normalization, so the same price in two encodings counts twice.
+                    if price.operator == WhereOperator::In {
+                        let candidates = WhereClause {
+                            field: "$price".to_string(),
+                            operator: WhereOperator::In,
+                            value: price.value.clone(),
+                        };
+                        if let Some(error) = candidates.in_values().errors.into_iter().next() {
+                            return QuerySyntaxSimpleValidationResult::new_with_error(error);
+                        }
+                    }
                     let ok = match price.operator {
                         WhereOperator::Equal
                         | WhereOperator::GreaterThan
@@ -644,6 +821,218 @@ impl DriveDocumentQueryFilter<'_> {
     }
 }
 
+/// Bring a where clause's operand to the form `document_type` stores its field in (see
+/// [`DriveDocumentQueryFilter::canonicalize_clause_values`]). Callers that group clauses (range
+/// bounds into one range) should canonicalize first, so bounds given with different integer
+/// widths compare.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn canonicalize_where_clause(
+    document_type: DocumentTypeRef,
+    clause: &mut WhereClause,
+    platform_version: &PlatformVersion,
+) -> Result<(), QuerySyntaxError> {
+    // IN candidates packed as bytes are `u8`s (as `WhereClause::in_values` reads them): already
+    // canonical for a `u8` field, and converted one by one for any other numeric field, such
+    // as one an update widened from `u8`.
+    if let (WhereOperator::In, Value::Bytes(bytes)) = (clause.operator, &clause.value) {
+        match document_type
+            .flattened_properties()
+            .get(&clause.field)
+            .map(|property| &property.property_type)
+        {
+            Some(DocumentPropertyType::U8) => return Ok(()),
+            Some(property_type)
+                if property_type.is_integer()
+                    || matches!(
+                        property_type,
+                        DocumentPropertyType::U128
+                            | DocumentPropertyType::I128
+                            | DocumentPropertyType::F64
+                    ) =>
+            {
+                clause.value = Value::Array(bytes.iter().copied().map(Value::U8).collect());
+            }
+            _ => {}
+        }
+    }
+    clause.value = canonical_operand(clause.operator, &clause.value, |value| {
+        canonical_value_for_key(document_type, &clause.field, value, platform_version)
+            .map(Cow::into_owned)
+    })?;
+    Ok(())
+}
+
+/// `value` as the document type stores `key`: encoded the way its index keys are, then
+/// decoded back, so every accepted encoding of one value yields the same `Value`. `None` when
+/// the value does not encode as the property (wrong type, wrong length) or the type has no
+/// such property.
+///
+/// Schema properties go through their property type's codec directly rather than
+/// `serialize_value_for_key`, which refuses values longer than an index key may be: a filter
+/// may read a field no index covers, and a long value must still compare.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_value_for_key<'v>(
+    document_type: DocumentTypeRef,
+    key: &str,
+    value: &'v Value,
+    platform_version: &PlatformVersion,
+) -> Option<Cow<'v, Value>> {
+    match document_type
+        .flattened_properties()
+        .get(key)
+        .map(|property| &property.property_type)
+    {
+        Some(property_type) => canonical_property_value(property_type, value),
+        // `$id` and the recipient or buyer (read as `$ownerId`) are the only other fields a
+        // filter reads. Anything else, such as a derived index property, is not in a
+        // transition's data and is refused before its codec runs.
+        None if SYSTEM_IDENTIFIER_FIELDS.contains(&key) => {
+            if exceeds_identifier_text(value) {
+                return None;
+            }
+            let serialized = document_type
+                .serialize_value_for_key(key, value, platform_version)
+                .ok()?;
+            document_type
+                .deserialize_value_for_key(key, &serialized, platform_version)
+                .ok()
+                .map(Cow::Owned)
+        }
+        None => None,
+    }
+}
+
+/// `value` as an integer property built by `variant` stores it: borrowed when it already has
+/// that variant (or is null), `None` when it is not an integer that fits.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_integer<'v, T>(value: &'v Value, variant: fn(T) -> Value) -> Option<Cow<'v, Value>>
+where
+    T: TryFrom<i128>
+        + TryFrom<u128>
+        + TryFrom<i64>
+        + TryFrom<u64>
+        + TryFrom<i32>
+        + TryFrom<u32>
+        + TryFrom<i16>
+        + TryFrom<u16>
+        + TryFrom<i8>
+        + TryFrom<u8>,
+{
+    if value.is_null() {
+        return Some(Cow::Borrowed(value));
+    }
+    let integer = value.to_integer::<T>().ok()?;
+    let canonical = variant(integer);
+    if std::mem::discriminant(&canonical) == std::mem::discriminant(value) {
+        Some(Cow::Borrowed(value))
+    } else {
+        Some(Cow::Owned(canonical))
+    }
+}
+
+/// `value` as a property of `property_type` is stored, borrowed when it already is.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_property_value<'v>(
+    property_type: &DocumentPropertyType,
+    value: &'v Value,
+) -> Option<Cow<'v, Value>> {
+    match property_type {
+        // Text is already canonical, and the index-key form would conflate `""` with `"\0"`.
+        DocumentPropertyType::String(_) => {
+            matches!(value, Value::Text(_)).then_some(Cow::Borrowed(value))
+        }
+        // Floats compare as floats: the index-key form turns -0.0 into NaN.
+        DocumentPropertyType::F64 => match value {
+            Value::Float(_) | Value::Null => Some(Cow::Borrowed(value)),
+            _ => value
+                .to_float()
+                .ok()
+                .map(|float| Cow::Owned(Value::Float(float))),
+        },
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+            if exceeds_identifier_text(value) =>
+        {
+            None
+        }
+        // Integers convert directly, as the codec would (both read the value with
+        // `to_integer`, and null stays null), without its two allocations.
+        DocumentPropertyType::U128 => canonical_integer(value, Value::U128),
+        DocumentPropertyType::I128 => canonical_integer(value, Value::I128),
+        DocumentPropertyType::U64 => canonical_integer(value, Value::U64),
+        DocumentPropertyType::I64 => canonical_integer(value, Value::I64),
+        DocumentPropertyType::U32 => canonical_integer(value, Value::U32),
+        DocumentPropertyType::I32 => canonical_integer(value, Value::I32),
+        DocumentPropertyType::U16 => canonical_integer(value, Value::U16),
+        DocumentPropertyType::I16 => canonical_integer(value, Value::I16),
+        DocumentPropertyType::U8 => canonical_integer(value, Value::U8),
+        DocumentPropertyType::I8 => canonical_integer(value, Value::I8),
+        // Bytes are already in the form the codec would produce; skip its two copies.
+        DocumentPropertyType::ByteArray(_) if matches!(value, Value::Bytes(_)) => {
+            Some(Cow::Borrowed(value))
+        }
+        _ => {
+            let encoded = property_type.encode_value_for_tree_keys(value).ok()?;
+            // The index-key form of an empty byte array is empty, which decodes as null.
+            if encoded.is_empty() && !value.is_null() {
+                return match property_type {
+                    DocumentPropertyType::ByteArray(_) => Some(Cow::Owned(Value::Bytes(vec![]))),
+                    _ => None,
+                };
+            }
+            property_type
+                .decode_value_for_tree_keys(&encoded)
+                .ok()
+                .map(Cow::Owned)
+        }
+    }
+}
+
+/// Base58 decoding takes time quadratic in its input, and a filter's operands come from
+/// unauthenticated requests: identifier text longer than any 32-byte identifier is refused
+/// before it is decoded.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn exceeds_identifier_text(value: &Value) -> bool {
+    matches!(value, Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LEN)
+}
+
+/// The system fields a filter may read, all identifiers.
+#[cfg(any(feature = "server", feature = "verify"))]
+const SYSTEM_IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$ownerId"];
+
+/// The longest base58 text of a 32-byte identifier.
+#[cfg(any(feature = "server", feature = "verify"))]
+const MAX_BASE58_IDENTIFIER_LEN: usize = 44;
+
+/// Canonicalize a clause operand with `canonical`: element-wise for the list operands of
+/// `IN` and `BETWEEN*`, directly otherwise.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_operand(
+    operator: WhereOperator,
+    operand: &Value,
+    canonical: impl Fn(&Value) -> Option<Value>,
+) -> Result<Value, QuerySyntaxError> {
+    let convert = |value: &Value| {
+        canonical(value).ok_or_else(|| {
+            QuerySyntaxError::InvalidFormatWhereClause(format!(
+                "where clause value {value} does not match the type of its field"
+            ))
+        })
+    };
+    match (operator, operand) {
+        (
+            WhereOperator::In
+            | WhereOperator::Between
+            | WhereOperator::BetweenExcludeBounds
+            | WhereOperator::BetweenExcludeLeft
+            | WhereOperator::BetweenExcludeRight,
+            Value::Array(values),
+        ) => Ok(Value::Array(
+            values.iter().map(convert).collect::<Result<_, _>>()?,
+        )),
+        _ => convert(operand),
+    }
+}
+
 /// Resolve a dot-notated path into a nested `BTreeMap<String, Value>` payload.
 ///
 /// Supports dot notation like `meta.status` by walking `Value::Map` entries
@@ -711,7 +1100,7 @@ mod tests {
 
         // With no clauses, evaluation should be true regardless of data
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data, None));
     }
 
     #[test]
@@ -750,7 +1139,7 @@ mod tests {
         let document_data = BTreeMap::new();
 
         let id_value: Value = matching_doc.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data, None));
 
         // Test with different ID
         let non_matching_doc = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -762,7 +1151,7 @@ mod tests {
         });
 
         let non_id_value: Value = non_matching_doc.id().into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &non_id_value, &document_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &non_id_value, &document_data, None));
     }
 
     #[test]
@@ -807,17 +1196,17 @@ mod tests {
         matching_data.insert("name".to_string(), Value::Text("example".to_string()));
 
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data, None));
 
         // Test with non-matching data
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("name".to_string(), Value::Text("different".to_string()));
 
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data, None));
 
         // Test with missing field
         let empty_data = BTreeMap::new();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &empty_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &empty_data, None));
     }
 
     #[test]
@@ -859,12 +1248,12 @@ mod tests {
         let mut matching_data = BTreeMap::new();
         matching_data.insert("status".to_string(), Value::Text("active".to_string()));
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data, None));
 
         // Test with value not in list
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("status".to_string(), Value::Text("completed".to_string()));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data, None));
     }
 
     #[test]
@@ -902,17 +1291,17 @@ mod tests {
         let mut greater_data = BTreeMap::new();
         greater_data.insert("score".to_string(), Value::U64(75));
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &greater_data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &greater_data, None));
 
         // Test with value equal to threshold (should fail for GreaterThan)
         let mut equal_data = BTreeMap::new();
         equal_data.insert("score".to_string(), Value::U64(50));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &equal_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &equal_data, None));
 
         // Test with value less than threshold
         let mut less_data = BTreeMap::new();
         less_data.insert("score".to_string(), Value::U64(25));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &less_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &less_data, None));
     }
 
     #[test]
@@ -961,7 +1350,7 @@ mod tests {
         data.insert("meta".to_string(), Value::Map(nested));
 
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data, None));
     }
 
     #[test]
@@ -1405,7 +1794,7 @@ mod tests {
             token_payment_info: None,
         });
 
-        // Original must have status=active; New must have score=10
+        // Original must have status=active; new must have name=example
         let mut orig_eq = BTreeMap::new();
         orig_eq.insert(
             "status".to_string(),
@@ -1422,11 +1811,11 @@ mod tests {
 
         let mut final_eq = BTreeMap::new();
         final_eq.insert(
-            "score".to_string(),
+            "name".to_string(),
             WhereClause {
-                field: "score".to_string(),
+                field: "name".to_string(),
                 operator: WhereOperator::Equal,
-                value: Value::U64(10),
+                value: Value::Text("example".to_string()),
             },
         );
         let new_document_clauses = InternalClauses {
@@ -1445,7 +1834,7 @@ mod tests {
 
         // Build Replace transition with new data
         let mut data = BTreeMap::new();
-        data.insert("score".to_string(), Value::U64(10));
+        data.insert("name".to_string(), Value::Text("example".to_string()));
         let replace_v0 = DocumentReplaceTransitionV0 {
             base,
             revision: 1,
@@ -1485,7 +1874,8 @@ mod tests {
         // New-data mismatching should fail in first check (do not call final)
         if let DocumentTransition::Replace(mut rep) = replace.clone() {
             let DocumentReplaceTransition::V0(ref mut v0) = rep;
-            v0.data.insert("score".to_string(), Value::U64(9));
+            v0.data
+                .insert("name".to_string(), Value::Text("other".to_string()));
             let bad_final = DocumentTransition::Replace(rep);
             assert_eq!(
                 filter.matches_document_transition(&bad_final, None, PlatformVersion::latest()),
@@ -1696,27 +2086,27 @@ mod tests {
         let mut in_range = BTreeMap::new();
         in_range.insert("value".to_string(), Value::U64(15));
         let id_value: Value = document_base.id().into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &in_range));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &in_range, None));
 
         // Test lower bound (inclusive)
         let mut lower_bound = BTreeMap::new();
         lower_bound.insert("value".to_string(), Value::U64(10));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &lower_bound));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &lower_bound, None));
 
         // Test upper bound (inclusive)
         let mut upper_bound = BTreeMap::new();
         upper_bound.insert("value".to_string(), Value::U64(20));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &upper_bound));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &upper_bound, None));
 
         // Test below range
         let mut below = BTreeMap::new();
         below.insert("value".to_string(), Value::U64(5));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &below));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &below, None));
 
         // Test above range
         let mut above = BTreeMap::new();
         above.insert("value".to_string(), Value::U64(25));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &above));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &above, None));
     }
 
     #[test]
@@ -2166,6 +2556,33 @@ mod tests {
     }
 
     #[test]
+    fn validate_price_clause_in_refuses_duplicates_once_normalized() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let price_in = |values: Vec<Value>| DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(values),
+                }),
+            },
+        };
+        assert!(price_in(vec![Value::U64(1), Value::U64(1)])
+            .validate()
+            .is_err());
+        assert!(price_in(vec![Value::U64(1); 101]).validate().is_err());
+        // The same price in two encodings is a duplicate once normalized.
+        let mut mixed = price_in(vec![Value::I64(1), Value::U64(1)]);
+        mixed
+            .canonicalize_clause_values(LATEST_PLATFORM_VERSION)
+            .expect("both are prices");
+        assert!(mixed.validate().is_err());
+    }
+
+    #[test]
     fn validate_price_clause_in_with_non_integer_is_invalid() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
@@ -2410,11 +2827,11 @@ mod tests {
 
         // Matching ID
         let id_value: Value = target_id_1.into();
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new(), None));
 
         // Non-matching ID
         let other_id: Value = Identifier::from([99u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &other_id, &BTreeMap::new()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &other_id, &BTreeMap::new(), None));
     }
 
     // ---- evaluate_clauses: combined primary_key and field clauses ----
@@ -2458,16 +2875,16 @@ mod tests {
         let id_value: Value = target_id.into();
         let mut data = BTreeMap::new();
         data.insert("name".to_string(), Value::Text("test".to_string()));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data, None));
 
         // ID matches but field doesn't
         let mut bad_data = BTreeMap::new();
         bad_data.insert("name".to_string(), Value::Text("other".to_string()));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &bad_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &bad_data, None));
 
         // Field matches but ID doesn't
         let wrong_id: Value = Identifier::from([99u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &wrong_id, &data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &wrong_id, &data, None));
     }
 
     // ---- get_value_by_path ----
@@ -2564,7 +2981,7 @@ mod tests {
         };
 
         let id_value: Value = Identifier::from([1u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new(), None));
     }
 
     // ---- evaluate_clauses: in clause with missing field ----
@@ -2592,7 +3009,7 @@ mod tests {
         };
 
         let id_value: Value = Identifier::from([1u8; 32]).into();
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new()));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &BTreeMap::new(), None));
     }
 
     // ---- matches_original_document: UpdatePrice with original clauses ----
@@ -2840,11 +3257,11 @@ mod tests {
 
         let mut matching = BTreeMap::new();
         matching.insert("name".to_string(), Value::Text("Alice".to_string()));
-        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching, None));
 
         let mut non_matching = BTreeMap::new();
         non_matching.insert("name".to_string(), Value::Text("Bob".to_string()));
-        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching, None));
     }
 
     // ---- validate: price clause between_exclude variants ----
@@ -2925,5 +3342,705 @@ mod tests {
             },
         };
         assert!(filter.validate().is_err());
+    }
+
+    mod canonical_values {
+        use super::*;
+        use dpp::platform_value::string_encoding::Encoding;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransition;
+
+        fn contract() -> DataContract {
+            get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
+                .data_contract_owned()
+        }
+
+        fn create(
+            contract: &DataContract,
+            document_type_name: &str,
+            data: BTreeMap<String, Value>,
+        ) -> DocumentTransition {
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                    id: Identifier::from([3u8; 32]),
+                    document_type_name: document_type_name.to_string(),
+                    data_contract_id: contract.id(),
+                    identity_contract_nonce: 0,
+                    token_payment_info: None,
+                }),
+                entropy: [0u8; 32],
+                data,
+                prefunded_voting_balance: None,
+            }))
+        }
+
+        fn equal(field: &str, value: Value) -> InternalClauses {
+            InternalClauses {
+                equal_clauses: BTreeMap::from([(
+                    field.to_string(),
+                    WhereClause {
+                        field: field.to_string(),
+                        operator: WhereOperator::Equal,
+                        value,
+                    },
+                )]),
+                ..Default::default()
+            }
+        }
+
+        #[test]
+        fn should_match_an_identifier_encoded_differently_in_clause_and_transition() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let identifier = Identifier::from([7u8; 32]);
+            // The clause names the identifier in base58, the transition carries raw bytes.
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "withByteArrays".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal(
+                        "identifierField",
+                        Value::Text(identifier.to_string(Encoding::Base58)),
+                    ),
+                },
+            };
+            let transition = create(
+                &contract,
+                "withByteArrays",
+                BTreeMap::from([
+                    ("byteArrayField".to_string(), Value::Bytes(vec![1u8; 10])),
+                    (
+                        "identifierField".to_string(),
+                        Value::Bytes(identifier.to_vec()),
+                    ),
+                ]),
+            );
+
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("expected the clause value to canonicalize");
+            assert!(filter.validate().is_valid());
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Pass
+            );
+
+            let other = create(
+                &contract,
+                "withByteArrays",
+                BTreeMap::from([("identifierField".to_string(), Value::Bytes(vec![8u8; 32]))]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&other, None, platform_version),
+                TransitionCheckResult::Fail
+            );
+        }
+
+        #[test]
+        fn should_match_a_value_longer_than_an_index_key() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let long_name = "x".repeat(300);
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("name", Value::Text(long_name.clone())),
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("expected the clause value to canonicalize");
+
+            let transition = create(
+                &contract,
+                "niceDocument",
+                BTreeMap::from([("name".to_string(), Value::Text(long_name))]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Pass
+            );
+        }
+
+        #[test]
+        fn should_reject_a_value_that_does_not_fit_its_field() {
+            let contract = contract();
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "withByteArrays".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("identifierField", Value::Bytes(vec![1u8; 5])),
+                },
+            };
+            assert!(matches!(
+                filter.canonicalize_clause_values(PlatformVersion::latest()),
+                Err(QuerySyntaxError::InvalidFormatWhereClause(_))
+            ));
+        }
+
+        #[test]
+        fn should_reject_clauses_on_system_fields_other_than_id() {
+            let contract = contract();
+            let owner: Value = Identifier::from([1u8; 32]).into();
+            for field in ["$ownerId", "$createdAt"] {
+                let filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "niceDocument".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: equal(field, owner.clone()),
+                    },
+                };
+                assert!(
+                    !filter.validate().is_valid(),
+                    "a clause on {field} can never match a transition"
+                );
+            }
+        }
+
+        #[test]
+        fn should_match_a_transfer_recipient_given_as_bytes() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let recipient = Identifier::from([9u8; 32]);
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Transfer {
+                    original_document_clauses: InternalClauses::default(),
+                    owner_clause: Some(ValueClause {
+                        operator: WhereOperator::In,
+                        value: Value::Array(vec![Value::Bytes(recipient.to_vec())]),
+                    }),
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("expected the recipient to canonicalize");
+            assert!(filter.validate().is_valid());
+
+            let transfer = DocumentTransition::Transfer(DocumentTransferTransition::V0(
+                DocumentTransferTransitionV0 {
+                    base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                        id: Identifier::from([3u8; 32]),
+                        document_type_name: "niceDocument".to_string(),
+                        data_contract_id: contract.id(),
+                        identity_contract_nonce: 0,
+                        token_payment_info: None,
+                    }),
+                    revision: 2,
+                    recipient_owner_id: recipient,
+                },
+            ));
+            assert_eq!(
+                filter.matches_document_transition(&transfer, None, platform_version),
+                TransitionCheckResult::Pass
+            );
+        }
+
+        #[test]
+        fn should_refuse_identifier_text_longer_than_any_identifier() {
+            let contract = contract();
+            for field in ["identifierField", "$id"] {
+                let clauses = if field == "$id" {
+                    InternalClauses {
+                        primary_key_equal_clause: Some(WhereClause {
+                            field: field.to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Text("z".repeat(120_000)),
+                        }),
+                        ..Default::default()
+                    }
+                } else {
+                    equal(field, Value::Text("z".repeat(120_000)))
+                };
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "withByteArrays".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Delete {
+                        original_document_clauses: clauses,
+                    },
+                };
+                assert!(
+                    filter
+                        .canonicalize_clause_values(PlatformVersion::latest())
+                        .is_err(),
+                    "{field}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_convert_integers_directly_as_the_index_key_codec_would() {
+            let cases = [
+                (DocumentPropertyType::U8, Value::U8(7)),
+                (DocumentPropertyType::U8, Value::U64(7)),
+                (DocumentPropertyType::U8, Value::I32(-1)),
+                (DocumentPropertyType::U8, Value::U64(300)),
+                (DocumentPropertyType::U16, Value::U16(300)),
+                (DocumentPropertyType::U16, Value::I64(300)),
+                (DocumentPropertyType::I64, Value::U128(1 << 64)),
+                (DocumentPropertyType::I64, Value::I8(-3)),
+                (DocumentPropertyType::U128, Value::U64(u64::MAX)),
+                (DocumentPropertyType::I8, Value::Null),
+                (DocumentPropertyType::U32, Value::Text("7".to_string())),
+                (DocumentPropertyType::U32, Value::Float(7.0)),
+            ];
+            for (property_type, value) in cases {
+                let direct = canonical_property_value(&property_type, &value);
+                // What the index-key round trip gives.
+                let codec = property_type
+                    .encode_value_for_tree_keys(&value)
+                    .ok()
+                    .map(|encoded| property_type.decode_value_for_tree_keys(&encoded).unwrap());
+                assert_eq!(
+                    direct.as_deref(),
+                    codec.as_ref(),
+                    "{property_type:?} {value:?}"
+                );
+            }
+            // A value already in its field's variant is not copied.
+            let canonical = Value::U16(300);
+            assert!(matches!(
+                canonical_property_value(&DocumentPropertyType::U16, &canonical),
+                Some(Cow::Borrowed(_))
+            ));
+        }
+
+        #[test]
+        fn should_borrow_byte_array_operands_already_in_canonical_form() {
+            let contract = contract();
+            let document_type = contract
+                .document_type_for_name("withByteArrays")
+                .expect("document type");
+            let byte_array = &document_type
+                .flattened_properties()
+                .get("byteArrayField")
+                .expect("byte array field")
+                .property_type;
+            for value in [Value::Bytes(vec![]), Value::Bytes(vec![1, 2, 3])] {
+                let canonical =
+                    canonical_property_value(byte_array, &value).expect("bytes are canonical");
+                assert!(matches!(canonical, Cow::Borrowed(_)), "{value:?}");
+                assert_eq!(canonical.as_ref(), &value);
+            }
+            // Other encodings of bytes are still converted.
+            let identifier = Value::Identifier([7; 32]);
+            assert_eq!(
+                canonical_property_value(byte_array, &identifier).as_deref(),
+                Some(&Value::Bytes(vec![7; 32]))
+            );
+        }
+
+        #[test]
+        fn should_keep_empty_byte_array_operands() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            for (operator, value) in [
+                (WhereOperator::Equal, Value::Bytes(vec![])),
+                (
+                    WhereOperator::In,
+                    Value::Array(vec![Value::Bytes(vec![]), Value::Bytes(vec![1])]),
+                ),
+            ] {
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "withByteArrays".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: InternalClauses {
+                            equal_clauses: if operator == WhereOperator::Equal {
+                                BTreeMap::from([(
+                                    "byteArrayField".to_string(),
+                                    WhereClause {
+                                        field: "byteArrayField".to_string(),
+                                        operator,
+                                        value: value.clone(),
+                                    },
+                                )])
+                            } else {
+                                BTreeMap::new()
+                            },
+                            in_clauses: if operator == WhereOperator::In {
+                                vec![WhereClause {
+                                    field: "byteArrayField".to_string(),
+                                    operator,
+                                    value: value.clone(),
+                                }]
+                            } else {
+                                vec![]
+                            },
+                            ..Default::default()
+                        },
+                    },
+                };
+                filter
+                    .canonicalize_clause_values(platform_version)
+                    .expect("an empty byte array is a byte array");
+                assert!(filter.validate().is_valid(), "{operator:?}");
+                let transition = create(
+                    &contract,
+                    "withByteArrays",
+                    BTreeMap::from([("byteArrayField".to_string(), Value::Bytes(vec![]))]),
+                );
+                assert_eq!(
+                    filter.matches_document_transition(&transition, None, platform_version),
+                    TransitionCheckResult::Pass,
+                    "{operator:?}"
+                );
+            }
+        }
+
+        /// A derived index property such as `postId.$ownerId` resolves to an identifier but
+        /// is not a schema property; like any field outside the schema, it is refused before
+        /// a codec could decode a hostile operand.
+        #[test]
+        fn should_refuse_fields_outside_the_schema_before_decoding_them() {
+            let contract = contract();
+            for operator in [WhereOperator::Equal, WhereOperator::In] {
+                let long = Value::Text("z".repeat(120_000));
+                let clause = WhereClause {
+                    field: "postId.$ownerId".to_string(),
+                    operator,
+                    value: if operator == WhereOperator::In {
+                        Value::Array(vec![long])
+                    } else {
+                        long
+                    },
+                };
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "niceDocument".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: InternalClauses {
+                            equal_clauses: if operator == WhereOperator::Equal {
+                                BTreeMap::from([(clause.field.clone(), clause.clone())])
+                            } else {
+                                BTreeMap::new()
+                            },
+                            in_clauses: if operator == WhereOperator::In {
+                                vec![clause]
+                            } else {
+                                vec![]
+                            },
+                            ..Default::default()
+                        },
+                    },
+                };
+                assert!(
+                    filter
+                        .canonicalize_clause_values(PlatformVersion::latest())
+                        .is_err(),
+                    "{operator:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_tell_empty_text_from_a_nul_character() {
+            let contract = contract();
+            let platform_version = PlatformVersion::latest();
+            let filter_for = |clauses: InternalClauses| DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: clauses,
+                },
+            };
+            let name = |text: &str| {
+                create(
+                    &contract,
+                    "niceDocument",
+                    BTreeMap::from([("name".to_string(), Value::Text(text.to_string()))]),
+                )
+            };
+
+            let mut empty = filter_for(equal("name", Value::Text(String::new())));
+            empty
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            assert_eq!(
+                empty.matches_document_transition(&name(""), None, platform_version),
+                TransitionCheckResult::Pass
+            );
+            assert_eq!(
+                empty.matches_document_transition(&name("\0"), None, platform_version),
+                TransitionCheckResult::Fail
+            );
+
+            let mut both = filter_for(InternalClauses {
+                in_clauses: vec![WhereClause {
+                    field: "name".to_string(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::Text(String::new()),
+                        Value::Text("\0".to_string()),
+                    ]),
+                }],
+                ..Default::default()
+            });
+            both.canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            assert!(both.validate().is_valid(), "two distinct candidates");
+
+            let mut prefix = filter_for(InternalClauses {
+                range_clause: Some(WhereClause {
+                    field: "name".to_string(),
+                    operator: WhereOperator::StartsWith,
+                    value: Value::Text("\0".to_string()),
+                }),
+                ..Default::default()
+            });
+            prefix
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            assert!(prefix.validate().is_valid(), "a non-empty prefix");
+        }
+
+        #[test]
+        fn should_accept_packed_byte_candidates_for_a_u8_field() {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let stars_type = contract
+                .document_type_for_name("rating")
+                .expect("type")
+                .flattened_properties()
+                .get("stars")
+                .expect("stars")
+                .property_type
+                .clone();
+            assert_eq!(stars_type, DocumentPropertyType::U8, "fixture field is u8");
+
+            let platform_version = PlatformVersion::latest();
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: InternalClauses {
+                        in_clauses: vec![WhereClause {
+                            field: "stars".to_string(),
+                            operator: WhereOperator::In,
+                            value: Value::Bytes(vec![4, 5]),
+                        }],
+                        ..Default::default()
+                    },
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("packed u8 candidates");
+            assert!(filter.validate().is_valid());
+            for (stars, expected) in [
+                (Value::U64(5), TransitionCheckResult::Pass),
+                (Value::U64(3), TransitionCheckResult::Fail),
+            ] {
+                let transition = create(
+                    &contract,
+                    "rating",
+                    BTreeMap::from([("stars".to_string(), stars)]),
+                );
+                assert_eq!(
+                    filter.matches_document_transition(&transition, None, platform_version),
+                    expected
+                );
+            }
+        }
+
+        /// A wrong-typed text value whose 20th byte falls inside a character, reported through
+        /// `Value`'s `Display`, must be refused rather than panic.
+        #[test]
+        fn should_refuse_rather_than_panic_on_a_wrong_typed_unicode_value() {
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let platform_version = PlatformVersion::latest();
+            let unicode = Value::Text(format!("{}é", "a".repeat(19)));
+
+            let mut operand = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("stars", unicode.clone()),
+                },
+            };
+            assert!(operand
+                .canonicalize_clause_values(platform_version)
+                .is_err());
+
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: equal("stars", Value::U64(3)),
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            let transition = create(
+                &contract,
+                "rating",
+                BTreeMap::from([("stars".to_string(), unicode)]),
+            );
+            assert_eq!(
+                filter.matches_document_transition(&transition, None, platform_version),
+                TransitionCheckResult::Fail
+            );
+        }
+
+        #[test]
+        fn should_not_let_null_satisfy_an_ordered_comparison() {
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            // A numeric field: its codec round-trips null, which `Value` orders after numbers.
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let platform_version = PlatformVersion::latest();
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "rating".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: InternalClauses {
+                        range_clause: Some(WhereClause {
+                            field: "stars".to_string(),
+                            operator: WhereOperator::GreaterThan,
+                            value: Value::U64(3),
+                        }),
+                        ..Default::default()
+                    },
+                },
+            };
+            filter
+                .canonicalize_clause_values(platform_version)
+                .expect("canonical");
+            let rated = |stars: Value| {
+                create(
+                    &contract,
+                    "rating",
+                    BTreeMap::from([("stars".to_string(), stars)]),
+                )
+            };
+            assert_eq!(
+                filter.matches_document_transition(&rated(Value::Null), None, platform_version),
+                TransitionCheckResult::Fail
+            );
+            assert_eq!(
+                filter.matches_document_transition(&rated(Value::U64(5)), None, platform_version),
+                TransitionCheckResult::Pass
+            );
+        }
+
+        #[test]
+        fn should_compare_negative_zero_as_zero() {
+            use dpp::data_contract::DataContractFactory;
+            use dpp::platform_value::platform_value;
+            let documents = platform_value!({
+                "reading": {
+                    "type": "object",
+                    "properties": { "value": { "type": "number", "position": 0 } },
+                    "additionalProperties": false
+                }
+            });
+            let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned();
+            let platform_version = PlatformVersion::latest();
+            let reading = |value: f64| {
+                create(
+                    &contract,
+                    "reading",
+                    BTreeMap::from([("value".to_string(), Value::Float(value))]),
+                )
+            };
+            for (operator, operand, event, expected) in [
+                // Equality across signs of zero, either side negative.
+                (WhereOperator::Equal, 0.0, -0.0, TransitionCheckResult::Pass),
+                (WhereOperator::Equal, -0.0, 0.0, TransitionCheckResult::Pass),
+                // Ordering with a negative-zero event value.
+                (
+                    WhereOperator::GreaterThan,
+                    -1.0,
+                    -0.0,
+                    TransitionCheckResult::Pass,
+                ),
+                (
+                    WhereOperator::LessThan,
+                    -1.0,
+                    -0.0,
+                    TransitionCheckResult::Fail,
+                ),
+            ] {
+                let clause = WhereClause {
+                    field: "value".to_string(),
+                    operator,
+                    value: Value::Float(operand),
+                };
+                let mut filter = DriveDocumentQueryFilter {
+                    contract: &contract,
+                    document_type_name: "reading".to_string(),
+                    action_clauses: DocumentActionMatchClauses::Create {
+                        new_document_clauses: if operator == WhereOperator::Equal {
+                            equal("value", Value::Float(operand))
+                        } else {
+                            InternalClauses {
+                                range_clause: Some(clause),
+                                ..Default::default()
+                            }
+                        },
+                    },
+                };
+                filter
+                    .canonicalize_clause_values(platform_version)
+                    .expect("canonical");
+                assert_eq!(
+                    filter.matches_document_transition(&reading(event), None, platform_version),
+                    expected,
+                    "{operator:?} {operand} against {event}"
+                );
+            }
+        }
     }
 }

@@ -515,6 +515,20 @@ GPBObjCClassDeclaration(SearchKey);
 GPBObjCClassDeclaration(SecurityLevelMap);
 GPBObjCClassDeclaration(SpecificKeys);
 GPBObjCClassDeclaration(StateTransitionBroadcastError);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_AddressFilter);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_DataContractFilter);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_DocumentFilter);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_IdentityFilter);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_StateTransitionFilter);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsRequest_TokenFilter);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsResponse);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint);
+GPBObjCClassDeclaration(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse);
@@ -33511,6 +33525,1112 @@ typedef struct GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_Nul
                                    storageSize:sizeof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsRequest
+
+@implementation SubscribeToStateTransitionsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct SubscribeToStateTransitionsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0 *v0;
+} SubscribeToStateTransitionsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0),
+        .number = SubscribeToStateTransitionsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void SubscribeToStateTransitionsRequest_ClearVersionOneOfCase(SubscribeToStateTransitionsRequest *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - Enum SubscribeToStateTransitionsRequest_Role
+
+GPBEnumDescriptor *SubscribeToStateTransitionsRequest_Role_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Any\000Sender\000Recipient\000";
+    static const int32_t values[] = {
+        SubscribeToStateTransitionsRequest_Role_Any,
+        SubscribeToStateTransitionsRequest_Role_Sender,
+        SubscribeToStateTransitionsRequest_Role_Recipient,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(SubscribeToStateTransitionsRequest_Role)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:SubscribeToStateTransitionsRequest_Role_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL SubscribeToStateTransitionsRequest_Role_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case SubscribeToStateTransitionsRequest_Role_Any:
+    case SubscribeToStateTransitionsRequest_Role_Sender:
+    case SubscribeToStateTransitionsRequest_Role_Recipient:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_DocumentFilter
+
+@implementation SubscribeToStateTransitionsRequest_DocumentFilter
+
+@dynamic dataContractId;
+@dynamic hasDocumentTypeName, documentTypeName;
+@dynamic actionsArray, actionsArray_Count;
+@dynamic hasBatchOwnerId, batchOwnerId;
+
+typedef struct SubscribeToStateTransitionsRequest_DocumentFilter__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *dataContractId;
+  NSString *documentTypeName;
+  NSMutableArray *actionsArray;
+  NSData *batchOwnerId;
+} SubscribeToStateTransitionsRequest_DocumentFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "dataContractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_DataContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter__storage_, dataContractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter__storage_, documentTypeName),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "actionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch),
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_ActionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter__storage_, actionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "batchOwnerId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_BatchOwnerId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter__storage_, batchOwnerId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_DocumentFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_DocumentFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - Enum SubscribeToStateTransitionsRequest_DocumentFilter_Action
+
+GPBEnumDescriptor *SubscribeToStateTransitionsRequest_DocumentFilter_Action_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Create\000Replace\000Delete\000Transfer\000UpdatePri"
+        "ce\000Purchase\000";
+    static const int32_t values[] = {
+        SubscribeToStateTransitionsRequest_DocumentFilter_Action_Create,
+        SubscribeToStateTransitionsRequest_DocumentFilter_Action_Replace,
+        SubscribeToStateTransitionsRequest_DocumentFilter_Action_Delete,
+        SubscribeToStateTransitionsRequest_DocumentFilter_Action_Transfer,
+        SubscribeToStateTransitionsRequest_DocumentFilter_Action_UpdatePrice,
+        SubscribeToStateTransitionsRequest_DocumentFilter_Action_Purchase,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(SubscribeToStateTransitionsRequest_DocumentFilter_Action)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:SubscribeToStateTransitionsRequest_DocumentFilter_Action_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL SubscribeToStateTransitionsRequest_DocumentFilter_Action_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case SubscribeToStateTransitionsRequest_DocumentFilter_Action_Create:
+    case SubscribeToStateTransitionsRequest_DocumentFilter_Action_Replace:
+    case SubscribeToStateTransitionsRequest_DocumentFilter_Action_Delete:
+    case SubscribeToStateTransitionsRequest_DocumentFilter_Action_Transfer:
+    case SubscribeToStateTransitionsRequest_DocumentFilter_Action_UpdatePrice:
+    case SubscribeToStateTransitionsRequest_DocumentFilter_Action_Purchase:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause
+
+@implementation SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause
+
+@dynamic operator_p;
+@dynamic hasValue, value;
+
+typedef struct SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_WhereOperator operator_p;
+  GetDocumentsRequest_DocumentFieldValue *value;
+} SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "operator_p",
+        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_WhereOperator_EnumDescriptor,
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber_Operator_p,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause__storage_, operator_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "value",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue),
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber_Value,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause__storage_, value),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest_DocumentFilter)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_Operator_p_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber_Operator_p];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetSubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_Operator_p_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause *message, int32_t value) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber_Operator_p];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch
+
+@implementation SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch
+
+@dynamic hasAction, action;
+@dynamic newDocumentWhereArray, newDocumentWhereArray_Count;
+@dynamic originalDocumentWhereArray, originalDocumentWhereArray_Count;
+@dynamic ownerIdsArray, ownerIdsArray_Count;
+@dynamic hasPrice, price;
+
+typedef struct SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_ {
+  uint32_t _has_storage_[1];
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action action;
+  NSMutableArray *newDocumentWhereArray;
+  NSMutableArray *originalDocumentWhereArray;
+  NSMutableArray *ownerIdsArray;
+  SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause *price;
+} SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "action",
+        .dataTypeSpecific.enumDescFunc = SubscribeToStateTransitionsRequest_DocumentFilter_Action_EnumDescriptor,
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Action,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_, action),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "newDocumentWhereArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_WhereClause),
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_NewDocumentWhereArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_, newDocumentWhereArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "originalDocumentWhereArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_WhereClause),
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_OriginalDocumentWhereArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_, originalDocumentWhereArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "ownerIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_OwnerIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_, ownerIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "price",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause),
+        .number = SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Price,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_, price),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest_DocumentFilter)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_Action_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Action];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetSubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_Action_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch *message, int32_t value) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Action];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_AddressFilter
+
+@implementation SubscribeToStateTransitionsRequest_AddressFilter
+
+@dynamic addressesArray, addressesArray_Count;
+@dynamic role;
+
+typedef struct SubscribeToStateTransitionsRequest_AddressFilter__storage_ {
+  uint32_t _has_storage_[1];
+  SubscribeToStateTransitionsRequest_Role role;
+  NSMutableArray *addressesArray;
+} SubscribeToStateTransitionsRequest_AddressFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "addressesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber_AddressesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_AddressFilter__storage_, addressesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "role",
+        .dataTypeSpecific.enumDescFunc = SubscribeToStateTransitionsRequest_Role_EnumDescriptor,
+        .number = SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber_Role,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_AddressFilter__storage_, role),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_AddressFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_AddressFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t SubscribeToStateTransitionsRequest_AddressFilter_Role_RawValue(SubscribeToStateTransitionsRequest_AddressFilter *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_AddressFilter descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber_Role];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetSubscribeToStateTransitionsRequest_AddressFilter_Role_RawValue(SubscribeToStateTransitionsRequest_AddressFilter *message, int32_t value) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_AddressFilter descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber_Role];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_IdentityFilter
+
+@implementation SubscribeToStateTransitionsRequest_IdentityFilter
+
+@dynamic identityIdsArray, identityIdsArray_Count;
+@dynamic role;
+
+typedef struct SubscribeToStateTransitionsRequest_IdentityFilter__storage_ {
+  uint32_t _has_storage_[1];
+  SubscribeToStateTransitionsRequest_Role role;
+  NSMutableArray *identityIdsArray;
+} SubscribeToStateTransitionsRequest_IdentityFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_IdentityFilter_FieldNumber_IdentityIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_IdentityFilter__storage_, identityIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "role",
+        .dataTypeSpecific.enumDescFunc = SubscribeToStateTransitionsRequest_Role_EnumDescriptor,
+        .number = SubscribeToStateTransitionsRequest_IdentityFilter_FieldNumber_Role,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_IdentityFilter__storage_, role),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_IdentityFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_IdentityFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t SubscribeToStateTransitionsRequest_IdentityFilter_Role_RawValue(SubscribeToStateTransitionsRequest_IdentityFilter *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_IdentityFilter descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_IdentityFilter_FieldNumber_Role];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetSubscribeToStateTransitionsRequest_IdentityFilter_Role_RawValue(SubscribeToStateTransitionsRequest_IdentityFilter *message, int32_t value) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_IdentityFilter descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_IdentityFilter_FieldNumber_Role];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_TokenFilter
+
+@implementation SubscribeToStateTransitionsRequest_TokenFilter
+
+@dynamic tokenIdsArray, tokenIdsArray_Count;
+@dynamic identityIdsArray, identityIdsArray_Count;
+@dynamic role;
+
+typedef struct SubscribeToStateTransitionsRequest_TokenFilter__storage_ {
+  uint32_t _has_storage_[1];
+  SubscribeToStateTransitionsRequest_Role role;
+  NSMutableArray *tokenIdsArray;
+  NSMutableArray *identityIdsArray;
+} SubscribeToStateTransitionsRequest_TokenFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "tokenIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_TokenFilter_FieldNumber_TokenIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_TokenFilter__storage_, tokenIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "identityIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_TokenFilter_FieldNumber_IdentityIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_TokenFilter__storage_, identityIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "role",
+        .dataTypeSpecific.enumDescFunc = SubscribeToStateTransitionsRequest_Role_EnumDescriptor,
+        .number = SubscribeToStateTransitionsRequest_TokenFilter_FieldNumber_Role,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_TokenFilter__storage_, role),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_TokenFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_TokenFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t SubscribeToStateTransitionsRequest_TokenFilter_Role_RawValue(SubscribeToStateTransitionsRequest_TokenFilter *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_TokenFilter descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_TokenFilter_FieldNumber_Role];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetSubscribeToStateTransitionsRequest_TokenFilter_Role_RawValue(SubscribeToStateTransitionsRequest_TokenFilter *message, int32_t value) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_TokenFilter descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:SubscribeToStateTransitionsRequest_TokenFilter_FieldNumber_Role];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - SubscribeToStateTransitionsRequest_DataContractFilter
+
+@implementation SubscribeToStateTransitionsRequest_DataContractFilter
+
+@dynamic dataContractIdsArray, dataContractIdsArray_Count;
+
+typedef struct SubscribeToStateTransitionsRequest_DataContractFilter__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *dataContractIdsArray;
+} SubscribeToStateTransitionsRequest_DataContractFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "dataContractIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_DataContractFilter_FieldNumber_DataContractIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_DataContractFilter__storage_, dataContractIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_DataContractFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_DataContractFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsRequest_StateTransitionFilter
+
+@implementation SubscribeToStateTransitionsRequest_StateTransitionFilter
+
+@dynamic filterOneOfCase;
+@dynamic documents;
+@dynamic addresses;
+@dynamic identities;
+@dynamic tokens;
+@dynamic dataContracts;
+
+typedef struct SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_ {
+  uint32_t _has_storage_[2];
+  SubscribeToStateTransitionsRequest_DocumentFilter *documents;
+  SubscribeToStateTransitionsRequest_AddressFilter *addresses;
+  SubscribeToStateTransitionsRequest_IdentityFilter *identities;
+  SubscribeToStateTransitionsRequest_TokenFilter *tokens;
+  SubscribeToStateTransitionsRequest_DataContractFilter *dataContracts;
+} SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "documents",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_DocumentFilter),
+        .number = SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_Documents,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_, documents),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "addresses",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_AddressFilter),
+        .number = SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_Addresses,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_, addresses),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "identities",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_IdentityFilter),
+        .number = SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_Identities,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_, identities),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "tokens",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_TokenFilter),
+        .number = SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_Tokens,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_, tokens),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "dataContracts",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_DataContractFilter),
+        .number = SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_DataContracts,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_, dataContracts),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_StateTransitionFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_StateTransitionFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "filter",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void SubscribeToStateTransitionsRequest_StateTransitionFilter_ClearFilterOneOfCase(SubscribeToStateTransitionsRequest_StateTransitionFilter *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsRequest_StateTransitionFilter descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0
+
+@implementation SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0
+
+@dynamic filtersArray, filtersArray_Count;
+@dynamic hasFromBlockHeight, fromBlockHeight;
+
+typedef struct SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *filtersArray;
+  uint64_t fromBlockHeight;
+} SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "filtersArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsRequest_StateTransitionFilter),
+        .number = SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0_FieldNumber_FiltersArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0__storage_, filtersArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "fromBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0_FieldNumber_FromBlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0__storage_, fromBlockHeight),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsResponse
+
+@implementation SubscribeToStateTransitionsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct SubscribeToStateTransitionsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 *v0;
+} SubscribeToStateTransitionsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0),
+        .number = SubscribeToStateTransitionsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void SubscribeToStateTransitionsResponse_ClearVersionOneOfCase(SubscribeToStateTransitionsResponse *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0
+
+@implementation SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0
+
+@dynamic responsesOneOfCase;
+@dynamic stateTransition;
+@dynamic checkpoint;
+
+typedef struct SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch *stateTransition;
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint *checkpoint;
+} SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "stateTransition",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch),
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_FieldNumber_StateTransition,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0__storage_, stateTransition),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "checkpoint",
+        .dataTypeSpecific.clazz = GPBObjCClass(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint),
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_FieldNumber_Checkpoint,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0__storage_, checkpoint),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "responses",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_ClearResponsesOneOfCase(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 *message) {
+  GPBDescriptor *descriptor = [SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch
+
+@implementation SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch
+
+@dynamic blockHeight;
+@dynamic blockTimeMs;
+@dynamic protocolVersion;
+@dynamic indexInBlock;
+@dynamic stateTransitionHash;
+@dynamic stateTransition;
+@dynamic matchedFiltersArray, matchedFiltersArray_Count;
+@dynamic matchedBatchPositionsArray, matchedBatchPositionsArray_Count;
+
+typedef struct SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t protocolVersion;
+  uint32_t indexInBlock;
+  NSData *stateTransitionHash;
+  NSData *stateTransition;
+  GPBUInt32Array *matchedFiltersArray;
+  GPBUInt32Array *matchedBatchPositionsArray;
+  uint64_t blockHeight;
+  uint64_t blockTimeMs;
+} SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_BlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, blockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "blockTimeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_BlockTimeMs,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, blockTimeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "protocolVersion",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_ProtocolVersion,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, protocolVersion),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "indexInBlock",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_IndexInBlock,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, indexInBlock),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "stateTransitionHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_StateTransitionHash,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, stateTransitionHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "stateTransition",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_StateTransition,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, stateTransition),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "matchedFiltersArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_MatchedFiltersArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, matchedFiltersArray),
+        .flags = (GPBFieldFlags)(GPBFieldRepeated | GPBFieldPacked),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "matchedBatchPositionsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_MatchedBatchPositionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_, matchedBatchPositionsArray),
+        .flags = (GPBFieldFlags)(GPBFieldRepeated | GPBFieldPacked),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint
+
+@implementation SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint
+
+@dynamic blockHeight;
+
+typedef struct SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t blockHeight;
+} SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint_FieldNumber_BlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint__storage_, blockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

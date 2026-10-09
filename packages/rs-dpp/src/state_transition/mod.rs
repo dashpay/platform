@@ -1103,6 +1103,32 @@ impl StateTransition {
             bytes,
             StateTransition::deserialize_from_bytes_untrusted,
             platform_version,
+            platform_version
+                .system_limits
+                .max_document_value_depth
+                .map(usize::from),
+        )
+    }
+
+    /// [`Self::deserialize_from_bytes_untrusted_in_version`] for a decoder that cannot trust
+    /// `platform_version` itself, such as a client told it by a node: values nested deeper than
+    /// `max_value_depth` are refused even under a version that set no limit, before a tree too
+    /// deep to drop or clone without exhausting the stack is built. Not for consensus, which
+    /// must decode under the version's own rules.
+    pub fn deserialize_from_bytes_untrusted_in_version_with_max_value_depth(
+        bytes: &[u8],
+        platform_version: &PlatformVersion,
+        max_value_depth: usize,
+    ) -> Result<Self, ProtocolError> {
+        let version_depth = platform_version
+            .system_limits
+            .max_document_value_depth
+            .map(usize::from);
+        Self::decode_untrusted_in_version(
+            bytes,
+            StateTransition::deserialize_from_bytes_untrusted,
+            platform_version,
+            Some(version_depth.map_or(max_value_depth, |depth| depth.min(max_value_depth))),
         )
     }
 
@@ -1117,6 +1143,10 @@ impl StateTransition {
             bytes,
             StateTransition::deserialize_from_bytes_untrusted_exact,
             platform_version,
+            platform_version
+                .system_limits
+                .max_document_value_depth
+                .map(usize::from),
         )
     }
 
@@ -1125,11 +1155,8 @@ impl StateTransition {
         bytes: &[u8],
         decode: fn(&[u8]) -> Result<Self, ProtocolError>,
         platform_version: &PlatformVersion,
+        max_value_depth: Option<usize>,
     ) -> Result<Self, ProtocolError> {
-        let max_value_depth = platform_version
-            .system_limits
-            .max_document_value_depth
-            .map(usize::from);
         let state_transition =
             platform_value::with_value_decode_depth_limit(max_value_depth, || decode(bytes))?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]

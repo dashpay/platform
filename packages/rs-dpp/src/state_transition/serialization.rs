@@ -644,6 +644,63 @@ mod tests {
     }
 
     #[test]
+    fn should_bound_value_depth_for_an_untrusted_version_that_set_no_limit() {
+        on_deep_value_stack(|| {
+            let unlimited = (1..=PlatformVersion::latest().protocol_version)
+                .rev()
+                .filter_map(|version| PlatformVersion::get(version).ok())
+                .find(|version| version.system_limits.max_document_value_depth.is_none())
+                .expect("an early protocol version sets no value depth limit");
+            let nested = (0..300).fold(Value::Null, |value, _| Value::Array(vec![value]));
+            let document_transition = DocumentTransition::Create(DocumentCreateTransition::V0(
+                DocumentCreateTransitionV0 {
+                    base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                        id: Identifier::default(),
+                        identity_contract_nonce: 1,
+                        document_type_name: "test".to_string(),
+                        data_contract_id: Identifier::default(),
+                    }),
+                    entropy: [0; 32],
+                    data: BTreeMap::from([("nested".to_string(), nested)]),
+                    prefunded_voting_balance: None,
+                },
+            ));
+            let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                transitions: vec![BatchedTransition::Document(document_transition)],
+                ..Default::default()
+            }));
+            let bytes = state_transition
+                .serialize_to_bytes()
+                .expect("the state transition should encode below the byte limit");
+            std::mem::forget(state_transition);
+
+            // Consensus keeps the version's own rule: no limit.
+            let decoded =
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, unlimited)
+                    .expect("the version sets no depth limit");
+            std::mem::forget(decoded);
+            // A decoder that cannot trust the version applies its own bound.
+            let error =
+                StateTransition::deserialize_from_bytes_untrusted_in_version_with_max_value_depth(
+                    &bytes, unlimited, 256,
+                )
+                .expect_err("the caller's bound applies");
+            assert!(error
+                .to_string()
+                .contains("value nesting depth 257 exceeds maximum 256"));
+            // The version's own limit applies when it is the tighter one.
+            let error =
+                StateTransition::deserialize_from_bytes_untrusted_in_version_with_max_value_depth(
+                    &bytes,
+                    PlatformVersion::latest(),
+                    1024,
+                )
+                .expect_err("the version's limit applies");
+            assert!(error.to_string().contains("exceeds maximum 256"));
+        });
+    }
+
+    #[test]
     fn document_batch_value_depth_limits_align_between_decode_and_validation() {
         on_deep_value_stack(|| {
             // Every decodable document value must also satisfy the consensus depth rule, so depth

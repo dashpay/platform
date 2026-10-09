@@ -29,6 +29,7 @@ pub mod query;
 pub mod query_settings;
 #[cfg(feature = "shielded")]
 pub mod shielded;
+pub mod subscriptions;
 mod system_data_contract;
 pub mod tokens;
 pub mod transition;

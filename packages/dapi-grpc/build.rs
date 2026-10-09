@@ -86,7 +86,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 69] = [
+    const VERSIONED_REQUESTS: [&str; 70] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
@@ -156,6 +156,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedPoolStateRequest",
         "GetShieldedNotesCountRequest",
         "GetShieldedNullifiersRequest",
+        "SubscribeToStateTransitionsRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -378,6 +379,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
+        .field_attribute("StateTransitionMatch.block_height", SERDE_WITH_STRING)
+        .field_attribute("StateTransitionMatch.block_time_ms", SERDE_WITH_STRING)
+        .field_attribute("Checkpoint.block_height", SERDE_WITH_STRING)
         .field_attribute("public_key_hash", SERDE_WITH_BYTES)
         .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
         .field_attribute("nullifiers", SERDE_WITH_BASE64)

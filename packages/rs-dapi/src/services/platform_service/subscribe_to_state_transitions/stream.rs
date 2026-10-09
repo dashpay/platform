@@ -1,0 +1,551 @@
+//! Admission and the per-subscription scan loop.
+
+use super::CHECKPOINT_INTERVAL;
+use super::block_source::{
+    BlockRead, BlockSource, CommittedBlock, HeightMeta, META_PAGE, NOT_YET_RETRY,
+};
+use dapi_grpc::platform::v0::SubscribeToStateTransitionsResponse;
+use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::subscribe_to_state_transitions_response_v0::{
+    Checkpoint, Responses, StateTransitionMatch,
+};
+use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::{
+    SubscribeToStateTransitionsResponseV0, Version,
+};
+use dapi_grpc::tonic::Status;
+use dash_platform_queries::subscriptions::{FilterMatch, ResolvedFilters};
+use dpp::version::PlatformVersion;
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
+use tokio::time::{Instant, sleep, timeout};
+use tokio_stream::wrappers::ReceiverStream;
+use tracing::{debug, warn};
+
+/// The response stream of one subscription.
+pub type SubscriptionStream = ReceiverStream<Result<SubscribeToStateTransitionsResponse, Status>>;
+
+/// Messages buffered per subscription before the client must read.
+const STREAM_BUFFER: usize = 32;
+/// How long a full buffer may stay full before the subscription ends.
+const SEND_DEADLINE: Duration = Duration::from_secs(60);
+/// How long a height may stay unreadable before the subscription ends.
+const UNREADABLE_DEADLINE: Duration = Duration::from_secs(30);
+/// How often the tip is polled when no new-block event arrives.
+const TIP_POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Bounds on what subscriptions may cost one node.
+#[derive(Debug, Clone, Copy)]
+pub struct SubscriptionLimits {
+    /// Concurrent subscriptions on the node.
+    pub max_subscriptions: usize,
+    /// Concurrent subscriptions from one client address (IPv6: per /64).
+    pub max_subscriptions_per_ip: usize,
+    /// Subscriptions catching up on history at the same time.
+    pub max_replaying: usize,
+    /// How far behind the tip a subscription may start.
+    pub max_replay_blocks: u64,
+    /// How far ahead of the tip a subscription may start; it waits for those blocks.
+    pub max_blocks_ahead: u64,
+}
+
+impl Default for SubscriptionLimits {
+    fn default() -> Self {
+        Self {
+            max_subscriptions: 1024,
+            max_subscriptions_per_ip: 16,
+            max_replaying: 8,
+            max_replay_blocks: 50_000,
+            max_blocks_ahead: 1_000,
+        }
+    }
+}
+
+/// A subscription's claim on the node's subscription capacity, released on drop.
+pub struct Admission {
+    _permit: OwnedSemaphorePermit,
+    _per_ip: Option<PerIpGuard>,
+}
+
+struct PerIpGuard {
+    key: IpAddr,
+    counts: Arc<Mutex<HashMap<IpAddr, usize>>>,
+}
+
+impl Drop for PerIpGuard {
+    fn drop(&mut self) {
+        let mut counts = self.counts.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = counts.get_mut(&self.key) {
+            *count -= 1;
+            if *count == 0 {
+                counts.remove(&self.key);
+            }
+        }
+    }
+}
+
+/// Serves every subscription of the node from one block source.
+pub struct SubscriptionService {
+    blocks: Arc<BlockSource>,
+    tip: watch::Receiver<u64>,
+    limits: SubscriptionLimits,
+    subscriptions: Arc<Semaphore>,
+    replaying: Arc<Semaphore>,
+    per_ip: Arc<Mutex<HashMap<IpAddr, usize>>>,
+}
+
+impl SubscriptionService {
+    /// `tip` carries the highest height Tenderdash reports stored; see [`Self::track_tip`].
+    pub fn new(
+        blocks: Arc<BlockSource>,
+        tip: watch::Receiver<u64>,
+        limits: SubscriptionLimits,
+    ) -> Self {
+        Self {
+            blocks,
+            tip,
+            subscriptions: Arc::new(Semaphore::new(limits.max_subscriptions)),
+            replaying: Arc::new(Semaphore::new(limits.max_replaying)),
+            per_ip: Arc::new(Mutex::new(HashMap::new())),
+            limits,
+        }
+    }
+
+    /// Keep `tip` at the highest height Tenderdash reports, polling every few seconds and
+    /// whenever `new_block` fires. Runs until `tip` has no receivers.
+    pub async fn track_tip(
+        blocks: Arc<BlockSource>,
+        tip: watch::Sender<u64>,
+        mut new_block: impl FnMut() -> futures::future::BoxFuture<'static, ()> + Send,
+    ) {
+        loop {
+            match blocks.latest_height().await {
+                Ok(height) => {
+                    tip.send_if_modified(|current| {
+                        let advanced = height > *current;
+                        if advanced {
+                            *current = height;
+                        }
+                        advanced
+                    });
+                }
+                Err(error) => debug!(%error, "cannot read the Tenderdash tip"),
+            }
+            if tip.is_closed() {
+                return;
+            }
+            tokio::select! {
+                _ = sleep(TIP_POLL_INTERVAL) => {}
+                _ = new_block() => {}
+            }
+        }
+    }
+
+    /// Claim capacity for a new subscription from `client_ip`, or refuse it.
+    pub fn admit(&self, client_ip: Option<IpAddr>) -> Result<Admission, Status> {
+        let permit = self
+            .subscriptions
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                Status::resource_exhausted("too many state transition subscriptions on this node")
+            })?;
+        let per_ip = match client_ip.map(per_ip_key) {
+            Some(key) => {
+                let mut counts = self.per_ip.lock().unwrap_or_else(|e| e.into_inner());
+                let count = counts.entry(key).or_insert(0);
+                if *count >= self.limits.max_subscriptions_per_ip {
+                    return Err(Status::resource_exhausted(format!(
+                        "at most {} state transition subscriptions per client address",
+                        self.limits.max_subscriptions_per_ip
+                    )));
+                }
+                *count += 1;
+                Some(PerIpGuard {
+                    key,
+                    counts: self.per_ip.clone(),
+                })
+            }
+            None => None,
+        };
+        Ok(Admission {
+            _permit: permit,
+            _per_ip: per_ip,
+        })
+    }
+
+    /// Start scanning from `from_block_height`, or after the current tip.
+    ///
+    /// `bound_at` is the height the data contracts `filters` are bound to were read at. A
+    /// stream starting after it scans from just after it without delivering anything before
+    /// its start, so that updates of those contracts committed in between are followed.
+    pub async fn start(
+        &self,
+        admission: Admission,
+        filters: ResolvedFilters,
+        from_block_height: Option<u64>,
+        bound_at: Option<u64>,
+    ) -> Result<SubscriptionStream, Status> {
+        let tip = self.current_tip().await?;
+        let start = match from_block_height {
+            None => tip + 1,
+            Some(height) => {
+                if height.saturating_add(self.limits.max_replay_blocks) < tip {
+                    return Err(Status::out_of_range(format!(
+                        "from_block_height {height} is more than {} blocks behind the tip {tip}",
+                        self.limits.max_replay_blocks
+                    )));
+                }
+                if height > tip.saturating_add(self.limits.max_blocks_ahead) {
+                    return Err(Status::out_of_range(format!(
+                        "from_block_height {height} is more than {} blocks ahead of the tip {tip}",
+                        self.limits.max_blocks_ahead
+                    )));
+                }
+                height
+            }
+        };
+
+        // However far back the contracts were read (a slow setup, a start ahead of the tip),
+        // every update after their bound version is followed before the start.
+        let first_scanned =
+            bound_at.map_or(start, |bound_at| start.min(bound_at.saturating_add(1)));
+
+        let (sender, receiver) = mpsc::channel(STREAM_BUFFER);
+        let scan = Scan {
+            blocks: self.blocks.clone(),
+            tip: self.tip.clone(),
+            replaying: self.replaying.clone(),
+            filters,
+            sender,
+            next_height: first_scanned.max(1),
+            deliver_from: start,
+        };
+        tokio::spawn(scan.run(admission));
+        Ok(ReceiverStream::new(receiver))
+    }
+
+    async fn current_tip(&self) -> Result<u64, Status> {
+        let tip = *self.tip.borrow();
+        if tip > 0 {
+            return Ok(tip);
+        }
+        self.blocks
+            .latest_height()
+            .await
+            .map_err(|e| Status::unavailable(format!("cannot read the Tenderdash tip: {e}")))
+    }
+}
+
+/// Why a client that stopped reading is dropped.
+fn slow_client() -> Status {
+    Status::resource_exhausted(format!(
+        "the client did not read for {}s; resume from the last checkpoint",
+        SEND_DEADLINE.as_secs()
+    ))
+}
+
+/// IPv4 addresses count individually; IPv6 addresses by /64, the smallest block a client
+/// usually controls. An IPv4 client seen through a dual-stack listener (`::ffff:a.b.c.d`) is
+/// counted as that IPv4 address, not in the one /64 all such clients share.
+fn per_ip_key(ip: IpAddr) -> IpAddr {
+    let ip = ip.to_canonical();
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => {
+            let mut segments = v6.segments();
+            segments[4..].fill(0);
+            IpAddr::V6(segments.into())
+        }
+    }
+}
+
+/// Why a scan stopped.
+enum Stop {
+    /// The client went away.
+    Closed,
+    /// End the stream with this status.
+    Fail(Status),
+    /// The client did not read for `SEND_DEADLINE`.
+    SlowClient,
+}
+
+struct Scan {
+    blocks: Arc<BlockSource>,
+    tip: watch::Receiver<u64>,
+    replaying: Arc<Semaphore>,
+    filters: ResolvedFilters,
+    sender: mpsc::Sender<Result<SubscribeToStateTransitionsResponse, Status>>,
+    /// The next height to scan; every height below it has been fully scanned.
+    next_height: u64,
+    /// The stream's start: heights below it are scanned only to follow contract updates.
+    deliver_from: u64,
+}
+
+impl Scan {
+    /// Scan until the subscription ends, then give its capacity back before telling the
+    /// client why: a client that stopped reading must not hold a slot while the status waits.
+    async fn run(mut self, admission: Admission) {
+        let outcome = self.scan().await;
+        drop(admission);
+        match outcome {
+            // The client is not reading: the status goes only if there is room for it.
+            Err(Stop::SlowClient) => {
+                let _ = self.sender.try_send(Err(slow_client()));
+            }
+            Err(Stop::Fail(status)) => {
+                debug!(code = ?status.code(), message = status.message(), "ending state transition subscription");
+                let _ = timeout(SEND_DEADLINE, self.sender.send(Err(status))).await;
+            }
+            Ok(()) | Err(Stop::Closed) => {}
+        }
+    }
+
+    async fn scan(&mut self) -> Result<(), Stop> {
+        self.checkpoint().await?;
+        let mut last_checkpoint = Instant::now();
+        loop {
+            let tip = *self.tip.borrow();
+            if self.next_height > tip {
+                tokio::select! {
+                    _ = self.sender.closed() => return Err(Stop::Closed),
+                    changed = self.tip.changed() => {
+                        if changed.is_err() {
+                            return Err(Stop::Fail(Status::unavailable("the node is shutting down")));
+                        }
+                    }
+                    _ = sleep(CHECKPOINT_INTERVAL.saturating_sub(last_checkpoint.elapsed())) => {
+                        self.checkpoint().await?;
+                        last_checkpoint = Instant::now();
+                    }
+                }
+                continue;
+            }
+            if self.sender.is_closed() {
+                return Err(Stop::Closed);
+            }
+
+            // Catching up on many blocks: share the replay capacity. The permit covers only
+            // reading from Tenderdash: it is given up before anything is sent, so a client that
+            // stops reading cannot hold it, and taken again before the next read.
+            let catching_up = tip - self.next_height >= META_PAGE;
+            let mut replay_permit = if catching_up {
+                Some(self.replay_permit(&mut last_checkpoint).await?)
+            } else {
+                None
+            };
+            let (page_start, page) =
+                self.blocks
+                    .meta_page(self.next_height, tip)
+                    .await
+                    .map_err(|e| {
+                        Stop::Fail(Status::unavailable(format!("cannot read block metas: {e}")))
+                    })?;
+            let page_end = page_start + page.len() as u64 - 1;
+            while self.next_height <= page_end {
+                let height = self.next_height;
+                match page[(height - page_start) as usize] {
+                    HeightMeta::Empty => {}
+                    HeightMeta::Unavailable => {
+                        return Err(Stop::Fail(Status::out_of_range(format!(
+                            "block {height} is not available on this node"
+                        ))));
+                    }
+                    HeightMeta::HasTxs => {
+                        if catching_up && replay_permit.is_none() {
+                            replay_permit = Some(self.replay_permit(&mut last_checkpoint).await?);
+                        }
+                        let block = self.read_block(height).await?;
+                        let matches = self.match_block(&block)?;
+                        if !matches.is_empty() && height >= self.deliver_from {
+                            replay_permit.take();
+                            // Keep only what the responses need, the serialized payloads shared
+                            // with the block, and let go of the decoded block before waiting on
+                            // the client: a stalled reader then pins no decoded transitions.
+                            let (time_ms, protocol_version) =
+                                (block.time_ms, block.protocol_version);
+                            let pending: Vec<_> = matches
+                                .into_iter()
+                                .map(|(position, filter_match)| {
+                                    let tx = &block.txs[position];
+                                    (tx.index, tx.hash, tx.bytes.clone(), filter_match)
+                                })
+                                .collect();
+                            drop(block);
+                            for (index_in_block, hash, bytes, filter_match) in pending {
+                                self.send(Responses::StateTransition(StateTransitionMatch {
+                                    block_height: height,
+                                    block_time_ms: time_ms,
+                                    protocol_version,
+                                    index_in_block,
+                                    state_transition_hash: hash.to_vec(),
+                                    state_transition: bytes.as_ref().clone(),
+                                    matched_filters: filter_match.matched_filters,
+                                    matched_batch_positions: filter_match.matched_batch_positions,
+                                }))
+                                .await?;
+                            }
+                            self.checkpoint_at(height).await?;
+                            last_checkpoint = Instant::now();
+                        }
+                    }
+                }
+                self.next_height += 1;
+                if last_checkpoint.elapsed() >= CHECKPOINT_INTERVAL {
+                    replay_permit.take();
+                    self.checkpoint().await?;
+                    last_checkpoint = Instant::now();
+                }
+            }
+        }
+    }
+
+    /// Wait for replay capacity, keeping the client informed while waiting.
+    ///
+    /// One acquisition is kept for the whole wait, so the subscription keeps its place in the
+    /// semaphore's FIFO queue across heartbeats, and heartbeats never wait on the client: a
+    /// permit granted while the client is not reading is not held behind a blocked send.
+    async fn replay_permit(
+        &mut self,
+        last_checkpoint: &mut Instant,
+    ) -> Result<OwnedSemaphorePermit, Stop> {
+        let acquire = self.replaying.clone().acquire_owned();
+        tokio::pin!(acquire);
+        // Since when the client's buffer has stayed full: a client that stops reading is
+        // dropped after `SEND_DEADLINE`, here as when a send waits on it.
+        let mut full_since: Option<Instant> = None;
+        loop {
+            tokio::select! {
+                permit = &mut acquire => {
+                    return permit.map_err(|_| Stop::Fail(Status::unavailable("the node is shutting down")));
+                }
+                _ = self.sender.closed() => return Err(Stop::Closed),
+                _ = sleep(CHECKPOINT_INTERVAL.saturating_sub(last_checkpoint.elapsed())) => {
+                    if self.try_checkpoint()? {
+                        full_since = None;
+                    } else if full_since.get_or_insert_with(Instant::now).elapsed() >= SEND_DEADLINE {
+                        return Err(Stop::SlowClient);
+                    }
+                    *last_checkpoint = Instant::now();
+                }
+            }
+        }
+    }
+
+    /// A checkpoint at the highest fully scanned height if the client has room for it; with
+    /// a full buffer the client has messages to read and needs no heartbeat. Returns whether
+    /// it was sent.
+    fn try_checkpoint(&mut self) -> Result<bool, Stop> {
+        let response = SubscribeToStateTransitionsResponse {
+            version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
+                responses: Some(Responses::Checkpoint(Checkpoint {
+                    block_height: self.checkpoint_height(),
+                })),
+            })),
+        };
+        match self.sender.try_send(Ok(response)) {
+            Ok(()) => Ok(true),
+            Err(mpsc::error::TrySendError::Full(_)) => Ok(false),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(Stop::Closed),
+        }
+    }
+
+    /// The committed block at `height`, waiting for its results to be saved.
+    async fn read_block(&mut self, height: u64) -> Result<Arc<CommittedBlock>, Stop> {
+        let deadline = Instant::now() + UNREADABLE_DEADLINE;
+        loop {
+            match self.blocks.read(height).await {
+                Ok(BlockRead::Block(block)) => return Ok(block),
+                Ok(BlockRead::NotYet) if Instant::now() < deadline => {
+                    tokio::select! {
+                        _ = self.sender.closed() => return Err(Stop::Closed),
+                        _ = sleep(NOT_YET_RETRY) => {}
+                    }
+                }
+                Ok(BlockRead::NotYet) => {
+                    return Err(Stop::Fail(Status::unavailable(format!(
+                        "block {height} has not become readable; resume from {height}"
+                    ))));
+                }
+                Err(error) => {
+                    return Err(Stop::Fail(Status::unavailable(format!(
+                        "cannot read block {height}: {error}; resume from {height}"
+                    ))));
+                }
+            }
+        }
+    }
+
+    /// The positions, in `block.txs`, of the block's transitions that match, in block order,
+    /// with what they matched.
+    fn match_block(&mut self, block: &CommittedBlock) -> Result<Vec<(usize, FilterMatch)>, Stop> {
+        let height = block.height;
+        let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
+            Stop::Fail(Status::failed_precondition(format!(
+                "block {height} executed under protocol version {}, which this node does not \
+                 know; resume from {height} on an upgraded node",
+                block.protocol_version
+            )))
+        })?;
+
+        let mut matches = Vec::new();
+        for (position, tx) in block.txs.iter().enumerate() {
+            let state_transition = tx.state_transition.as_ref().map_err(|e| {
+                warn!(height, index = tx.index, error = %e, "cannot decode an executed state transition");
+                Stop::Fail(Status::failed_precondition(format!(
+                    "block {height} transaction {} cannot be decoded by this node ({e}); resume \
+                     from {height} on an upgraded node",
+                    tx.index
+                )))
+            })?;
+            if let Some(filter_match) = self.filters.matches(state_transition, platform_version) {
+                matches.push((position, filter_match));
+            }
+            self.filters
+                .follow(state_transition, platform_version)
+                .map_err(|e| {
+                    Stop::Fail(Status::failed_precondition(format!(
+                        "block {height} transaction {} updates a subscribed data contract this \
+                         node cannot read ({e}); resume from {height} on an upgraded node",
+                        tx.index
+                    )))
+                })?;
+        }
+        Ok(matches)
+    }
+
+    /// A checkpoint at the highest fully scanned height.
+    async fn checkpoint(&mut self) -> Result<(), Stop> {
+        self.checkpoint_at(self.checkpoint_height()).await
+    }
+
+    /// The highest fully scanned height, or just before the start while scanning before it:
+    /// the client resumes after a checkpoint, so none may point before where it asked to be.
+    fn checkpoint_height(&self) -> u64 {
+        self.next_height.max(self.deliver_from) - 1
+    }
+
+    async fn checkpoint_at(&mut self, height: u64) -> Result<(), Stop> {
+        self.send(Responses::Checkpoint(Checkpoint {
+            block_height: height,
+        }))
+        .await
+    }
+
+    async fn send(&mut self, message: Responses) -> Result<(), Stop> {
+        let response = SubscribeToStateTransitionsResponse {
+            version: Some(Version::V0(SubscribeToStateTransitionsResponseV0 {
+                responses: Some(message),
+            })),
+        };
+        match timeout(SEND_DEADLINE, self.sender.send(Ok(response))).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err(Stop::Closed),
+            Err(_) => Err(Stop::SlowClient),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
