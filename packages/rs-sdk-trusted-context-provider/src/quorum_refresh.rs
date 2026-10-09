@@ -70,11 +70,30 @@ impl FetchedQuorums {
 
     /// Why these lists cannot show that a quorum is absent, if they cannot.
     pub(crate) fn incomplete(&self) -> Option<String> {
-        match (&self.current, &self.previous) {
-            (Ok(_), Ok(_)) => None,
-            (Err(current), Ok(_)) => Some(format!("current quorums: {current}")),
-            (Ok(_), Err(previous)) => Some(format!("previous quorums: {previous}")),
-            (Err(current), Err(previous)) => Some(format!(
+        let reason = |list: &Result<Vec<QuorumData>, String>| match list {
+            Err(error) => Some(error.clone()),
+            Ok(quorums) => {
+                quorums
+                    .iter()
+                    .find_map(|quorum| match hex::decode(&quorum.quorum_hash) {
+                        Err(error) => Some(format!(
+                            "invalid quorum hash '{}': {error}",
+                            quorum.quorum_hash
+                        )),
+                        Ok(bytes) if bytes.len() != 32 => Some(format!(
+                            "invalid quorum hash '{}': expected 32 bytes, got {}",
+                            quorum.quorum_hash,
+                            bytes.len()
+                        )),
+                        Ok(_) => None,
+                    })
+            }
+        };
+        match (reason(&self.current), reason(&self.previous)) {
+            (None, None) => None,
+            (Some(current), None) => Some(format!("current quorums: {current}")),
+            (None, Some(previous)) => Some(format!("previous quorums: {previous}")),
+            (Some(current), Some(previous)) => Some(format!(
                 "current quorums: {current}; previous quorums: {previous}"
             )),
         }

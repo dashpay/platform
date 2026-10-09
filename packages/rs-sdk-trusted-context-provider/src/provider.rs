@@ -1682,6 +1682,101 @@ mod tests {
             .await
     }
 
+    async fn assert_uninterpretable_hash_is_source_unavailable(invalid_hash: &str) {
+        for current in [true, false] {
+            let malformed = if current {
+                current_response(0x11, 0x41)
+            } else {
+                previous_response(0x11, 0x41)
+            }
+            .replace(&hex::encode([0x11; 32]), invalid_hash);
+            let (current_list, previous_list) = if current {
+                (malformed, empty_previous_response())
+            } else {
+                (empty_current_response(), malformed)
+            };
+            let (base_url, server) = spawn_http_responses(vec![
+                ("/quorums", 200, current_list),
+                ("/previous", 200, previous_list),
+            ]);
+            let provider = provider_for(base_url);
+
+            let fetched = fetch_missing(&provider, 0x11).await;
+            assert!(
+                matches!(
+                    &fetched,
+                    Err(ContextProviderError::QuorumSourceUnavailable(reason))
+                        if reason.contains(invalid_hash)
+                ),
+                "an uninterpretable trusted hash cannot establish absence: {fetched:?}"
+            );
+            server.join().expect("mock quorum server must finish");
+        }
+    }
+
+    /// HTTP success cannot establish absence when a record's hash is not hex.
+    #[tokio::test]
+    async fn should_treat_invalid_hex_quorum_hashes_as_an_incomplete_source() {
+        assert_uninterpretable_hash_is_source_unavailable("zz").await;
+    }
+
+    /// A decodable hash must still identify a full 32-byte quorum.
+    #[tokio::test]
+    async fn should_treat_wrong_length_quorum_hashes_as_an_incomplete_source() {
+        assert_uninterpretable_hash_is_source_unavailable("11").await;
+    }
+
+    /// Semantic incompleteness prevents absence, but a usable positive match
+    /// still supplies the requested key from either list.
+    #[tokio::test]
+    async fn should_use_a_valid_match_beside_an_uninterpretable_quorum_hash() {
+        for invalid_hash in ["zz", "11"] {
+            for malformed_current in [true, false] {
+                for usable_current in [true, false] {
+                    let mut current: serde_json::Value =
+                        serde_json::from_str(&empty_current_response()).unwrap();
+                    let mut previous: serde_json::Value =
+                        serde_json::from_str(&empty_previous_response()).unwrap();
+                    let malformed: serde_json::Value = serde_json::from_str(
+                        &current_response(0x22, 0x42)
+                            .replace(&hex::encode([0x22; 32]), invalid_hash),
+                    )
+                    .unwrap();
+                    let usable: serde_json::Value =
+                        serde_json::from_str(&current_response(0x11, 0x41)).unwrap();
+                    for (entry, is_current) in [
+                        (malformed["data"][0].clone(), malformed_current),
+                        (usable["data"][0].clone(), usable_current),
+                    ] {
+                        let list = if is_current {
+                            &mut current["data"]
+                        } else {
+                            &mut previous["data"]["quorums"]
+                        };
+                        list.as_array_mut().unwrap().push(entry);
+                    }
+                    let (base_url, server) = spawn_http_responses(vec![
+                        ("/quorums", 200, current.to_string()),
+                        ("/previous", 200, previous.to_string()),
+                    ]);
+                    let provider = provider_for(base_url);
+
+                    assert_eq!(
+                        fetch_missing(&provider, 0x11)
+                            .await
+                            .expect("a usable positive match survives an incomplete list"),
+                        Some(quorum_key(0x41))
+                    );
+                    assert_eq!(
+                        provider.get_quorum_public_key(6, [0x11; 32], 1).unwrap(),
+                        quorum_key(0x41)
+                    );
+                    server.join().expect("mock quorum server must finish");
+                }
+            }
+        }
+    }
+
     #[tokio::test]
     async fn should_reject_an_invalid_bls_key_from_the_trusted_source() {
         let (base_url, server) = spawn_http_responses(vec![
