@@ -84,11 +84,11 @@ pub(crate) fn verifier_version(
         Ok(version) => version,
         Err(_) => {
             let newest = PlatformVersion::latest();
-            tracing::warn!(
+            tracing::debug!(
                 signed_protocol_version = signed,
                 stored_protocol_version = stored.protocol_version,
                 verifier_protocol_version = newest.protocol_version,
-                "network protocol version is unknown; using newest known verifier table"
+                "unverified protocol version is unknown; selecting newest known verifier table"
             );
             newest
         }
@@ -106,10 +106,9 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 ///
 /// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
 /// any of those networks still runs. Devnets seed at 14: they are cut from the
-/// current development line, and their contracts use index grammar that
-/// version 13 cannot deserialize, so a lower seed would fail the very first
-/// proved request instead of ratcheting (the ratchet only runs after a proof
-/// verifies).
+/// current development line. Proved reads can use a newer version named in
+/// their signed response metadata even when the SDK starts with a lower seed;
+/// the stored version ratchets only after proof and signature verification.
 ///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
@@ -476,6 +475,16 @@ impl Sdk {
         metadata: &ResponseMetadata,
         arrival: Option<MetadataArrival>,
     ) -> Result<(), Error> {
+        if metadata.protocol_version > self.protocol_version_number()
+            && PlatformVersion::get(metadata.protocol_version).is_err()
+        {
+            tracing::warn!(
+                signed_protocol_version = metadata.protocol_version,
+                stored_protocol_version = self.protocol_version_number(),
+                verifier_protocol_version = PlatformVersion::latest().protocol_version,
+                "authenticated network protocol version is unknown; using newest known verifier table"
+            );
+        }
         self.verify_response_metadata_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
@@ -1118,6 +1127,9 @@ impl SdkBuilder {
     ///
     /// Select specific version of Dash Platform to use. This pins the version and
     /// disables auto-detection.
+    ///
+    /// The pin governs construction. Proof verification may use a newer table
+    /// named in the response's quorum-signed metadata without changing the pin.
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].

@@ -218,8 +218,12 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
         block_time_ms,
         protocol_version,
     } = trunk_response;
-    // Branch responses have no signed metadata; their roots are authenticated
-    // by this trunk, so every branch in the scan uses its verification rules.
+    // Branch responses have no signed metadata; this trunk authenticates their
+    // roots. The node builds proofs with its current version, while the signed
+    // metadata names the checkpoint's version. Address item-row encoding is
+    // compatible across these versions. Revisit this choice if item-row proof
+    // encoding, the address tree's item-only structure, or branch verification
+    // method versions or depth bounds change.
     let platform_version = verifier_version(sdk.version(), protocol_version);
     Ops::set_checkpoint_height(context, checkpoint_height);
 

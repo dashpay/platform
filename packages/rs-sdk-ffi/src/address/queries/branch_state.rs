@@ -149,7 +149,9 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
         // their root through a trunk proof. Address-funds leaves are item rows,
         // whose proof encoding the newest GroveDB rules preserve, so these
         // rules are compatible and strongest even for a pinned SDK. Revisit
-        // this choice if a GroveDB version changes item-row proof encoding.
+        // this choice if item-row proof encoding changes, address-funds gains
+        // subtree children, or a newer table changes the branch verification
+        // method version or depth bounds.
         let platform_version = PlatformVersion::latest();
 
         // Verify the proof and get branch result
