@@ -1,6 +1,7 @@
 //! Identity related types and functions
 
 use crate::delegate_enum;
+use crate::sdk::ProofResponseMetadata;
 use crate::{
     platform::{proto, Query},
     Error,
@@ -10,6 +11,7 @@ use dapi_grpc::platform::v0::get_identities_balances_request::GetIdentitiesBalan
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::Version as NonUniqueResponseVersion;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
@@ -34,6 +36,25 @@ delegate_enum! {
     (GetIdentity,proto::GetIdentityRequest,proto::GetIdentityResponse),
     (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse),
     (GetIdentityByNonUniquePublicKeyHash, proto::GetIdentityByNonUniquePublicKeyHashRequest, proto::GetIdentityByNonUniquePublicKeyHashResponse)
+}
+
+impl ProofResponseMetadata for IdentityResponse {
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error> {
+        match self {
+            Self::GetIdentity(response) => response.response_metadata(),
+            Self::GetIdentityByPublicKeyHash(response) => response.response_metadata(),
+            Self::GetIdentityByNonUniquePublicKeyHash(response) => {
+                let Some(NonUniqueResponseVersion::V0(response)) = response.version.as_ref() else {
+                    return Err(drive_proof_verifier::Error::EmptyVersion);
+                };
+                response
+                    .metadata
+                    .as_ref()
+                    .ok_or(drive_proof_verifier::Error::EmptyResponseMetadata)
+            }
+            Self::Unknown => Err(drive_proof_verifier::Error::EmptyVersion),
+        }
+    }
 }
 
 impl Query<IdentityRequest> for dpp::prelude::Identifier {

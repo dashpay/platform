@@ -146,6 +146,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             trunk: trunk_state.into_inner(),
             height: metadata.height,
             block_time_ms: metadata.time_ms,
+            protocol_version: metadata.protocol_version,
         })
     }
 

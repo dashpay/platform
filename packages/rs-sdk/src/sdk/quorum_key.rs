@@ -1,6 +1,6 @@
 //! Verifying a proof signed by a quorum the context provider has not cached.
 
-use super::{MetadataArrival, Sdk};
+use super::{verifier_version, MetadataArrival, ProofResponseMetadata, Sdk};
 use crate::Error;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
@@ -40,12 +40,15 @@ impl Sdk {
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
         O::Request: Clone,
-        O::Response: Clone,
+        O::Response: Clone + ProofResponseMetadata,
     {
         // Both verifications use the same protocol version. The request and
         // response are copied on every call so a second verification can
         // follow a fetch; the copy is small next to proof verification itself.
-        let version = self.version();
+        let version = verifier_version(
+            self.version(),
+            response.response_metadata()?.protocol_version,
+        );
         let arrival = MetadataArrival {
             height: self.metadata_last_seen_height.load(Ordering::Acquire),
             time_ms: chrono::Utc::now().timestamp_millis() as u64,
