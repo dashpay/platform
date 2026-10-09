@@ -1,7 +1,4 @@
-//! Run as a DPP example on Platform 6499c680c6bc311e8933f396423a79459e2a88bd.
-//! `cargo run -p dpp --example generate_historical_hashes --locked -- /path/to/output`
-//! The output directory must contain encrypted-xpub.bin and encrypted-label.bin
-//! from platform-encryption's historical generator, run at the same revision.
+//! Historical fixture generator, invoked by scripts/generate_historical_test_vectors.sh.
 
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
@@ -26,11 +23,11 @@ use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_double;
 use dpp::BlsModule;
 use std::collections::BTreeMap;
-use std::path::Path;
 
-fn main() {
-    let dir = std::env::args().nth(1).expect("output directory");
-    let dir = Path::new(&dir);
+#[test]
+#[ignore = "run through scripts/generate_historical_test_vectors.sh on the pinned revision"]
+fn generate() {
+    let dir = super::output_dir("signing");
     let write = |name: &str, bytes: &[u8]| {
         std::fs::write(dir.join(format!("{name}.hex")), hex::encode(bytes)).unwrap();
     };

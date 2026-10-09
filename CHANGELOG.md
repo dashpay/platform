@@ -2,7 +2,7 @@
 
 ### Tests
 
-* **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors.
+* **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
 
 ## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
 

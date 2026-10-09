@@ -1,5 +1,4 @@
-//! Run as a drive-abci example on Platform 6499c680c6bc311e8933f396423a79459e2a88bd.
-//! `cargo run -p drive-abci --example generate_populated_storage --all-features --locked -- /path/to/output`
+//! Historical fixture generator, invoked by scripts/generate_historical_test_vectors.sh.
 
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::{v0::ValidatorSetV0, ValidatorSet};
@@ -55,7 +54,9 @@ fn quorums(entries: &[(u8, usize, Option<u32>)]) -> Quorums<VerificationQuorum> 
         .collect()
 }
 
-fn main() {
+#[test]
+#[ignore = "run through scripts/generate_historical_test_vectors.sh on the pinned revision"]
+fn generate() {
     let mut runtime = SignatureVerificationQuorumSetV0::new(&ChainLockConfig {
         quorum_type: QuorumType::Llmq400_60,
         quorum_size: 400,
@@ -66,8 +67,8 @@ fn main() {
     runtime.set_current_quorums(quorums(&[(0x11, 0, None), (0x22, 1, Some(0))]));
     runtime.set_previous_past_quorums(Quorums::default(), 899, 900);
     runtime.set_previous_past_quorums(quorums(&[(0x33, 2, Some(1)), (0x44, 3, None)]), 1000, 1008);
-    let output = std::env::args().nth(1).expect("fixture output directory");
-    let output = Path::new(&output);
+    let output_dir = super::output_dir("populated");
+    let output = output_dir.as_path();
     let config = bincode::config::standard()
         .with_big_endian()
         .with_no_limit();

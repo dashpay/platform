@@ -1,8 +1,5 @@
-//! Run in a standalone package with dashcore at rev
-//! 40268cc0402a8933ec539f16b2d634c4e25876ad (feature serde).
-//! `cargo run --locked -- /path/to/output`; copy hex-encoded consensus bytes
-//! and txids into core_transactions.rs. Never refresh with the upgraded pin.
-//! Run against rust-dashcore 40268cc0402a8933ec539f16b2d634c4e25876ad.
+//! Historical fixture generator, invoked by scripts/generate_historical_test_vectors.sh.
+
 use dashcore::bls_sig_utils::{BLSPublicKey, BLSSignature};
 use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::{
@@ -14,8 +11,10 @@ use dashcore::transaction::special_transaction::{
 };
 use dashcore::{OutPoint, PlatformNodeId, PubkeyHash, ScriptBuf, Transaction, TxOut, Txid};
 
-fn main() {
-    let output = std::path::PathBuf::from(std::env::args().nth(1).expect("fixture directory"));
+#[test]
+#[ignore = "run through scripts/generate_historical_test_vectors.sh on the pinned revision"]
+fn generate() {
+    let output = super::output_dir("core");
     let key = BLSPublicKey::from(std::array::from_fn(|i| i as u8));
     let node = PlatformNodeId::from_byte_array(std::array::from_fn(|i| i as u8 + 1));
     let registration = ProviderRegistrationPayload {

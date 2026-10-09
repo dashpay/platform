@@ -1,6 +1,6 @@
 //! Frozen results from Platform 6499c680c6bc311e8933f396423a79459e2a88bd,
 //! using secp256k1 0.30.0. These ciphertexts become signed DashPay document fields.
-//! Reproduce with fixtures/generate-historical-encryption.rs in that checkout.
+//! Reproduce with scripts/generate_historical_test_vectors.sh.
 
 use platform_encryption::*;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};

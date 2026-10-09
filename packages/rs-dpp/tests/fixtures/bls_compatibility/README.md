@@ -23,15 +23,8 @@ The frozen expected values are copied unchanged from #5307. This standalone
 suite exercises the backend on `v5.1-dev` without adding the candidate backend
 as a dependency. The generator uses the original blsful API.
 
-The frozen expected values come from the original DPP backend listed above.
-The generator calls the current DPP implementation; after a backend change,
-compare its output with the frozen fixture rather than replacing the fixture.
-To inspect its output, run:
-
-```sh
-cargo run -p dpp --example generate_bls_compatibility_vectors --locked
-cargo test -p dpp --test bls_compatibility --locked
-```
+Reproduce the corpus with the [historical generation script](../../../../../scripts/historical-test-vectors/README.md).
+It runs ignored tests on a pinned checkout and writes a separate output directory.
 
 Keep the frozen fixture unchanged when migrating the implementation. These tests
 cover the listed cases, not an exhaustive proof of equivalence or every persisted

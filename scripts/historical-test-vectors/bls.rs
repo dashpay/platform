@@ -1,5 +1,4 @@
-//! Emit deterministic compatibility fixtures from DPP's current BLS backend.
-//! Run with `cargo run -p dpp --example generate_bls_compatibility_vectors`.
+//! Historical fixture generator, invoked by scripts/generate_historical_test_vectors.sh.
 
 use dpp::bls_signatures::{
     AggregateSignature, Bls12381G2Impl, PublicKey, SecretKey, SerializationFormat, SignatureSchemes,
@@ -10,7 +9,9 @@ use dpp::dashcore::{hashes::Hash, ProTxHash, PubkeyHash, QuorumHash};
 use serde_json::json;
 use std::collections::BTreeMap;
 
-fn main() {
+#[test]
+#[ignore = "run through scripts/generate_historical_test_vectors.sh on the pinned revision"]
+fn generate() {
     let key_generation: Vec<_> = [[0u8; 32], [1; 32], [255; 32]].iter().map(|ikm| {
         let key = SecretKey::<Bls12381G2Impl>::from_hash(ikm);
         json!({"ikm": hex::encode(ikm), "secret_key": hex::encode(key.to_be_bytes()), "public_key": hex::encode(key.public_key().0.to_compressed())})
@@ -139,8 +140,13 @@ fn main() {
             "validator_set_bytes": hex::encode(bincode::encode_to_vec(&set, config).unwrap())
         }));
     }
-    println!("{}", serde_json::to_string_pretty(&json!({
+    let corpus = serde_json::to_string_pretty(&json!({
         "basic": basic, "secure_aggregation": secure_aggregation, "scalars": scalars, "storage": storage,
         "key_generation": key_generation
-    })).unwrap());
+    })).unwrap();
+    std::fs::write(
+        super::output_dir("bls").join("vectors.json"),
+        format!("{corpus}\n"),
+    )
+    .unwrap();
 }
