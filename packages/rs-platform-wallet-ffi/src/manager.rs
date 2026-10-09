@@ -487,13 +487,29 @@ unsafe fn create_wallet_from_seed_impl(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read an optional BIP-39 passphrase C string. `NULL` means "no
+/// passphrase" and maps to the empty string, which is the BIP-39 default
+/// and what every pre-passphrase caller gets.
+unsafe fn passphrase_str<'a>(
+    passphrase: *const std::os::raw::c_char,
+) -> Result<&'a str, std::str::Utf8Error> {
+    if passphrase.is_null() {
+        Ok("")
+    } else {
+        std::ffi::CStr::from_ptr(passphrase).to_str()
+    }
+}
+
 /// Shared body for the mnemonic-based wallet-creation exports.
 ///
 /// `birth_height_override` is threaded verbatim into
 /// `create_wallet_from_mnemonic`; the no-override export passes `None`.
+/// `passphrase` may be `NULL` (no passphrase).
+#[allow(clippy::too_many_arguments)]
 unsafe fn create_wallet_from_mnemonic_impl(
     manager_handle: Handle,
     mnemonic: *const std::os::raw::c_char,
+    passphrase: *const std::os::raw::c_char,
     network: FFINetwork,
     account_options: u32,
     birth_height_override: Option<u32>,
@@ -505,6 +521,7 @@ unsafe fn create_wallet_from_mnemonic_impl(
     check_ptr!(out_wallet_id);
 
     let mnemonic_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(mnemonic).to_str());
+    let passphrase_str = unwrap_result_or_return!(passphrase_str(passphrase));
 
     let network: Network = network.into();
 
@@ -516,6 +533,7 @@ unsafe fn create_wallet_from_mnemonic_impl(
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         runtime().block_on(manager.create_wallet_from_mnemonic(
             mnemonic_str,
+            passphrase_str,
             network,
             accounts,
             birth_height_override,
@@ -607,6 +625,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     create_wallet_from_mnemonic_impl(
         manager_handle,
         mnemonic,
+        std::ptr::null(),
         network,
         account_options,
         None,
@@ -640,6 +659,49 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
     create_wallet_from_mnemonic_impl(
         manager_handle,
         mnemonic,
+        std::ptr::null(),
+        network,
+        account_options,
+        birth_height_override_opt(has_birth_height_override, birth_height_override),
+        out_wallet_handle,
+        out_wallet_id,
+    )
+}
+
+/// Create a wallet from a BIP39 mnemonic phrase plus an optional BIP-39
+/// passphrase ("25th word"), with an optional birth-height override.
+///
+/// Identical to
+/// [`platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height`]
+/// except for `passphrase`: `NULL` or `""` means no passphrase and yields
+/// exactly the wallet (and wallet id) that export produces; any other
+/// value is folded into the seed as `PBKDF2(mnemonic, passphrase)`, so the
+/// resulting wallet id differs from the passphrase-less one. The passphrase
+/// is NFKD-normalized per BIP-39 — pass it as the user typed it.
+///
+/// The host must store the passphrase alongside the mnemonic and hand both
+/// back through its `MnemonicResolveCallback`, or the wallet will not sign
+/// with the keys it was created with.
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_with_passphrase_and_birth_height(
+    manager_handle: Handle,
+    mnemonic: *const std::os::raw::c_char,
+    passphrase: *const std::os::raw::c_char,
+    network: FFINetwork,
+    account_options: u32,
+    has_birth_height_override: bool,
+    birth_height_override: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    create_wallet_from_mnemonic_impl(
+        manager_handle,
+        mnemonic,
+        passphrase,
         network,
         account_options,
         birth_height_override_opt(has_birth_height_override, birth_height_override),

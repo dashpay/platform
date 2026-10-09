@@ -22,7 +22,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         private let gate: DispatchSemaphore?
         private let failingCode: PlatformWalletFFIResultCode?
         private let eventLog: EventLog?
-        private var invocations: [(handle: Handle, mnemonic: String, ranOnMainThread: Bool)] = []
+        private var invocations: [(handle: Handle, mnemonic: String, seedPassphrase: String?, ranOnMainThread: Bool)] = []
         private var inFlight = 0
         private var maxInFlightSeen = 0
 
@@ -41,7 +41,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             params: PlatformWalletCreateParams
         ) -> (result: PlatformWalletFFIResult, walletHandle: Handle, walletId: Data) {
             lock.withLock {
-                invocations.append((handle, params.mnemonic, Thread.isMainThread))
+                invocations.append((handle, params.mnemonic, params.seedPassphrase, Thread.isMainThread))
                 inFlight += 1
                 maxInFlightSeen = max(maxInFlightSeen, inFlight)
             }
@@ -72,6 +72,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
 
         var count: Int { lock.withLock { invocations.count } }
         var handles: [Handle] { lock.withLock { invocations.map(\.handle) } }
+        var seedPassphrases: [String?] { lock.withLock { invocations.map(\.seedPassphrase) } }
         var mainThreadFlags: [Bool] { lock.withLock { invocations.map(\.ranOnMainThread) } }
         /// Peak number of native creates running at once — 1 proves the
         /// shared queue actually serialized concurrent callers.
@@ -138,8 +139,21 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         XCTAssertEqual(recorder.count, 1)
         XCTAssertEqual(recorder.handles, [42])
         XCTAssertEqual(recorder.mainThreadFlags, [false], "the native create must run off the main thread")
+        XCTAssertEqual(recorder.seedPassphrases, [nil], "no passphrase by default")
         XCTAssertEqual(wallet.walletId, Data(repeating: 1, count: 32))
         XCTAssertTrue(manager.wallets[wallet.walletId] === wallet)
+        await manager.shutdown()
+    }
+
+    /// The optional BIP-39 passphrase reaches the native create verbatim —
+    /// the FFI side NFKD-normalizes it, Swift must not touch it.
+    func testCreateForwardsTheSeedPassphrase() async throws {
+        let recorder = CreateRecorder()
+        let manager = makeManager(handle: 43, createRecorder: recorder)
+
+        _ = try await manager.createWallet(mnemonic: "m", seedPassphrase: " Trézor ", network: .testnet)
+
+        XCTAssertEqual(recorder.seedPassphrases, [" Trézor "])
         await manager.shutdown()
     }
 
