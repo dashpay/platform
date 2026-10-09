@@ -153,12 +153,13 @@ const DPNS_CONTRACT_FETCH_ATTEMPTS: usize = 3;
 
 /// The DPNS contract of the first response proved at the protocol version the SDK parsed it
 /// under, reading the SDK's version through `sdk_version` and each response through `fetch`,
-/// at most [`DPNS_CONTRACT_FETCH_ATTEMPTS`] times. A response proved at a newer version was
-/// parsed under an older one, which can drop the declaration the preorder hash follows (the
-/// response has taught the SDK the newer version, so the next one is parsed under it). One
-/// proved at an older version comes from a node behind the network, which can still hold the
-/// contract an upgrade replaced. Either would commit the preorder to a hash the domain cannot
-/// reveal, so neither is used.
+/// at most [`DPNS_CONTRACT_FETCH_ATTEMPTS`] times. The SDK's version only rises, and SDK clones
+/// share it, so a version unchanged across the fetch is the one the response was parsed under;
+/// one that rose meanwhile (this response, or another request, taught the SDK a newer version)
+/// leaves the response unused. A response proved at a newer version was parsed under an older
+/// one, which can drop the declaration the preorder hash follows. One proved at an older
+/// version comes from a node behind the network, which can still hold the contract an upgrade
+/// replaced. Either would commit the preorder to a hash the domain cannot reveal.
 async fn dpns_contract_proved_at_parsed_version<V, F, R>(
     sdk_version: V,
     mut fetch: F,
@@ -172,7 +173,7 @@ where
     for _ in 0..DPNS_CONTRACT_FETCH_ATTEMPTS {
         let parsed_under = sdk_version();
         let (dpns_contract, metadata) = fetch().await?;
-        if metadata.protocol_version == parsed_under {
+        if metadata.protocol_version == parsed_under && sdk_version() == parsed_under {
             return dpns_contract
                 .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()));
         }
@@ -941,6 +942,38 @@ mod tests {
         .expect("the current node's response is taken");
 
         assert!(responses.borrow().is_empty());
+        assert!(declares_the_preorder_hash(&dpns_contract));
+    }
+
+    #[tokio::test]
+    async fn should_skip_a_dpns_contract_proved_while_another_request_raised_the_version() {
+        // The SDK is at 13 when the fetch starts. While it waits, another request on a clone
+        // teaches the shared SDK the latest version, and the response comes from a node still
+        // at 13 proving DPNS v2: it matches the version the fetch started at, not the one the
+        // SDK has learned since.
+        let sdk_version = Cell::new(13);
+        let fetches = Cell::new(0);
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
+            || sdk_version.get(),
+            || {
+                fetches.set(fetches.get() + 1);
+                let response = if fetches.get() == 1 {
+                    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+                    let dpns_v2 = dpns_contract_decoded_under(platform_version, 13);
+                    sdk_version.set(LATEST_VERSION);
+                    (Some(dpns_v2), proved_at(13))
+                } else {
+                    let dpns_v3 =
+                        dpns_contract_decoded_under(PlatformVersion::latest(), sdk_version.get());
+                    (Some(dpns_v3), proved_at(LATEST_VERSION))
+                };
+                ready(Ok(response))
+            },
+        )
+        .await
+        .expect("the response proved at the learned version is taken");
+
+        assert_eq!(fetches.get(), 2);
         assert!(declares_the_preorder_hash(&dpns_contract));
     }
 
