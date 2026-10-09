@@ -239,6 +239,16 @@ pub trait ShieldedStore: Send + Sync {
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
 
+    /// Whether `id` holds a note with `nullifier` that is already marked
+    /// spent. The default scans [`Self::get_all_notes`]; stores with a
+    /// nullifier index should answer from it.
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .iter()
+            .any(|note| note.nullifier == *nullifier && note.is_spent))
+    }
+
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
@@ -411,6 +421,12 @@ pub trait ShieldedStore: Send + Sync {
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error>;
 
     /// Create a tree checkpoint at the given identifier.
+    ///
+    /// Identifiers must be strictly increasing: an id that is not above
+    /// the newest checkpoint's is a successful no-op (shardtree's
+    /// semantics). The sync path relies on this — it checkpoints at the
+    /// tree size on every committing pass, which is a no-op whenever the
+    /// tree hasn't grown since the last checkpoint.
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error>;
 
     /// Return the current tree root (Sinsemilla anchor, 32 bytes).
@@ -630,6 +646,12 @@ impl SubwalletState {
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
         self.notes.clone()
+    }
+
+    pub(super) fn is_spent(&self, nullifier: &[u8; 32]) -> bool {
+        self.nullifier_index
+            .get(nullifier)
+            .is_some_and(|&idx| self.notes[idx].is_spent)
     }
 
     pub(super) fn mark_spent(&mut self, nullifier: &[u8; 32]) -> MarkSpentOutcome {
@@ -893,6 +915,13 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or_default())
     }
 
+    fn is_note_spent(&self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .is_some_and(|state| state.is_spent(nullifier)))
+    }
+
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
         // In-memory store: the redrive map lives in the same
         // `SubwalletState`, so `mark_spent` already dropped any resolved
@@ -1069,7 +1098,9 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
-        self.checkpoints.push(checkpoint_id);
+        if self.checkpoints.last() < Some(&checkpoint_id) {
+            self.checkpoints.push(checkpoint_id);
+        }
         Ok(())
     }
 
@@ -1184,6 +1215,23 @@ mod tests {
         );
         state.clear_pending(&[2; 32]);
         assert_eq!(state.spendable_balance(), Some(700));
+    }
+
+    #[test]
+    fn should_report_spent_state_by_nullifier() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        store.save_note(id, &note_with_nullifier([1; 32])).unwrap();
+        assert!(!store.is_note_spent(id, &[1; 32]).unwrap());
+        store.mark_pending(id, &[1; 32]).unwrap();
+        assert!(
+            !store.is_note_spent(id, &[1; 32]).unwrap(),
+            "a reservation is not a spend"
+        );
+        store.mark_spent(id, &[1; 32]).unwrap();
+        assert!(store.is_note_spent(id, &[1; 32]).unwrap());
+        assert!(!store.is_note_spent(id, &[2; 32]).unwrap());
+        assert!(!store.is_note_spent(test_id(1), &[1; 32]).unwrap());
     }
 
     #[test]
