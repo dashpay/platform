@@ -27,6 +27,7 @@ use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
+use super::prover::{prove_on_blocking_thread, ShieldedProver};
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
@@ -61,7 +62,7 @@ use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
     build_identity_top_up_from_shielded_pool_transition, build_shield_from_identity_transition,
     build_shield_transition, build_shielded_transfer_transition,
-    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
+    build_shielded_withdrawal_transition, build_unshield_transition, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -528,7 +529,7 @@ fn resolve_shield_recipient(
 /// Self-shield front for [`shield_to`], preserving the pre-recipient
 /// signature for existing callers.
 #[allow(clippy::too_many_arguments)]
-pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
+pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: ShieldedProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -559,7 +560,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
 /// the send from chain data and the live and scan-derived activity ids
 /// line up.
 #[allow(clippy::too_many_arguments)]
-pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
+pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: ShieldedProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -640,6 +641,9 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 
     let claimed_inputs = inputs_with_nonce.clone();
 
+    // Await the shared, off-runtime proving-key preparation rather than
+    // blocking this worker on the key build.
+    let prover = prover.ready().await?;
     let state_transition = build_shield_transition(
         &recipient_addr,
         amount,
@@ -647,7 +651,7 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
         fee_strategy,
         signer,
         0, // user_fee_increase
-        prover,
+        &prover,
         memo,
         // Encrypt the output under the account's own OVK so the wallet's
         // shielded sync can recover this send (recipient, value, memo)
@@ -924,7 +928,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
 pub(in crate::wallet) async fn shield_from_identity_to<
     S: ShieldedStore,
     Sig: Signer<IdentityPublicKey>,
-    P: OrchardProver,
+    P: ShieldedProver,
 >(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -988,6 +992,9 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         "ShieldFromIdentity: building proof"
     );
 
+    // Await the shared, off-runtime proving-key preparation rather than
+    // blocking this worker on the key build.
+    let prover = prover.ready().await?;
     let state_transition = build_shield_from_identity_transition(
         identity,
         &recipient_addr,
@@ -996,7 +1003,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         signer,
         None,
         0, // user_fee_increase
-        prover,
+        &prover,
         memo,
         Some(keys.outgoing_viewing_key.clone()),
         sdk.version(),
@@ -1352,12 +1359,12 @@ mod shield_from_identity_build_error_tests {
 /// unexpected shape, which is logged). The caller persists it for a managed
 /// identity (`PlatformWallet::shielded_identity_top_up_from_pool`).
 #[allow(clippy::too_many_arguments)]
-pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
+pub async fn identity_top_up_from_pool<S: ShieldedStore, P: ShieldedProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &Arc<OrchardKeySet>,
     account: u32,
     identity_id: Identifier,
     amount: u64,
@@ -1381,13 +1388,13 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     S: ShieldedStore,
-    P: OrchardProver,
+    P: ShieldedProver,
 >(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &Arc<OrchardKeySet>,
     account: u32,
     identity_id: Identifier,
     amount: u64,
@@ -1415,18 +1422,27 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         let anchor_bytes = anchor.to_bytes();
 
-        let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
-            spends,
-            identity_id,
-            amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            [0u8; 36],
-            sdk.version(),
-        )
+        // Proof generation runs on the blocking pool (see `prove_on_blocking_thread`);
+        // the keyset moves in by `Arc`, so the spend authority is not copied.
+        let (state_transition, fee_used) = {
+            let keys = Arc::clone(keys);
+            let platform_version: &'static PlatformVersion = sdk.version();
+            prove_on_blocking_thread(prover, move |prover| {
+                build_identity_top_up_from_shielded_pool_transition(
+                    spends,
+                    identity_id,
+                    amount,
+                    &change_addr,
+                    &keys.full_viewing_key,
+                    &keys.spend_auth_key,
+                    anchor,
+                    prover,
+                    [0u8; 36],
+                    platform_version,
+                )
+            })
+            .await?
+        }
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         debug_assert_eq!(
             fee_used, exact_fee,
@@ -1563,12 +1579,12 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 /// Unshield funds from `account`'s shielded notes to a
 /// transparent platform address.
 #[allow(clippy::too_many_arguments)]
-pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
+pub async fn unshield<S: ShieldedStore, P: ShieldedProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &Arc<OrchardKeySet>,
     account: u32,
     to_address: &PlatformAddress,
     amount: u64,
@@ -1617,18 +1633,28 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_unshield_transition(
-            spends,
-            *to_address,
-            amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            [0u8; 36],
-            sdk.version(),
-        )
+        // Proof generation runs on the blocking pool (see `prove_on_blocking_thread`);
+        // the keyset moves in by `Arc`, so the spend authority is not copied.
+        let (state_transition, fee_used) = {
+            let keys = Arc::clone(keys);
+            let to_address = *to_address;
+            let platform_version: &'static PlatformVersion = sdk.version();
+            prove_on_blocking_thread(prover, move |prover| {
+                build_unshield_transition(
+                    spends,
+                    to_address,
+                    amount,
+                    &change_addr,
+                    &keys.full_viewing_key,
+                    &keys.spend_auth_key,
+                    anchor,
+                    prover,
+                    [0u8; 36],
+                    platform_version,
+                )
+            })
+            .await?
+        }
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
         // compute_shielded_unshield_fee with the same action count; lock that they agree.
@@ -1755,12 +1781,12 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 /// Transfer funds privately from `account`'s shielded notes to
 /// another Orchard payment address.
 #[allow(clippy::too_many_arguments)]
-pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
+pub async fn transfer<S: ShieldedStore, P: ShieldedProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &Arc<OrchardKeySet>,
     account: u32,
     to_address: &PaymentAddress,
     amount: u64,
@@ -1796,18 +1822,27 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_shielded_transfer_transition(
-            spends,
-            &recipient_addr,
-            amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            memo,
-            sdk.version(),
-        )
+        // Proof generation runs on the blocking pool (see `prove_on_blocking_thread`);
+        // the keyset moves in by `Arc`, so the spend authority is not copied.
+        let (state_transition, fee_used) = {
+            let keys = Arc::clone(keys);
+            let platform_version: &'static PlatformVersion = sdk.version();
+            prove_on_blocking_thread(prover, move |prover| {
+                build_shielded_transfer_transition(
+                    spends,
+                    &recipient_addr,
+                    amount,
+                    &change_addr,
+                    &keys.full_viewing_key,
+                    &keys.spend_auth_key,
+                    anchor,
+                    prover,
+                    memo,
+                    platform_version,
+                )
+            })
+            .await?
+        }
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
         // compute_minimum_shielded_fee with the same action count; lock that they agree.
@@ -1911,12 +1946,12 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
 /// Withdraw funds from `account`'s shielded notes to a Core L1 address.
 #[allow(clippy::too_many_arguments)]
-pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
+pub async fn withdraw<S: ShieldedStore, P: ShieldedProver>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
-    keys: &OrchardKeySet,
+    keys: &Arc<OrchardKeySet>,
     account: u32,
     to_address: &dashcore::Address,
     amount: u64,
@@ -1963,21 +1998,30 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_shielded_withdrawal_transition(
-            spends,
-            amount,
-            output_script,
-            core_fee_per_byte,
-            // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
-            Pooling::Never,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
-            prover,
-            [0u8; 36],
-            sdk.version(),
-        )
+        // Proof generation runs on the blocking pool (see `prove_on_blocking_thread`);
+        // the keyset moves in by `Arc`, so the spend authority is not copied.
+        let (state_transition, fee_used) = {
+            let keys = Arc::clone(keys);
+            let platform_version: &'static PlatformVersion = sdk.version();
+            prove_on_blocking_thread(prover, move |prover| {
+                build_shielded_withdrawal_transition(
+                    spends,
+                    amount,
+                    output_script,
+                    core_fee_per_byte,
+                    // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
+                    Pooling::Never,
+                    &change_addr,
+                    &keys.full_viewing_key,
+                    &keys.spend_auth_key,
+                    anchor,
+                    prover,
+                    [0u8; 36],
+                    platform_version,
+                )
+            })
+            .await?
+        }
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
         // compute_shielded_withdrawal_fee with the same action count; lock that they agree.
@@ -2112,7 +2156,7 @@ pub async fn identity_create_from_shielded_pool<S, P, IS>(
 ) -> Result<(Identifier, Identity), PlatformWalletError>
 where
     S: ShieldedStore,
-    P: OrchardProver,
+    P: ShieldedProver,
     IS: Signer<IdentityPublicKey>,
 {
     if public_keys.is_empty() {
@@ -2167,6 +2211,10 @@ where
         // this anchor is pruned from Platform's recorded set.
         let anchor_bytes = anchor.to_bytes();
 
+        // Await the shared proving-key preparation instead of blocking a worker
+        // on the key build. The proof itself still runs inside the builder here:
+        // it interleaves proving with the host identity signer.
+        let prover = prover.ready().await?;
         let build = build_identity_create_from_shielded_pool_transition(
             public_keys,
             denomination,
@@ -2176,7 +2224,7 @@ where
             &keys.full_viewing_key,
             &keys.spend_auth_key,
             anchor,
-            prover,
+            &prover,
             identity_signer,
             [0u8; 36],
             sdk.version(),

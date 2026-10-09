@@ -22,7 +22,8 @@
 //!   [`FileBackedShieldedStore`] — storage abstraction; the
 //!   shared commitment tree lives here. Per-subwallet notes are
 //!   scoped by [`SubwalletId`] inside the store.
-//! - [`CachedOrchardProver`] — lazy-init proving key cache.
+//! - [`CachedOrchardProver`] — lazy-init proving key cache with a
+//!   shared, off-runtime async preparation ([`ShieldedProver`]).
 //! - Sync / spend operations live as free functions in the
 //!   [`sync`] and [`operations`] submodules and take
 //!   `(sdk, store, persister, wallet_id, keys, …)` explicitly.
@@ -61,7 +62,7 @@ pub use balance::{
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
-pub use prover::CachedOrchardProver;
+pub use prover::{CachedOrchardProver, ReadyOrchardProver, ShieldedProver};
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore, ShieldedNote,

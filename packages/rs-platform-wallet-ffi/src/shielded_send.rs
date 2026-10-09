@@ -32,9 +32,10 @@
 //! crosses the FFI boundary.
 //!
 //! Feature-gated behind `shielded`. The accompanying
-//! [`platform_wallet_shielded_warm_up_prover`] entry-point is
-//! also defined here so hosts can pre-build the Halo 2 proving
-//! key on a background thread at app startup.
+//! [`platform_wallet_shielded_warm_up_prover`] (fire-and-forget) and
+//! [`platform_wallet_shielded_prepare_prover`] (blocks until ready)
+//! entry-points are also defined here so hosts can pre-build the
+//! Halo 2 proving key at app startup.
 //!
 //! [`ShieldedWallet`]: platform_wallet::wallet::shielded::ShieldedWallet
 //! [`ShieldedWallet::shield`]: platform_wallet::wallet::shielded::ShieldedWallet::shield
@@ -136,28 +137,62 @@ unsafe fn parse_required_platform_address(
     }
 }
 
-/// Kick off the Halo 2 proving-key build on a background tokio
-/// worker if it hasn't been built yet. Returns immediately —
-/// hosts can call this at app startup without blocking the UI
-/// thread. Subsequent calls are cheap no-ops once the key is
-/// cached. The first shielded send still pays the ~30 s build
-/// cost only if it fires before the warm-up worker finishes;
-/// `platform_wallet_shielded_prover_is_ready` reports whether
-/// that's the case.
+/// Kick off the Halo 2 proving-key build in the background if it
+/// hasn't been built yet. Returns immediately — hosts can call this
+/// at app startup without blocking the UI thread. Subsequent calls
+/// are cheap no-ops once the key is cached.
 ///
-/// Independent of any manager — the cache is a process-global
-/// `OnceLock`.
+/// The build runs on the runtime's blocking pool and is shared with
+/// every other preparation: a shielded send (or
+/// [`platform_wallet_shielded_prepare_prover`]) that starts while it
+/// is running waits only for the remaining build time.
+/// `platform_wallet_shielded_prover_is_ready` reports whether it has
+/// finished.
+///
+/// Independent of any manager — the cache is process-global.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_warm_up_prover() {
-    runtime().spawn_blocking(|| CachedOrchardProver::new().warm_up());
+    runtime().spawn(async {
+        // A failed build leaves the cache empty; the next preparation
+        // (or send) retries and reports the error.
+        let _ = CachedOrchardProver::prepare().await;
+    });
+}
+
+/// Block the calling thread until the Halo 2 proving key is built,
+/// starting the build if nobody has yet. Returns immediately if the key
+/// is already cached.
+///
+/// Shares the single process-wide build with
+/// [`platform_wallet_shielded_warm_up_prover`] and with shielded sends,
+/// so calling it while a warm-up is running waits only for the
+/// remainder. The build runs on the runtime's blocking pool; the calling
+/// thread just parks. Call it off the main thread (e.g. from a
+/// background dispatch queue) to learn when the prover is ready.
+///
+/// Returns an error only if the build panicked or the runtime is
+/// shutting down; the cache then stays empty and a later call retries.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_shielded_prepare_prover() -> PlatformWalletFFIResult {
+    // Preparation spends nothing, so a panic in the runtime bridge is a
+    // definitive failure rather than an ambiguous spend outcome.
+    catch_panic_to_code(
+        "shielded prover preparation",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "No spend was broadcast.",
+        || match block_on_worker(CachedOrchardProver::prepare()) {
+            Ok(()) => PlatformWalletFFIResult::ok(),
+            Err(e) => e.into(),
+        },
+    )
 }
 
 /// Whether the Halo 2 proving key has already been built.
 ///
 /// Useful as a UI indicator ("preparing prover…") before the
 /// first shielded send. `false` doesn't mean shielded sends will
-/// fail — it just means the next one will pay the ~30s build
-/// cost up front.
+/// fail — it just means the next one will wait for the build to
+/// finish first.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
     CachedOrchardProver::new().is_ready()
@@ -2293,6 +2328,26 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_wallet::wallet::shielded::store::PendingRedrive;
     use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
+
+    /// The blocking prepare entry point returns only once the real key is
+    /// cached, and joins a warm-up already in flight. Builds the real Halo 2
+    /// key (~30 s debug, ~1-3 s release), so ignored by default.
+    #[test]
+    #[ignore = "builds the real Halo 2 proving key"]
+    fn prepare_prover_blocks_until_the_key_is_ready() {
+        unsafe {
+            platform_wallet_shielded_warm_up_prover();
+            let start = std::time::Instant::now();
+            let result = platform_wallet_shielded_prepare_prover();
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert!(platform_wallet_shielded_prover_is_ready());
+            eprintln!("prepare_prover waited {:?}", start.elapsed());
+            // Ready: repeated preparation succeeds and preserves readiness.
+            let result = platform_wallet_shielded_prepare_prover();
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            assert!(platform_wallet_shielded_prover_is_ready());
+        }
+    }
 
     #[test]
     fn encode_memo_text_none_is_empty() {
