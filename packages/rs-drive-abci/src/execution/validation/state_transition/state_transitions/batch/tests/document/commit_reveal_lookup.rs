@@ -1073,7 +1073,7 @@ mod commit_reveal_lookup_tests {
         );
         assert_matches!(
             consumed.as_slice(),
-            [consumed] if consumed.document.document_id == preorder.id()
+            [consumed] if consumed.document.document.id() == preorder.id()
                 && consumed.document.document_type_name == "preorder"
                 && consumed.path == "preorderSalt"
         );

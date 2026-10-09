@@ -28,6 +28,7 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
+use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -94,7 +95,7 @@ impl ConsumedDocuments {
             let document = (
                 contract_id,
                 consumption.document.document_type_name.clone(),
-                consumption.document.document_id,
+                consumption.document.document.id(),
             );
             if self.written.contains(&document)
                 || self.consumed.contains(&document)
@@ -125,7 +126,7 @@ impl ConsumedDocuments {
             (
                 contract_id,
                 consumption.document.document_type_name.clone(),
-                consumption.document.document_id,
+                consumption.document.document.id(),
             )
         }));
     }
@@ -150,6 +151,7 @@ mod tests {
     use super::*;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::DocumentPropertyReferenceTarget;
+    use dpp::document::{Document, DocumentV0};
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::version::PlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;
@@ -168,7 +170,11 @@ mod tests {
     fn consumption(document_id: [u8; 32]) -> ConsumedLookupDocument {
         ConsumedLookupDocument {
             document: ConsumedDocument {
-                document_id: Identifier::from(document_id),
+                document: Document::V0(DocumentV0 {
+                    id: Identifier::from(document_id),
+                    ..Default::default()
+                }),
+                storage_flags: None,
                 document_type_name: "preorder".to_string(),
             },
             referenced_id: Identifier::from([9; 32]),

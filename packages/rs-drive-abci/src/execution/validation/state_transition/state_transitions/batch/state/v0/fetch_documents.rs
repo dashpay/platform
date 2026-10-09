@@ -15,13 +15,16 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
-use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use drive::drive::document::query::{
+    QueryDocumentsOutcomeV0Methods, QueryDocumentsWithFlagsOutcomeV0Methods,
+};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::util::storage_flags::StorageFlags;
 use std::collections::BTreeMap;
 
 // ============================================================================
@@ -452,8 +455,9 @@ pub(crate) fn hash_lookup_key(
     Some(BilledLookupKey(digest))
 }
 
-/// The document a `refersTo` lookup resolves to for one value: the one the
-/// declared unique index of `document_type` finds for the key assembled from
+/// The document a `refersTo` lookup resolves to for one value, with the storage flags of
+/// its stored element (a create that consumes it deletes it from these, without reading it
+/// again): the one the declared unique index of `document_type` finds for the key assembled from
 /// `reference_value` (the identifier property's value, one array element, the
 /// writer or the creator), the writer `owner_id` and the sources in
 /// `document_data`, a document of `declaring_document_type`. `None` when no
@@ -486,7 +490,7 @@ pub(crate) fn fetch_document_through_lookup(
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<Option<Document>, Error> {
+) -> Result<Option<(Document, Option<StorageFlags>)>, Error> {
     // Registration resolved the index its `findBy` names, and a type's indexes
     // never change, so this only guards a declaration no registration admits:
     // one naming no unique index finds no document
@@ -552,7 +556,7 @@ pub(crate) fn fetch_document_through_lookup(
         sub_queries: vec![],
     };
 
-    let documents_outcome = drive.query_documents(
+    let documents_outcome = drive.query_documents_with_flags(
         drive_query,
         Some(epoch),
         false,

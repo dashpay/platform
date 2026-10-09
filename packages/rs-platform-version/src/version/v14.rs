@@ -1639,7 +1639,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     structure 1 refuses a contract-bound key whose bounds leave out a type
 ///     the created type may consume (`ContractBoundedKeyOutOfBoundsError`,
 ///     20014). The consumed deletes are converted with the create's own
-///     operations pending, so a type may consume its own documents. The
+///     operations pending, so a type may consume its own documents, each from
+///     the document and storage flags the lookup read (`ConsumedDocument`,
+///     `Drive::force_delete_read_document_for_contract_operations`), so the
+///     delete reads and bills nothing again. The
 ///     `where` entries beside a function are judged with it, on the create
 ///     alone, so the properties they read must be fixed once written or
 ///     transient; on a mutable type such a reference may not be an `anyOf`
@@ -1914,8 +1917,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `permanentDocument` or `moderatedDocument` one
 ///     (`documents_can_disappear`, `document_reference_kind`). A consumed
 ///     document is deleted without its owner's `canBeDeleted` guard
-///     (`ForceDeleteDocument` beside a contested create,
-///     `force_delete_document_for_contract_operations` in
+///     (`ForceDeleteReadDocument` beside a contested create,
+///     `force_delete_read_document_for_contract_operations` in
 ///     `AddDocumentAndDeleteConsumed`), so Drive's delete guard stays strict
 ///     for the owner's delete. Refused on a type that keeps history or is
 ///     indexOnly (10231), and fixed on update (`validate_update` v1, 40212).
