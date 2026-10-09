@@ -1007,6 +1007,57 @@ mod tests {
         service.join().expect("quorum service");
     }
 
+    /// Uninterpretable hashes in successful trusted responses leave absence
+    /// unproven, so an honest node must not incur a health ban.
+    #[test_case::test_case("zz", true; "invalid_hex_current")]
+    #[test_case::test_case("zz", false; "invalid_hex_previous")]
+    #[test_case::test_case("11", true; "wrong_length_current")]
+    #[test_case::test_case("11", false; "wrong_length_previous")]
+    #[tokio::test]
+    async fn should_not_ban_a_node_for_uninterpretable_trusted_quorum_hashes(
+        invalid_hash: &str,
+        malformed_current: bool,
+    ) {
+        let malformed = current_list(invalid_hash, &signing_quorum_key());
+        let (current, previous) = if malformed_current {
+            (malformed, empty_previous_list())
+        } else {
+            let malformed: serde_json::Value = serde_json::from_str(&malformed).unwrap();
+            (
+                r#"{"success":true,"data":[]}"#.to_string(),
+                serde_json::json!({
+                    "success": true,
+                    "data": {"height": 1, "quorums": malformed["data"]}
+                })
+                .to_string(),
+            )
+        };
+        let (base_url, service) = quorum_service(vec![
+            ("/quorums", 200, current),
+            ("/previous", 200, previous),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("the trusted list cannot identify its quorum");
+
+        assert!(
+            matches!(
+                &error,
+                Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "unproven absence must remain a source failure: {error:?}"
+        );
+        assert!(!error.can_retry(), "a source failure must not ban the node");
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        let mut asked = service.join().expect("quorum service");
+        asked.sort();
+        assert_eq!(asked, ["/previous", "/quorums"]);
+    }
+
     /// A provider that cannot fetch keys keeps today's behaviour: the
     /// verification error is reported unchanged.
     #[tokio::test]

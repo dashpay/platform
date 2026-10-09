@@ -205,20 +205,6 @@ fn consensus_code_of(error: &dash_sdk::Error) -> Option<u32> {
     }
 }
 
-/// Whether the trusted quorum source failed, including retry exhaustion
-/// around its original SDK error.
-fn is_quorum_source_unavailable(error: &dash_sdk::Error) -> bool {
-    match error {
-        dash_sdk::Error::ContextProviderError(
-            dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_),
-        ) => true,
-        dash_sdk::Error::NoAvailableAddressesToRetry(last_error) => {
-            is_quorum_source_unavailable(last_error)
-        }
-        _ => false,
-    }
-}
-
 impl FFIError {
     /// `source` with the message `"{context}: {source}"`, keeping the SDK
     /// error so its consensus code and quorum-source category reach the host.
@@ -235,7 +221,7 @@ impl From<FFIError> for DashSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKCallFailed { source, .. } => {
-                let code = if is_quorum_source_unavailable(source) {
+                let code = if source.is_quorum_source_unavailable() {
                     DashSDKErrorCode::NetworkError
                 } else {
                     DashSDKErrorCode::InternalError
@@ -270,7 +256,7 @@ impl From<FFIError> for DashSDKError {
                     // InternalError and surface in the UI as a misleading
                     // "Internal Error" for what is really a network problem.
                     (DashSDKErrorCode::NetworkError, error_str)
-                } else if is_quorum_source_unavailable(sdk_err) {
+                } else if sdk_err.is_quorum_source_unavailable() {
                     // The quorum service that vouches for quorum keys gave no
                     // answer, so a proof could not be checked: transient and
                     // network-side, whatever words its message happens to hold.

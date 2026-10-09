@@ -156,7 +156,9 @@ impl From<dash_sdk::dash_platform_queries::Error> for WasmSdkError {
 impl From<SdkError> for WasmSdkError {
     fn from(err: SdkError) -> Self {
         use SdkError::*;
-        let retriable = err.can_retry();
+        // A trusted source outage is transient for the app, independently
+        // of the SDK's node-health retryability, even after retry exhaustion.
+        let retriable = err.can_retry() || err.is_quorum_source_unavailable();
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
             Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
@@ -246,22 +248,12 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             Generic(msg) => Self::new(WasmSdkErrorKind::Generic, msg, None, retriable),
-            ContextProviderError(e) => {
-                // A quorum source that gave no answer is not held against the
-                // node, so the SDK does not count it as retryable, but it is
-                // transient: the app may try again.
-                let retriable = retriable
-                    || matches!(
-                        e,
-                        dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(_)
-                    );
-                Self::new(
-                    WasmSdkErrorKind::ContextProviderError,
-                    e.to_string(),
-                    None,
-                    retriable,
-                )
-            }
+            ContextProviderError(e) => Self::new(
+                WasmSdkErrorKind::ContextProviderError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
@@ -456,16 +448,61 @@ mod tests {
 
     /// The quorum service that vouches for quorum keys gave no answer. No node
     /// is banned for that, but the app should try again: it is transient.
-    #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
     fn should_report_an_unavailable_quorum_source_as_retriable() {
-        let error = WasmSdkError::from(SdkError::ContextProviderError(
+        let source = SdkError::ContextProviderError(
             dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
                 "current quorums: HTTP 503".to_string(),
             ),
-        ));
+        );
+        assert!(!source.can_retry(), "source failures must not ban nodes");
+        let message = format!("Failed to fetch identity: {source}");
+        let error = WasmSdkError::with_context("Failed to fetch identity", source);
 
         assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
         assert!(error.is_retriable());
+        assert_eq!(error.message(), message);
+    }
+
+    /// Retry exhaustion must preserve application retryability without
+    /// attributing the trusted source's failure to a responding node.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_retry_wrapped_unavailable_quorum_source_as_retriable() {
+        for depth in 1..=2 {
+            let mut source = SdkError::ContextProviderError(
+                dash_sdk::error::ContextProviderError::QuorumSourceUnavailable(
+                    "current quorums: HTTP 503".to_string(),
+                ),
+            );
+            for _ in 0..depth {
+                source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+            }
+            assert!(!source.can_retry(), "source failures must not ban nodes");
+            let message = format!("Failed to fetch identity: {source}");
+            let error = WasmSdkError::with_context("Failed to fetch identity", source);
+
+            assert_eq!(error.kind(), WasmSdkErrorKind::DapiClientError);
+            assert!(error.is_retriable(), "retry envelope depth {depth}");
+            assert_eq!(error.message(), message);
+        }
+    }
+
+    /// Only typed quorum-source failures override retry exhaustion.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_keep_unrelated_retry_exhaustion_non_retriable() {
+        let source =
+            SdkError::NoAvailableAddressesToRetry(Box::new(SdkError::NoAvailableAddressesToRetry(
+                Box::new(SdkError::Generic("quorum source unavailable".to_string())),
+            )));
+        let message = format!("Failed to fetch identity: {source}");
+        let error = WasmSdkError::with_context("Failed to fetch identity", source);
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::DapiClientError);
+        assert!(!error.is_retriable());
+        assert_eq!(error.message(), message);
     }
 
     #[test]
