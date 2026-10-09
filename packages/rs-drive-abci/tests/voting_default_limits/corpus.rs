@@ -154,7 +154,7 @@ fn should_match_committed_voting_default_limit_responses() {
         DEFAULT_QUERY_LIMIT as usize,
         DEFAULT_QUERY_LIMIT as usize + 1,
     ] {
-        let drive = setup_drive_with_initial_state_structure(None);
+        let drive = setup_drive_with_initial_state_structure(Some(version));
         fixture::populate(&drive, count, version);
         let root = drive
             .grove
