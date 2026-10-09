@@ -56,9 +56,12 @@ export async function register(
   // preorderSalt against. From DPNS v3 the contract declares it: the params of
   // the salt's findBy function (the writer's id, the salt, the normalized label,
   // '.' and the parent domain name as sent). Before it, the salt and
-  // `${normalizedLabel}.${parentDomainName}`.
+  // `${normalizedLabel}.${parentDomainName}`. The contract is the one the
+  // network stores now, not one cached before an upgrade changed it, whose hash
+  // the domain could not reveal; fetching it also replaces the cached one, so
+  // both documents are created against it.
   const { contractId } = this.client.getApps().get('dpns');
-  const dpnsContract = await this.contracts.get(contractId);
+  const dpnsContract = await this.contracts.get(contractId, { skipCache: true });
   const domainSchema = dpnsContract ? dpnsContract.getDocumentSchema('domain') : undefined;
   const hashParams = domainSchema?.properties?.preorderSalt?.refersTo
     ?.findBy?.saltedDomainHash?.params;

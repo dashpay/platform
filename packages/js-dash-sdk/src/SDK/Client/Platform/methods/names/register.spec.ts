@@ -5,7 +5,30 @@ import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateR
 import cryptoModule from 'crypto';
 
 import register from './register';
+import getContract from '../contracts/get';
 import { ClientApps } from '../../../ClientApps';
+
+const sha256d = (data: Buffer): Buffer => {
+  const sha256 = (bytes: Buffer): Buffer => cryptoModule.createHash('sha256').update(bytes).digest();
+  return sha256(sha256(data));
+};
+
+// The `domain` schema of DPNS v3: the salt reveals the hash of the writer's id,
+// the salt, the normalized label, '.' and the parent domain name
+const dpnsV3DomainSchema = () => ({
+  properties: {
+    preorderSalt: {
+      refersTo: {
+        findBy: {
+          saltedDomainHash: {
+            function: 'sys.hash.sha256d',
+            params: ['$ownerId', 'preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+          },
+        },
+      },
+    },
+  },
+});
 
 describe('Platform', () => {
   let randomBytesMock;
@@ -155,20 +178,7 @@ describe('Platform', () => {
         const identityId = await generateRandomIdentifier();
         identityMock.getId.returns(identityId);
         platformMock.contracts.get.resolves({
-          getDocumentSchema: () => ({
-            properties: {
-              preorderSalt: {
-                refersTo: {
-                  findBy: {
-                    saltedDomainHash: {
-                      function: 'sys.hash.sha256d',
-                      params: ['$ownerId', 'preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
-                    },
-                  },
-                },
-              },
-            },
-          }),
+          getDocumentSchema: dpnsV3DomainSchema,
         });
 
         await register.call(platformMock, 'User.dash', {
@@ -176,15 +186,61 @@ describe('Platform', () => {
         }, identityMock);
 
         // sha256d(owner id ++ salt ++ 'user' ++ '.' ++ 'dash')
-        const sha256 = (data) => cryptoModule.createHash('sha256').update(data).digest();
-        const expected = sha256(sha256(Buffer.concat([
+        const expected = sha256d(Buffer.concat([
           identityId.toBuffer(),
           Buffer.alloc(32),
           Buffer.from('user.dash'),
-        ])));
+        ]));
         expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.equal(
           expected.toString('hex'),
         );
+      });
+
+      it('should hash with the DPNS contract the network stores, not a cached one', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+
+        // An app cache warmed with DPNS v2, which declares no preorder hash, on a
+        // network that has since stored DPNS v3
+        const { contractId } = platformMock.client.getApps().get('dpns');
+        const cachedContract = {
+          getDocumentSchema: () => ({ properties: { preorderSalt: {} } }),
+        };
+        const storedContract = {
+          getDocumentSchema: dpnsV3DomainSchema,
+        };
+        const apps = new ClientApps({
+          dpns: { contractId, contract: cachedContract },
+        });
+        platformMock.client.getApps = () => apps;
+        platformMock.logger = { debug: () => {}, silly: () => {} };
+        platformMock.fetcher = {
+          fetchDataContract: async () => ({ getDataContract: () => new Uint8Array() }),
+        };
+        platformMock.dpp = {
+          dataContract: { createFromBuffer: async () => storedContract },
+        };
+        platformMock.contracts.get = (identifier, options) => getContract.call(
+          platformMock,
+          identifier,
+          options,
+        );
+
+        await register.call(platformMock, 'User.dash', {
+          identity: identityId,
+        }, identityMock);
+
+        // sha256d(owner id ++ salt ++ 'user' ++ '.' ++ 'dash')
+        const expected = sha256d(Buffer.concat([
+          identityId.toBuffer(),
+          Buffer.alloc(32),
+          Buffer.from('user.dash'),
+        ]));
+        expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.equal(
+          expected.toString('hex'),
+        );
+        // The documents are created against the contract the hash was taken from
+        expect(apps.get('dpns').contract).to.equal(storedContract);
       });
 
       it('should fail if DPNS app have no contract set up', async () => {

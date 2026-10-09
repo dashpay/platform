@@ -1371,7 +1371,7 @@ pub fn prettify_proof(proof: &Proof) -> String {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use std::sync::Arc;
 
     use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
@@ -2385,7 +2385,7 @@ mod test {
     /// metadata, so consuming this expectation drives `refresh_protocol_version`
     /// through the same verified `maybe_update_protocol_version` ratchet a real
     /// quorum-signed response would — the exact path production relies on.
-    async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
+    pub(crate) async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
         use crate::platform::types::epoch::EpochQuery;
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
