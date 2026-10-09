@@ -2,9 +2,9 @@
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to PR #1145 (`40e7b24c`) to accept
-  legacy BLS public-key encodings through binary Serde. PlatformNodeId storage
-  compatibility is not covered by this update.
+- **Rust dependencies:** pin rust-dashcore to `fix/legacy-serde-bls-node-id`
+  (`e6873e95`), restoring legacy BLS public-key and canonical PlatformNodeId
+  serialization, and preserving the pre-v4 coinbase payload Serde layout.
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
 

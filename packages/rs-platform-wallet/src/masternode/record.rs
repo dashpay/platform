@@ -349,7 +349,7 @@ where
                 if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
                     // Evonode IDs use canonical Tenderdash bytes in the ownership index.
                     if let Some(node_id) = p.platform_node_id {
-                        agg.platform_node_id = Some(node_id.to_canonical_bytes());
+                        agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
                     }
                 }
@@ -366,7 +366,7 @@ where
                 }
                 if let Some(node_id) = p.platform_node_id {
                     if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                        agg.platform_node_id = Some(node_id.to_canonical_bytes());
+                        agg.platform_node_id = Some(node_id.to_byte_array());
                         agg.platform_node_height = height;
                     }
                 }
