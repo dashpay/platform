@@ -388,6 +388,35 @@ fn parse_generation_3(
         )));
     }
 
+    // A property type shorthand (`"type": "identifier"`, or `"type": "bytes"`
+    // with a `size`) is read as the long form it stands for: from here on
+    // every stage, the meta-schema, the document validator the core compiles
+    // and the `$ref` walks included, reads the expanded schema and `$defs`,
+    // so a shorthand parses to exactly what its long form parses to. The
+    // document type keeps the schema as sent (restored before returning),
+    // since that is what the contract stores, serializes and proves. Only a
+    // document type's parse expands the contract's `$defs`, so the `$defs` of
+    // a contract without document types stay as sent, unchecked, as before 14.
+    let expanded_schema_defs = schema_defs
+        .map(|schema_defs| {
+            DocumentType::expand_schema_defs_property_type_shorthands(
+                schema_defs,
+                full_validation,
+                platform_version,
+            )
+        })
+        .transpose()?
+        .flatten();
+    let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
+    let (schema, schema_as_sent) = match DocumentType::expand_property_type_shorthands(
+        &schema,
+        full_validation,
+        platform_version,
+    )? {
+        Some(expanded_schema) => (expanded_schema, Some(schema)),
+        None => (schema, None),
+    };
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -660,6 +689,12 @@ fn parse_generation_3(
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
+    // Every stage above read the expanded schema; the document type holds the
+    // one the contract was sent with
+    if let Some(schema_as_sent) = schema_as_sent {
+        v2.schema = schema_as_sent;
     }
 
     Ok(v2)
@@ -1908,6 +1943,8 @@ mod owner_reference_tests;
 mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_type_shorthand_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_expression_tests;
 #[cfg(all(test, feature = "validation"))]

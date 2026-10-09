@@ -173,6 +173,58 @@ async fn should_accept_an_ordinary_contract_in_check_tx() {
     );
 }
 
+/// The depth check resolves every `$ref`. The block checks the long form a property type
+/// shorthand stands for, so a reference to a keyword only that form writes resolves there;
+/// `check_tx` checks the same rewritten schema and admits what the block accepts, as it does
+/// the contract written in full.
+#[tokio::test]
+async fn should_admit_in_check_tx_a_ref_to_a_keyword_a_shorthand_stands_for() {
+    let hash = |property: Value| {
+        platform_value!({
+            "type": "object",
+            "properties": { "hash": property },
+            "additionalProperties": false
+        })
+    };
+    let contains = platform_value!({ "$ref": "#/properties/hash/byteArray" });
+    for schema in [
+        hash(platform_value!({
+            "type": "bytes",
+            "size": 32,
+            "position": 0,
+            "contains": contains.clone()
+        })),
+        hash(platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "position": 0,
+            "contains": contains.clone()
+        })),
+    ] {
+        let outcome = register_contract_with_schema(
+            schema.clone(),
+            PlatformVersion::latest().protocol_version,
+        )
+        .await
+        .outcome;
+
+        assert_matches!(
+            outcome.check_tx.as_deref(),
+            Ok([]),
+            "check_tx of {schema:?}: {:?}",
+            outcome.check_tx
+        );
+        assert_matches!(
+            &outcome.block,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "block of {schema:?}: {:?}",
+            outcome.block
+        );
+    }
+}
+
 #[tokio::test]
 async fn should_refuse_a_summed_u64_property_with_a_paid_consensus_error() {
     let outcome = register_contract_with_schema(
