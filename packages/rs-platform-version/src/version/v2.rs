@@ -17,6 +17,7 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v0::DRIVE_ABCI_QUERY_VERSIONS_V0;
+use crate::version::drive_abci_versions::drive_abci_state_sync_versions::v1::DRIVE_ABCI_STATE_SYNC_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v2::DRIVE_ABCI_VALIDATION_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
@@ -40,6 +41,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1,
         query: DRIVE_ABCI_QUERY_VERSIONS_V0,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
+        state_sync: DRIVE_ABCI_STATE_SYNC_VERSIONS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,

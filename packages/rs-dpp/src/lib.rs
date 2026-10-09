@@ -61,6 +61,8 @@ pub mod core_subsidy;
 pub mod fee;
 pub mod nft;
 pub mod prefunded_specialized_balance;
+/// Reduced platform state stored in replicated state for state sync reconstruction
+pub mod reduced_platform_state;
 pub mod serialization;
 #[cfg(any(
     feature = "message-signing",

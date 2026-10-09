@@ -1,10 +1,15 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, PlatformApplication, StateSyncApplication, TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::{
+    clear_restore_sentinel_best_effort, restore_sentinel_exists, SnapshotFetchingSession,
+};
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
@@ -26,6 +31,8 @@ pub struct ConsensusAbciApplication<'a, C> {
     block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// The unsigned withdrawal transactions of every proposal accepted at the current height
     unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
+    /// The state sync transfer currently in progress, if any
+    snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'a>>>,
 }
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
@@ -36,12 +43,23 @@ impl<'a, C> ConsensusAbciApplication<'a, C> {
             transaction: Default::default(),
             block_execution_context: Default::default(),
             unsigned_withdrawal_txs_by_round: Default::default(),
+            snapshot_fetching_session: Default::default(),
         }
     }
 }
 
 impl<C> PlatformApplication<C> for ConsensusAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
+        self.platform
+    }
+}
+
+impl<'a, C> StateSyncApplication<'a, C> for ConsensusAbciApplication<'a, C> {
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'a>>> {
+        &self.snapshot_fetching_session
+    }
+
+    fn platform(&self) -> &'a Platform<C> {
         self.platform
     }
 }
@@ -81,7 +99,18 @@ impl<'a, C> TransactionalApplication<'a> for ConsensusAbciApplication<'a, C> {
         self.platform
             .drive
             .commit_transaction(transaction, &platform_version.drive)
-            .map_err(Error::Drive)
+            .map_err(Error::Drive)?;
+        if restore_sentinel_exists(&self.platform.config.db_path) {
+            if let Err(error) = self.platform.drive.grove.flush() {
+                tracing::error!(
+                    ?error,
+                    "could not flush genesis state before clearing restore sentinel"
+                );
+            } else {
+                clear_restore_sentinel_best_effort(&self.platform.config.db_path);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -113,7 +142,7 @@ mod tests {
             crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
 
         let app = ConsensusAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let _platform_ref = app.platform();
+        let _platform_ref = PlatformApplication::platform(&app);
     }
 
     #[test]
@@ -229,5 +258,19 @@ where
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         handler::verify_vote_extension(self, request).map_err(error_into_exception)
+    }
+
+    fn offer_snapshot(
+        &self,
+        request: proto::RequestOfferSnapshot,
+    ) -> Result<proto::ResponseOfferSnapshot, proto::ResponseException> {
+        handler::offer_snapshot(self, request).map_err(error_into_exception)
+    }
+
+    fn apply_snapshot_chunk(
+        &self,
+        request: proto::RequestApplySnapshotChunk,
+    ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
+        handler::apply_snapshot_chunk(self, request).map_err(error_into_exception)
     }
 }

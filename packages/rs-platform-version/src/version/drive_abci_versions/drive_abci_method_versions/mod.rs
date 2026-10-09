@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v10;
+pub mod v11;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -36,6 +37,8 @@ pub struct DriveAbciMethodVersions {
 pub struct DriveAbciPlatformStateStorageMethodVersions {
     pub fetch_platform_state: FeatureVersion,
     pub store_platform_state: FeatureVersion,
+    pub fetch_reduced_platform_state: FeatureVersion,
+    pub store_reduced_platform_state: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

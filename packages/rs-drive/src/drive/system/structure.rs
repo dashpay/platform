@@ -1,6 +1,7 @@
 use crate::drive::balances::{TOTAL_SYSTEM_CREDITS_STORAGE_KEY, TOTAL_TOKEN_SUPPLIES_STORAGE_KEY};
 use crate::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
 use crate::drive::initialization::genesis_core_height::GENESIS_CORE_HEIGHT_KEY;
+use crate::drive::platform_state::REDUCED_PLATFORM_STATE_KEY;
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
 
@@ -11,8 +12,8 @@ pub(crate) fn structure() -> StructureNode {
         .source("packages/rs-drive/src/drive/mod.rs")
         .describe(
             "Chain wide values: total credits, total token \
-             supplies, the genesis core height, and the documents \
-             waiting to expire.",
+             supplies, the genesis core height, the documents \
+             waiting to expire, and the reduced platform state.",
         )
         .children(vec![
             StructureNode::fixed(
@@ -108,6 +109,27 @@ pub(crate) fn structure() -> StructureNode {
                         "The supply of one token. Must equal the sum of \
                          its balances.",
                     ),
+            ),
+            StructureNode::fixed(
+                "reduced_saved_state",
+                REDUCED_PLATFORM_STATE_KEY,
+                "ReducedSavedState",
+                "REDUCED_PLATFORM_STATE_KEY",
+            )
+            .ascii()
+            .kind(ElementKind::Item)
+            .since(15)
+            .lazy()
+            .source("packages/rs-drive/src/drive/platform_state/mod.rs")
+            .value("ReducedPlatformState, platform serialization (big endian)")
+            .describe(
+                "The part of the platform state a node restored by state \
+                 sync cannot derive from Dash Core: block info, protocol \
+                 versions, validator set quorum hashes and positions, \
+                 previous fee versions and superseded lock quorums. \
+                 Rewritten every block just before the app hash is taken, \
+                 so snapshots carry it; the full platform state lives in aux \
+                 storage, which state sync does not transfer.",
             ),
         ])
 }

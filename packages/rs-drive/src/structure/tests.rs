@@ -380,6 +380,7 @@ mod fixtures {
         "saved_block_transactions.address_balances.block",
         "pools.pending_epoch_refunds.epoch",
         "misc.genesis_core_height",
+        "misc.reduced_saved_state",
         "spent_asset_locks.outpoint",
         "withdrawals.queue.transaction",
         "withdrawals.sum_amount.entry",

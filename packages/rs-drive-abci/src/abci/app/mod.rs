@@ -10,6 +10,7 @@ pub mod execution_result;
 mod full;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::snapshot::SnapshotFetchingSession;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
 use crate::rpc::core::DefaultCoreRPC;
 #[cfg(test)]
@@ -23,6 +24,16 @@ pub use full::FullAbciApplication;
 pub trait PlatformApplication<C = DefaultCoreRPC> {
     /// Returns Platform
     fn platform(&self) -> &Platform<C>;
+}
+
+/// ABCI application that can bootstrap its state via state sync
+pub trait StateSyncApplication<'p, C = DefaultCoreRPC> {
+    /// Returns the state sync transfer currently in progress, if any
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>>;
+
+    /// Returns Platform with the full `'p` lifetime, so a grovedb state sync session
+    /// borrowing the grove can be stored in the snapshot fetching session
+    fn platform(&self) -> &'p Platform<C>;
 }
 
 /// Transactional ABCI application

@@ -66,4 +66,22 @@ where
             })),
         }
     }
+
+    /// Rebuilds the in-memory Core-derived state (masternode lists and every quorum
+    /// set) from scratch at `core_block_height`, without touching GroveDB.
+    ///
+    /// State sync reconstruction uses this: the restored GroveDB already holds every
+    /// masternode identity exactly as the source chain wrote it, so the identity writes
+    /// `update_core_info` would issue are at best no-ops and at worst a root-hash
+    /// mismatch. Only the platform state, which is not replicated, has to be rebuilt.
+    /// Not consensus code, hence unversioned.
+    pub(crate) fn rebuild_core_info_in_memory(
+        &self,
+        state: &mut PlatformState,
+        core_block_height: u32,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.update_state_masternode_list_v0(state, core_block_height, true)?;
+        self.update_quorum_info(None, state, core_block_height, true, platform_version)
+    }
 }

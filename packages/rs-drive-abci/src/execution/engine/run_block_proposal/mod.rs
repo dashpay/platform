@@ -17,6 +17,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -187,9 +188,19 @@ Your software version: {}, latest supported protocol version: {}."#,
                 block_platform_version,
                 timer,
             ),
+            1 => self.run_block_proposal_v1(
+                block_proposal,
+                known_from_us,
+                epoch_info,
+                transaction,
+                platform_state,
+                block_platform_state,
+                block_platform_version,
+                timer,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "run_block_proposal".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -457,6 +468,88 @@ mod tests {
                 .get(SystemDataContract::DPNS.id().to_buffer(), true)
                 .is_none(),
             "an ordinary proposal must still clear the block cache it inherited"
+        );
+    }
+    /// `run_block_proposal` v1 (protocol v15) must run every step v0 runs, in the same
+    /// order, and differ only in the state sync changes: the validator set update moved
+    /// above the root hash and the reduced platform state written just before it. v1 is a
+    /// copy of v0, so a step later added to v0 alone (document expiry, token shielded pool
+    /// anchors) would silently be skipped by every v15 block. Remove exactly those changes
+    /// from v1 and v0 must be what is left.
+    #[test]
+    fn v1_runs_exactly_the_steps_of_v0_plus_the_state_sync_changes() {
+        let v0 = include_str!("v0/mod.rs");
+        let v1 = include_str!("v1/mod.rs");
+
+        fn cut<'a>(text: &'a str, start: &str, end: &str) -> (&'a str, &'a str) {
+            let from = text
+                .find(start)
+                .unwrap_or_else(|| panic!("missing {start:?}"));
+            let to = from
+                + text[from..]
+                    .find(end)
+                    .unwrap_or_else(|| panic!("missing {end:?} after {start:?}"));
+            (&text[..from], &text[to..])
+        }
+
+        // v1 without its state sync changes
+        let v1 = v1.replacen(
+            "use dpp::reduced_platform_state::v0::ReducedBlockInfoV0;\n",
+            "",
+            1,
+        );
+        let (head, tail) = cut(
+            &v1,
+            "    /// v1 (protocol v15, state sync)",
+            "    /// # Arguments",
+        );
+        let v1 = format!("{head}{tail}");
+        let (head, tail) = cut(
+            &v1,
+            "        // Unlike v0, the validator set update happens BEFORE",
+            "        let root_hash = self\n",
+        );
+        let v1 = format!("{head}{tail}").replace("run_block_proposal_v1", "run_block_proposal_v0");
+
+        // v0 without the validator set update that v1 moved
+        let (head, tail) = cut(
+            v0,
+            "        let validator_set_update = self.validator_set_update(",
+            "        if tracing::enabled!(tracing::Level::TRACE) {",
+        );
+        let v0 = format!("{head}{tail}");
+
+        assert!(
+            v1 == v0,
+            "run_block_proposal v1 differs from v0 by more than the state sync changes; \
+             mirror the v0 change into v1"
+        );
+    }
+
+    /// The protocol v15 method table is the v14 one with only the state sync generations
+    /// bumped, so every other block step (token shielded pool anchors included) runs at
+    /// v15 exactly as at v14.
+    #[test]
+    fn v15_method_table_differs_from_v14_only_in_the_state_sync_generations() {
+        use dpp::version::v14::PLATFORM_V14;
+        use dpp::version::v15::PLATFORM_V15;
+
+        let mut v15 = PLATFORM_V15.drive_abci.methods.clone();
+        assert_eq!(v15.engine.run_block_proposal, 1);
+        assert_eq!(v15.engine.consensus_params_update, 2);
+        v15.engine.run_block_proposal = 0;
+        v15.engine.consensus_params_update = 1;
+        assert_eq!(
+            format!("{v15:?}"),
+            format!("{:?}", PLATFORM_V14.drive_abci.methods)
+        );
+        assert_eq!(
+            PLATFORM_V15
+                .drive_abci
+                .methods
+                .block_end
+                .record_token_shielded_pool_anchors,
+            Some(0)
         );
     }
 }

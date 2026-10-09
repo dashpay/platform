@@ -31,6 +31,27 @@ impl Drive {
         path: P,
         config: Option<DriveConfig>,
     ) -> Result<(Self, Option<&'static PlatformVersion>), Error> {
+        let checkpoints_path = path.as_ref().join("checkpoints");
+        Self::open_with_checkpoints_path(path, config, checkpoints_path)
+    }
+
+    /// Opens GroveDB database, loading the checkpoint registry from an explicit directory.
+    ///
+    /// Checkpoints may be configured to live outside the database directory
+    /// (`CHECKPOINTS_PATH`). Whoever knows that configuration must pass the same directory
+    /// checkpoint creation writes to, otherwise the registry comes up empty after a
+    /// restart and the checkpoints on disk are neither advertised nor prunable.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the GroveDB.
+    /// * `config` - An `Option` which contains `DriveConfig`. If not specified, default configuration is used.
+    /// * `checkpoints_path` - The directory checkpoints are written to.
+    pub fn open_with_checkpoints_path<P: AsRef<Path>, Q: AsRef<Path>>(
+        path: P,
+        config: Option<DriveConfig>,
+        checkpoints_path: Q,
+    ) -> Result<(Self, Option<&'static PlatformVersion>), Error> {
         let config = config.unwrap_or_default();
         let db_path = path.as_ref();
 
@@ -52,8 +73,8 @@ impl Drive {
             })
             .transpose()?;
 
-        // Load existing checkpoints from the checkpoints directory
-        let checkpoints = load_current_checkpoints(db_path)?;
+        // Load existing checkpoints from the configured checkpoints directory
+        let checkpoints = load_current_checkpoints(checkpoints_path)?;
 
         let drive = Drive {
             grove,

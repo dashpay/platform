@@ -1,6 +1,7 @@
 pub mod drive_abci_checkpoint_parameters;
 pub mod drive_abci_method_versions;
 pub mod drive_abci_query_versions;
+pub mod drive_abci_state_sync_versions;
 pub mod drive_abci_structure_versions;
 pub mod drive_abci_validation_versions;
 pub mod drive_abci_withdrawal_constants;
@@ -8,6 +9,7 @@ pub mod drive_abci_withdrawal_constants;
 use drive_abci_checkpoint_parameters::DriveAbciCheckpointParameters;
 use drive_abci_method_versions::DriveAbciMethodVersions;
 use drive_abci_query_versions::DriveAbciQueryVersions;
+use drive_abci_state_sync_versions::DriveAbciStateSyncVersions;
 use drive_abci_structure_versions::DriveAbciStructureVersions;
 use drive_abci_validation_versions::DriveAbciValidationVersions;
 use drive_abci_withdrawal_constants::DriveAbciWithdrawalConstants;
@@ -20,4 +22,5 @@ pub struct DriveAbciVersion {
     pub withdrawal_constants: DriveAbciWithdrawalConstants,
     pub query: DriveAbciQueryVersions,
     pub checkpoints: DriveAbciCheckpointParameters,
+    pub state_sync: DriveAbciStateSyncVersions,
 }

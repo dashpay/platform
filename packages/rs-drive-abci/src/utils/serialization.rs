@@ -13,6 +13,29 @@ where
     s.parse::<T>().map_err(Error::custom)
 }
 
+/// Deserialize a value from a string (as provided by envy, where every value is a
+/// string) or from its native representation (as in JSON round trips).
+pub fn from_str_or_native<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    use serde::de::Error;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NativeOrString<T> {
+        Native(T),
+        String(String),
+    }
+
+    match NativeOrString::<T>::deserialize(deserializer)? {
+        NativeOrString::Native(value) => Ok(value),
+        NativeOrString::String(s) => s.parse::<T>().map_err(Error::custom),
+    }
+}
+
 /// Deserialize a value from an optional string or a number
 pub fn from_opt_str_or_number<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
