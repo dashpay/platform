@@ -72,8 +72,10 @@ impl PlatformWallet {
         account_index: u32,
         dummy_outputs: usize,
     ) -> Result<WalletDrainPreview, PlatformWalletError> {
-        let pool_fee_credits = self
-            .shield_from_asset_lock_pool_fee(shield_from_asset_lock_num_actions(dummy_outputs))?;
+        let pool_fee_credits = Self::shield_from_asset_lock_pool_fee(
+            shield_from_asset_lock_num_actions(dummy_outputs),
+            self.sdk.version(),
+        )?;
         let (candidates, height) = {
             let manager = self.wallet_manager.read().await;
             let (wallet, info) =
