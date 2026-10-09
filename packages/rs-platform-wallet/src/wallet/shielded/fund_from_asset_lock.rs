@@ -41,8 +41,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::wallet::asset_lock::tracked::TrackedAssetLock;
-
+use std::future::Future;
 use std::time::Duration;
 
 use crate::error::is_instant_lock_proof_invalid;
@@ -309,25 +308,14 @@ impl PlatformWallet {
                 let _ = out_point_tx.send(out_point);
             },
         );
-        tokio::pin!(resolve, speculate);
         // Resolution never waits on speculation: whatever has not started
         // proving by the time the lock resolves is dropped.
-        let (mut speculative, mut speculating) = (None, true);
-        let resolution = loop {
-            tokio::select! {
-                biased;
-                started = &mut speculate, if speculating => {
-                    speculating = false;
-                    speculative = started;
-                }
-                resolution = &mut resolve => break resolution?,
-            }
-        };
+        let (resolution, speculative) = resolve_while_speculating(resolve, speculate).await;
         let ResolvedFunding {
             proof,
             path,
             tracked_out_point,
-        } = match resolution {
+        } = match resolution? {
             FundingResolution::Resolved(rf) => rf,
             FundingResolution::IsTimeout { out_point } => {
                 tracing::warn!(
@@ -737,17 +725,41 @@ async fn tracked_lock_value_duffs(
     wallet: &PlatformWallet,
     out_point: &dashcore::OutPoint,
 ) -> Result<u64, PlatformWalletError> {
-    let locks: Vec<TrackedAssetLock> = wallet.asset_locks.list_tracked_locks().await;
-    locks
-        .iter()
-        .find(|l| l.out_point == *out_point)
-        .map(|l| l.amount)
+    wallet
+        .asset_locks
+        .tracked_lock_amount(out_point)
+        .await
         .ok_or_else(|| {
             PlatformWalletError::AddressSync(format!(
                 "tracked asset lock {} not found in manager",
                 out_point
             ))
         })
+}
+
+/// Runs `resolve` to completion while polling `speculate` alongside it, and
+/// returns the resolution with whatever speculation produced by then.
+///
+/// Both futures are owned here, so an unfinished `speculate` is dropped on
+/// return rather than kept alive for the rest of the caller. A speculation
+/// parked on a lock must not outlive resolution: a lock can hand it a permit
+/// it never polls to release, starving later writers.
+async fn resolve_while_speculating<R, S>(
+    resolve: impl Future<Output = R>,
+    speculate: impl Future<Output = Option<S>>,
+) -> (R, Option<S>) {
+    tokio::pin!(resolve, speculate);
+    let (mut speculative, mut speculating) = (None, true);
+    loop {
+        tokio::select! {
+            biased;
+            started = &mut speculate, if speculating => {
+                speculating = false;
+                speculative = started;
+            }
+            resolution = &mut resolve => return (resolution, speculative),
+        }
+    }
 }
 
 /// Wait for a bundle proof started with `spawn_blocking`.
@@ -1107,6 +1119,26 @@ mod tests {
             )
             .into(),
         )))
+    }
+
+    #[tokio::test]
+    async fn should_release_a_speculative_read_queued_behind_resolution() {
+        let lock = RwLock::new(());
+        let held = lock.write().await;
+        // Speculation queues a read behind the held write; resolution then
+        // releases the write, granting that read before it is polled again.
+        let speculate = async {
+            let _read = lock.read().await;
+            Some(())
+        };
+        let resolve = async move { drop(held) };
+
+        let ((), speculative) = resolve_while_speculating(resolve, speculate).await;
+
+        assert!(speculative.is_none());
+        let _write = tokio::time::timeout(Duration::from_secs(5), lock.write())
+            .await
+            .expect("a later writer must not starve behind dropped speculation");
     }
 
     #[tokio::test]

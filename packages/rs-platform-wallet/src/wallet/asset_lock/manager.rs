@@ -274,6 +274,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map(|info| info.tracked_asset_locks.values().cloned().collect())
             .unwrap_or_default()
     }
+
+    /// The amount, in duffs, of the tracked asset lock at `out_point`, read
+    /// in place without cloning the tracked set.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn tracked_lock_amount(&self, out_point: &OutPoint) -> Option<u64> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(|lock| lock.amount)
+    }
 }
 
 impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for AssetLockManager<B> {
