@@ -1,4 +1,10 @@
-# Historical V0 quorum storage
+# Historical quorum storage constants
+
+The frozen bytes live in `../storage_vectors.rs` as hex constants. The filenames
+below identify generator outputs; no separate hex files are needed by the tests.
+Checksums describe those original outputs, including their final newline.
+
+## Historical V0 quorum storage
 
 `quorum-storage-v0.hex` contains a synthetic, complete
 `SignatureVerificationQuorumSetForSaving::V0` encoded by Platform commit
@@ -68,3 +74,30 @@ Checksums below include the final newline in each hex file.
 | `platform-state-v1.hex` | 734 | `e2b83244feff85195d45fe4092ea85d298037f53cecdddd55c0eb7a5dda27ad7` |
 | `checkpoint-platform-state.hex` | 734 | `e2b83244feff85195d45fe4092ea85d298037f53cecdddd55c0eb7a5dda27ad7` |
 | `platform-state-v2.hex` | 732 | `d5eb9be1fac002863a22f1cfec3bb770ee9f67dde44ed3cba4734b18135f9616` |
+
+## Populated GroveDB records
+
+`generate-populated-storage.rs` runs on Platform
+`6499c680c6bc311e8933f396423a79459e2a88bd`, before #5307, with rust-dashcore
+`40268cc0402a8933ec539f16b2d634c4e25876ad` and the same historical blsful revision.
+Copy it to that checkout's `packages/rs-drive-abci/examples/generate_populated_storage.rs`:
+
+```sh
+cargo run -p drive-abci --example generate_populated_storage --all-features --locked -- /path/to/output
+```
+
+The corresponding `storage_vectors.rs` constants add:
+
+- `MASTERNODE_REGULAR` (241 bytes) and `MASTERNODE_EVO` (279 bytes): actual
+  per-entry writers, including IPv4/IPv6, operator keys and a non-palindromic node ID.
+- `VALIDATOR_SET_ENTRY` (243 bytes): a versioned set with one member and distinct
+  member/threshold BLS keys.
+- `POPULATED_PLATFORM_STATE_V1` (1904 bytes) and `POPULATED_PLATFORM_STATE_V2`
+  (764 bytes): two masternodes, one validator set and both current/previous quorum lists.
+- `POPULATED_CHECKPOINT_PLATFORM_STATE`: the standalone checkpoint writer's output,
+  verified identical to V1 and represented by a constant alias.
+
+`should_preserve_historical_grovedb_masternode_and_validator_entries` exercises
+the production entry codecs. `should_restore_historical_populated_state_and_checkpoint`
+rebuilds V2 from its external entries and checks that its standalone checkpoint
+still matches the historical bytes. These are synthetic records, not live-chain snapshots.

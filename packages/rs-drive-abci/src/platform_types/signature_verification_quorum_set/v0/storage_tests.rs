@@ -1,5 +1,10 @@
 use super::for_saving_v1::QuorumForSavingV1;
 use super::quorum_set::PreviousPastQuorumsV0;
+use super::storage_vectors;
+use crate::platform_types::platform_state::platform_state_for_saving::v2::{
+    deserialize_masternode_entry, deserialize_validator_set_entry, serialize_masternode_entry,
+    serialize_validator_set_entry,
+};
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::{
@@ -7,8 +12,9 @@ use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
 use dpp::bls::PublicKey;
+use dpp::core_types::validator_set::ValidatorSet;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::QuorumHash;
+use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::dashcore_rpc::json::QuorumType;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
@@ -72,8 +78,8 @@ fn assert_quorums(set: &SignatureVerificationQuorumSet) {
 #[test]
 fn should_preserve_current_and_previous_quorums_in_old_v1_and_v2_records() {
     for fixture in [
-        include_str!("fixtures/quorum-storage-v1.hex"),
-        include_str!("fixtures/quorum-storage-v2.hex"),
+        super::storage_vectors::QUORUM_STORAGE_V1,
+        super::storage_vectors::QUORUM_STORAGE_V2,
     ] {
         let bytes = hex::decode(fixture.trim()).unwrap();
         let (stored, read): (SignatureVerificationQuorumSetForSaving, _) =
@@ -87,9 +93,9 @@ fn should_preserve_current_and_previous_quorums_in_old_v1_and_v2_records() {
 #[test]
 fn should_load_old_saved_state_and_checkpoint_with_both_quorum_sets() {
     for fixture in [
-        include_str!("fixtures/platform-state-v1.hex"),
-        include_str!("fixtures/checkpoint-platform-state.hex"),
-        include_str!("fixtures/platform-state-v2.hex"),
+        super::storage_vectors::PLATFORM_STATE_V1,
+        super::storage_vectors::CHECKPOINT_PLATFORM_STATE,
+        super::storage_vectors::PLATFORM_STATE_V2,
     ] {
         let bytes = hex::decode(fixture.trim()).unwrap();
         let (stored, read): (PlatformStateForSaving, _) =
@@ -158,4 +164,107 @@ fn should_reject_truncated_and_invalid_stored_quorum_keys() {
     let mut invalid = bytes;
     invalid[32..80].fill(0);
     assert!(bincode::decode_from_slice::<QuorumForSavingV1, _>(&invalid, config()).is_err());
+}
+
+fn historical_masternode_entries() -> Vec<(Vec<u8>, Vec<u8>)> {
+    [
+        (0x31, storage_vectors::MASTERNODE_REGULAR),
+        (0x41, storage_vectors::MASTERNODE_EVO),
+    ]
+    .into_iter()
+    .map(|(tag, hex)| (vec![tag; 32], hex::decode(hex).unwrap()))
+    .collect()
+}
+
+#[test]
+fn should_preserve_historical_grovedb_masternode_and_validator_entries() {
+    for (key, bytes) in historical_masternode_entries() {
+        let node = deserialize_masternode_entry(&bytes).unwrap();
+        assert_eq!(node.pro_tx_hash.as_byte_array().as_slice(), key);
+        assert_eq!(node.collateral_index, 1000);
+        assert_eq!(node.operator_reward, 1.5);
+        assert_eq!(node.state.pub_key_operator, hex::decode(KEYS[0]).unwrap());
+        assert_eq!(node.state.pose_revived_height, Some(200));
+        assert_eq!(node.state.pose_ban_height, None);
+        assert_eq!(
+            node.state.platform_node_id,
+            (key[0] == 0x41).then_some(std::array::from_fn(|i| i as u8 + 1))
+        );
+        assert_eq!(
+            serialize_masternode_entry(&node, PlatformVersion::latest()).unwrap(),
+            bytes
+        );
+    }
+    let bytes = hex::decode(storage_vectors::VALIDATOR_SET_ENTRY).unwrap();
+    let set = deserialize_validator_set_entry(&bytes).unwrap();
+    assert_eq!(serialize_validator_set_entry(&set).unwrap(), bytes);
+    let ValidatorSet::V0(set) = set;
+    assert_eq!(set.quorum_hash.to_byte_array(), [0x55; 32]);
+    assert_eq!(set.quorum_index, Some(2));
+    assert_eq!(set.core_height, 1000);
+    assert_eq!(
+        set.threshold_public_key.to_bytes().as_slice(),
+        hex::decode(KEYS[2]).unwrap()
+    );
+    assert_eq!(set.members.len(), 1);
+    let member = set
+        .members
+        .get(&ProTxHash::from_byte_array([0x41; 32]))
+        .unwrap();
+    assert_eq!(
+        member.public_key.unwrap().to_bytes().as_slice(),
+        hex::decode(KEYS[1]).unwrap()
+    );
+    assert_eq!(
+        member.node_id.to_byte_array(),
+        std::array::from_fn(|i| i as u8 + 1)
+    );
+    assert_eq!(member.node_ip, "2001:db8::1");
+}
+
+#[test]
+fn should_restore_historical_populated_state_and_checkpoint() {
+    for fixture in [
+        storage_vectors::POPULATED_PLATFORM_STATE_V1,
+        storage_vectors::POPULATED_PLATFORM_STATE_V2,
+    ] {
+        let bytes = hex::decode(fixture).unwrap();
+        let (stored, read): (PlatformStateForSaving, _) =
+            bincode::decode_from_slice(&bytes, config()).unwrap();
+        assert_eq!(read, bytes.len());
+        assert_eq!(bincode::encode_to_vec(&stored, config()).unwrap(), bytes);
+        let state = match stored {
+            PlatformStateForSaving::V2(record) => record
+                .into_platform_state(
+                    historical_masternode_entries(),
+                    vec![(
+                        vec![0x55; 32],
+                        hex::decode(storage_vectors::VALIDATOR_SET_ENTRY).unwrap(),
+                    )],
+                )
+                .unwrap(),
+            _ => PlatformState::versioned_deserialize_trusted(&bytes, PlatformVersion::latest())
+                .unwrap(),
+        };
+        assert_quorums(&state.chain_lock_validating_quorums);
+        assert_quorums(&state.instant_lock_validating_quorums);
+        assert_eq!(state.full_masternode_list.len(), 2);
+        assert_eq!(state.hpmn_masternode_list.len(), 1);
+        assert!(state
+            .hpmn_masternode_list
+            .contains_key(&ProTxHash::from_byte_array([0x41; 32])));
+        assert_eq!(state.validator_sets.len(), 1);
+        let set = state
+            .validator_sets
+            .get(&QuorumHash::from_byte_array([0x55; 32]))
+            .unwrap();
+        assert_eq!(
+            serialize_validator_set_entry(set).unwrap(),
+            hex::decode(storage_vectors::VALIDATOR_SET_ENTRY).unwrap()
+        );
+        assert_eq!(
+            state.serialize_standalone_to_bytes().unwrap(),
+            hex::decode(storage_vectors::POPULATED_CHECKPOINT_PLATFORM_STATE).unwrap()
+        );
+    }
 }
