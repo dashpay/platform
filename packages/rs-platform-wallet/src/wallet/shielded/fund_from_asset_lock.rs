@@ -38,6 +38,7 @@ use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{OrchardProver, ProvedShieldFromAssetLockBundle};
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -157,8 +158,11 @@ impl PlatformWallet {
         // reservation below is derived from the SAME value (any mismatch is rejected).
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
-        // SAME flat fee consensus charges (`transform_into_action` Step 3b).
-        let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
+        // SAME flat fee consensus charges (`transform_into_action` Step 3b). This
+        // estimate only sizes the pre-broadcast guards; the definitive fee is
+        // re-derived below from the version the bundle is proved under.
+        let preflight_fee_credits =
+            Self::shield_from_asset_lock_pool_fee(num_actions, self.sdk.version())?;
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
@@ -187,10 +191,10 @@ impl PlatformWallet {
                      {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
                     ))
                 })?;
-            if lock_credits <= pool_fee_credits {
+            if lock_credits <= preflight_fee_credits {
                 return Err(PlatformWalletError::ShieldedBuildError(format!(
                     "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
-                     below the ShieldFromAssetLock pool fee ({pool_fee_credits} credits = \
+                     below the ShieldFromAssetLock pool fee ({preflight_fee_credits} credits = \
                      shielded fee + asset_lock_base_cost) — refusing to broadcast a single-use \
                      L1 outpoint that would be unrecoverable on resume"
                 )));
@@ -212,7 +216,7 @@ impl PlatformWallet {
                 account,
                 minimum_lock_duffs: _,
             } => {
-                let minimum_lock_duffs = pool_fee_credits / CREDITS_PER_DUFF + 1;
+                let minimum_lock_duffs = preflight_fee_credits / CREDITS_PER_DUFF + 1;
                 AssetLockFunding::DrainAccountBalance {
                     account,
                     minimum_lock_duffs: Some(minimum_lock_duffs),
@@ -249,9 +253,15 @@ impl PlatformWallet {
             })
         };
 
+        // One protocol-version snapshot prices the fee, proves the bundle and
+        // assembles every attempt, so the amount and the binding cannot come
+        // from different fee schedules.
+        let platform_version = self.sdk.version();
+        let pool_fee_credits =
+            Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
+
         // Proves the Orchard bundle on the blocking pool, so the seconds of
         // Halo 2 work never occupy an async worker.
-        let platform_version = self.sdk.version();
         let spawn_proof = |out_point, shield_amount| {
             let sender_ovk = sender_ovk.clone();
             tokio::task::spawn_blocking(move || {
@@ -426,6 +436,7 @@ impl PlatformWallet {
                 asset_lock_signer,
                 surplus_output,
                 s,
+                platform_version,
             )
         })
         .await
@@ -460,6 +471,7 @@ impl PlatformWallet {
                         asset_lock_signer,
                         surplus_output,
                         s,
+                        platform_version,
                     )
                 })
                 .await;
@@ -566,11 +578,10 @@ impl PlatformWallet {
     /// funding) uses, read from `dpp.state_transitions.identities.asset_locks`
     /// and converted duffs→credits.
     pub(crate) fn shield_from_asset_lock_pool_fee(
-        &self,
         num_actions: usize,
+        platform_version: &PlatformVersion,
     ) -> Result<Credits, PlatformWalletError> {
-        let pv = self.sdk.version();
-        let albc_duffs = pv
+        let albc_duffs = platform_version
             .dpp
             .state_transitions
             .identities
@@ -582,11 +593,12 @@ impl PlatformWallet {
                  ({albc_duffs} duffs * {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
             ))
         })?;
-        let shielded_fee = compute_minimum_shielded_fee(num_actions, pv).map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "failed to compute minimum shielded fee for ShieldFromAssetLock: {e}"
-            ))
-        })?;
+        let shielded_fee =
+            compute_minimum_shielded_fee(num_actions, platform_version).map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "failed to compute minimum shielded fee for ShieldFromAssetLock: {e}"
+                ))
+            })?;
         shielded_fee.checked_add(albc).ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError(format!(
                 "ShieldFromAssetLock pool fee overflowed credits conversion \
@@ -780,11 +792,16 @@ async fn join_proof(
 ///
 /// Extracted so `submit_with_cl_height_retry`'s closure stays compact
 /// and the IS→CL fallback path can re-call it with the upgraded proof.
-/// Each call re-signs the proved `bundle` around `proof`.
+/// Each call re-signs the proved `bundle` around `proof`, and refuses to
+/// submit once the SDK has moved off the `platform_version` the bundle's
+/// amount was priced under: consensus would charge another fee, and a lower
+/// one would donate the difference to the pools. The lock stays resumable,
+/// and a resume proves afresh.
 ///
 /// On success returns the **landed** bundle's serialized Orchard actions
 /// so the orchestrator can record a live `ShieldFromAssetLock` activity
 /// entry over the exact bundle that committed.
+#[allow(clippy::too_many_arguments)]
 async fn build_and_broadcast_shielded<AS>(
     sdk: std::sync::Arc<dash_sdk::Sdk>,
     bundle: &ProvedShieldFromAssetLockBundle,
@@ -793,6 +810,7 @@ async fn build_and_broadcast_shielded<AS>(
     asset_lock_signer: &AS,
     surplus_output: Option<PlatformAddress>,
     settings: Option<PutSettings>,
+    platform_version: &PlatformVersion,
 ) -> Result<Vec<dpp::shielded::SerializedAction>, dash_sdk::Error>
 where
     AS: ::key_wallet::signer::Signer,
@@ -800,7 +818,14 @@ where
     use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
 
-    let platform_version = sdk.version();
+    let current_version = sdk.version().protocol_version;
+    if current_version != platform_version.protocol_version {
+        return Err(dash_sdk::Error::Generic(format!(
+            "protocol version moved from {} to {current_version} since the shield bundle \
+             was priced; resume the asset lock to re-prove it",
+            platform_version.protocol_version
+        )));
+    }
     let st = bundle
         .build_transition_with_signer(
             proof,
@@ -1139,6 +1164,40 @@ mod tests {
         let _write = tokio::time::timeout(Duration::from_secs(5), lock.write())
             .await
             .expect("a later writer must not starve behind dropped speculation");
+    }
+
+    #[tokio::test]
+    async fn should_return_a_started_speculation_without_waiting_for_it() {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let speculate = async move {
+            let proving = tokio::spawn(async move { release_rx.await.map(|()| 7u8) });
+            let _ = started_tx.send(());
+            Some(proving)
+        };
+        // Resolution only completes once the proof has started.
+        let resolve = async move { started_rx.await.is_ok() };
+
+        let (resolved, speculative) = resolve_while_speculating(resolve, speculate).await;
+
+        assert!(resolved);
+        let proving = speculative.expect("the started proof is handed back");
+        assert!(!proving.is_finished());
+        release_tx.send(()).unwrap();
+        assert_eq!(proving.await.unwrap(), Ok(7));
+    }
+
+    #[tokio::test]
+    async fn should_keep_resolving_after_speculation_gives_up() {
+        // Speculation finishes first, so the select runs again afterwards:
+        // polling the completed speculation there would panic.
+        let speculate = async { None::<()> };
+        let resolve = async { 1 };
+
+        let (resolution, speculative) = resolve_while_speculating(resolve, speculate).await;
+
+        assert_eq!(resolution, 1);
+        assert!(speculative.is_none());
     }
 
     #[tokio::test]
