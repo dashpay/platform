@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+### Fixed
+
+- **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
+  of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+
 ### Changed
 
 - **Rust dependencies:** pin rust-dashcore to `fix/legacy-serde-bls-node-id`

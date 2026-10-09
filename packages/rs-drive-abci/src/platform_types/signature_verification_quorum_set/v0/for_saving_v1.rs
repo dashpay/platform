@@ -1,10 +1,11 @@
+use super::public_key_for_saving::PublicKeyForSaving;
 #[cfg(feature = "bls-signatures")]
 use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0::PreviousPastQuorumsForSavingV0;
 use crate::platform_types::signature_verification_quorum_set::v0::quorum_config_for_saving_v0::QuorumConfigForSavingV0;
 use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::PreviousPastQuorumsV0;
 use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
-    ThresholdBlsPublicKey, VerificationQuorum,
+    VerificationQuorum,
 };
 use bincode::{Decode, Encode};
 
@@ -67,8 +68,8 @@ impl From<SignatureVerificationQuorumSetForSavingV1> for SignatureVerificationQu
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct QuorumForSavingV1 {
     hash: Bytes32,
-    #[bincode(with_serde)]
-    public_key: ThresholdBlsPublicKey,
+    // Preserve the shipped 48-byte key layout in every selecting protocol version.
+    public_key: PublicKeyForSaving,
     index: Option<u32>,
 }
 
@@ -78,7 +79,7 @@ impl From<Vec<QuorumForSavingV1>> for Quorums<VerificationQuorum> {
             (
                 QuorumHash::from_byte_array(quorum.hash.to_buffer()),
                 VerificationQuorum {
-                    public_key: quorum.public_key,
+                    public_key: quorum.public_key.0,
                     index: quorum.index,
                 },
             )
@@ -91,7 +92,7 @@ impl From<Quorums<VerificationQuorum>> for Vec<QuorumForSavingV1> {
             .into_iter()
             .map(|(hash, quorum)| QuorumForSavingV1 {
                 hash: Bytes32::from(hash.as_byte_array()),
-                public_key: quorum.public_key,
+                public_key: PublicKeyForSaving(quorum.public_key),
                 index: quorum.index,
             })
             .collect()
