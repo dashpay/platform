@@ -22,7 +22,8 @@ impl Drive {
     /// For a protocol upgrade that changes a system contract's document type in a way a
     /// contract update cannot follow, such as replacing a unique index; the documents deleted
     /// are not refunded. Runs once, on the first block of the protocol version that ships the
-    /// new contract (DPNS v3's `preorder` at protocol version 14).
+    /// new contract (DPNS v3's `preorder` at protocol version 14). Like an update, it leaves
+    /// the rewritten contract in the block cache.
     pub fn apply_contract_rebuilding_document_types(
         &self,
         contract: &DataContract,
@@ -100,6 +101,86 @@ impl Drive {
             drive_operations,
             &mut vec![],
             &platform_version.drive,
-        )
+        )?;
+
+        // As an update does, the block cache gets the rewritten contract, so no read in this
+        // block falls back to the copy the global cache may hold
+        let rebuilt_contract_fetch_info = self
+            .fetch_contract_and_add_operations(
+                contract_id,
+                Some(&block_info.epoch),
+                Some(transaction),
+                &mut vec![],
+                platform_version,
+            )?
+            .ok_or_else(|| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "the rebuilt contract was just stored",
+                ))
+            })?;
+        self.cache
+            .data_contracts
+            .insert_rewritten(rebuilt_contract_fetch_info, true);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_serve_the_rebuilt_contract_to_reads_in_the_block() {
+        let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version_13));
+        let dpns_v2 = load_system_data_contract(SystemDataContract::DPNS, platform_version_13)
+            .expect("DPNS v2 loads");
+        drive
+            .apply_contract(
+                &dpns_v2,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version_13,
+            )
+            .expect("DPNS v2 is stored");
+        let dpns_id = dpns_v2.id().to_buffer();
+        // A committed-state read puts DPNS v2 in the global cache
+        drive
+            .get_contract_with_fetch_info(dpns_id, true, None, platform_version_13)
+            .expect("DPNS is read")
+            .expect("DPNS is stored");
+
+        let dpns_v3 = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS v3 loads");
+        let transaction = drive.grove.start_transaction();
+        drive
+            .apply_contract_rebuilding_document_types(
+                &dpns_v3,
+                &["preorder"],
+                &BlockInfo::default(),
+                None,
+                &transaction,
+                platform_version,
+            )
+            .expect("the preorder type is rebuilt");
+
+        let read_in_block = drive
+            .get_contract_with_fetch_info(dpns_id, false, Some(&transaction), platform_version)
+            .expect("DPNS is read")
+            .expect("DPNS is stored");
+        let preorder = read_in_block
+            .contract
+            .document_type_for_name("preorder")
+            .expect("DPNS has a preorder type");
+        assert!(preorder.indexes().contains_key("ownerAndSaltedHash"));
+        assert!(!preorder.indexes().contains_key("saltedHash"));
     }
 }
