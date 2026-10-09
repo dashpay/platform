@@ -454,10 +454,22 @@ impl TrustedHttpContextProvider {
         fetched: &FetchedQuorums,
         quorum_hash: &QuorumHash,
     ) -> Result<Option<[u8; 48]>, ContextProviderError> {
-        let Some((quorum, current)) = fetched.find(quorum_hash) else {
-            return Ok(None);
+        let mut first_error = None;
+        let usable = fetched.matching(quorum_hash).find_map(|(quorum, current)| {
+            match Self::parse_quorum_public_key(&quorum.key) {
+                Ok(key) => Some((quorum, current, key)),
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                    None
+                }
+            }
+        });
+        let Some((quorum, current, key)) = usable else {
+            return match first_error {
+                Some(error) => Err(error),
+                None => Ok(None),
+            };
         };
-        let key = Self::parse_quorum_public_key(&quorum.key)?;
         let cache = if current {
             &self.current_quorums_cache
         } else {
@@ -1753,6 +1765,30 @@ mod tests {
             provider
                 .get_quorum_public_key(6, [0x11; 32], 1)
                 .expect("the repaired key must not be shadowed"),
+            quorum_key(0x41)
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn should_use_a_valid_previous_key_when_the_current_list_overlaps_with_a_malformed_key() {
+        let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, malformed),
+            ("/previous", 200, previous_response(0x11, 0x41)),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the overlapping previous list supplies a usable key"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("the malformed current entry must not shadow the usable key"),
             quorum_key(0x41)
         );
         server.join().expect("mock quorum server must finish");

@@ -52,19 +52,20 @@ impl FetchedQuorums {
         }
     }
 
-    /// The listed quorum with this hash, and whether the current list has it.
-    pub(crate) fn find(&self, quorum_hash: &[u8; 32]) -> Option<(&QuorumData, bool)> {
-        fn listed<'a>(
-            quorums: &'a Result<Vec<QuorumData>, String>,
-            quorum_hash: &[u8; 32],
-        ) -> Option<&'a QuorumData> {
-            quorums.as_ref().ok()?.iter().find(|quorum| {
-                hex::decode(&quorum.quorum_hash).ok().as_deref() == Some(quorum_hash.as_slice())
+    /// Matching quorums from both lists, current first, with their list origin.
+    pub(crate) fn matching<'a>(
+        &'a self,
+        quorum_hash: &'a [u8; 32],
+    ) -> impl Iterator<Item = (&'a QuorumData, bool)> + 'a {
+        [(&self.current, true), (&self.previous, false)]
+            .into_iter()
+            .flat_map(move |(quorums, current)| {
+                quorums.iter().flatten().filter_map(move |quorum| {
+                    (hex::decode(&quorum.quorum_hash).ok().as_deref()
+                        == Some(quorum_hash.as_slice()))
+                    .then_some((quorum, current))
+                })
             })
-        }
-        listed(&self.current, quorum_hash)
-            .map(|quorum| (quorum, true))
-            .or_else(|| listed(&self.previous, quorum_hash).map(|quorum| (quorum, false)))
     }
 
     /// Why these lists cannot show that a quorum is absent, if they cannot.
