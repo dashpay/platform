@@ -87,28 +87,68 @@ fn decode_transaction(bytes: &[u8]) -> Result<Transaction, Error> {
     Transaction::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
 }
 
+/// The transaction a successful `getTransaction` reply for `expected`
+/// carries. `Ok(None)` when the reply does not carry it: empty (the node does
+/// not know it — the same as gRPC `NOT_FOUND`) or another transaction (a
+/// faulty node; never returned in its place — a miss, so a caller retries as
+/// it would for one). `Err` for bytes that do not decode. Takes the reply
+/// alone, so a caller that executes the request itself keeps the serving
+/// node's address.
+pub fn transaction_from_reply(
+    response: &GetTransactionResponse,
+    expected: &Txid,
+) -> Result<Option<Transaction>, Error> {
+    if response.transaction.is_empty() {
+        return Ok(None);
+    }
+    let transaction = decode_transaction(&response.transaction)?;
+    if transaction.txid() != *expected {
+        tracing::warn!(
+            requested = %expected,
+            answered = %transaction.txid(),
+            "getTransaction answered with another transaction; treated as a miss"
+        );
+        return Ok(None);
+    }
+    Ok(Some(transaction))
+}
+
+/// The txid `getTransaction` is asked for, as a reply is checked against.
+fn requested_txid(txid: &str) -> Result<Txid, Error> {
+    txid.parse()
+        .map_err(|e| Error::Generic(format!("invalid txid {txid}: {e}")))
+}
+
 impl Sdk {
     /// Fetch a Core transaction by its id via DAPI `getTransaction`.
     ///
     /// `txid` is the transaction id as a hex string (big-endian display form).
     /// Returns `Ok(Some(..))` with the decoded transaction plus its
-    /// confirmation/lock metadata; `Ok(None)` when the node does not know the tx
-    /// (empty response or gRPC `NOT_FOUND`) so the caller can retry with the id
-    /// byte-reversed; and `Err` for a transient/transport failure that must not
-    /// be masked by a doomed reversed-id retry.
+    /// confirmation/lock metadata; `Ok(None)` when the node does not give the
+    /// tx — it does not know it (empty response or gRPC `NOT_FOUND`), or it
+    /// answered with another transaction (a faulty node; see
+    /// [`transaction_from_reply`]) — so the caller can retry, with the id
+    /// byte-reversed or later on another node; and `Err` for a
+    /// transient/transport failure that must not be masked by a doomed
+    /// reversed-id retry, for bytes that do not decode, or for a `txid` that
+    /// is not a txid (refused before any request).
     pub async fn get_transaction(
         &self,
         txid: &str,
     ) -> Result<Option<FetchedCoreTransaction>, Error> {
+        let expected = requested_txid(txid)?;
         let Some(response) = self
             .fetch_core_transaction(txid, RequestSettings::default())
             .await?
         else {
             return Ok(None);
         };
+        let Some(transaction) = transaction_from_reply(&response, &expected)? else {
+            return Ok(None);
+        };
 
         Ok(Some(FetchedCoreTransaction {
-            transaction: decode_transaction(&response.transaction)?,
+            transaction,
             height: response.height,
             is_chain_locked: response.is_chain_locked,
             is_instant_locked: response.is_instant_locked,
@@ -127,12 +167,16 @@ impl Sdk {
         txid: &str,
         settings: RequestSettings,
     ) -> Result<Option<CoreTransactionPlacement>, Error> {
+        let expected = requested_txid(txid)?;
         let Some(response) = self.fetch_core_transaction(txid, settings).await? else {
+            return Ok(None);
+        };
+        let Some(transaction) = transaction_from_reply(&response, &expected)? else {
             return Ok(None);
         };
 
         Ok(Some(CoreTransactionPlacement {
-            transaction: decode_transaction(&response.transaction)?,
+            transaction,
             height: response.height,
             block_hash: block_hash_from_display_bytes(&response.block_hash),
             is_chain_locked: response.is_chain_locked,
@@ -182,8 +226,9 @@ impl Sdk {
             .map_err(|e| Error::CoreError(e.into()))
     }
 
-    /// Run `getTransaction`, mapping an unknown transaction (gRPC `NOT_FOUND`
-    /// or an empty reply) to `Ok(None)` and every other failure to `Err`.
+    /// Run `getTransaction`, mapping gRPC `NOT_FOUND` to `Ok(None)` and every
+    /// other failure to `Err`; an empty reply is read by
+    /// [`transaction_from_reply`].
     async fn fetch_core_transaction(
         &self,
         txid: &str,
@@ -210,9 +255,7 @@ impl Sdk {
             }
         };
 
-        if response.transaction.is_empty() {
-            return Ok(None);
-        }
+        // An empty reply is decided by `transaction_from_reply`.
         Ok(Some(response))
     }
 
@@ -453,6 +496,112 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::dashcore::consensus::serialize;
+
+    fn reply(transaction: Vec<u8>) -> GetTransactionResponse {
+        GetTransactionResponse {
+            transaction,
+            ..GetTransactionResponse::default()
+        }
+    }
+
+    /// Script one `getTransaction` reply for `txid` on a mock SDK.
+    #[cfg(feature = "mocks")]
+    async fn sdk_answering(txid: &str, transaction: Vec<u8>) -> Sdk {
+        let sdk = Sdk::new_mock();
+        sdk.mock_dapi_client()
+            .lock()
+            .await
+            .expect(
+                &GetTransactionRequest {
+                    id: txid.to_string(),
+                },
+                &Ok(rs_dapi_client::ExecutionResponse {
+                    inner: reply(transaction),
+                    retries: 0,
+                    address: "http://127.0.0.1:1443".parse().expect("address"),
+                }),
+            )
+            .expect("expectation");
+        sdk
+    }
+
+    #[cfg(feature = "mocks")]
+    fn tx(lock_time: u32) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// The getters' contract: the requested transaction is returned; an empty
+    /// reply or another transaction is a miss; an unparsable txid is refused
+    /// before any request.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_return_only_the_requested_transaction_from_the_getters() {
+        let wanted = tx(1);
+        let id = wanted.txid().to_string();
+
+        let sdk = sdk_answering(&id, serialize(&wanted)).await;
+        let fetched = sdk.get_transaction(&id).await.expect("ok").expect("found");
+        assert_eq!(fetched.transaction, wanted);
+        let placed = sdk
+            .get_transaction_placement(&id, RequestSettings::default())
+            .await
+            .expect("ok")
+            .expect("found");
+        assert_eq!(placed.transaction, wanted);
+
+        for answer in [Vec::new(), serialize(&tx(2))] {
+            let sdk = sdk_answering(&id, answer).await;
+            assert!(sdk.get_transaction(&id).await.expect("ok").is_none());
+            assert!(sdk
+                .get_transaction_placement(&id, RequestSettings::default())
+                .await
+                .expect("ok")
+                .is_none());
+        }
+
+        let refused = Sdk::new_mock().get_transaction("not a txid").await;
+        assert!(
+            matches!(refused, Err(Error::Generic(ref message)) if message.contains("invalid txid")),
+            "{refused:?}"
+        );
+    }
+
+    /// A reply is read, never trusted: empty or another transaction is a
+    /// miss, undecodable bytes are an error, only the requested one is
+    /// returned.
+    #[test]
+    fn should_return_only_the_requested_transaction_from_a_reply() {
+        let tx = |lock_time| Transaction {
+            version: 1,
+            lock_time,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let wanted = tx(1);
+        let txid = wanted.txid();
+
+        assert!(matches!(
+            transaction_from_reply(&reply(Vec::new()), &txid),
+            Ok(None)
+        ));
+        assert!(transaction_from_reply(&reply(vec![0xff, 0x01]), &txid).is_err());
+        assert!(matches!(
+            transaction_from_reply(&reply(serialize(&tx(2))), &txid),
+            Ok(None)
+        ));
+        assert_eq!(
+            transaction_from_reply(&reply(serialize(&wanted)), &txid).expect("decodes"),
+            Some(wanted)
+        );
+    }
 
     /// DAPI's display-order bytes come back as the hash's internal order.
     #[test]

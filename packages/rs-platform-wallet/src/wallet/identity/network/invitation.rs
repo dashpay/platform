@@ -653,8 +653,8 @@ impl IdentityWallet {
         .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "invitation funding transaction not found (tried both byte orders across \
-                 repeated attempts); it may not have propagated to the queried DAPI node yet — \
-                 retry shortly"
+                 repeated attempts); it may not have propagated to the queried DAPI node yet, \
+                 or the node answered with another transaction — retry shortly"
                     .to_string(),
             )
         })?;
@@ -797,8 +797,9 @@ fn assemble_asset_lock_proof(
     invitation: &ParsedInvitation,
 ) -> Result<ReconstructedProof, PlatformWalletError> {
     // Fail-fast: the fetched tx must actually be the funding tx (either byte
-    // order). DAPI returns whatever tx matches the id we asked for, so this
-    // guards a backend that answers with an unrelated tx.
+    // order). The SDK's getter already reads a reply carrying another
+    // transaction as a miss; this stays as defense in depth for any other
+    // source of the transaction.
     let fetched_txid = transaction.txid().to_string();
     let reversed_txid = reverse_txid_hex(&invitation.funding_txid).ok();
     if fetched_txid != invitation.funding_txid

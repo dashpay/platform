@@ -38,7 +38,9 @@ use super::locator::bls_public_keys;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
-use crate::wallet::core::{CoreWallet, SignedCoreTransaction, SEND_FUNDING_SOURCES};
+use crate::wallet::core::{
+    CoreWallet, FinalizeOptions, SignedCoreTransaction, SEND_FUNDING_SOURCES,
+};
 use crate::wallet::platform_wallet::PlatformWallet;
 
 /// What an update-service (unban) request lets the caller choose. Everything
@@ -154,16 +156,18 @@ async fn fetch_operator_reward(
         })?
         .ok_or_else(|| {
             PlatformWalletError::InvalidParameter(format!(
-                "registration transaction {display} was not found; cannot determine the \
-                 operator reward"
+                "registration transaction {display} was not found (or the node answered \
+                 with another transaction); cannot determine the operator reward"
             ))
         })?;
     operator_reward_from_registration(pro_tx_hash, &fetched.transaction)
 }
 
 /// Read `operatorReward` out of a fetched registration transaction,
-/// binding the response to the request first: DAPI's get-transaction reply
-/// is not authenticated, so the decoded transaction must hash to the
+/// binding the response to the request first — defense in depth: the SDK's
+/// getter already reads a reply carrying another transaction as a miss, but
+/// this function trusts no caller to have used it. DAPI's get-transaction
+/// reply is not authenticated, so the decoded transaction must hash to the
 /// requested proTxHash before its payload is trusted. Only the operator
 /// reward is read from it; the service values come from the synced
 /// masternode list's entry for that proTxHash. Without the hash check a
@@ -446,9 +450,19 @@ where
     B: TransactionBroadcaster + ?Sized,
     S: TransactionSigner + ?Sized + Sync,
 {
-    let builder = update_service_builder(placeholder, operator_secret)?;
-    core.finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, signer)
-        .await
+    // Made again on a shortfall, so a fee only unconfirmed coins would cover
+    // is reported as waiting on the network (code 59).
+    // The factory owns the one long-lived copy of the operator secret and is
+    // dropped before the signer runs (`finalize_transaction_from`).
+    let make = move || update_service_builder(placeholder.clone(), operator_secret.clone());
+    core.finalize_transaction_from(
+        make,
+        FinalizeOptions::default(),
+        &SEND_FUNDING_SOURCES,
+        0,
+        signer,
+    )
+    .await
 }
 
 fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
@@ -886,6 +900,52 @@ mod tests {
             "an insufficient-funds error, got {err:?}"
         );
         assert_eq!(broadcaster.sent_count(), 0, "nothing is broadcast");
+    }
+
+    /// The build is described to the shortfall rules: when the only coin is
+    /// not final yet, a fee it would cover is waiting on the network (code
+    /// 59), and one it would not cover stays insufficient funds.
+    #[tokio::test]
+    async fn should_report_waiting_when_only_an_unconfirmed_coin_would_pay_the_fee() {
+        for (coin, waiting) in [(100_000, true), (200, false)] {
+            let (core, broadcaster, signer) = core_with_outputs(&[coin]).await;
+            {
+                let mut manager = core.wallet_manager.write().await;
+                let (_, info) = manager
+                    .get_wallet_and_info_mut(&core.wallet_id())
+                    .expect("wallet");
+                let managed = info
+                    .core_wallet
+                    .first_bip44_managed_account_mut()
+                    .expect("bip44 account");
+                for utxo in managed.utxos.values_mut() {
+                    utxo.is_confirmed = false;
+                    utxo.is_instantlocked = false;
+                }
+            }
+
+            let err = build_sign_update_service(
+                &core,
+                regular_placeholder(),
+                Zeroizing::new(OPERATOR_SECRET),
+                &signer,
+            )
+            .await
+            .expect_err("nothing is final");
+
+            if waiting {
+                assert!(
+                    matches!(err, PlatformWalletError::CoreFundsAwaitingNetwork { .. }),
+                    "coin {coin}: got {err:?}"
+                );
+            } else {
+                assert!(
+                    matches!(err, PlatformWalletError::CorePooledInsufficientFunds { .. }),
+                    "coin {coin}: got {err:?}"
+                );
+            }
+            assert_eq!(broadcaster.sent_count(), 0, "nothing is broadcast");
+        }
     }
 
     /// Without the data output a lone 600-duff UTXO assembles into a

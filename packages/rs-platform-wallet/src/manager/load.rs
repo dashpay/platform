@@ -270,7 +270,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 if wm.get_wallet(&wallet_id).is_some() {
                     continue 'load;
                 }
-                if let Err(e) = wm.insert_wallet(wallet, platform_info) {
+                if let Err(e) = self.insert_into_inner(&mut wm, wallet, platform_info) {
                     load_error = Some(PlatformWalletError::WalletCreation(format!(
                         "Failed to register persisted wallet in WalletManager: {}",
                         e
@@ -465,7 +465,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
+                    if let Err(e) = self.remove_from_inner(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,

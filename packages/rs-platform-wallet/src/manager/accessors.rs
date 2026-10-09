@@ -304,7 +304,7 @@ impl OutpointClass {
 /// (`DashpayExternalAccount`): coins there belong to the contact, so the
 /// inventory omits them and the classifier has no verdict for them.
 pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
-    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+    account_type.is_contact_owned()
 }
 
 /// One page of `wallet_id`'s UTXO inventory across every funds account
@@ -520,6 +520,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// immutable for the manager lifetime because the persistence backend is.
     pub fn persistence_capabilities(&self) -> PersistenceCapabilities {
         self.persister.persistence_capabilities()
+    }
+
+    /// Turn automatic probing of unconfirmed sends on or off.
+    ///
+    /// When on, the roots of a registered wallet's unconfirmed chains are
+    /// resubmitted to evonodes over DAPI — right after dash-spv reports a send
+    /// `Uncertain` (each report), then, while the wallet follows the chain tip,
+    /// every block for 24 blocks from when it first did so for that root, and
+    /// every 10 blocks after, a return from the background included — and
+    /// each change of a send's verdict is published as
+    /// `on_outgoing_transaction_probed`, each send that no longer needs one
+    /// as `on_outgoing_transaction_cleared`. Nothing in the wallet changes.
+    /// Off by default; turning it off clears every published verdict. Returns
+    /// at once: verdicts and clears reach the host from the resolver's own
+    /// task, never on the calling thread.
+    pub fn set_broadcast_probe_enabled(&self, enabled: bool) {
+        self.broadcast_resolver.set_enabled(enabled);
+    }
+
+    /// Whether automatic probing of unconfirmed sends is on.
+    pub fn is_broadcast_probe_enabled(&self) -> bool {
+        self.broadcast_resolver.is_enabled()
     }
 
     /// The SDK instance.

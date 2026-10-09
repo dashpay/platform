@@ -40,6 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
+use crate::wallet::core::{is_contact_watch_only, record_spends_own_coins};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -1222,6 +1223,26 @@ async fn build_core_changeset(
             let mut cs = CoreChangeSet::default();
             cs.instant_locks_for_non_final_records
                 .insert(*txid, instant_lock.clone());
+            // The persister learns a record's context only from a re-emitted
+            // record; the lock map above does not reach it. Upstream rewrote
+            // the record's context to `InstantSend` before emitting this
+            // event, so re-emit the manager's slices for the txid — without
+            // this the stored row stays at mempool until the block, and a
+            // send the network has locked keeps reading "Sending". Same
+            // shape as a `BlockProcessed` update: records and the owned
+            // outputs' verdicts, no UTXO topology change. `None` / no slices
+            // (wallet gone, record pruned) leave just the lock.
+            if let Some((slices, verdicts)) =
+                wallet_slices_and_verdicts_for_txid(wallet_manager, wallet_id, txid).await
+            {
+                cs.account_records = slices
+                    .into_iter()
+                    .filter(|r| !is_contact_watch_only(r))
+                    .collect();
+                cs.records = cs.account_records.clone();
+                crate::changeset::changeset::fold_same_txid_records(&mut cs.records);
+                cs.utxo_credit_verdicts = verdicts;
+            }
             cs
         }
         WalletEvent::BlockProcessed {
@@ -1966,61 +1987,6 @@ async fn wallet_slices_and_verdicts_for_txid(
     Some((slices, verdicts))
 }
 
-/// Is this record owned by a contact's watch-only DashPay chain?
-///
-/// A `DashpayExternalAccount` derives its addresses from the
-/// **contact's** xpub, so this wallet can observe those outputs but can
-/// never sign for them. They are the contact's coins; this wallet only
-/// ever pays into them.
-///
-/// dashpay/rust-dashcore#926 established exactly that policy at the
-/// balance layer, dropping `dashpay_external_accounts` from
-/// `ManagedAccountCollection::all_funding_accounts` (and `_mut`), which
-/// covers `balance`, `account_balances`, `utxos` and
-/// `get_spendable_utxos` in one place. `dashpay_receival_accounts` were
-/// deliberately kept: those derive from *our* xpub, so a contact paying
-/// into them really is money arriving.
-///
-/// The persistence seam is the same rule's second home. Upstream
-/// `check_core_transaction` emits **one `TransactionRecord` per matched
-/// account** (`key_wallet::transaction_checking::wallet_checker`), so a
-/// payment to a contact produces two records sharing one txid:
-///
-/// | record's account          | `direction` | `net_amount`     |
-/// |---------------------------|-------------|------------------|
-/// | funding (BIP44/BIP32/…)   | `Outgoing`  | `change - spent` |
-/// | `DashpayExternalAccount`  | `Incoming`  | `+paid`          |
-///
-/// The external account's record is not *wrong* about its own account —
-/// that chain did receive an output. It is wrong as a description of the
-/// **wallet**, and the persisted `transactions` row is keyed by txid
-/// alone, with no per-account dimension to disambiguate (the
-/// `transaction_account_involvements` table is only written for
-/// provider-key accounts). Whichever record is stored last therefore
-/// defines the row, and the watch-only one — emitted last, because
-/// `all_accounts` visits the DashPay accounts after the standard ones —
-/// wins: a payment *away* is persisted as an incoming credit, and its
-/// output is written into `txos` as a wallet-owned coin no key of ours
-/// can spend.
-///
-/// So external-account records are excluded from the persist-time
-/// projection entirely, exactly as #926 excluded the accounts from
-/// balance aggregation. What survives from the same event is everything
-/// that is genuinely ours to remember: the address-used flips and
-/// highest-used watermarks (so contact address rotation keeps working),
-/// the derived-address rows, and `derive_spent_utxos` (so a contact
-/// spending an output persisted *before* this fix still clears the
-/// stale row).
-///
-/// The predicate itself is canonical upstream
-/// ([`AccountType::is_contact_owned`], dashpay/rust-dashcore#952): its
-/// exhaustive match forces any future account type to declare whether
-/// its coins are the wallet's or a contact's, so this seam and #926's
-/// cannot drift apart.
-fn is_contact_watch_only(record: &TransactionRecord) -> bool {
-    record.account_type.is_contact_owned()
-}
-
 /// Derive the "ours" UTXOs created by a transaction's outputs.
 ///
 /// Walks `record.output_details`, keeps entries with role `Received` or
@@ -2042,9 +2008,8 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     );
     let is_instant = matches!(record.context, TransactionContext::InstantSend(_));
     let is_coinbase = record.transaction.is_coin_base();
-    // We own at least one input iff the wallet recorded any input details
-    // (those entries are keyed to inputs that spent our outpoints).
-    let owns_any_input = !record.input_details.is_empty();
+    // Contact-owned records returned above, so this is the input rule alone.
+    let owns_any_input = record_spends_own_coins(record);
 
     record
         .output_details
@@ -3852,6 +3817,119 @@ mod contact_watch_only_projection_tests {
             2,
             "both account slices ride along for account-scoped persisters"
         );
+    }
+
+    /// An InstantSend lock on a mempool send re-emits the send's row with
+    /// its `InstantSend` context. The lock event carries only a txid, so
+    /// without the re-emission the stored row stayed at mempool until the
+    /// block — a send the network had locked kept reading "Sending".
+    #[tokio::test]
+    async fn an_instant_lock_re_emits_the_locked_record() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(&ctx.receive_address.clone(), 0..1, &[100_000_000]);
+        let funded = ctx
+            .check_transaction(
+                &funding,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(funded.is_relevant, "funding tx should be relevant");
+
+        // A send of the whole coin to a foreign address: no change, so
+        // no output of ours for the lock to mark — only the context moves.
+        let spend = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: funding.txid(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 99_999_000,
+                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let sent = ctx
+            .check_transaction(&spend, TransactionContext::Mempool)
+            .await;
+        assert!(sent.is_relevant, "the spend should match");
+        let lock = InstantLock::default();
+        assert!(
+            ctx.managed_wallet
+                .mark_instant_send_utxos(&spend.txid(), &lock),
+            "the lock rewrites the send's context"
+        );
+
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        let manager = Arc::new(RwLock::new(wm));
+
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid: spend.txid(),
+            instant_lock: lock,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        let cs = build_core_changeset(&manager, &event).await;
+
+        assert!(cs
+            .instant_locks_for_non_final_records
+            .contains_key(&spend.txid()));
+        assert_eq!(cs.records.len(), 1, "the send's row is re-emitted");
+        assert_eq!(cs.records[0].txid, spend.txid());
+        assert!(
+            matches!(cs.records[0].context, TransactionContext::InstantSend(_)),
+            "the row carries the lock, got {:?}",
+            cs.records[0].context
+        );
+        assert!(cs.new_utxos.is_empty(), "a lock adds no coins");
+        assert!(cs.spent_utxos.is_empty(), "a lock spends no coins");
+    }
+
+    /// An InstantSend lock for a txid the manager holds no record for
+    /// (pruned, or a wallet it does not know) keeps the lock alone.
+    #[tokio::test]
+    async fn an_instant_lock_without_a_record_carries_only_the_lock() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        let txid = |byte: u8| Txid::from_byte_array([byte; 32]);
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id: [0x21u8; 32],
+            txid: txid(9),
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+        assert!(cs.records.is_empty());
+        assert!(cs.account_records.is_empty());
+        assert!(cs
+            .instant_locks_for_non_final_records
+            .contains_key(&txid(9)));
     }
 
     /// A contact spending an output that a *pre-fix* build already

@@ -14,6 +14,7 @@
 
 pub mod address_paths;
 pub(crate) mod broadcast_outcome;
+pub mod broadcast_probe;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;
@@ -26,7 +27,7 @@ pub mod test_support;
 mod util;
 pub mod wallet;
 
-pub use error::PlatformWalletError;
+pub use error::{ChosenInputProblem, PlatformWalletError};
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 // Surface the upstream `DerivedAddress` event payload through this
@@ -60,7 +61,8 @@ pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
-    CoreWallet, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+    check_chosen_inputs, check_fee_rate, in_broadcast_outpoints, CoreWallet, FinalizeOptions,
+    SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
 };
 pub use wallet::signed_payment_registry::{
     RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
