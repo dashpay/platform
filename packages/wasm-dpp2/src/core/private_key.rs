@@ -8,7 +8,6 @@ use crate::impl_wasm_type_info;
 use crate::public_key::PublicKeyWasm;
 use crate::utils::try_vec_to_fixed_bytes;
 use dpp::dashcore::PrivateKey;
-use dpp::dashcore::hashes::hex::FromHex;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PrivateKey")]
@@ -63,8 +62,8 @@ impl PrivateKeyWasm {
     ) -> WasmDppResult<Self> {
         let network_wasm: NetworkWasm = network.try_into()?;
 
-        let bytes = Vec::from_hex(hex_key)
-            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        let bytes =
+            hex::decode(hex_key).map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         let key_bytes: [u8; 32] = try_vec_to_fixed_bytes(bytes, "privateKey")?;
 
