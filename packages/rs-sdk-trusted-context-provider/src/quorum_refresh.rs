@@ -69,25 +69,30 @@ impl FetchedQuorums {
     }
 
     /// Why these lists cannot show that a quorum is absent, if they cannot.
+    /// While either list contains an uninterpretable hash, every unknown
+    /// quorum remains a source failure: its node gets a two-second exclusion,
+    /// rather than a health ban, for as long as the source stays incomplete.
+    /// An honest node naming the malformed quorum cannot be distinguished
+    /// from an attacker. Forged signatures are still rejected; this affects
+    /// availability, not proof acceptance.
     pub(crate) fn incomplete(&self) -> Option<String> {
         let reason = |list: &Result<Vec<QuorumData>, String>| match list {
             Err(error) => Some(error.clone()),
-            Ok(quorums) => {
-                quorums
-                    .iter()
-                    .find_map(|quorum| match hex::decode(&quorum.quorum_hash) {
-                        Err(error) => Some(format!(
-                            "invalid quorum hash '{}': {error}",
-                            quorum.quorum_hash
-                        )),
-                        Ok(bytes) if bytes.len() != 32 => Some(format!(
-                            "invalid quorum hash '{}': expected 32 bytes, got {}",
-                            quorum.quorum_hash,
-                            bytes.len()
-                        )),
-                        Ok(_) => None,
-                    })
-            }
+            Ok(quorums) => quorums.iter().find_map(|quorum| {
+                let invalid = match hex::decode(&quorum.quorum_hash) {
+                    Err(error) => Some(error.to_string()),
+                    Ok(bytes) if bytes.len() != 32 => {
+                        Some(format!("expected 32 bytes, got {}", bytes.len()))
+                    }
+                    Ok(_) => None,
+                }?;
+                let mut chars = quorum.quorum_hash.chars();
+                let mut prefix: String = chars.by_ref().take(64).collect();
+                if chars.next().is_some() {
+                    prefix.push('…');
+                }
+                Some(format!("invalid quorum hash '{prefix}': {invalid}"))
+            }),
         };
         match (reason(&self.current), reason(&self.previous)) {
             (None, None) => None,
@@ -328,6 +333,31 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Malformed trusted hashes must not flood logs or host error messages;
+    /// the diagnostic keeps a bounded prefix and its parsing failure.
+    #[test]
+    fn should_bound_uninterpretable_quorum_hash_diagnostics() {
+        for raw_hash in ["g".repeat(65), "aa".repeat(33), "é".repeat(65)] {
+            let fetched = FetchedQuorums {
+                current: Ok(vec![QuorumData {
+                    quorum_hash: raw_hash.clone(),
+                    key: String::new(),
+                    height: 1,
+                    valid_members_count: 3,
+                }]),
+                previous: Ok(vec![]),
+            };
+            let reason = fetched.incomplete().expect("an incomplete trusted list");
+            let prefix: String = raw_hash.chars().take(64).collect();
+            assert!(reason.contains("invalid quorum hash"));
+            assert!(
+                reason.contains(&format!("'{prefix}…'")),
+                "retain only the bounded hash prefix: {reason}"
+            );
+            assert!(!reason.contains(&raw_hash), "omit the full malformed hash");
+        }
+    }
 
     fn seen(generation: u64, started: Instant, finished: bool) -> Option<Seen> {
         Some(Seen {
