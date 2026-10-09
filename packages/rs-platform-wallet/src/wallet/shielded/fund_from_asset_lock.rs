@@ -422,7 +422,12 @@ impl PlatformWallet {
                 proving
             }
             // Made for other inputs: dropping it cancels it if still queued.
-            _ => spawn_proof(proof_out_point, shield_amount),
+            // `_` would leave it owned by `speculative` until the end of the
+            // function, so move it out and drop it before the replacement.
+            stale => {
+                drop(stale);
+                spawn_proof(proof_out_point, shield_amount)
+            }
         };
         let bundle = join_proof(proving).await?;
         let sdk = self.sdk.clone();
