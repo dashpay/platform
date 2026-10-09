@@ -20,6 +20,7 @@
 //!   - The `propertyConstraints` rules of a document type, and the
 //!     pre-check of a document against them (`property_constraints`).
 
+mod json;
 mod property_constraints;
 mod put;
 mod queries;
