@@ -1,8 +1,8 @@
 //! JNI exports for read-only Platform queries: identities, DPNS names,
 //! data contracts, documents. All payloads are JSON strings produced by
 //! `rs-sdk-ffi`; parsing happens on the Kotlin side. The two
-//! `propertyConstraints` exports read a contract the caller already holds
-//! and make no network call.
+//! `propertyConstraints` exports and the property type shorthand expansion
+//! read a contract the caller already holds and make no network call.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.QueriesNative`.
 
@@ -22,10 +22,12 @@ use rs_sdk_ffi::{
     dash_sdk_data_contract_check_property_constraints, dash_sdk_data_contract_destroy,
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_json,
     dash_sdk_data_contract_fetch_result_free, dash_sdk_data_contract_fetch_with_serialization,
-    dash_sdk_data_contract_get_property_constraints, dash_sdk_data_contracts_fetch_by_range,
-    dash_sdk_document_average, dash_sdk_document_count, dash_sdk_document_search,
-    dash_sdk_document_sum, dash_sdk_dpns_check_availability, dash_sdk_dpns_get_usernames,
-    dash_sdk_dpns_resolve, dash_sdk_dpns_search, dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
+    dash_sdk_data_contract_get_property_constraints,
+    dash_sdk_data_contract_json_expand_property_type_shorthands,
+    dash_sdk_data_contracts_fetch_by_range, dash_sdk_document_average, dash_sdk_document_count,
+    dash_sdk_document_search, dash_sdk_document_sum, dash_sdk_dpns_check_availability,
+    dash_sdk_dpns_get_usernames, dash_sdk_dpns_resolve, dash_sdk_dpns_search,
+    dash_sdk_evonode_get_proposed_epoch_blocks_by_ids,
     dash_sdk_evonode_get_proposed_epoch_blocks_by_range, dash_sdk_group_get_action_signers,
     dash_sdk_group_get_actions, dash_sdk_group_get_info, dash_sdk_identities_fetch_balances,
     dash_sdk_identities_fetch_contract_keys, dash_sdk_identity_fetch,
@@ -1772,6 +1774,38 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
                 properties.as_ptr(),
                 owner.as_ptr(),
             )
+        };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// A data contract's JSON with its property type shorthands (protocol version
+/// 14) written in full, as
+/// `dash_sdk_data_contract_json_expand_property_type_shorthands` returns it:
+/// `"type": "identifier"` and `"type": "bytes", "size": n` become the byte
+/// array they stand for, in every document type schema and in `schemaDefs`.
+/// Everything else comes back as given. A view for reading the schemas: the
+/// contract kept on disk stays as sent.
+///
+/// * `contract_json` is the contract JSON `dataContractFetchJson` and
+///   `dataContractFetchWithSerialization` return. No SDK handle and no
+///   network call.
+///
+/// Returns the JSON, or null after throwing: `InvalidParameter` for a null
+/// argument or text that is not a JSON object.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataContractJsonExpandPropertyTypeShorthands(
+    mut env: JNIEnv,
+    _class: JClass,
+    contract_json: JString,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let contract_json = require_cstr!(env, contract_json);
+        // `contract_json` outlives the synchronous call.
+        let result = unsafe {
+            dash_sdk_data_contract_json_expand_property_type_shorthands(contract_json.as_ptr())
         };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
