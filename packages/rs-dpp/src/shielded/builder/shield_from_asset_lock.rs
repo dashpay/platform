@@ -37,6 +37,9 @@ pub struct ProvedShieldFromAssetLockBundle {
     /// Signs the proved bundle (see `prove_bundle_with`). The proved-but-unsigned bundle type is
     /// not re-exported by `grovedb-commitment-tree`, so it lives inside this closure.
     sign: Box<SignBundleFn>,
+    /// The outpoint the bundle was proved for. Checked on its own, because at versions that bind
+    /// nothing the sighash would accept a proof of any outpoint.
+    asset_lock_out_point: OutPoint,
     /// The asset-lock binding the sighash committed to; empty at versions that bind nothing.
     extra_sighash_data: Vec<u8>,
 }
@@ -74,6 +77,7 @@ impl ProvedShieldFromAssetLockBundle {
         let sign = prove_bundle_with(builder, prover, move |_| Ok(bound))?;
         Ok(Self {
             sign,
+            asset_lock_out_point,
             extra_sighash_data,
         })
     }
@@ -83,9 +87,10 @@ impl ProvedShieldFromAssetLockBundle {
     /// ECDSA signature. Does not consume the proved bundle, so a rejected transition can be
     /// re-assembled, with a new asset-lock proof or the same one, without proving again.
     ///
-    /// Errors, rather than produce a transition consensus would reject, when consensus would
-    /// derive another binding from `asset_lock_proof` at `platform_version`: a proof of another
-    /// outpoint, or a protocol version that binds differently.
+    /// Errors when `asset_lock_proof` is for another outpoint, even at versions whose sighash
+    /// binds nothing (one proved bundle around two locks would fund the same note twice), and,
+    /// rather than produce a transition consensus would reject, when `platform_version` binds
+    /// differently from the version the bundle was proved at.
     pub async fn build_transition_with_signer<AS>(
         &self,
         asset_lock_proof: AssetLockProof,
@@ -97,8 +102,9 @@ impl ProvedShieldFromAssetLockBundle {
     where
         AS: ::key_wallet::signer::Signer,
     {
-        if shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)?
-            != self.extra_sighash_data
+        if asset_lock_proof.out_point() != Some(self.asset_lock_out_point)
+            || shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)?
+                != self.extra_sighash_data
         {
             return Err(ProtocolError::ShieldedBuildError(
                 "shield_from_asset_lock: the asset lock proof does not match the binding the \
