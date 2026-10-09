@@ -1012,6 +1012,7 @@
           "uniqueItems": true
         },
         "type": {
+          "description": "A JSON Schema type. The property type shorthands never reach this meta-schema: from protocol version 14, \"type\": \"identifier\" and \"type\": \"bytes\" with a \"size\" are rewritten into the byte array they stand for (DocumentType::expand_property_type_shorthands) before it runs, and the contract is stored as sent",
           "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/type"
         },
         "format": {
@@ -1421,6 +1422,7 @@
           "$ref": "https://json-schema.org/draft/2020-12/meta/meta-data#/properties/description"
         },
         "type": {
+          "description": "An element of one scalar type. As on a property, an \"identifier\" or \"bytes\" shorthand element is rewritten into its long form, a byte array, before this meta-schema runs",
           "enum": [
             "integer",
             "number",

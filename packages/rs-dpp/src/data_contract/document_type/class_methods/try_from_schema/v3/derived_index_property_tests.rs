@@ -3,7 +3,7 @@
 //! registers and refuses, and what the parse of the whole contract resolves and refuses on the
 //! referenced side.
 
-use super::refusal_test_support::assert_refused;
+use super::refusal_test_support::{assert_refused, contract_value, CONTRACT_ID};
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
@@ -25,8 +25,6 @@ use crate::ProtocolError;
 use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-
-const CONTRACT_ID: [u8; 32] = [7; 32];
 
 fn identifier(position: u64, refers_to: Option<Value>) -> Value {
     let mut property = platform_value!({
@@ -889,16 +887,6 @@ fn should_leave_every_other_name_to_the_type_s_own_properties() {
     );
 }
 
-fn contract_value(version: u32, document_schemas: Value) -> Value {
-    platform_value!({
-        "$formatVersion": "1",
-        "id": Value::Identifier(CONTRACT_ID),
-        "ownerId": Value::Identifier([8; 32]),
-        "version": version,
-        "documentSchemas": document_schemas,
-    })
-}
-
 /// A contract declaring a derived index property can be updated: the update re-parses the
 /// whole contract, resolves the derived property again, and passes the update rules.
 #[test]
@@ -909,6 +897,7 @@ fn should_let_a_contract_declaring_a_derived_index_property_be_updated() {
         contract_value(
             1,
             platform_value!({ "post": post(Value::Null), "reply": reply_schema.clone() }),
+            None,
         ),
         true,
         platform_version,
@@ -928,6 +917,7 @@ fn should_let_a_contract_declaring_a_derived_index_property_be_updated() {
                     "additionalProperties": false,
                 },
             }),
+            None,
         ),
         true,
         platform_version,
@@ -950,7 +940,7 @@ fn should_let_a_contract_declaring_a_derived_index_property_be_updated() {
 fn should_resolve_a_derived_type_when_document_types_are_set_one_at_a_time() {
     let platform_version = PlatformVersion::latest();
     let mut contract = DataContract::from_value(
-        contract_value(1, platform_value!({ "post": post(Value::Null) })),
+        contract_value(1, platform_value!({ "post": post(Value::Null) }), None),
         true,
         platform_version,
     )
