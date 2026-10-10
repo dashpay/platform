@@ -1928,6 +1928,10 @@ mod tests {
             !*self.buffered.lock().unwrap()
         }
 
+        fn stores_dashpay_backfill(&self) -> bool {
+            true
+        }
+
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
             if *self.non_atomic.lock().unwrap() {
                 crate::changeset::PersistenceCapabilities::NONE
@@ -3327,6 +3331,10 @@ mod tests {
 
     impl PlatformWalletPersistence for ReloadPersister {
         fn store_commits_inline(&self) -> bool {
+            true
+        }
+
+        fn stores_dashpay_backfill(&self) -> bool {
             true
         }
 
@@ -5075,42 +5083,81 @@ mod tests {
         }
     }
 
-    /// On a buffering backend the pre-publication replacement is committed
-    /// with a `flush` before the wallet becomes visible, and a failed flush
-    /// fails the registration rather than publishing over a replacement that
-    /// never reached disk (dashpay/platform#4302 review).
+    /// [`ReloadPersister`] behind a backend whose `store` only buffers, with
+    /// a `flush` that can be made to fail transiently.
+    struct BufferedHost {
+        inner: Arc<ReloadPersister>,
+        fail_flushes: std::sync::atomic::AtomicBool,
+    }
+
+    impl PlatformWalletPersistence for BufferedHost {
+        fn stores_dashpay_backfill(&self) -> bool {
+            true
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS
+        }
+
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.inner.store(wallet_id, changeset)
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if self.fail_flushes.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "injected flush failure",
+                ));
+            }
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            self.inner.load()
+        }
+    }
+
+    /// A buffering backend that hands back a record must have it replaced
+    /// with an empty one, committed with a `flush` before the wallet becomes
+    /// visible. A failed flush fails the load with the flush's own typed
+    /// error rather than publishing over a replacement that never reached
+    /// disk (dashpay/platform#4302 review).
     #[tokio::test]
     async fn a_buffering_backend_flushes_the_replaced_record_before_publishing() {
-        let (donor, _, wallet_id) = make_wallet().await;
+        let (donor, donor_persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        establish_receival_contact(
+            &donor,
+            &donor_persister,
+            wallet_id,
+            owner,
+            contact,
+            200,
+            200,
+        )
+        .await;
+        let mut record = crate::changeset::DashPayBackfillRecord::default();
+        record.record_pass(800, None, [(owner, contact, 0, 200)]);
+        let snapshot = Arc::new(reload_snapshot(&donor, wallet_id, owner, 800, Some(record)).await);
         drop(donor);
-        let persister = Arc::new(RecordingPersister::default());
-        *persister.buffered.lock().unwrap() = true;
-        *persister.fail_flushes.lock().unwrap() = true;
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        let manager = Arc::new(PlatformWalletManager::new(
-            sdk,
-            Arc::clone(&persister),
-            handler,
-        ));
-        // A same-id wallet was published earlier in this process.
-        manager
-            .durable_cursors
-            .lock()
-            .await
-            .insert(wallet_id, crate::changeset::DurableCursor::at(1_000));
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
-            .expect("valid mnemonic")
-            .to_seed("");
-        let create = || {
-            manager.create_wallet_from_seed_bytes(
-                Network::Testnet,
-                &seed,
-                WalletAccountCreationOptions::Default,
-                Some(101),
-            )
+        let host = Arc::new(BufferedHost {
+            inner: Arc::clone(&snapshot),
+            fail_flushes: std::sync::atomic::AtomicBool::new(true),
+        });
+        let manager_over = |host: &Arc<BufferedHost>| {
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+            Arc::new(PlatformWalletManager::new(sdk, Arc::clone(host), handler))
         };
-        let error = match create().await {
+
+        let manager = manager_over(&host);
+        let error = match manager.load_from_persistor().await {
             Ok(_) => panic!("the replacement did not commit, so the wallet is not published"),
             Err(error) => error,
         };
@@ -5124,10 +5171,15 @@ mod tests {
         );
         assert!(manager.get_wallet(&wallet_id).await.is_none());
 
-        *persister.fail_flushes.lock().unwrap() = false;
-        persister.stores.lock().unwrap().clear();
-        create().await.expect("the replacement commits");
-        first_store_is_an_empty_record(&persister.stores.lock().unwrap());
+        host.fail_flushes
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        snapshot.stores.lock().unwrap().clear();
+        let manager = manager_over(&host);
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the replacement commits");
+        first_store_is_an_empty_record(&snapshot.stores.lock().unwrap());
     }
 
     /// The replacement can also put coverage BACK: the loaded record covers

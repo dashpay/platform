@@ -665,7 +665,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// - the filter dropped coverage for accounts this wallet does not hold;
     /// - an entry shows a same-id wallet was published in this process — it
     ///   may have stored or invalidated coverage after the snapshot was read;
-    /// - the backend does not commit inline and the snapshot held a record.
+    /// - the backend cannot hold the record durably and the snapshot held one.
     ///
     /// A replacement that puts coverage on the host while this wallet's cursor
     /// is below the host's carries that cursor, as a rewind, in the same
@@ -699,7 +699,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         } else {
             DashPayBackfillRecord::default()
         };
-        if !(dropped || predecessor || (!durable && held_on_host)) {
+        // A backend that cannot hold the record durably never had one
+        // written by this process, so only a record it handed back can need
+        // invalidating; one that can is replaced when the snapshot's record
+        // may disagree with what the wallet carries.
+        let replace = if durable {
+            dropped || predecessor
+        } else {
+            held_on_host
+        };
+        if !replace {
             return Ok(record);
         }
         let host_cursor = durable_cursors
