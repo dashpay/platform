@@ -1,3 +1,65 @@
+## [Unreleased]
+
+### Tests
+
+* **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
+
+## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** withdrawals also fit a Core-anchored limit (PV14) (#5237)
+* **platform:** documents only a consume deletes (canBeDeleted "onlyWhenConsumed", PV14) (#5239)
+* **platform:** summableOffCountIndex keeps one counter per group of another index (PV14) (#5250)
+* **drive-abci:** resolve Core v24 platform ports at protocol version 14 (#5228)
+* **platform:** a BLS12_381 identity key's signature must verify (PV14) (#5295)
+* **platform:** support Core v24 masternode identities at protocol version 14 (#5227)
+* **drive-abci:** record and check the nullifiers of shielding transitions (PV14) (#5014)
+* **platform:** refuse a by-id refersTo to an indexOnly document type at registration (PV14) (#5284)
+* **platform:** only members added before a document approve its settled deletion (PV14) (#5260)
+* **platform:** token shielded pools (#4760)
+* **platform:** let a banned or suspended author retract with a declared replace (PV14) (#5253)
+* **platform:** bound the summed values of a contested document type (PV14) (#5240)
+
+### Features
+
+* **drive-abci:** resolve Core v24 platform ports at protocol version 14 ([#5228](https://github.com/dashpay/platform/issues/5228))
+* **platform:** bound the summed values of a contested document type (PV14) ([#5240](https://github.com/dashpay/platform/issues/5240))
+* **platform:** documents only a consume deletes (canBeDeleted "onlyWhenConsumed", PV14) ([#5239](https://github.com/dashpay/platform/issues/5239))
+* **platform:** let a banned or suspended author retract with a declared replace (PV14) ([#5253](https://github.com/dashpay/platform/issues/5253))
+* **platform:** only members added before a document approve its settled deletion (PV14) ([#5260](https://github.com/dashpay/platform/issues/5260))
+* **platform:** summableOffCountIndex keeps one counter per group of another index (PV14) ([#5250](https://github.com/dashpay/platform/issues/5250))
+* **platform:** support Core v24 masternode identities at protocol version 14 ([#5227](https://github.com/dashpay/platform/issues/5227))
+* **platform:** token shielded pools ([#4760](https://github.com/dashpay/platform/issues/4760))
+* **platform:** withdrawals also fit a Core-anchored limit (PV14) ([#5237](https://github.com/dashpay/platform/issues/5237))
+
+
+### Bug Fixes
+
+* **ci:** resolve Swift simulator test destinations by UDID
+* **dpp:** read $entropy as base64, not base58, in the create-transition map parser ([#5072](https://github.com/dashpay/platform/issues/5072))
+* **drive-abci:** record and check the nullifiers of shielding transitions (PV14) ([#5014](https://github.com/dashpay/platform/issues/5014))
+* **platform-wallet:** report an identity balance refusal on withdrawal as insufficient credits
+* **platform:** a BLS12_381 identity key's signature must verify (PV14) ([#5295](https://github.com/dashpay/platform/issues/5295))
+* **platform:** refuse a by-id refersTo to an indexOnly document type at registration (PV14) ([#5284](https://github.com/dashpay/platform/issues/5284))
+* **sdk:** refuse GroveDB V0 proof envelopes at every protocol version ([#5294](https://github.com/dashpay/platform/issues/5294))
+
+
+### Tests
+
+* **dashmate:** assert the migrated config format version, not a literal ([#5241](https://github.com/dashpay/platform/issues/5241))
+* **platform-wallet:** pin the key-unavailable fallthrough of promote_identity_insufficient_balance_or
+* **sdk:** re-record GroveDB V0 offline vectors as V1 and re-enable their tests ([#5299](https://github.com/dashpay/platform/issues/5299))
+* **swift-sdk:** fix the two failing Swift SDK unit tests on v5.0-dev ([#5297](https://github.com/dashpay/platform/issues/5297))
+
+
+### Continuous Integration
+
+* let the SDK release workflows rebuild tags older than v4.2.0-beta.5 ([#5107](https://github.com/dashpay/platform/issues/5107))
+* **release:** build dashmate packages from the release's own npm tarballs ([#5235](https://github.com/dashpay/platform/issues/5235))
+* run PR Hygiene's engine from master ([#5247](https://github.com/dashpay/platform/issues/5247))
+
 ## [5.0.0-beta.1](https://github.com/dashpay/platform/compare/v4.2.0-beta.7...v5.0.0-beta.1) (2026-09-30)
 
 The 4.2 release line was renamed 5.0. This release follows 4.2.0-beta.7.

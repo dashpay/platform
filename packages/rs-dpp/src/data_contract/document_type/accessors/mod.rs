@@ -1011,6 +1011,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.documents_deleted_only_when_consumed(),
+        }
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         match self {
             DocumentType::V0(_) => false,
@@ -1127,6 +1135,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
             DocumentType::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
             DocumentType::V2(v2) => v2.immutable_field_conditions(),
+        }
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.retracted_when(),
         }
     }
 
@@ -1255,6 +1271,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.documents_deleted_only_when_consumed(),
+        }
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         match self {
             DocumentTypeRef::V0(_) => false,
@@ -1374,6 +1398,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.retracted_when(),
+        }
+    }
+
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         match self {
             DocumentTypeRef::V0(_) => None,
@@ -1462,6 +1494,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_ENTRY_PAYLOAD,
             DocumentTypeMutRef::V1(_) => &NO_ENTRY_PAYLOAD,
             DocumentTypeMutRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.documents_deleted_only_when_consumed(),
         }
     }
 
@@ -1583,6 +1623,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
             DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
             DocumentTypeMutRef::V2(v2) => v2.immutable_field_conditions(),
+        }
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.retracted_when(),
         }
     }
 

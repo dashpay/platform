@@ -26,7 +26,7 @@ mod tests {
     use dpp::platform_value::BinaryData;
     use dpp::prelude::IdentityNonce;
     use dpp::serialization::PlatformSerializable;
-    use dpp::shielded::SerializedAction;
+    use dpp::shielded::{shield_from_identity_extra_sighash_data, SerializedAction};
     use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::shield_from_identity_transition::methods::ShieldFromIdentityTransitionMethodsV0;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
@@ -125,8 +125,12 @@ mod tests {
     }
 
     /// Builds and proves a real outputs-only Orchard bundle paying `shield_value`
-    /// to a fresh recipient. Identical to the `Shield` fixture: no extra sighash data.
-    fn build_valid_bundle(shield_value: u64) -> ProvenBundle {
+    /// to a fresh recipient, bound to the identity that will fund it.
+    fn build_valid_bundle(
+        shield_value: u64,
+        identity: &Identity,
+        platform_version: &PlatformVersion,
+    ) -> ProvenBundle {
         let mut rng = OsRng;
         let pk = get_proving_key();
 
@@ -152,7 +156,10 @@ mod tests {
 
         let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
         let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-        let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+        let extra_sighash_data =
+            shield_from_identity_extra_sighash_data(&identity.id().to_buffer(), platform_version)
+                .expect("shield from identity sighash data");
+        let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
         let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
         let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -733,7 +740,7 @@ mod tests {
         );
         add_identity_to_drive(&mut platform, &identity);
 
-        let bundle = build_valid_bundle(5_000);
+        let bundle = build_valid_bundle(5_000, &identity, platform_version);
         let mutated_amount = bundle.amount + 1;
         // The identity signature is over the mutated amount, so it verifies; the Orchard
         // binding signature commits to the real value balance and must reject it.
@@ -867,7 +874,7 @@ mod tests {
             "fixture must start balanced"
         );
 
-        let bundle = build_valid_bundle(5_000);
+        let bundle = build_valid_bundle(5_000, &identity, platform_version);
         let shield_amount = bundle.amount;
         let num_actions = bundle.actions.len();
         let st = create_signed_transition(
@@ -1005,7 +1012,7 @@ mod tests {
                 platform_version,
             );
             add_identity_to_drive(&mut platform, &identity);
-            let bundle = build_valid_bundle(5_000);
+            let bundle = build_valid_bundle(5_000, &identity, platform_version);
             let amount = bundle.amount;
             let st = create_signed_transition(
                 &identity,
@@ -1044,7 +1051,7 @@ mod tests {
         );
         add_identity_to_drive(&mut platform, &identity);
 
-        let bundle = build_valid_bundle(5_000);
+        let bundle = build_valid_bundle(5_000, &identity, platform_version);
         let amount = bundle.amount;
         let st =
             create_signed_transition(&identity, &signer, bundle, amount, 1, 0, platform_version)
@@ -1101,5 +1108,748 @@ mod tests {
         let proven_balance = partial.balance.expect("balance must be proven");
         assert_eq!(proven_balance, identity_balance(&platform, &identity));
         assert!(proven_balance < initial_balance - amount);
+    }
+
+    // ==========================================
+    // Bundle binding
+    // ==========================================
+
+    /// The bundle's sighash binds its kind and the identity that funds it. That bundle is
+    /// verified in two places — CheckTx's admission check (`validate_shielded_proof`) and block
+    /// processing's transform — and a disagreement between them rejects every honest shield at
+    /// admission while block-level tests stay green. Every test here therefore puts its
+    /// transitions through both, and starts from a transition the public builder made.
+    mod bundle_binding {
+        use super::*;
+        use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            check_tx_errors, test_orchard_recipient, TestOrchardProver,
+        };
+        use dpp::address_funds::PlatformAddress;
+        use dpp::dashcore::{Network, PrivateKey};
+        use dpp::shielded::builder::{
+            build_shield_from_asset_lock_transition, build_shield_from_identity_transition,
+        };
+        use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+        use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
+
+        const SHIELD_AMOUNT: u64 = 5_000;
+
+        fn funded_identity(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            id: [u8; 32],
+            seed: u64,
+            platform_version: &PlatformVersion,
+        ) -> (Identity, SimpleSigner) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (identity, signer) = create_identity_with_transfer_key(
+                id,
+                dash_to_credits!(1.0),
+                &mut rng,
+                platform_version,
+            );
+            add_identity_to_drive(platform, &identity);
+            (identity, signer)
+        }
+
+        async fn builder_made_shield(
+            identity: &Identity,
+            signer: &SimpleSigner,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            build_shield_from_identity_transition(
+                identity,
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                1,
+                signer,
+                None,
+                0,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                platform_version,
+            )
+            .await
+            .expect("client-built shield from identity")
+        }
+
+        fn lift(transition: &StateTransition) -> ProvenBundle {
+            let StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(v0)) =
+                transition
+            else {
+                panic!("expected a shield from identity transition");
+            };
+            ProvenBundle {
+                actions: v0.actions.clone(),
+                amount: v0.amount,
+                anchor: v0.anchor,
+                proof: v0.proof.clone(),
+                binding_signature: v0.binding_signature,
+            }
+        }
+
+        /// CheckTx's proof check, the whole admission path and block execution all accept it.
+        fn assert_accepted_at_admission_and_in_the_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let proof_check = transition
+                .validate_shielded_proof(platform_version)
+                .expect("proof check must not error");
+            assert!(
+                proof_check.is_valid(),
+                "CheckTx's proof check must accept it: {:?}",
+                proof_check.errors
+            );
+            let admission = check_tx_errors(platform, transition);
+            assert!(admission.is_empty(), "CheckTx must admit it: {admission:?}");
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// CheckTx's proof check, the whole admission path and block execution all refuse it
+        /// for its proof.
+        fn assert_refused_for_its_proof_at_admission_and_in_the_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let proof_check = transition
+                .validate_shielded_proof(platform_version)
+                .expect("proof check must not error");
+            assert_matches!(
+                proof_check.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )],
+                "CheckTx's proof check must refuse it"
+            );
+            let admission = check_tx_errors(platform, transition);
+            assert_matches!(
+                admission.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )],
+                "CheckTx must refuse it"
+            );
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
+            );
+        }
+
+        /// The bundle a client ships must be the one both verification sites accept. The builder
+        /// binds the preimage from `dpp`, and each site rebuilds it on its own; this is the test
+        /// that fails if either site rebuilds something else.
+        #[tokio::test]
+        async fn should_accept_a_builder_made_bundle_at_admission_and_in_the_block() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) =
+                funded_identity(&mut platform, [30u8; 32], 30, platform_version);
+
+            let shield = builder_made_shield(&identity, &signer, platform_version).await;
+
+            assert_accepted_at_admission_and_in_the_block(&platform, &shield, platform_version);
+        }
+
+        /// Another identity signs a transition of its own around a bundle proved for somebody
+        /// else: without the owner in the sighash its proof verifies and a second note with the
+        /// same nullifier lands in the pool.
+        #[tokio::test]
+        async fn should_refuse_a_bundle_resubmitted_by_another_identity() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (victim, victim_signer) =
+                funded_identity(&mut platform, [31u8; 32], 31, platform_version);
+            let (copier, copier_signer) =
+                funded_identity(&mut platform, [32u8; 32], 32, platform_version);
+
+            let shield = builder_made_shield(&victim, &victim_signer, platform_version).await;
+            // Positive control: the bundle is valid, so a refusal below is about who carries it.
+            assert_accepted_at_admission_and_in_the_block(&platform, &shield, platform_version);
+
+            let bundle = lift(&shield);
+            let amount = bundle.amount;
+            let copy = create_signed_transition(
+                &copier,
+                &copier_signer,
+                bundle,
+                amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+
+            assert_refused_for_its_proof_at_admission_and_in_the_block(
+                &platform,
+                &copy,
+                platform_version,
+            );
+        }
+
+        /// An identity created from an asset lock has that lock's identifier as its id, so a
+        /// `ShieldFromAssetLock` bundle and a `ShieldFromIdentity` of that identity bind the very
+        /// same owner bytes. Only the kind tag tells them apart, and this is the one place a
+        /// forgotten tag would show.
+        #[tokio::test]
+        async fn should_refuse_an_asset_lock_bundle_resubmitted_by_the_identity_sharing_its_owner()
+        {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(33);
+            let (_, lock_key) = KeyType::ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .expect("asset lock key");
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&lock_key, Network::Testnet).expect("key")),
+                None,
+            );
+            let owner = asset_lock_proof
+                .create_identifier()
+                .expect("asset lock identifier");
+
+            let from_lock = build_shield_from_asset_lock_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                asset_lock_proof,
+                &lock_key,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                Some(PlatformAddress::P2pkh([0x33; 20])),
+                0,
+                platform_version,
+            )
+            .expect("client-built shield from asset lock");
+            // Positive control: the bundle is valid for the kind it was proved for.
+            assert!(check_tx_errors(&platform, &from_lock).is_empty());
+            assert_matches!(
+                process_transition(&platform, from_lock.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            let (identity, signer) =
+                funded_identity(&mut platform, owner.to_buffer(), 34, platform_version);
+            let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(proven)) =
+                &from_lock
+            else {
+                panic!("expected a shield from asset lock transition");
+            };
+            let copy = create_signed_transition(
+                &identity,
+                &signer,
+                ProvenBundle {
+                    actions: proven.actions.clone(),
+                    amount: proven.value_balance,
+                    anchor: proven.anchor,
+                    proof: proven.proof.clone(),
+                    binding_signature: proven.binding_signature,
+                },
+                proven.value_balance,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+
+            assert_refused_for_its_proof_at_admission_and_in_the_block(
+                &platform,
+                &copy,
+                platform_version,
+            );
+        }
+    }
+
+    // ==========================================
+    // Nullifiers: every revealed nullifier is recorded once
+    // ==========================================
+
+    mod nullifiers {
+        use super::*;
+        use crate::execution::types::execution_event::ExecutionEvent;
+        use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            build_outputs_only_bundle_bound, build_outputs_only_bundle_bound_with_outputs,
+            check_tx_errors, has_recorded_nullifier, shielded_transfer_errors_revealing,
+            OutputsOnlyBundle,
+        };
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use drive::fees::op::LowLevelDriveOperation;
+
+        /// A bundle proved against `identity_id`. The sighash binds the identity funding the
+        /// shield, so the bundle verifies for that identity's transitions and for no other's, and
+        /// each test proves its own. The binding does not cover the nonce, so one bundle still
+        /// serves several shields by the same identity.
+        fn bound_bundle(
+            identity_id: &[u8; 32],
+            platform_version: &PlatformVersion,
+        ) -> OutputsOnlyBundle {
+            let extra_sighash_data =
+                shield_from_identity_extra_sighash_data(identity_id, platform_version)
+                    .expect("the binding of the funding identity");
+            build_outputs_only_bundle_bound(5_000, &extra_sighash_data)
+        }
+
+        fn proven(bundle: &OutputsOnlyBundle) -> ProvenBundle {
+            ProvenBundle {
+                actions: bundle.actions.clone(),
+                amount: bundle.amount,
+                anchor: bundle.anchor,
+                proof: bundle.proof.clone(),
+                binding_signature: bundle.binding_signature,
+            }
+        }
+
+        /// A funded identity on `platform` and its signer.
+        fn funded_identity(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            seed: u8,
+            platform_version: &PlatformVersion,
+        ) -> (Identity, SimpleSigner) {
+            let mut rng = StdRng::seed_from_u64(seed as u64);
+            let (identity, signer) = create_identity_with_transfer_key(
+                [seed; 32],
+                dash_to_credits!(1.0),
+                &mut rng,
+                platform_version,
+            );
+            add_identity_to_drive(platform, &identity);
+            (identity, signer)
+        }
+
+        fn pool_total(platform: &TempPlatform<MockCoreRPCLike>) -> u64 {
+            platform
+                .drive
+                .read_shielded_pool_total_balance(None, &mut vec![], PlatformVersion::latest())
+                .expect("fetch pool total")
+        }
+
+        fn populate_nullifier_tree(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            platform_version: &PlatformVersion,
+        ) {
+            let nullifiers: Vec<_> = (0u16..512)
+                .map(|i| {
+                    let mut nullifier = [0u8; 32];
+                    nullifier[..2].copy_from_slice(&i.to_le_bytes());
+                    nullifier
+                })
+                .collect();
+            let operations = platform
+                .drive
+                .insert_nullifiers(&nullifiers, platform_version)
+                .expect("nullifier operations");
+            platform
+                .drive
+                .grove_apply_batch(
+                    LowLevelDriveOperation::grovedb_operations_batch_consume(operations),
+                    false,
+                    None,
+                    &platform_version.drive,
+                )
+                .expect("populate nullifier tree");
+        }
+
+        /// Fee admission estimates the successful action before CheckTx verifies its proof.
+        /// Dummy proof bytes let every permitted action count exercise that complete estimate,
+        /// including the signature and state-read context, without proving sixteen circuits.
+        #[tokio::test]
+        async fn should_cover_complete_identity_shield_admission_estimates() {
+            let platform_version = PlatformVersion::latest();
+            let mut shortfalls = vec![];
+            for populated in [false, true] {
+                let mut platform = setup_platform();
+                if populated {
+                    populate_nullifier_tree(&platform, platform_version);
+                }
+                let (identity, signer) = funded_identity(&mut platform, 88, platform_version);
+                let state = platform.state.load();
+                let platform_ref = PlatformRef {
+                    drive: &platform.drive,
+                    state: &state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                };
+                for action_count in 1..=platform_version
+                    .system_limits
+                    .max_shielded_transition_actions
+                    as usize
+                {
+                    let mut bundle = dummy_bundle();
+                    bundle.actions = (0..action_count)
+                        .map(|i| {
+                            let mut action = create_dummy_serialized_action();
+                            action.nullifier[0] = i as u8 + 1;
+                            action
+                        })
+                        .collect();
+                    let st = create_signed_transition(
+                        &identity,
+                        &signer,
+                        bundle,
+                        1_000,
+                        1,
+                        0,
+                        platform_version,
+                    )
+                    .await;
+                    let mut event = state_transition_to_execution_event_for_check_tx(
+                        &platform_ref,
+                        &st,
+                        CheckTxLevel::FirstTimeCheck,
+                        &platform.check_tx_proof_verifier,
+                        platform_version,
+                    )
+                    .expect("build complete admission event")
+                    .into_data()
+                    .expect("valid admission event")
+                    .expect("first CheckTx produces an event");
+                    let ExecutionEvent::Paid {
+                        execution_operations,
+                        additional_fixed_fee_cost,
+                        ..
+                    } = &mut event
+                    else {
+                        panic!("identity shield must be identity-paid");
+                    };
+                    // BLS is the most expensive identity signature admitted by this transition.
+                    let mut signatures = 0;
+                    for operation in execution_operations {
+                        if let ValidationOperation::SignatureVerification(signature) = operation {
+                            *signature = SignatureVerificationOperation::new(KeyType::BLS12_381);
+                            signatures += 1;
+                        }
+                    }
+                    assert_eq!(signatures, 1);
+                    let compute_fee = additional_fixed_fee_cost.expect("shield compute fee");
+                    let estimated = platform
+                        .platform
+                        .validate_fees_of_event(
+                            &event,
+                            state.last_block_info(),
+                            None,
+                            platform_version,
+                            &Default::default(),
+                        )
+                        .expect("estimate complete event")
+                        .into_data()
+                        .expect("funded estimate")
+                        .total_base_fee()
+                        + compute_fee;
+                    let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+                        action_count,
+                        platform_version,
+                    )
+                    .expect("wallet estimate");
+                    eprintln!(
+                        "actions={action_count} populated={populated} admission={estimated} floor={floor}"
+                    );
+                    if estimated > floor {
+                        shortfalls.push((action_count, populated, estimated, floor));
+                    }
+                }
+            }
+            assert!(
+                shortfalls.is_empty(),
+                "wallet estimates must cover complete fee admission: {shortfalls:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_admit_identity_shield_funded_at_wallet_estimate() {
+            let platform_version = PlatformVersion::latest();
+            let extra_sighash_data =
+                shield_from_identity_extra_sighash_data(&[88; 32], platform_version)
+                    .expect("funding identity binding");
+            for action_count in [2, 3, 4, 6] {
+                let bundle = build_outputs_only_bundle_bound_with_outputs(
+                    5_000,
+                    action_count,
+                    &extra_sighash_data,
+                );
+                let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+                    bundle.actions.len(),
+                    platform_version,
+                )
+                .expect("wallet estimate");
+                for populated in [false, true] {
+                    let mut platform = setup_platform();
+                    if populated {
+                        populate_nullifier_tree(&platform, platform_version);
+                    }
+                    let mut rng = StdRng::seed_from_u64(88);
+                    let (identity, signer) = create_identity_with_transfer_key(
+                        [88; 32],
+                        bundle.amount + floor,
+                        &mut rng,
+                        platform_version,
+                    );
+                    add_identity_to_drive(&mut platform, &identity);
+                    let st = create_signed_transition(
+                        &identity,
+                        &signer,
+                        proven(&bundle),
+                        bundle.amount,
+                        1,
+                        0,
+                        platform_version,
+                    )
+                    .await;
+                    assert!(
+                        st.serialize_to_bytes().expect("serialize").len() as u64
+                            <= platform_version.system_limits.max_state_transition_size
+                    );
+                    let admission = check_tx_errors(&platform, &st);
+                    assert!(
+                        admission.is_empty(),
+                        "exact wallet funding must enter CheckTx: actions={action_count}, populated={populated}: {admission:?}"
+                    );
+                    let result = process_transition_and_commit(&platform, st, platform_version);
+                    let charged = match result.execution_results().as_slice() {
+                        [StateTransitionExecutionResult::SuccessfulExecution {
+                            fee_result, ..
+                        }] => fee_result.total_base_fee(),
+                        other => panic!("exact wallet funding must enter a block: {other:?}"),
+                    };
+                    assert!(charged <= floor, "charged fee {charged} exceeds {floor}");
+                    assert_eq!(identity_balance(&platform, &identity), floor - charged);
+                    assert_eq!(identity_nonce(&platform, &identity), 1);
+                    assert_eq!(pool_total(&platform), bundle.amount);
+                    for nullifier in bundle.nullifiers() {
+                        assert!(has_recorded_nullifier(&platform, &nullifier));
+                    }
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn should_record_the_nullifiers_a_shield_reveals() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 71, platform_version);
+            let bundle = &bound_bundle(&identity.id().to_buffer(), platform_version);
+
+            let st = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            let charged = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                    fee_result.total_base_fee()
+                }
+                other => panic!("expected a successful shield, got {other:?}"),
+            };
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    has_recorded_nullifier(&platform, &nullifier),
+                    "every nullifier the shield reveals must be recorded"
+                );
+            }
+            // The admission floor is the client's estimate of the complete fee; the nullifier
+            // writes must stay inside it.
+            let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+                bundle.actions.len(),
+                platform_version,
+            )
+            .expect("floor");
+            assert!(
+                charged <= floor,
+                "the charged fee ({charged}) must stay within the admission floor ({floor})"
+            );
+        }
+
+        /// The repeat is refused at CheckTx, and in a block it is a paid failure: the identity
+        /// nonce is consumed and the reads are charged, and nothing reaches the pool.
+        #[tokio::test]
+        async fn should_refuse_a_shield_repeating_a_recorded_nullifier() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 72, platform_version);
+            let bundle = &bound_bundle(&identity.id().to_buffer(), platform_version);
+
+            let first = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            let balance_before = identity_balance(&platform, &identity);
+            let pool_before = pool_total(&platform);
+
+            // The same bundle under the next nonce: the same note, the same nullifiers.
+            let repeat = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                2,
+                0,
+                platform_version,
+            )
+            .await;
+            let first_nullifier = bundle.nullifiers()[0];
+
+            let raw = repeat.serialize_to_bytes().expect("serialize");
+            {
+                let state = platform.state.load();
+                let platform_ref = PlatformRef {
+                    drive: &platform.drive,
+                    state: &state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                };
+                let check = platform
+                    .check_tx(
+                        &raw,
+                        CheckTxLevel::FirstTimeCheck,
+                        &platform_ref,
+                        platform_version,
+                    )
+                    .expect("check_tx runs");
+                assert_matches!(
+                    check.errors.as_slice(),
+                    [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                        if e.nullifier() == first_nullifier
+                );
+            }
+
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+            let charged = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::NullifierAlreadySpentError(e)),
+                    actual_fees,
+                    ..
+                }] if e.nullifier() == first_nullifier => actual_fees.total_base_fee(),
+                other => panic!("expected a paid nullifier refusal, got {other:?}"),
+            };
+            assert!(charged > 0, "the refusal is paid");
+            assert_eq!(
+                identity_balance(&platform, &identity),
+                balance_before - charged
+            );
+            assert_eq!(identity_nonce(&platform, &identity), 2);
+            assert_eq!(
+                pool_total(&platform),
+                pool_before,
+                "nothing reaches the pool"
+            );
+        }
+
+        /// The check runs before the proof, so the unprovable bundle is refused for its nullifier,
+        /// without the proof-failure penalty.
+        #[tokio::test]
+        async fn should_refuse_a_nullifier_repeated_inside_the_bundle() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 73, platform_version);
+
+            let mut repeating = dummy_bundle();
+            repeating.actions = vec![
+                create_dummy_serialized_action(),
+                create_dummy_serialized_action(),
+            ];
+            let st = create_signed_transition(
+                &identity,
+                &signer,
+                repeating,
+                1_000,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+            let charged = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::NullifierAlreadySpentError(e)),
+                    actual_fees,
+                    ..
+                }] if e.nullifier() == create_dummy_serialized_action().nullifier => {
+                    actual_fees.total_base_fee()
+                }
+                other => panic!("expected a paid nullifier refusal, got {other:?}"),
+            };
+            assert!(
+                charged < penalty,
+                "the refusal ({charged}) must not charge the proof-failure penalty ({penalty})"
+            );
+            assert_eq!(identity_nonce(&platform, &identity), 1);
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 74, platform_version);
+            let bundle = &bound_bundle(&identity.id().to_buffer(), platform_version);
+
+            let st = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            assert!(
+                shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
+                "a spend revealing an unrecorded nullifier passes the spend-side check"
+            );
+            let recorded = bundle.nullifiers()[1];
+            assert_matches!(
+                shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == recorded
+            );
+        }
     }
 }

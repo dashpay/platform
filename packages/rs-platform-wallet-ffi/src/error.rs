@@ -287,7 +287,8 @@ pub enum PlatformWalletFFIResultCode {
     //
     //   37  ErrorDocumentNotForSale         DPNS username marketplace
     //   38  ErrorDocumentPriceChanged       DPNS username marketplace
-    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
+    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace,
+    //                                       identity withdrawal / transfer to addresses
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
     //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
     //   42  ErrorMasternodeWithdrawalUnconfirmed masternode withdrawal status
@@ -387,8 +388,9 @@ pub enum PlatformWalletFFIResultCode {
     /// identity's credit balance cannot cover the operation — the
     /// wallet's purchase pre-flight (price + fee reserve against the
     /// local balance snapshot) or the downcast of the consensus
-    /// `IdentityInsufficientBalanceError`. Nothing executed; top the
-    /// identity up and retry.
+    /// `IdentityInsufficientBalanceError` (DPNS purchase, identity credit
+    /// withdrawal, identity credit transfer to addresses). Nothing
+    /// executed; top the identity up or send less and retry.
     ///
     /// Message: a STABLE JSON detail object —
     /// `{"identityId":"<base58>","required":<u64>,"available":<u64>}`

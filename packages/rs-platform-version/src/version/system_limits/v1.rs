@@ -42,7 +42,10 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
-    max_daily_withdrawal_amount: None,
+    core_credit_pool_unlock_limit_percent: None,
+    core_credit_pool_unlock_limit_floor: None,
+    core_credit_pool_window_blocks: None,
+    regtest_core_credit_pool_window_blocks: None,
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,
@@ -76,6 +79,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
     min_time_range_ttl_drop_operations_per_write: None,
@@ -83,5 +87,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_ttl_seconds: None,
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
-    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
+    max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
 };

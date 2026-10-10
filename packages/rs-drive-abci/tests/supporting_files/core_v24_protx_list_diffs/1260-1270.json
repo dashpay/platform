@@ -1,0 +1,68 @@
+{
+  "baseHeight": 1260,
+  "blockHeight": 1270,
+  "addedMNs": [
+    {
+      "type": "Evo",
+      "proTxHash": "99e719c608d603658f296acd00f271345a29e391e2d717d3615062f9a961920c",
+      "collateralHash": "89b952e1ac0ecdf8245dc368c955a866538031c6685a562e579adeda25f7a8f3",
+      "collateralIndex": 0,
+      "collateralAddress": "yRuFRszcgUcV8jMEdg8MJ7Yync7GkNkp7d",
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "4zmxpqirulb4blkyeufp3nd37wvcvpz6fibfwvgeybtfttkkni7h3mdd.onion:9999",
+        "addresses": {
+          "core_p2p": [
+            "4zmxpqirulb4blkyeufp3nd37wvcvpz6fibfwvgeybtfttkkni7h3mdd.onion:9999"
+          ],
+          "platform_p2p": [
+            "192.0.2.50:26656"
+          ],
+          "platform_https": [
+            "192.0.2.50:443"
+          ]
+        },
+        "registeredHeight": 1265,
+        "lastPaidHeight": 0,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMWTGVez6o7YXsaj2cEGT9bU3a1jHbmDtJ",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "platformNodeID": "9cea9116b333eba7631804e1be7efd62c56d5b58",
+        "platformP2PPort": 26656,
+        "platformHTTPPort": 443,
+        "payouts": [
+          {
+            "address": "yfzihVQvxhkkp4rTSw3sLYQzxbaifaTUTZ",
+            "script": "76a914d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d788ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6"
+      }
+    }
+  ],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0": {
+        "service": "192.0.2.40:9999",
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.40:9999"
+          ],
+          "platform_p2p": [
+            "192.0.2.40:36657"
+          ],
+          "platform_https": [
+            "192.0.2.40:8443"
+          ]
+        }
+      }
+    }
+  ]
+}

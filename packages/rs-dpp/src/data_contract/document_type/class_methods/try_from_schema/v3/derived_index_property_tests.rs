@@ -3,6 +3,7 @@
 //! registers and refuses, and what the parse of the whole contract resolves and refuses on the
 //! referenced side.
 
+use super::refusal_test_support::assert_refused;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
@@ -140,20 +141,6 @@ fn parse(
         &mut vec![],
         PlatformVersion::latest(),
     )
-}
-
-fn assert_refused(result: Result<BTreeMap<String, DocumentType>, ProtocolError>, fragment: &str) {
-    let error = result.expect_err("the contract should be refused");
-    // A paid refusal needs the consensus variant: a bare data contract error would surface as
-    // an internal error in a block
-    assert!(
-        matches!(error, ProtocolError::ConsensusError(_)),
-        "expected a consensus error, got {error:?}"
-    );
-    assert!(
-        error.to_string().contains(fragment),
-        "expected {fragment:?} in: {error}"
-    );
 }
 
 #[test]

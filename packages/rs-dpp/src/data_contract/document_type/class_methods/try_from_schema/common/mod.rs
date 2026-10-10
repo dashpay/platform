@@ -38,17 +38,18 @@ use crate::data_contract::document_type::property::{
     KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraint_condition, SystemProperty, STORED_DOCUMENT_PREFIX,
+    parse_property_constraint_condition, PropertyConstraint, SystemProperty, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
     delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD,
     DELETE_REFUNDS_OWNER, DELETE_SETTLED, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES,
-    RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_ONLY_WHEN_CONSUMED, CREATION_RESTRICTION_MODE,
+    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
+    DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -251,6 +252,10 @@ pub(super) struct ParserGeneration {
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_skip_if_absent: bool,
+    /// Whether the index grammar admits the `summableOffCountIndex` keyword (summableOffCountIndex
+    /// indexOnly indexes). Forwarded to [`Index::try_from_value_map`] exactly
+    /// like the admissions above.
+    pub admit_index_summable_off_count_index: bool,
     /// Whether `rangeCountable: true` promotes an omitted `countable` to
     /// `"countable"` (generation 3 and later), as the doctype-level
     /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
@@ -455,6 +460,13 @@ struct CoreParseContext<'a> {
     /// generation admitting the keyword can ever pass `true` (the caller
     /// reads it off the schema); generations 1 and 2 always pass `false`.
     index_only: bool,
+    /// Whether the document type being parsed declared `canBeDeleted: "onlyWhenConsumed"`,
+    /// which [`parse_document_type_flags`] reads as `false` for the owner's delete instead of
+    /// reading `canBeDeleted` as a boolean. Only a generation admitting the value can ever pass
+    /// `true` (the caller reads it off the schema with
+    /// [`parse_can_be_deleted_only_when_consumed_keyword`]); generations 1 and 2 always pass
+    /// `false`.
+    deleted_only_when_consumed: bool,
     generation: &'a ParserGeneration,
     platform_version: &'a PlatformVersion,
 }
@@ -515,6 +527,7 @@ pub(super) fn parse_document_type_core(
     data_contact_config: &DataContractConfig,
     full_validation: bool, // we don't need to validate if loaded from state
     index_only: bool,
+    deleted_only_when_consumed: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
@@ -528,6 +541,7 @@ pub(super) fn parse_document_type_core(
         data_contact_config,
         full_validation,
         index_only,
+        deleted_only_when_consumed,
         generation,
         platform_version,
     };
@@ -705,14 +719,18 @@ fn parse_document_type_flags(
         .map_err(consensus_or_protocol_value_error)?
         .unwrap_or(ctx.data_contact_config.documents_mutable_contract_default());
 
-    // Can documents of this type be deleted? (Overrides contract value)
-    let documents_can_be_deleted: bool =
+    // Can documents of this type be deleted by their owners? (Overrides contract value)
+    // `"onlyWhenConsumed"` says they can not: only a `refersTo` with `consume` deletes them
+    let documents_can_be_deleted: bool = if ctx.deleted_only_when_consumed {
+        false
+    } else {
         Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
             .map_err(consensus_or_protocol_value_error)?
             .unwrap_or(
                 ctx.data_contact_config
                     .documents_can_be_deleted_contract_default(),
-            );
+            )
+    };
 
     // Are documents of this type transferable?
     let documents_transferable_u8: u8 =
@@ -924,6 +942,9 @@ fn parse_indices(
                             preallocated: ctx.generation.admit_index_preallocated,
                             outlives_delete: ctx.generation.admit_index_outlives_delete,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
+                            summable_off_count_index: ctx
+                                .generation
+                                .admit_index_summable_off_count_index,
                             range_countable_implies_countable: ctx
                                 .generation
                                 .admit_range_countable_implies_countable,
@@ -1317,11 +1338,13 @@ fn parse_indices(
     // query planner, the update-immutability comparison) reading one
     // canonical spelling: both spellings of the same index parse to equal
     // `Index` values. `apply_index_only` then validates the normalized set.
+    // A `summableOffCountIndex` index keeps no entries and so has no member
+    // key: it stays without a terminal.
     let mut indices = indices;
     if ctx.index_only {
         use crate::document::property_names::OWNER_ID;
         for index in indices.values_mut() {
-            if index.terminal.is_none() {
+            if index.terminal.is_none() && !index.is_summable_off_count_index() {
                 index.terminal = Some(vec![OWNER_ID.to_string()]);
             }
         }
@@ -2253,7 +2276,8 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// this generation: a stored contract is read without one. An object, with
 /// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
 /// (booleans), `deleteWithin` (seconds, a u32), `deleteSettled` (an object with
-/// only `leader`, a boolean, and `approvals`, a u16, at least one of them),
+/// only `leader` and `approversPredateDocument`, booleans, and `approvals`, a u16,
+/// at least one of them),
 /// `deleteKeepsFields` (a non-empty list of property paths) and `changeFields`
 /// (a non-empty list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
@@ -2317,24 +2341,31 @@ pub(super) fn parse_moderator_abilities_keyword(
                 )));
             };
             if let Some(unknown) = settled_map.iter().find_map(|(key, _)| match key.as_text() {
-                Some(delete_settled::LEADER | delete_settled::APPROVALS) => None,
+                Some(
+                    delete_settled::LEADER
+                    | delete_settled::APPROVALS
+                    | delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                ) => None,
                 Some(other) => Some(other.to_string()),
                 None => Some(key.to_string()),
             }) {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` has no \
-                     key \"{unknown}\", only `{}` and `{}`",
+                     key \"{unknown}\", only `{}`, `{}` and `{}`",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             if settled_map.is_empty() {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` is empty: \
                      say whether the team's leader must approve (`{}`), how many must (`{}`), \
-                     or both",
+                     whether members the leader added after a document approve its deletion \
+                     (`{}`), or any of them",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             let leader = Value::inner_optional_bool_value(settled_map, delete_settled::LEADER)
@@ -2344,7 +2375,19 @@ pub(super) fn parse_moderator_abilities_keyword(
                 Value::inner_optional_integer_value::<u16>(settled_map, delete_settled::APPROVALS)
                     .map_err(consensus_or_protocol_value_error)?
                     .unwrap_or(1);
-            Some(SettledDeletionRule { leader, approvals })
+            let approvers_predate_document = Value::inner_optional_bool_value(
+                settled_map,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+            )
+            .map_err(consensus_or_protocol_value_error)?
+            // On by default only where it protects something: a rule one approval meets, the
+            // leader meets alone, so the members it adds give it nothing.
+            .unwrap_or(approvals > 1);
+            Some(SettledDeletionRule {
+                leader,
+                approvals,
+                approvers_predate_document,
+            })
         }
     };
     let delete_keeps_fields = match Value::get_optional_from_map(abilities_map, DELETE_KEEPS_FIELDS)
@@ -2455,7 +2498,14 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - `approvals` is at least 1 and, under full validation, at most the members
 ///   the declared team can hold: its leader,
 ///   `SystemLimits::max_moderation_charter_elected_members` elected members and
-///   the declaration's `maxAddedModerators`.
+///   the declaration's `maxAddedModerators`;
+/// - while `approversPredateDocument` is on (the default when `approvals` is
+///   above 1), the type must list `$createdAt` in `required` under full
+///   validation: a member the leader added approves only the deletion of
+///   documents created after its addition, and a document without `$createdAt`
+///   says nothing of when it was. A registration rule, as the bound on
+///   `approvals` is: a stored type is read back without it, and a document of it
+///   without `$createdAt` admits no added member.
 ///
 /// `deleteKeepsFields` names what of a deleted document its removal record
 /// keeps, copied from the document as it was deleted: what stays public once
@@ -2688,6 +2738,19 @@ pub(super) fn apply_moderator_abilities(
                  team can hold",
                 delete_settled::APPROVALS,
                 rule.approvals,
+            )));
+        }
+        if full_validation
+            && rule.approvers_predate_document
+            && !document_type.required_fields.contains(CREATED_AT)
+        {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, whose \
+                 approvers the leader added must have been added before the document was created \
+                 (`{}`, on by default when more than one approval is needed), which is read from \
+                 `$createdAt`: list `$createdAt` in `required`, or set `{}: false`",
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
             )));
         }
         document_type.moderator_settled_deletion = Some(rule);
@@ -3035,6 +3098,58 @@ pub(super) fn apply_documents_ttl(
     Ok(())
 }
 
+/// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`, read before the
+/// core parser consumes `schema`, through the map accessor every doctype keyword is read with
+/// (the first entry under the key), same shape as [`parse_index_only_keyword`]. Only the
+/// generation-3 driver calls this: it passes the answer to the core parse, which then reads
+/// the owner's delete as `false`, and records it on the parsed type
+/// ([`apply_deleted_only_when_consumed`]). Any other value is left to the core parse, which
+/// reads `canBeDeleted` as a boolean.
+pub(super) fn parse_can_be_deleted_only_when_consumed_keyword(schema: &Value) -> bool {
+    schema.to_map().ok().is_some_and(|schema_map| {
+        Value::get_optional_from_map(schema_map, CAN_BE_DELETED).and_then(Value::as_text)
+            == Some(CAN_BE_DELETED_ONLY_WHEN_CONSUMED)
+    })
+}
+
+/// Records `canBeDeleted: "onlyWhenConsumed"` on a generation-3 type: its owner can not delete
+/// a document (the core parse read `documents_can_be_deleted` as `false`), and a create whose
+/// `refersTo` declares `consume` can. Its documents can then leave state, so the type is a
+/// `deletableDocument` target. Runs after `apply_index_only`, and refuses, on every parse as
+/// `ttl` does, a type whose documents nothing could consume: one that keeps history, which
+/// the storage layer never deletes from, and an indexOnly one, which has no stored row a
+/// reference finds.
+pub(super) fn apply_deleted_only_when_consumed(
+    document_type: &mut DocumentTypeV2,
+    deleted_only_when_consumed: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !deleted_only_when_consumed {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeleted: \"onlyWhenConsumed\"`, but the storage layer refuses to delete a \
+             document whose type keeps history, so nothing could consume one: set \
+             `canBeDeleted` to false",
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{name}\" must not set `canBeDeleted: \"onlyWhenConsumed\"`: \
+             there is no stored row a reference could find and consume",
+        )));
+    }
+    document_type.documents_deleted_only_when_consumed = true;
+    Ok(())
+}
+
 /// Reads a doctype-level array of top-level property names (`entryPayload`,
 /// or `changeFields` inside `moderatorAbilities`) before the core parse
 /// consumes `schema`, same shape as [`parse_index_only_keyword`]. Only the
@@ -3198,14 +3313,11 @@ pub(super) fn parse_immutable_keyword(
 /// the properties frozen at creation, and the others with their parsed
 /// conditions. Runs after the core parse, whose properties it reads.
 ///
-/// A condition takes the grammar of a `propertyConstraints` rule, and what it
-/// reads is checked as a rule's reads are
-/// ([`super::validate_property_constraint_reads`]), on every parse: a stored
-/// condition reading a property the type does not declare, or a transient one,
-/// could only ever read it as absent. Beyond a rule, a condition may read the
-/// stored document through `$old.`, as a replace judges it on the document it
-/// writes, and may read no `countOf` or `sumOf`: it reads the document alone,
-/// so a replace judges it without reading state.
+/// A condition is parsed by [`parse_replace_condition`]: the grammar of a
+/// `propertyConstraints` rule, its reads checked as a rule's are on every
+/// parse (a stored condition reading a property the type does not declare, or
+/// a transient one, could only ever read it as absent), the stored document
+/// read through `$old.`, and no `countOf` or `sumOf`.
 ///
 /// Under full validation, for contracts entering the chain, the lints: the
 /// type's documents must be mutable; every listed property is a declared
@@ -3237,57 +3349,16 @@ pub(super) fn apply_immutable_fields(
 
     let mut conditions = BTreeMap::new();
     for (property, when) in conditional {
-        let subject = format!("condition of \"{property}\"");
-        let condition_error = |message: String| {
-            DataContractError::InvalidContractStructure(format!(
-                "document type \"{name}\" immutable {message}"
-            ))
-        };
-        let property_kind = |path: &str| {
-            super::property_equality_kind(
-                &document_type.flattened_properties,
-                path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
-            )
-        };
-        let condition = parse_property_constraint_condition(&when, name, &property_kind).map_err(
-            |message| {
-                consensus_or_protocol_data_contract_error(condition_error(format!(
-                    "{subject} {message}"
-                )))
-            },
-        )?;
-        super::validate_property_constraint_reads(
+        let condition = parse_replace_condition(
             document_type,
+            &when,
             schema_defs,
-            &subject,
-            &condition,
-            true,
-            &condition_error,
-        )
-        .map_err(consensus_or_protocol_data_contract_error)?;
-        if !condition.aggregate_reads().is_empty() {
-            return Err(structure_error(format!(
-                "document type \"{name}\" immutable {subject} reads a countOf or sumOf total: \
-                 a condition reads the document alone, so a replace judges it without reading \
-                 state"
-            )));
-        }
-        if full_validation {
-            let max_nodes = platform_version.system_limits.max_property_constraint_nodes;
-            let nodes = condition.node_count();
-            if nodes > usize::from(max_nodes) {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" immutable {subject} has {nodes} nodes, above the \
-                     maximum of {max_nodes}"
-                )));
-            }
-            if let Some((repeat, earlier)) = condition.repeated_condition() {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" immutable {subject} at {repeat} repeats the \
-                     condition at {earlier}"
-                )));
-            }
-        }
+            name,
+            property_names::IMMUTABLE,
+            &format!("condition of \"{property}\""),
+            full_validation,
+            platform_version,
+        )?;
         conditions.insert(property, condition);
     }
 
@@ -3336,6 +3407,267 @@ pub(super) fn apply_immutable_fields(
     document_type.immutable_fields = always;
     document_type.immutable_field_conditions = conditions;
 
+    Ok(())
+}
+
+/// The `summableOffCountIndex` rules an indexOnly document type checks, for one summableOffCountIndex
+/// index: the reason it is refused, or `None`.
+///
+/// - The source is another index of the type that holds every document
+///   exactly once: it keeps entries (it is not a summableOffCountIndex index itself), skips no
+///   document, outlives no delete and involves no `$createdAt` (no window
+///   fans a document out).
+/// - Every source property is a property of the summableOffCountIndex index, so a group
+///   here never merges several source groups.
+/// - Every other property is fixed by the source: a referring value of a
+///   `where` on a same-contract `permanentDocument` or `moderatedDocument`
+///   reference a source property holds ([`Index::count_index_derivations`]), so
+///   a source group never spreads over several groups here.
+/// - No other index continues below the summableOffCountIndex index's last property:
+///   that value position holds the group's counter, not a tree.
+fn summable_off_count_index_error(
+    index_name: &str,
+    index: &Index,
+    source_name: &str,
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Option<String> {
+    let prefix = format!(
+        "summableOffCountIndex index \"{index_name}\" on indexOnly document type \"{document_type_name}\""
+    );
+    let Some(source) = document_type.indices.get(source_name) else {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is not an index of the \
+             document type"
+        ));
+    };
+    if source.is_summable_off_count_index() {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is a summableOffCountIndex index itself and \
+             keeps no entries"
+        ));
+    }
+    // One summed value per document type, as for property sums: sum queries
+    // name it, and they name this one by the source index. (A property sum
+    // named like the source is refused below, the source sharing a
+    // property's name.)
+    if let Some((other_name, other_value)) =
+        document_type
+            .indices
+            .iter()
+            .find_map(|(other_name, other)| {
+                other
+                    .summed_value_name()
+                    .filter(|other_value| *other_value != source_name)
+                    .map(|other_value| (other_name, other_value))
+            })
+    {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", but index \"{other_name}\" sums \
+             \"{other_value}\": a document type keeps one summed value, which sum queries name"
+        ));
+    }
+    if document_type.flattened_properties.contains_key(source_name) {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which is also a property of the \
+             document type: sum queries name the source index for the summed value, so it must \
+             not share its name with a property"
+        ));
+    }
+    if !source.keys_each_live_document_by_its_values() {
+        return Some(format!(
+            "{prefix} sums the count of \"{source_name}\", which must hold every document \
+             exactly once: it may not skip documents (skipIfAbsent), keep the entries of deleted \
+             ones (outlivesDelete) or involve $createdAt"
+        ));
+    }
+    if let Some(missing) = source.properties.iter().find(|source_property| {
+        !index
+            .properties
+            .iter()
+            .any(|property| property.name == source_property.name)
+    }) {
+        return Some(format!(
+            "{prefix} lacks \"{}\", a property of its source \"{source_name}\": every source \
+             property must be a property of the summableOffCountIndex index, or one of its groups would \
+             count several source groups",
+            missing.name
+        ));
+    }
+    if let Err(property) = index.count_index_derivations(
+        source,
+        &document_type.flattened_properties,
+        document_type.data_contract_id,
+    ) {
+        return Some(format!(
+            "{prefix} has \"{property}\", which is neither a property of its source \
+             \"{source_name}\" nor fixed by it: it must be a referring value of a `where` on a \
+             same-contract permanentDocument or moderatedDocument reference by id (no findBy or \
+             inList) held by a property of \"{source_name}\", or one source group would spread \
+             over several groups"
+        ));
+    }
+    let depth = index.properties.len();
+    if let Some((other_name, _)) = document_type.indices.iter().find(|(_, other)| {
+        other.properties.len() > depth && index.shares_leading_levels(other, depth)
+    }) {
+        return Some(format!(
+            "{prefix} is continued by index \"{other_name}\", which lists its properties first: \
+             the value position of a summableOffCountIndex index's last property holds the group's \
+             counter, so no other index can continue below it"
+        ));
+    }
+    None
+}
+
+/// Parses a condition a replace is judged by, the `when` of an `immutable`
+/// entry or a type's `retractedWhen`. It takes the grammar of a
+/// `propertyConstraints` rule, and what it reads is checked as a rule's reads
+/// are ([`super::validate_property_constraint_reads`]), on every parse. Beyond
+/// a rule, it may read the stored document through `$old.`, as a replace
+/// judges it on the document it writes, and may read no `countOf` or `sumOf`:
+/// it reads the document alone, so a replace judges it without reading state.
+/// Under full validation it stays within the node limit of a rule and lists no
+/// condition twice. Every message reads `document type "{name}" {keyword}
+/// {subject} ...`.
+#[allow(clippy::too_many_arguments)]
+fn parse_replace_condition(
+    document_type: &DocumentTypeV2,
+    when: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    keyword: &str,
+    subject: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<PropertyConstraint, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let condition_error = |message: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{name}\" {keyword} {message}"
+        ))
+    };
+    let property_kind = |path: &str| {
+        super::property_equality_kind(
+            &document_type.flattened_properties,
+            path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
+        )
+    };
+    let condition =
+        parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
+            consensus_or_protocol_data_contract_error(condition_error(format!(
+                "{subject} {message}"
+            )))
+        })?;
+    super::validate_property_constraint_reads(
+        document_type,
+        schema_defs,
+        subject,
+        &condition,
+        true,
+        &condition_error,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    if !condition.aggregate_reads().is_empty() {
+        return Err(structure_error(format!(
+            "document type \"{name}\" {keyword} {subject} reads a countOf or sumOf total: a \
+             condition reads the document alone, so a replace judges it without reading state"
+        )));
+    }
+    if full_validation {
+        let max_nodes = platform_version.system_limits.max_property_constraint_nodes;
+        let nodes = condition.node_count();
+        if nodes > usize::from(max_nodes) {
+            return Err(structure_error(format!(
+                "document type \"{name}\" {keyword} {subject} has {nodes} nodes, above the \
+                 maximum of {max_nodes}"
+            )));
+        }
+        if let Some((repeat, earlier)) = condition.repeated_condition() {
+            return Err(structure_error(format!(
+                "document type \"{name}\" {keyword} {subject} at {repeat} repeats the \
+                 condition at {earlier}"
+            )));
+        }
+    }
+    Ok(condition)
+}
+
+/// Reads the doctype-level `retractedWhen` keyword (protocol version 14) onto
+/// the parsed document type: the condition under which a replace writes a
+/// retracted document. On a moderated contract a banned or suspended owner can
+/// write nothing new, but the batch transformer lets it make this one replace,
+/// refusing each of its replaces whose written document does not meet the
+/// condition. So an author whose documents can not be deleted (`canBeDeleted:
+/// false`) can still take back what it wrote. The condition is parsed as an
+/// `immutable` entry's `when` ([`parse_replace_condition`]) and judged as one,
+/// on the document the replace writes with the stored one under `$old.`.
+///
+/// What a retracted document holds is the type's own rules to say: a
+/// `propertyConstraints` rule that it carries no content, and an `immutable`
+/// entry that keeps it retracted. The condition only picks the replaces a
+/// barred owner may make; every other rule of the type still judges them.
+///
+/// The type's documents must be mutable, or there is no replace, and the
+/// contract must keep a banlist or a suspension list, or no owner is ever
+/// barred. The keyword and the moderation config both arrive with protocol
+/// version 14, so no stored contract breaks either rule and both are checked
+/// on every parse. Runs after the core parse, whose properties it reads.
+pub(super) fn apply_retracted_when(
+    document_type: &mut DocumentTypeV2,
+    data_contract_config: &DataContractConfig,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let keyword = property_names::RETRACTED_WHEN;
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let Some(when) = document_type
+        .schema
+        .to_map()
+        .ok()
+        .and_then(|schema_map| Value::get_optional_from_map(schema_map, keyword))
+        .cloned()
+    else {
+        return Ok(());
+    };
+    if !document_type.documents_mutable {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{keyword}`, but its documents are not mutable \
+             (documentsMutable: false), so there is no replace to retract with"
+        )));
+    }
+    let bars_anyone = data_contract_config
+        .moderation()
+        .is_some_and(|moderation| moderation.barring_lists().next().is_some());
+    if !bars_anyone {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{keyword}`, which names the replace a banned or \
+             suspended owner may still make, but the contract keeps neither a banlist nor a \
+             suspension list, so no owner is ever barred (moderation can only be declared when \
+             the contract is created)"
+        )));
+    }
+    let condition = parse_replace_condition(
+        document_type,
+        &when,
+        schema_defs,
+        name,
+        keyword,
+        "condition",
+        full_validation,
+        platform_version,
+    )?;
+    document_type.retracted_when = Some(condition);
     Ok(())
 }
 
@@ -3401,13 +3733,9 @@ fn skip_if_absent_index_error(
         .rev()
         .find(|(_, property)| index.skip_if_absent_properties.contains(&property.name));
     if let Some((deepest_skip_position, deepest_skip_property)) = deepest_skip {
-        for ranked_at in index.ranked_countable_at.iter() {
-            let above = index
-                .properties
-                .iter()
-                .position(|property| property.name == *ranked_at)
-                .is_some_and(|position| position < deepest_skip_position);
-            if above {
+        for position in index.at_level_positions(index.ranked_at_levels()) {
+            if position < deepest_skip_position {
+                let ranked_at = &index.properties[position].name;
                 return Some(format!(
                     "index \"{}\" on document type \"{}\" ranks at \"{}\", above its skip \
                      property \"{}\": that ranking would count only documents carrying \"{}\", \
@@ -3516,6 +3844,20 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // And for `summableOffCountIndex`: a stored type's index entries are references to
+        // stored rows, whose count its own count trees already keep.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.is_summable_off_count_index())
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `summableOffCountIndex`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the keyword)",
+                index_name, name,
+            )));
+        }
         // And for `outlivesDelete`: a stored document is deleted by id, its
         // stored row saying where each of its entries is, so a delete never
         // lacks a value to find one by.
@@ -3585,27 +3927,18 @@ pub(super) fn apply_index_only(
                 })
             {
                 let last = position + 1 == index.properties.len();
-                let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
-                    || (last
-                        && (index.ranked_countable
-                            || index.ranked_summable
-                            || index.ranked_averageable));
+                let ranks_here = index.ranked_at_levels().any(|at| *at == skip_property.name)
+                    || (last && index.ranks_its_last_property());
                 if !ranks_here {
                     continue;
                 }
-                let prefix: Vec<String> = (0..=position)
-                    .map(|at| index.level_key(at, &index.properties[at].name))
-                    .collect();
                 if let Some((other_name, _)) =
                     document_type.indices.iter().find(|(other_name, other)| {
                         *other_name != index_name
                             && !other
                                 .skip_if_absent_properties
                                 .contains(&skip_property.name)
-                            && other.properties.len() > position
-                            && (0..=position).all(|at| {
-                                other.level_key(at, &other.properties[at].name) == prefix[at]
-                            })
+                            && index.shares_leading_levels(other, position + 1)
                     })
                 {
                     return Err(structure_error(format!(
@@ -3817,10 +4150,7 @@ pub(super) fn apply_index_only(
                 || index.range_countable
                 || index.summable.is_some()
                 || index.range_summable
-                || index.ranked_countable
-                || !index.ranked_countable_at.is_empty()
-                || index.ranked_summable
-                || index.ranked_averageable
+                || index.declares_any_ranking()
                 || index.is_bucketed()
                 || index.skip_if_absent
                 || index.preallocated
@@ -3914,11 +4244,13 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
-        // `parse_indices` gives every index of an indexOnly type a terminal,
-        // and the index parser refuses an empty one, so a contract cannot get
-        // here: this is the parser failing, not the contract.
+        // `parse_indices` gives every index of an indexOnly type but a
+        // summableOffCountIndex one a terminal, and the index parser refuses an empty
+        // one, so a contract cannot get here: this is the parser failing, not
+        // the contract. A summableOffCountIndex index keeps no entries, so it has no
+        // member key to check.
         let components = index.terminal_components();
-        if components.is_empty() {
+        if components.is_empty() && !index.is_summable_off_count_index() {
             return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
                  normalization: internal parser error",
@@ -4085,13 +4417,10 @@ pub(super) fn apply_index_only(
         // documents — its own owner-bearing row and a victim's owner-less
         // row — and remove an entry it never created; binding every entry
         // to its owner closes that, at the cost of the (unneeded) global-
-        // uniqueness-without-owner shape.
-        if !index.terminal_contains(OWNER_ID)
-            && !index
-                .properties
-                .iter()
-                .any(|property| property.name == OWNER_ID)
-        {
+        // uniqueness-without-owner shape. A summableOffCountIndex index keeps no
+        // entries: a delete takes its count back only once the entries of
+        // the indexes that keep them, its source among them, matched.
+        if !index.is_summable_off_count_index() && !index.involves(OWNER_ID) {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" must include $ownerId (as \
                  a property or as the terminal): every entry must be bound to its owner so \
@@ -4192,9 +4521,10 @@ pub(super) fn apply_index_only(
                 .chain(index.terminal_components().iter().map(String::as_str))
                 .filter(|name| *name != CREATED_AT)
                 .collect();
+            // (An index involving `$createdAt` never fits that key, so the
+            // shared predicate's `$createdAt` term changes nothing here.)
             let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
-                !other.outlives_delete
-                    && !other.skip_if_absent
+                other.keys_each_live_document_by_its_values()
                     && other
                         .properties
                         .iter()
@@ -4246,6 +4576,19 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // `summableOffCountIndex`: a summableOffCountIndex index keeps, per group, the number of its
+        // source's entries in that group. The count is lossless when the
+        // source holds every document exactly once and a group here holds
+        // exactly the documents of one source group. That the values fixing
+        // a group never change is judged with the referenced types, by the
+        // parse of the whole contract (`validate_summable_off_count_indexes_lossless`).
+        if let Some(source_name) = &index.summable_off_count_index {
+            if let Some(message) =
+                summable_off_count_index_error(index_name, index, source_name, document_type, name)
+            {
+                return Err(structure_error(message));
+            }
+        }
     }
 
     // At least one index must involve no `$createdAt` at all AND not be
@@ -4259,15 +4602,10 @@ pub(super) fn apply_index_only(
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
     // index qualifies as the proof index.) Nor may it outlive deletes: a
     // delete's proof shows the entry gone, which such an index keeps.
-    let has_proof_index = document_type.indices.values().any(|index| {
-        !index.skip_if_absent
-            && !index.outlives_delete
-            && !index.terminal_contains(CREATED_AT)
-            && !index
-                .properties
-                .iter()
-                .any(|property| property.name == CREATED_AT)
-    });
+    let has_proof_index = document_type
+        .indices
+        .values()
+        .any(Index::keys_each_live_document_by_its_values);
     if !has_proof_index {
         return Err(structure_error(format!(
             "indexOnly document type \"{}\" must declare at least one index that neither \
@@ -4301,6 +4639,28 @@ pub(super) fn apply_index_only(
         .flat_map(|index| index.skip_if_absent_properties.iter())
         .map(String::as_str)
         .collect();
+    // A summableOffCountIndex index keeps no value per document, so it covers nothing.
+    // The properties of one that its source lacks are fixed by the source's
+    // references (checked above): a client that lost them reads them back
+    // from the referenced document, so they need no index of their own.
+    let fixed_by_a_source: BTreeSet<&str> = document_type
+        .indices
+        .values()
+        .filter_map(|index| {
+            let source = document_type
+                .indices
+                .get(index.summable_off_count_index.as_deref()?)?;
+            index
+                .count_index_derivations(
+                    source,
+                    &document_type.flattened_properties,
+                    document_type.data_contract_id,
+                )
+                .ok()
+        })
+        .flatten()
+        .map(|derivation| derivation.property)
+        .collect();
     for (property_name, property) in document_type.flattened_properties.iter() {
         if matches!(property.property_type, DocumentPropertyType::Object(_)) {
             // Containers are covered through their flattened leaves.
@@ -4321,14 +4681,12 @@ pub(super) fn apply_index_only(
                 property_name, name,
             )));
         }
-        let holds_property = |index: &Index| {
-            index.terminal_contains(property_name)
-                || index
-                    .properties
-                    .iter()
-                    .any(|index_property| index_property.name == *property_name)
-        };
-        if optional {
+        let holds_property =
+            |index: &Index| !index.is_summable_off_count_index() && index.involves(property_name);
+        if fixed_by_a_source.contains(property_name.as_str()) {
+            // Covered by its source's reference; the rules every index
+            // holding an optional property follows still apply below.
+        } else if optional {
             // A time-windowed index keeps a value only in its windows, which
             // document queries do not read and a `ttl` drains, so it cannot be
             // where an optional value is kept.

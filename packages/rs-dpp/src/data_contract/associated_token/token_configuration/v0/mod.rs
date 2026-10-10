@@ -32,9 +32,17 @@ use std::fmt;
 ///
 /// This configuration is designed to be deterministic and versioned for compatibility
 /// across protocol upgrades and validation environments.
+///
+/// An unknown key is refused rather than skipped. A token's configuration is fixed when the
+/// token is created, so a key this format version does not carry — `hasShieldedPool` written
+/// beside `$formatVersion: "0"`, say — would otherwise leave the token without what was asked
+/// for and with no way to add it later. The field set is closed: a later format version is a
+/// new generation, never a new field here. `TokenConfigurationV1` reads these fields through
+/// `serde(flatten)`, which does not carry the refusal, so a version 1 configuration is not
+/// held to it.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, DecodeUntrusted)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenConfigurationV0 {
     /// Metadata conventions, including decimals and localizations.
     pub conventions: TokenConfigurationConvention,
@@ -194,7 +202,7 @@ fn default_token_marketplace_rules() -> TokenMarketplaceRules {
     })
 }
 
-fn default_change_control_rules() -> ChangeControlRules {
+pub(crate) fn default_change_control_rules() -> ChangeControlRules {
     ChangeControlRules::V0(ChangeControlRulesV0 {
         authorized_to_make_change: AuthorizedActionTakers::NoOne,
         admin_action_takers: AuthorizedActionTakers::NoOne,

@@ -507,50 +507,10 @@ impl Drive {
                 //   walk further; passing a larger one is rejected.
                 //   If the caller passes `None`, the platform default
                 //   (the cap itself) is used.
-                let has_outer_range = where_clauses
-                    .iter()
-                    .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
-                    .count()
-                    == 2;
-                let effective_limit = if has_outer_range {
-                    match request.limit {
-                        None => Some(super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT),
-                        Some(n) => {
-                            if n > super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 {
-                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                                    "carrier-aggregate range-outer queries (e.g. \
-                                         `outer_range_field > X AND inner_acor_field > \
-                                         Y` with `group_by = [outer_range_field]`) cap \
-                                         the outer walk at {} entries (compile-time \
-                                         constant `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`); \
-                                         got limit = {}. Pass a value ≤ {} or omit \
-                                         `limit` to use the default.",
-                                    super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
-                                    n,
-                                    super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
-                                ))));
-                            }
-                            if n == 0 {
-                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(
-                                    "carrier-aggregate range-outer queries require limit \
-                                     ≥ 1; got limit = 0"
-                                        .to_string(),
-                                )));
-                            }
-                            Some(n as u16)
-                        }
-                    }
-                } else {
-                    if let Some(n) = request.limit {
-                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                            "carrier-aggregate In-outer queries (e.g. `outer_in_field IN \
-                             [...] AND inner_acor_field > Y` with `group_by = \
-                             [outer_in_field]`) don't accept `limit` — the In array's \
-                             length already bounds the result. Got limit = {n}.",
-                        ))));
-                    }
-                    None
-                };
+                let effective_limit = DriveDocumentCountQuery::carrier_aggregate_count_limit(
+                    &where_clauses,
+                    request.limit,
+                )?;
                 // Outer-walk direction: ascending by default (the
                 // grovedb invariant for serialized-key carriers), or
                 // descending when the caller's `order_by` first

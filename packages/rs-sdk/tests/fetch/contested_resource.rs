@@ -28,10 +28,6 @@ use drive_proof_verifier::types::ContestedResource;
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
-#[cfg_attr(
-    feature = "offline-testing",
-    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"
-)]
 async fn test_contested_resources_ok() {
     setup_logs();
 
@@ -68,10 +64,6 @@ fn base_query(cfg: &Config) -> VotePollsByDocumentTypeQuery {
 #[cfg_attr(
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
-)]
-#[cfg_attr(
-    feature = "offline-testing",
-    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"
 )]
 /// Test [ContestedResource] start index (`start_at_value`)
 ///
@@ -152,10 +144,6 @@ async fn contested_resources_start_at_value() {
 #[cfg_attr(
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
-)]
-#[cfg_attr(
-    feature = "offline-testing",
-    ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"
 )]
 #[allow(non_snake_case)]
 async fn contested_resources_limit_PLAN_656() {
@@ -240,14 +228,14 @@ async fn contested_resources_limit_PLAN_656() {
 /// ## Preconditions
 ///
 /// None
-#[test_case::test_case(|_q| {}, Ok("ContestedResources([ContestedResource(Text(".into()) => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "unmodified base query is Ok")]
+#[test_case::test_case(|_q| {}, Ok("ContestedResources([ContestedResource(Text(".into()); "unmodified base query is Ok")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok("".into()); "index value empty string is Ok")]
 #[test_case::test_case(|q| q.document_type_name = "some random non-existing name".to_string(), Err(r#"status: InvalidArgument, message: "document type some random non-existing name not found"#); "non existing document type returns InvalidArgument")]
 #[test_case::test_case(|q| q.index_name = "nx index".to_string(), Err(r#"status: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
 #[test_case::test_case(|q| q.index_name = "dashIdentityId".to_string(), Err(r#"status: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
 // Disabled due to bug PLAN-653
 // #[test_case::test_case(|q| q.start_at_value = Some((Value::Array(vec![]), true)), Err(r#"status: InvalidArgument"#); "start_at_value wrong index type returns InvalidArgument PLAN-653")]
-#[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()) => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "start_index_values empty vec returns top-level keys")]
+#[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "start_index_values empty vec returns top-level keys")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok(r#"ContestedResources([])"#.into()); "start_index_values empty string returns zero results")]
 #[test_case::test_case(|q| {
     q.start_index_values = vec![
@@ -258,7 +246,7 @@ async fn contested_resources_limit_PLAN_656() {
 #[test_case::test_case(|q| {
     q.start_index_values = vec![];
     q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string())];
-}, Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()) => ignore["recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform with the contested-name prerequisites (dashpay/platform#3720)"]; "end_index_values one value with empty start_index_values returns 'dash'")]
+}, Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "end_index_values one value with empty start_index_values returns 'dash'")]
 #[test_case::test_case(|q| {
     q.start_index_values = vec![];
     q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string()), Value::Text("non existing".to_string())];

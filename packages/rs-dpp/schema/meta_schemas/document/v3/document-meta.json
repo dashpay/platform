@@ -4,6 +4,27 @@
   "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a document found by findBy, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the generatedFrom property keyword (a string property whose value a built-in function generates from other properties of the same document, on arrival when a document leaves it out), refersTo findBy and where (findBy the properties of a unique index of the referenced document type mapped to where each value comes from, where what the document found must hold, both keyed by the referenced document's property; a findBy entry may be a sys.hash function of values the document reveals, for a commit and reveal checked on create, on an identifier or on the string or byte array property whose value it reveals, with minimumAgeBlocks and consume beside findBy), the timeRange and integerRange index transforms, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), refuses a dotted path in summable, averageable, documentsSummable and documentsAverageable, whose value is read from the top level of the document (the same word-character pattern; no contract on mainnet or testnet names one), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
+    "rankedAtLevels": {
+      "description": "The `at` of a level-addressed ranking (rankedCountable, rankedSummable, rankedAverageable): the name of an index property, or an array of them (an index has at most 10, hence maxItems).",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true
+        }
+      ]
+    },
     "referenceOperands": {
       "description": "The operands of a refersTo anyOf or allOf: two or more, no two alike, each a leaf or an expression of the other combinator. At most SystemLimits max_reference_operands of them in one list, and at most SystemLimits max_reference_expression_depth combinators on any path from the declaration to a leaf (4 and 4 from protocol version 14), checked at contract registration; every leaf counts against max_references_per_document, since each may be read for each value. A leaf is an identity target, a permanentDocument by id, by findBy or with inList, or a deletableDocument found by findBy. The first two are existence checks against entities that are never deleted (inList reads a list that never changes on a document that is never deleted), so an expression of only them holds for good once it holds and is re-validated on replace only when its value or a property bound to one of its leaves changes, as a single target is; a deletableDocument leaf found by findBy is an existence check against a document that may be deleted, so an expression holding one is re-validated on every replace, and an immutable property may not hold it. The exception is a leaf whose key a findBy function computes (see findBy): it is judged when the document is created only and holds on a replace without a read, so an immutable property may hold it, and on a document type whose documents can be replaced it may not be an operand of an anyOf, which would then hold on every replace whichever operand held on the create. The other types do not compose with other operands: deletableDocument by id is re-validated on every replace and may be cleared once its document is deleted, which assumes the property refers to that one target; identityPublicKey pairs the value with a key id property no other operand reads; a contract target's requirements are gates judged against the block time and the writer rather than an existence check, and a contract or token id is never also an identity or document id. A where belongs to its leaf and is checked only against that leaf's document. Allowed on identifier properties and on the items of a typed array of identifiers; a changed expression is an incompatible schema change on update",
       "type": "array",
@@ -622,7 +643,7 @@
               ]
             },
             "documentType": {
-              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
+              "description": "The name of the referenced document type, whose documents must leave state only as the reference type says: for permanentDocument never (canBeDeleted: false, no moderatorAbilities.delete and no ttl; canBeDeleted: \"onlyWhenConsumed\" is not false); for moderatedDocument only through a moderator's recorded removal (canBeDeleted: false, no ttl, moderatorAbilities.delete with deleteKeepsRecord not false), so the reference resolves to the document or to its removal record, which a replace keeps; for deletableDocument in any other way; a deletableDocument reference is re-validated on every replace of the referring document, so one whose target was deleted has to be repointed at an existing document or cleared. With inList, the document type holding the list; the document is the one findBy's $id names",
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
@@ -788,7 +809,7 @@
               "maximum": 4294967295
             },
             "consume": {
-              "description": "Beside a findBy function, only: the create deletes the document findBy finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose where compares \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
+              "description": "Beside a findBy function, only: the create deletes the document findBy finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose where compares \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true) or that only a consume removes (canBeDeleted: \"onlyWhenConsumed\"), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
               "const": true
             }
           },
@@ -1911,47 +1932,64 @@
             "oneOf": [
               {
                 "type": "boolean",
-                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's document count, so \"top / bottom K groups by count\" queries are O(log n + k) with proofs."
+                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's document count, so \"top / bottom K groups by count\" queries are O(log n + k) with proofs. On a summableOffCountIndex index the document count is its sums, so this declares the Sum ranking (as rankedSummable does)."
               },
               {
                 "type": "object",
                 "properties": {
                   "at": {
-                    "oneOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 256
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 256
-                        },
-                        "minItems": 1,
-                        "maxItems": 10,
-                        "uniqueItems": true
-                      }
-                    ],
+                    "$ref": "#/$defs/rankedAtLevels",
                     "description": "Name of the index property (or array of properties) whose levels carry Count rankings. Each must be one of the index's properties (an index has at most 10, hence maxItems); naming the last property is equivalent to the boolean form. A non-terminal property places a ranking at that prefix level: its values are ranked by whole-subtree document count (e.g. on [hashtag, postId], at: \"hashtag\" ranks hashtags by total count across all their posts), and every level from the shallowest ranked one down to the terminal is laid out count-bearing so each write's delta propagates up through the chain. ANY subset of levels may be named — e.g. [\"hashtag\", \"postId\"] declares both rankings on one index, and a fully ranked index ranks every level."
                   }
                 },
                 "required": ["at"],
                 "additionalProperties": false,
-                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, and no other index of the document type may share a non-terminal ranked level or any level below it."
+                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, except on a summableOffCountIndex index, and no other index of the document type may share a non-terminal ranked level or any level below it. On a summableOffCountIndex index a document count is its sums, so rankedCountable (either form) declares the same ranking as rankedSummable and needs no rangeCountable."
               }
             ],
-            "description": "Count ranking axis. Requires `rangeCountable: true`. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which stay terminal-level booleans."
+            "description": "Count ranking axis. Requires `rangeCountable: true`, except on a summableOffCountIndex index, where it is the Sum ranking. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which take the level-addressed form only on a summableOffCountIndex index."
           },
           "rankedSummable": {
-            "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property, so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true` (or `rangeAverageable: true`, which implies it). Adds the Sum ranking axis only."
+            "oneOf": [
+              {
+                "type": "boolean",
+                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's sum of the `summable` property (on a summableOffCountIndex index, of the source index's entries), so \"top / bottom K groups by sum\" queries are O(log n + k) with proofs. Requires `rangeSummable: true` (or `rangeAverageable: true`, which implies it). Adds the Sum ranking axis only."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/$defs/rankedAtLevels",
+                    "description": "Name of the index property (or array of properties) whose levels carry Sum rankings. Each must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property ranks that property's values by the total of the counters beneath them."
+                  }
+                },
+                "required": ["at"],
+                "additionalProperties": false,
+                "description": "Level-addressed form, only on a summableOffCountIndex index: places Sum rankings at the named properties' levels."
+              }
+            ],
+            "description": "Sum ranking axis. Requires `rangeSummable: true`. The level-addressed form is only allowed on a summableOffCountIndex index."
           },
           "rankedAverageable": {
-            "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`), or the explicit `rangeCountable: true` + `rangeSummable: true` pair. Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+            "oneOf": [
+              {
+                "type": "boolean",
+                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`), or the explicit `rangeCountable: true` + `rangeSummable: true` pair. Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/$defs/rankedAtLevels",
+                    "description": "Name of the index property (or array of properties) whose levels carry Avg rankings. Each must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property ranks that property's values by the average per group of the counters beneath them."
+                  }
+                },
+                "required": ["at"],
+                "additionalProperties": false,
+                "description": "Level-addressed form, only on a summableOffCountIndex index: places Avg rankings at the named properties' levels."
+              }
+            ],
+            "description": "Avg ranking axis. Requires `rangeCountable: true` and `rangeSummable: true`. The level-addressed form is only allowed on a summableOffCountIndex index."
           },
           "timeRange": {
             "type": "object",
@@ -2063,6 +2101,12 @@
               }
             ],
             "description": "Conditional participation: a document that omits a property of this index's skip set writes no entry into this index (and a delete, or on a stored type a replace, recomputes the same skip), so the index holds only documents carrying every skip property. `true` makes the skip set every optional property of the index; an array names the skip set (each must be one of the index's properties; an index has at most 10, hence maxItems). A skip property may sit at any position of the index, and must be a top-level schema property NOT listed in `required` (system properties are never optional). On an indexOnly type the skip set must hold every optional property of the index (an index path has no representation for an absent value), every optional property needs a skip index whose skip set is that property alone, and at least one $createdAt-free index must remain non-skipIfAbsent (the executed-transition proof index); on a stored type the array may name a subset, the index's other optional properties keeping the null layout, and a skip index cannot be contested or set nullSearchable: false. No rankedCountable `at` level may sit above the deepest skip property. An absent property is distinct from an empty value: absence skips the index, while any present value — empty included — indexes normally. Available from protocol version 14."
+          },
+          "summableOffCountIndex": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Only on indexOnly document types: makes the index sum the count of another index. It names an index of the type, the source, and keeps per group of its own properties one counter holding the number of the source's entries in that group, with no entry per document. In the tree of the last property each group adds its counter, so its trees sum the source's entries in them, and with rangeCountable each group also counts one, so they count groups too: a count query over the index reads those sums, the source's entries, as does a sum query (which names the source index), and its average (with rangeCountable) is the entries per group. The sums are lossless: the source keeps entries, skips nothing, outlives no delete and involves no $createdAt; every source property is a property of this index; every other property of this index is a referring value of a `where` on a same-contract permanentDocument or moderatedDocument reference by id (no findBy or inList) held by a source property, to a value that never changes (the referenced $id or $creatorId, an $ownerId no transfer or purchase changes, or a property no replace or moderator can change: an unconditionally immutable one that is no optional deletableDocument reference by id (a replace may clear that once its document is deleted), or any of a documentsMutable: false type that no moderator's changeFields lists; kept on removal through moderatedDocument). This index may skip only on those other properties, needs rangeSummable: true, takes no terminal, summable, averageable, timeRange, integerRange or outlivesDelete, and is the only kind of index whose rankedSummable and rankedAverageable take the level-addressed form. Available from protocol version 14."
           }
         },
         "required": [
@@ -2071,12 +2115,17 @@
         "dependentRequired": {
           "rangeAverageable": ["averageable"]
         },
-        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
+        "$comment": "Every prerequisite here is sugar-aware, matching the structural parser, which expands `averageable` into `countable` + `summable` and `rangeAverageable` into `rangeCountable` + `rangeSummable` before it checks the same prerequisites on the resolved flags. `rangeSummable` accepts `averageable` or `summableOffCountIndex` in place of `summable`, and each `ranked*` flag accepts `rangeAverageable` in place of its own range axis (`rankedAverageable` also accepts the explicit `rangeCountable` + `rangeSummable` pair; `rankedCountable` on a summableOffCountIndex index needs no `rangeCountable`, being its Sum ranking). They are `if`/`then` pairs rather than `dependentRequired` rows only because `dependentRequired` cannot express the alternative. `rangeCountable` has no row at all: it implies `countable`, as it does at the doctype level, and the parser promotes an omitted `countable`. The remaining range rows keep the presence semantics they shipped with in v2 (an explicit `\"rangeSummable\": false` still needs a `summable` or an `averageable`); the ranked pairs are value-sensitive so that an explicit `\"rankedCountable\": false`, a written-out opt-out the structural parser accepts as such, demands nothing.",
         "allOf": [
           {
             "if": {
               "required": ["rangeSummable"],
-              "not": { "required": ["averageable"] }
+              "not": {
+                "anyOf": [
+                  { "required": ["averageable"] },
+                  { "required": ["summableOffCountIndex"] }
+                ]
+              }
             },
             "then": { "required": ["summable"] }
           },
@@ -2088,13 +2137,22 @@
                 }
               },
               "required": ["rankedCountable"],
-              "not": { "required": ["rangeAverageable"] }
+              "not": {
+                "anyOf": [
+                  { "required": ["rangeAverageable"] },
+                  { "required": ["summableOffCountIndex"] }
+                ]
+              }
             },
             "then": { "required": ["rangeCountable"] }
           },
           {
             "if": {
-              "properties": { "rankedSummable": { "const": true } },
+              "properties": {
+                "rankedSummable": {
+                  "anyOf": [{ "const": true }, { "type": "object" }]
+                }
+              },
               "required": ["rankedSummable"],
               "not": { "required": ["rangeAverageable"] }
             },
@@ -2102,11 +2160,44 @@
           },
           {
             "if": {
-              "properties": { "rankedAverageable": { "const": true } },
+              "properties": {
+                "rankedAverageable": {
+                  "anyOf": [{ "const": true }, { "type": "object" }]
+                }
+              },
               "required": ["rankedAverageable"],
               "not": { "required": ["rangeCountable", "rangeSummable"] }
             },
             "then": { "required": ["rangeAverageable"] }
+          },
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "properties": { "rankedSummable": { "type": "object" } },
+                  "required": ["rankedSummable"]
+                },
+                {
+                  "properties": { "rankedAverageable": { "type": "object" } },
+                  "required": ["rankedAverageable"]
+                }
+              ]
+            },
+            "then": { "required": ["summableOffCountIndex"] }
+          },
+          {
+            "if": { "required": ["summableOffCountIndex"] },
+            "then": {
+              "properties": { "rangeSummable": { "const": true } },
+              "required": ["rangeSummable"],
+              "not": {
+                "anyOf": [
+                  { "required": ["terminal"] },
+                  { "required": ["summable"] },
+                  { "required": ["averageable"] }
+                ]
+              }
+            }
           }
         ],
         "additionalProperties": false
@@ -2144,8 +2235,8 @@
       "description": "True if the documents are mutable, default is true"
     },
     "canBeDeleted": {
-      "type": "boolean",
-      "description": "True if the documents can be deleted, default is true"
+      "enum": [true, false, "onlyWhenConsumed"],
+      "description": "True if the documents' owners can delete them, default is the contract config's documentsCanBeDeletedContractDefault. \"onlyWhenConsumed\": the owner can not delete a document, but a create of the same contract whose refersTo declares consume deletes it, so the documents can still leave state and the type is a deletableDocument target, never a permanentDocument or moderatedDocument one. Refused on a type that keeps history or is indexOnly, whose documents nothing can consume. Fixed: an update may not change it. \"onlyWhenConsumed\" is available from protocol version 14."
     },
     "transferable": {
       "type": "integer",
@@ -2253,11 +2344,15 @@
               "minimum": 1,
               "maximum": 31,
               "description": "How many members of the seated team must approve, the leader counted among them. Default 1. At registration, at most the members the declared team can hold: its leader, the 15 members a charter elects and the elected declaration's maxAddedModerators."
+            },
+            "approversPredateDocument": {
+              "type": "boolean",
+              "description": "Whether a member the leader added (an addedModerator) proposes or approves the deletion of a document only when its addition was made before the document was created; one added in the same block does not count. The leader and the elected members always count. Without it, the leader could add members who approve whatever it proposes, and take them off again once they had. Default true when `approvals` is above 1 (false otherwise: a rule one approval meets, the leader meets alone), and true needs `$createdAt` in `required`. What the rule needs is not lowered for it: a team whose members from before a document are too few never deletes that document once settled. Every addition comes after the seat, so under a rule asking for more approvals than the leader and the members a charter elects, no document older than the seat is ever deleted once settled."
             }
           },
           "additionalProperties": false,
           "minProperties": 1,
-          "description": "Who must approve a moderator's deletion of a settled document, one past `deleteWithin`: a member of the contract's seated team proposes it with deleteSettledDocument, which is its own approval, the others approve the proposal by its action id with approveTeamAction, and the approval that meets the rule deletes the document, as `delete` would. `{\"leader\": true}` is the leader alone; `{\"leader\": true, \"approvals\": 3}` the leader and two others. The proposals and their approvals are kept under the contract as team actions, readable with getContractTeamActions and getContractTeamActionSigners; nothing lapses, but an approval is refused once the document has changed since the proposal. Requires `deleteWithin` and a contract whose moderators are an elected team, which must give the team `deleteDocuments` on the type; no interim moderator deletes a settled document."
+          "description": "Who must approve a moderator's deletion of a settled document, one past `deleteWithin`: a member of the contract's seated team proposes it with deleteSettledDocument, which is its own approval, the others approve the proposal by its action id with approveTeamAction, and the approval that meets the rule deletes the document, as `delete` would. `{\"leader\": true}` is the leader alone; `{\"leader\": true, \"approvals\": 3}` the leader and two others, any member the leader added among them added before the document was created unless `approversPredateDocument` is false. The proposals and their approvals are kept under the contract as team actions, readable with getContractTeamActions and getContractTeamActionSigners; nothing lapses, but an approval is refused once the document has changed since the proposal. Requires `deleteWithin` and a contract whose moderators are an elected team, which must give the team `deleteDocuments` on the type; no interim moderator deletes a settled document."
         },
         "deleteKeepsFields": {
           "type": "array",
@@ -2451,6 +2546,12 @@
         ]
       },
       "description": "The top-level properties of a mutable document type a replace may not change, add or remove. An entry naming a property freezes it at document creation; an entry { \"property\": ..., \"when\": condition } freezes it for any replace the condition holds for, and leaves it free for any other. A condition takes the grammar of a propertyConstraints rule (comparisons, arithmetic, in, present, absent, anyOf, allOf, not, ifThen, ifThenElse, the system times and heights the type requires, $ownerId) and is judged on the document the replace writes: its $updatedAt is the replace's block time, so { \"greaterThan\": [{ \"subtract\": [\"$updatedAt\", \"$createdAt\"] }, 300000] } freezes a property five minutes after the document was created. A path under $old. reads the stored document instead: { \"present\": \"$old.trackingCode\" } lets an absent trackingCode be set once, and { \"equal\": [\"$old.status\", { \"const\": \"published\" }] } freezes a property once the stored document is published. A condition may read no countOf or sumOf total. A replace changing a frozen property is rejected (DocumentImmutablePropertyChangedError, code 40128), except one removing a refersTo deletableDocument reference by id, listed without a condition, whose referenced document has been deleted. Only allowed when documentsMutable is true (the default). Every property must be a declared top-level property that is not transient, listed once: system properties ($-prefixed) are excluded because the platform manages them, and nested paths are not accepted (list the containing object to freeze it whole). A deletableDocument reference by id may be listed only without a condition. On contract update a property may be added, with a condition or without, and one listed with a condition may lose it; one listed without a condition stays, a condition never changes, and no property is dropped. Replaces immutableAllowSetting, which is refused. Available from protocol version 14."
+    },
+    "retractedWhen": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "description": "The condition under which a replace writes a retracted document: on a moderated contract, the one replace a banned or suspended owner may still make. A barred owner can write nothing new, but may still delete its documents and, on a type declaring retractedWhen, replace one when the document the replace writes meets the condition; any other replace by it is refused with ContractUserBannedError (41107) or ContractUserSuspendedError (41108). So an author whose documents can not be deleted (canBeDeleted: false) can still take back what it wrote. The condition is an immutable entry's when: the grammar of a propertyConstraints rule, judged on the document the replace writes, with the stored document read through $old., and no countOf or sumOf. A condition that cannot be evaluated counts as not met. What a retracted document holds is for the type's other rules to say: { \"present\": \"deleted\" } with a propertyConstraints rule that a document carrying deleted carries no content, and an immutable entry { \"property\": \"deleted\", \"when\": { \"present\": \"$old.deleted\" } } that keeps it retracted. Only allowed when documentsMutable is true and the contract keeps a banlist or a suspension list. Adding, removing or changing it on contract update is an incompatible change. Available from protocol version 14."
     },
     "ownerRefersTo": {
       "description": "A refersTo declaration whose value is the document's $ownerId, the writer, instead of a property's value: the declaration of an identifier property, with the same keys and the same checks, for the targets a writer can be: identity, a permanentDocument or a deletableDocument found by findBy, where \".\" is the writer, or a permanentDocument with inList, the writer an element of the list, or an anyOf or allOf expression whose every leaf is one of them and \"$ownerId\" names the writer as well. A deletableDocument leaf gates the writer on the document findBy finds existing now: every replace checks it again, so a writer whose document is gone can no longer replace theirs (it may still delete it). contract, token and a document by id are refused, since the writer's identity id is never one of those ids, and identityPublicKey pairs the value with a key id, which the writer does not carry. A where value is still a property of the document or its $ownerId, the same writer. Only on a document type whose documents can be neither transferred nor traded, so the writer stays the owner; on a type whose documents can, creatorRefersTo checks the creator instead. When a document is created, and when a replace changes a property findBy or where reads (every replace for a where value $ownerId), consensus checks the writer against the target exactly as a property's value is checked, and refuses the write with the error that target reports for a property (ReferencedEntityNotFoundError, 40120, and the rest), naming $ownerId as the path. It counts as one reference against the references a document may carry. Fixed when the document type is created: adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",

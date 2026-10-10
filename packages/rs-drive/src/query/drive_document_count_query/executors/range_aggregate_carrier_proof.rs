@@ -69,7 +69,8 @@ impl Drive {
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "carrier-aggregate count requires a `range_countable: true` index whose first \
+                "carrier-aggregate count requires a `range_countable: true` (or \
+                 summableOffCountIndex) index whose first \
                  property carries the outer In or range clause and whose last property \
                  carries the inner ACOR range clause"
                     .to_string(),
