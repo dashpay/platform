@@ -2960,6 +2960,12 @@ mod tests {
             "rewinds to the height of the request that carried our xpub"
         );
         assert_eq!(synced_height(&manager, wallet_id).await, 1_475_801);
+
+        // Let the backfill climb back to the tip. Reconciling at the funding
+        // height would return `None` with or without the guard, since nothing
+        // is below the scan; only from above it can a missing guard rewind
+        // the wallet a second time.
+        set_synced_height(&manager, wallet_id, 1_561_776).await;
         assert_eq!(
             iw.dashpay()
                 .reconcile_dashpay_rescan()
@@ -2967,6 +2973,11 @@ mod tests {
                 .expect("rescan 2"),
             None,
             "the guard makes it single-shot, as for established contacts"
+        );
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            1_561_776,
+            "the climbed-back scan must not be rewound again"
         );
     }
 
