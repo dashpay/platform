@@ -16,6 +16,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::errors::DataContractError;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::identity::{IdentityPublicKey, SecurityLevel};
 use dpp::platform_value::{platform_value, Value};
@@ -136,6 +137,49 @@ pub(in crate::execution) fn terminal_without_index_only_schema() -> Value {
     })
 }
 
+/// Adds a document type `item` whose property `p` is a `$ref` to `d0`, and adds to the
+/// contract's `$defs` each `d<i>` below `levels`, an object with two members that both `$ref`
+/// `d<i+1>`, and an integer `d<levels>`: an acyclic graph the non-validating parse would expand
+/// into 2^`levels` properties. Also adds `item_summed_u64`, which that parse refuses and the depth
+/// check accepts, so `check_tx` refusing the graph shows the check runs before the parse.
+pub(in crate::execution) fn add_ref_dag_document_type(
+    contract: &mut DataContractInSerializationFormat,
+    levels: usize,
+) {
+    let schema_defs = match contract {
+        DataContractInSerializationFormat::V0(v0) => &mut v0.schema_defs,
+        DataContractInSerializationFormat::V1(v1) => &mut v1.schema_defs,
+    };
+    let defs = schema_defs.get_or_insert_with(BTreeMap::new);
+    for i in 0..levels {
+        let next = format!("#/$defs/d{}", i + 1);
+        defs.insert(
+            format!("d{i}"),
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "b": { "$ref": next.clone(), "position": 0 },
+                    "c": { "$ref": next, "position": 1 },
+                },
+                "additionalProperties": false,
+            }),
+        );
+    }
+    // A leaf that parses, so the non-validating parse would not stop at the first one.
+    defs.insert(format!("d{levels}"), platform_value!({ "type": "integer" }));
+    let schemas = contract.document_schemas_mut();
+    schemas.insert(
+        "item".to_string(),
+        platform_value!({
+            "type": "object",
+            "properties": { "p": { "$ref": "#/$defs/d0", "position": 0 } },
+            "additionalProperties": false,
+        }),
+    );
+    // Sorts after `item`, so the block's parse meets the graph first.
+    schemas.insert("item_summed_u64".to_string(), summed_u64_schema());
+}
+
 /// What `check_tx` and one block made of a transition.
 pub(in crate::execution) struct Outcome {
     /// The consensus errors `check_tx` refused the transition with, or its own error.
@@ -147,24 +191,24 @@ pub(in crate::execution) struct Outcome {
     pub balance_after: Option<u64>,
 }
 
-/// Edits the document schemas of the contract a create or update transition carries and signs
-/// the transition again. A rule the parser enforces cannot be broken by a contract built in
-/// memory, so the schema goes into the serialized contract instead.
-pub(in crate::execution) async fn resign_with_schemas(
+/// Edits the serialized contract a create or update transition carries and signs the transition
+/// again. A rule the parser enforces cannot be broken by a contract built in memory, so the edit
+/// goes into the serialized contract instead.
+pub(in crate::execution) async fn resign_with_contract(
     state_transition: &mut StateTransition,
-    edit_schemas: impl FnOnce(&mut BTreeMap<String, Value>),
+    edit_contract: impl FnOnce(&mut DataContractInSerializationFormat),
     key: &IdentityPublicKey,
     signer: &SimpleSigner,
 ) -> Vec<u8> {
     match state_transition {
         StateTransition::DataContractCreate(create) => {
             let mut serialized_contract = create.data_contract().clone();
-            edit_schemas(serialized_contract.document_schemas_mut());
+            edit_contract(&mut serialized_contract);
             create.set_data_contract(serialized_contract);
         }
         StateTransition::DataContractUpdate(update) => {
             let mut serialized_contract = update.data_contract().clone();
-            edit_schemas(serialized_contract.document_schemas_mut());
+            edit_contract(&mut serialized_contract);
             update.set_data_contract(serialized_contract);
         }
         _ => panic!("expected a data contract create or update transition"),
@@ -327,6 +371,49 @@ pub(in crate::execution) fn assert_paid_contract_structure_error_in_block(
         "the rejection is charged: {:?} -> {:?}",
         outcome.balance_before,
         outcome.balance_after
+    );
+}
+
+/// A paid rejection of a `$defs` graph reaching one definition along two paths: `check_tx`
+/// refuses it with the schema depth check's cycle error before its non-validating parse would
+/// expand the graph, and the block charges the owner for the same error and bumps the nonce to
+/// `bumped_nonce`.
+pub(in crate::execution) fn assert_paid_ref_cycle_error(outcome: &Outcome, bumped_nonce: u64) {
+    let is_cycle_error = |error: &ConsensusError| {
+        matches!(
+            error,
+            ConsensusError::BasicError(BasicError::InvalidJsonSchemaRefError(e))
+                if e.to_string().contains("contains cycles")
+        )
+    };
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([error]) if is_cycle_error(error),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError { error, .. } if is_cycle_error(error),
+        "block: {:?}",
+        outcome.block
+    );
+    assert_eq!(
+        outcome
+            .nonce_after
+            .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+        Some(bumped_nonce),
+        "the rejection bumps the nonce"
+    );
+    let balance_before = outcome
+        .balance_before
+        .expect("the owner has a balance before the rejection");
+    let balance_after = outcome
+        .balance_after
+        .expect("the owner keeps a balance after the rejection");
+    assert!(
+        balance_after < balance_before,
+        "the rejection is charged: {balance_before} -> {balance_after}"
     );
 }
 

@@ -2,9 +2,10 @@
 //! through `check_tx` and block processing.
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
-    assert_paid_contract_structure_error, assert_paid_contract_structure_error_in_block,
+    add_ref_dag_document_type, assert_paid_contract_structure_error,
+    assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
     assert_unpaid_internal_error, check_and_process,
-    expiring_summed_schema, resign_with_schemas, summed_u64_schema,
+    expiring_summed_schema, resign_with_contract, summed_u64_schema,
     terminal_without_index_only_schema, Outcome, EXPIRING_UNBOUNDED_SUM_MESSAGE,
     SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
 };
@@ -18,6 +19,7 @@ use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::config::DataContractConfig;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -29,7 +31,6 @@ use dpp::tests::fixtures::get_data_contract_fixture;
 use drive::util::storage_flags::StorageFlags;
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use simple_signer::signer::SimpleSigner;
-use std::collections::BTreeMap;
 
 /// The contract nonce the update is signed with.
 const UPDATE_NONCE: u64 = 2;
@@ -37,6 +38,22 @@ const UPDATE_NONCE: u64 = 2;
 /// Updates a stored contract, adding a document type `item` with `schema`.
 async fn update_contract_adding_schema(
     schema: Value,
+    protocol_version: ProtocolVersion,
+) -> Outcome {
+    update_fixture_contract(
+        |contract| {
+            contract
+                .document_schemas_mut()
+                .insert("item".to_string(), schema);
+        },
+        protocol_version,
+    )
+    .await
+}
+
+/// Updates the stored fixture contract with its serialized form edited by `edit_contract`.
+async fn update_fixture_contract(
+    edit_contract: impl FnOnce(&mut DataContractInSerializationFormat),
     protocol_version: ProtocolVersion,
 ) -> Outcome {
     let platform_version =
@@ -57,9 +74,7 @@ async fn update_contract_adding_schema(
         &signer,
         &key,
         &data_contract,
-        |schemas| {
-            schemas.insert("item".to_string(), schema);
-        },
+        edit_contract,
         platform_version,
     )
     .await
@@ -101,23 +116,25 @@ async fn update_expiring_summed_amount(amount: Value) -> Outcome {
         &signer,
         &key,
         &data_contract,
-        |schemas| {
-            schemas.insert("tally".to_string(), expiring_summed_schema(amount));
+        |contract| {
+            contract
+                .document_schemas_mut()
+                .insert("tally".to_string(), expiring_summed_schema(amount));
         },
         platform_version,
     )
     .await
 }
 
-/// Stores `data_contract`, then sends its update to version 2 with its schemas edited by
-/// `edit_schemas`, signed by `identity` with the contract nonce `UPDATE_NONCE`.
+/// Stores `data_contract`, then sends its update to version 2 with its serialized form edited by
+/// `edit_contract`, signed by `identity` with the contract nonce `UPDATE_NONCE`.
 async fn update_stored_contract(
     platform: &TempPlatform<MockCoreRPCLike>,
     identity: &Identity,
     signer: &SimpleSigner,
     key: &IdentityPublicKey,
     data_contract: &DataContract,
-    edit_schemas: impl FnOnce(&mut BTreeMap<String, Value>),
+    edit_contract: impl FnOnce(&mut DataContractInSerializationFormat),
     platform_version: &PlatformVersion,
 ) -> Outcome {
     platform
@@ -148,7 +165,7 @@ async fn update_stored_contract(
     .await
     .expect("expected to create the contract update transition");
     let transition_bytes =
-        resign_with_schemas(&mut state_transition, edit_schemas, key, signer).await;
+        resign_with_contract(&mut state_transition, edit_contract, key, signer).await;
 
     let owner_id = identity.id();
     let contract_id = data_contract.id();
@@ -199,6 +216,21 @@ async fn should_refuse_an_update_adding_a_terminal_outside_an_index_only_type_wi
         TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
         UPDATE_NONCE,
     );
+}
+
+/// `check_tx` runs the schema depth check before its non-validating parse of an update too, so
+/// it refuses an acyclic `$defs` graph that parse would expand exponentially with the error the
+/// block charges for.
+#[tokio::test]
+async fn should_refuse_an_update_adding_an_exponential_ref_dag_in_check_tx_as_the_block_does() {
+    let outcome = update_fixture_contract(
+        |contract| add_ref_dag_document_type(contract, 12),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_eq!(outcome.nonce_before, None);
+    assert_paid_ref_cycle_error(&outcome, UPDATE_NONCE);
 }
 
 #[tokio::test]

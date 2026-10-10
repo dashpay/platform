@@ -1057,7 +1057,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
 ///     UTF-8 bytes of a string property, and `count`, the items
 ///     of an array or byte array property, each 0 for a property the document
-///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     leaves out, `countPresent`, how many of two or more distinct properties
+///     of any type the document holds, each as `present` tests it, so a rule
+///     bounds how many of a group are set, and the system times and heights `$createdAt`, `$updatedAt`
 ///     and `$transferredAt` (block times in milliseconds), each also with
 ///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
 ///     last update (create, replace, price update) and last transfer (create,
@@ -1117,11 +1119,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (none on an indexOnly type), every path compared with identifiers an
 ///     identifier property, every path compared with strings a string property
 ///     (whose `enum`, if it declares one, lists every constant it is compared
-///     with), and every path `present` or `absent` tests a property of any
-///     type, none transient nor inside a transient object; that every
+///     with), and every path `present`, `absent` or `countPresent` tests a
+///     property of any type, none transient nor inside a transient object; that every
 ///     comparison and `in` reads a property or the owner; that nothing is
 ///     compared with itself; that strings and identifiers are only compared for
-///     equality, and never with each other; that no `in` lists a value twice;
+///     equality, and never with each other; that no `in` lists a value twice
+///     and no `countPresent` a path twice;
 ///     that an `anyOf` or `allOf` holds none directly of its own kind and a
 ///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
 ///     no owner, reads no `$ownerId`; and that no condition or operand nests
@@ -1130,7 +1133,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
 ///     comparison, `in`, listed value, `const`, presence test and logical
-///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     operator counting as one, a `countPresent` as one plus one per path), and that no `anyOf` or `allOf` lists the same
 ///     condition twice, and at most `max_property_constraint_aggregates` (4)
 ///     distinct totals per type; once every type is parsed, that a tree keeps
 ///     each total (`documentsCountable` or `documentsSummable`, or an index
@@ -2180,7 +2183,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     in a total's filter**: a document type of meta-schema v3 and parser
 ///     generation 3, in place, may declare `deleteConstraints`, named rules in
 ///     the `propertyConstraints` grammar (`parse_delete_constraints`,
-///     `apply_delete_constraints`, versioned with `apply_property_constraints`
+///     `apply_delete_constraints_v0`, run by `apply_property_constraints` 0
 ///     on `parse_property_constraints`; `DocumentTypeV2Getters::delete_constraints`).
 ///     Document delete state validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
 ///     runs the checks of version 0, then reads the totals the rules read
@@ -2201,6 +2204,101 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `ttl` expiries are not judged. Inert before this version: the earlier
 ///     meta-schemas refuse the keyword and the `$id` filter value, and their
 ///     tables select delete state validation 0.
+///
+/// 86. **Bounded schema depth check**: `validate_max_depth` 1
+///     (`CONTRACT_VERSIONS_V6`) no longer walks a `$ref` whose target is a
+///     scalar and never clears its visited set, so every ref target is
+///     expanded at most once and the check is bounded in schema size. Before
+///     this a crafted `$defs` chain with `$ref`s to scalars cleared the cycle
+///     guard and made the check, run during contract registration in block
+///     execution, exponential. Verdict, depth and size are unchanged for
+///     schemas without a scalar `$ref` target; earlier versions replay
+///     through generation 0.
+///
+/// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
+///     validation 0, in place, judges every rule of the restored type after uniqueness
+///     and before constructing restoration operations. The retained document supplies
+///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     adds it to the live totals as an insertion, with no contribution from its removal
+///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
+///     (10422) in a block, charging the moderator and consuming its nonce while leaving
+///     the document absent and the removal record unrestored. Mempool admission refuses
+///     it without persisting fees or a nonce change. Types without rules retain their fees.
+///     Full property schema validation and `deleteConstraints` are not added to restore.
+///     Earlier versions are unchanged: contract moderation is inactive before version 14.
+///
+/// 88. **Rules that read the bytes of a byte array**: the `propertyConstraints`
+///     grammar (item 39; meta-schema v3 and `parse_property_constraints` 0, in
+///     place) gains a `byteAt` integer operand, `{ "byteAt": [path, index] }`,
+///     the byte (0 to 255) at a literal index from 0 to 65535 of a byte array
+///     property, 0 when the array does not hold it or the document leaves it
+///     out, one node; and `startsWith` and `endsWith` test byte arrays when a
+///     side names a byte array property, the other a `{ "const": hex }` or
+///     another byte array property, three nodes, not holding for an array left
+///     out (`PropertyConstraint::BytesAffix`). Parser generation 3 refuses a read
+///     of anything but a stored byte array property, an index at or past its
+///     `maxItems`, a constant longer than it, a constant that is not an even
+///     number of hex digits, a default for a byte array, and an `equal`,
+///     `notEqual`, `in` or `contains` of one (10231). `immutable` conditions,
+///     `retractedWhen` and `deleteConstraints` read bytes the same way.
+///     Inert before this version: the earlier meta-schemas refuse
+///     `propertyConstraints` and their parsers ignore it.
+///
+/// 89. **Non-transferable tokens**: a format 1 token configuration
+///     (`TokenConfigurationV1`) gains `transferable`, `true` when absent and
+///     fixed at creation (no `TokenConfigUpdate` item). With `false` the batch
+///     advanced structure validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses every `TokenTransfer` from the contract the action carries
+///     (`TokenNotTransferableError`, 40726, paid, and in check tx); the
+///     document type parser, in place, refuses a cost in the contract's own
+///     such token that pays the contract owner instead of burning it
+///     (`NonTransferableTokenPaymentMustBurnError`, 10280); data contract
+///     create and update state validation 0, in place, refuse a cost in
+///     another contract's such token (40726), reusing the read that checks the
+///     token exists, external burns being refused already (10261);
+///     document-base state validation 2 refuses a payment to the contract
+///     owner in the contract's own such token again (40726), from the
+///     configuration in hand; `validate_shielded_pool_rules` refuses it with a
+///     shielded pool (`NonTransferableTokenShieldedPoolError`, 10279, unpaid
+///     at the pre-activation gate); and the pool threshold
+///     `TokenConfigUpdate` items are refused on a format 1 configuration
+///     without a pool. Mints, claims, direct purchases, burns, freezes and
+///     burn payments for the contract's own documents are unchanged.
+///     Inert before this version: only format 1 can be non-transferable, and
+///     the pre-activation gate refuses that format on every earlier version.
+///
+/// 91. **Property type shorthands, `identifier` and `bytes`**: a property
+///     schema may write `"type": "identifier"` for `"type": "array",
+///     "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType":
+///     "application/x.dash.dpp.identifier"`, and `"type": "bytes", "size": n`
+///     for `"type": "array", "byteArray": true, "minItems": n, "maxItems": n`,
+///     on a property at any level, the `items` of a typed array and a
+///     `schemaDefs` definition. `DocumentType::expand_property_type_shorthands`
+///     0 (`expand_property_type_shorthands`, new in `CONTRACT_VERSIONS_V6`,
+///     `None` in the earlier tables) rewrites them into the long form before
+///     anything reads the schema: parser generation 3, in place, expands the
+///     document type schema and the contract's `$defs` before the meta-schema
+///     (v3, unchanged), the core parse with its `$ref` walks, the validator it
+///     compiles and every later stage; `validate_document` 1, in place,
+///     expands before compiling a stored contract's validator;
+///     `validate_schema_compatibility` 1, in place, expands the old and the
+///     new document type schemas and `$defs` before diffing, so rewriting a
+///     property or a definition between the two spellings is no change; and
+///     the check_tx schema-depth pre-check walks the rewritten schema, as the
+///     block's check does. The document type, the stored contract and the
+///     transition keep the schema as sent. Refused (10231) under full
+///     validation: `byteArray`, `minItems`, `maxItems` or `contentMediaType`
+///     beside a shorthand, `size` on `identifier`, and `bytes` without a
+///     `size` from 1 to `SYSTEM_LIMITS_V4.max_field_value_size` (5120).
+///     Without full validation nothing is refused and a shorthand that can not
+///     be rewritten is left as sent, so a contract stored before this version
+///     keeps loading even where it holds one no reader looks at (the `$defs`
+///     of a contract without document types, which are left unexpanded, or an
+///     entry a repeated key shadows), as the upgrade's read of every stored
+///     contract requires. The schema validation fee is charged on the long
+///     form. Inert before this version: the expansion rewrites nothing there,
+///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
+///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

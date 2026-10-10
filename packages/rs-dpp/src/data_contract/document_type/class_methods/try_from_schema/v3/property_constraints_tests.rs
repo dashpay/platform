@@ -971,6 +971,72 @@ fn should_test_the_presence_of_any_property_the_type_declares() {
     }
 }
 
+/// `countPresent` tests each property it lists as `present` does, on both
+/// paths: any property the type declares, an object included, but no path
+/// naming nothing, no system value and nothing transient. A path listed twice
+/// the meta-schema refuses when registering, and the parser on both paths.
+#[test]
+fn should_count_the_presence_of_properties_the_type_declares() {
+    let rules = json!({
+        "rule": {
+            "lessThanOrEqual": [{ "countPresent": ["note", "meta", "meta.tag", "price"] }, 1]
+        }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(
+            document_type.property_constraints()["rule"].property_reads(),
+            [
+                ("note", PropertyRead::Presence),
+                ("meta", PropertyRead::Presence),
+                ("meta.tag", PropertyRead::Presence),
+                ("price", PropertyRead::Presence)
+            ]
+        );
+    }
+
+    for path in ["missing", "meta.missing", "$ownerId", "$createdAt"] {
+        let rules = json!({ "rule": { "equal": [{ "countPresent": ["note", path] }, 1] } });
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(rules.clone(), full_validation),
+                &format!(
+                    "rule \"rule\" tests the presence of \"{path}\", which is not a property of \
+                     the document type"
+                ),
+            );
+        }
+    }
+
+    let schema = order_schema(
+        Some(json!({ "rule": { "equal": [{ "countPresent": ["price", "meta.tag"] }, 1] } })),
+        Some("meta"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" tests the presence of \"meta.tag\", which is transient or inside a \
+             transient object",
+        );
+    }
+
+    let repeated = json!({ "rule": { "equal": [{ "countPresent": ["note", "note"] }, 1] } });
+    let registered = parse_order(repeated.clone(), true);
+    assert!(
+        registered.as_ref().is_err_and(is_json_schema_error),
+        "the meta-schema should refuse it, got {registered:?}"
+    );
+    expect_structure_error(
+        parse_order(repeated, false),
+        "at equal[0].countPresent[1] repeats the path at equal[0].countPresent[0]",
+    );
+}
+
 /// Only an integer property's value is a number the rule can compute with: a
 /// string, a float, an array, an object and a system property are refused on
 /// both paths, as is a path naming nothing.

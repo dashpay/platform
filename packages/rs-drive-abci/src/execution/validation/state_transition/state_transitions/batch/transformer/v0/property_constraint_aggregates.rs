@@ -45,6 +45,15 @@ impl<'a> DocumentVersion<'a> {
     }
 }
 
+/// A document version as a total reads it: its id, its properties as one map value, and its
+/// owner.
+#[derive(Clone, Copy)]
+struct VersionData<'a> {
+    id: Identifier,
+    data: &'a Value,
+    owner_id: Identifier,
+}
+
 /// Reads the `countOf` and `sumOf` totals the rules judging the write in `result`
 /// read ([`read_property_constraint_aggregates`]) and hands them to its action: a
 /// create or a replace of a document of `writer`'s, stored as `stored` before
@@ -160,6 +169,33 @@ pub(crate) fn read_property_constraint_aggregates_for_moderator_change(
     )
 }
 
+/// Reads the `propertyConstraints` totals after restoring `document`, an insertion into the
+/// live trees under its original id and owner. Its removal record contributes nothing.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_property_constraint_aggregates_for_restore(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &Document,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<AggregateRead, i128>, Error> {
+    read_property_constraint_aggregates(
+        drive,
+        contract,
+        document_type_name,
+        DocumentVersion::of(document),
+        None,
+        None,
+        block_info,
+        execution_context,
+        transaction,
+        platform_version,
+    )
+}
+
 /// Reads from state the `countOf` and `sumOf` totals the `propertyConstraints` rules of
 /// the document type `document_type_name` read, for a write storing `written` in place of
 /// `stored` (`None` for a create), each as it will be once the write is done: the total the
@@ -202,12 +238,25 @@ fn read_property_constraint_aggregates(
         .filter(|rule| change.is_none_or(|change| rule.reads_change(change)))
         .flat_map(|rule| rule.aggregate_reads())
         .collect::<BTreeSet<_>>();
+    if reads.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let written_data = Value::from(written.properties.clone());
+    let stored_data = stored.map(|stored| (stored, Value::from(stored.properties.clone())));
     read_aggregates(
         drive,
         contract,
         reads,
-        Some(written),
-        stored,
+        Some(VersionData {
+            id: written.id,
+            data: &written_data,
+            owner_id: written.owner_id,
+        }),
+        stored_data.as_ref().map(|(stored, data)| VersionData {
+            id: stored.id,
+            data,
+            owner_id: stored.owner_id,
+        }),
         block_info,
         execution_context,
         transaction,
@@ -216,19 +265,28 @@ fn read_property_constraint_aggregates(
 }
 
 /// Reads from state the `countOf` and `sumOf` totals the `deleteConstraints` rules of the
-/// document type `document_type_name` read, for its owner's delete of `stored`, each as it will
-/// be once the document is gone: the total the count or sum tree keeps now, less what `stored`
-/// adds to it. A filter reads its values (its id, its owner, its properties) from `stored`.
-/// The reads are billed to `execution_context`.
+/// document type `document_type_name` read, for its owner's delete of `stored`, whose
+/// properties are `stored_data` (one map value, which the caller judges the rules on too), each
+/// as it will be once the document is gone: the total the count or sum tree keeps now, less
+/// what `stored` adds to it. A filter reads its values (its id, its owner, its properties) from
+/// `stored`. The reads are billed to `execution_context`.
 ///
 /// Only document delete state validation 1 calls it (protocol version 14), after the stored
 /// document is fetched and its owner checked; a type without delete rules reads nothing.
+///
+/// Delete state validation reads committed state, and the batch's transitions are all
+/// validated before any is applied, so these totals leave out the batch's own earlier writes.
+/// That holds only while the document batch carries one transition
+/// (`SystemLimits::max_transitions_in_documents_batch`): raising the limit would let a batch
+/// create a vote pointing at a poll and delete the poll, the delete reading no vote. Raising it
+/// needs the batch's earlier writes added to these totals, as to the write path's.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn read_delete_constraint_aggregates(
     drive: &Drive,
     contract: &DataContract,
     document_type_name: &str,
     stored: &Document,
+    stored_data: &Value,
     block_info: &BlockInfo,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
@@ -248,7 +306,11 @@ pub(crate) fn read_delete_constraint_aggregates(
         contract,
         reads,
         None,
-        Some(DocumentVersion::of(stored)),
+        Some(VersionData {
+            id: stored.id(),
+            data: stored_data,
+            owner_id: stored.owner_id(),
+        }),
         block_info,
         execution_context,
         transaction,
@@ -266,32 +328,19 @@ fn read_aggregates(
     drive: &Drive,
     contract: &DataContract,
     reads: BTreeSet<&AggregateRead>,
-    written: Option<DocumentVersion>,
-    stored: Option<DocumentVersion>,
+    written: Option<VersionData>,
+    stored: Option<VersionData>,
     block_info: &BlockInfo,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<AggregateRead, i128>, Error> {
+    let Some(bound) = written.or(stored) else {
+        return Ok(BTreeMap::new());
+    };
     if reads.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let version_data = |version: Option<DocumentVersion>| {
-        version.map(|version| {
-            (
-                version.id,
-                Value::from(version.properties.clone()),
-                version.owner_id,
-            )
-        })
-    };
-    let stored_data = version_data(stored);
-    let written_data = version_data(written);
-    let Some((bound_id, bound_data, bound_owner_id)) =
-        written_data.as_ref().or(stored_data.as_ref())
-    else {
-        return Ok(BTreeMap::new());
-    };
     let mut drive_operations = vec![];
     let mut aggregates = BTreeMap::new();
     for read in reads {
@@ -303,9 +352,9 @@ fn read_aggregates(
         };
         let total = match read.filter_values(
             counted,
-            *bound_id,
-            bound_data,
-            *bound_owner_id,
+            bound.id,
+            bound.data,
+            bound.owner_id,
             platform_version,
         )? {
             // No document can match a value its key cannot hold
@@ -320,19 +369,18 @@ fn read_aggregates(
                     &mut drive_operations,
                     platform_version,
                 )?;
-                let contribution = |version: &Option<(Identifier, Value, Identifier)>| match version
-                {
-                    Some((_, data, owner_id)) => read.contribution(
+                let contribution = |version: Option<VersionData>| match version {
+                    Some(version) => read.contribution(
                         counted,
                         &filter_values,
-                        data,
-                        *owner_id,
+                        version.data,
+                        version.owner_id,
                         platform_version,
                     ),
                     None => Ok(0),
                 };
-                let removed = contribution(&stored_data)?;
-                let added = contribution(&written_data)?;
+                let removed = contribution(stored)?;
+                let added = contribution(written)?;
                 kept.checked_sub(removed)
                     .and_then(|total| total.checked_add(added))
                     .ok_or(Error::Execution(ExecutionError::Overflow(

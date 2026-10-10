@@ -906,26 +906,20 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 
     /// `validate_delete_constraints` version 0: every rule of the document type's
     /// `deleteConstraints` is evaluated against the stored document's `data` with `system`,
-    /// in name order, and the first one broken is reported. The data is copied into a map
-    /// value only when the type declares a rule. A rule reading a total consensus did not
-    /// read ([`PropertyConstraint::unread_aggregate`]) is an error.
+    /// in name order, and the first one broken is reported. A rule reading a total consensus
+    /// did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
     fn validate_delete_constraints_v0(
         &self,
         document_id: Identifier,
-        data: &BTreeMap<String, Value>,
+        data: &Value,
         system: &DocumentSystemValues,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
         Self: DocumentTypeV2Getters,
     {
-        let rules = self.delete_constraints();
-        if rules.is_empty() {
-            return Ok(SimpleConsensusValidationResult::default());
-        }
-        let data = Value::from(data.clone());
-        for (name, constraint) in rules {
+        for (name, constraint) in self.delete_constraints() {
             self.expect_every_aggregate_read(name, constraint, system)?;
-            if let Some(violation) = constraint.violation(&data, system) {
+            if let Some(violation) = constraint.violation(data, system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentDeleteConstraintViolatedError::new(
                         document_id,

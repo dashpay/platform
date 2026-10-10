@@ -23,6 +23,17 @@ pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
     fn name(&self) -> &String;
 
+    /// Returns the schema exactly as the contract was sent, which is what the
+    /// contract stores and serializes. From protocol version 14 it, and the
+    /// contract's `schema_defs()`, may spell a property with a type shorthand
+    /// (`"type": "identifier"`, or `"type": "bytes"` with a `size`). Read a
+    /// property's type from the parsed properties, never from these schemas'
+    /// `type` keywords. A raw read that must follow a `$ref` rewrites the root
+    /// [`DocumentType::enrich_with_base_schema`](crate::data_contract::document_type::DocumentType::enrich_with_base_schema)
+    /// builds from this schema and the `$defs` with
+    /// [`DocumentType::expand_property_type_shorthands`](crate::data_contract::document_type::DocumentType::expand_property_type_shorthands),
+    /// which rewrites its `properties` and its `$defs` together; rewriting this
+    /// schema alone leaves the definitions a `$ref` names as sent.
     fn schema(&self) -> &Value;
 
     fn schema_owned(self) -> Value;

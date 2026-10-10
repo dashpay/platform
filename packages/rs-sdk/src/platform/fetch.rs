@@ -84,8 +84,10 @@ where
     /// [`TransportRequest`]. For non-versioned operations
     /// `Self::Query = Self::Request`; for versioned ones the
     /// [`Query::query`] impl on [`Self::Query`] performs the
-    /// protocol-version-aware wire encoding using `&Sdk`.
-    type Request: TransportRequest;
+    /// protocol-version-aware wire encoding using `&Sdk`. Its response is
+    /// `Clone` so that a proof whose quorum key had to be fetched can be
+    /// verified again without asking the network a second time.
+    type Request: TransportRequest<Response: Clone>;
 
     /// Fetch single object from Platform.
     ///

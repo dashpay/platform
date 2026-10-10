@@ -65,7 +65,9 @@ if [ -n "${DASHMATE_NPM_TARBALLS_DIR:-}" ]; then
     const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
     const tarballs = fs.readdirSync(dir).filter((file) => file.endsWith(".tgz"));
     if (tarballs.length === 0) throw new Error(`No npm tarballs in ${dir}`);
-    p.resolutions = {};
+    // Keep the entries the package ships with: one of them leaves out
+    // cpu-features, whose native build Apple does not notarize.
+    p.resolutions = p.resolutions || {};
     for (const file of tarballs) {
       const tarball = path.join(dir, file);
       const { name } = JSON.parse(execFileSync("tar", ["-xOzf", tarball, "package/package.json"], { encoding: "utf8" }));

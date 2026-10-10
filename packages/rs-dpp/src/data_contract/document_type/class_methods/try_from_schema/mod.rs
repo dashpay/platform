@@ -161,10 +161,12 @@ fn insert_values(
     config: &DataContractConfig,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
-    let mut to_visit: Vec<(Option<String>, String, &Value)> =
-        vec![(prefix, property_key, property_value)];
+    // Each item carries the `$ref` targets resolved on its path from the root,
+    // so a cyclic `$ref` errors instead of expanding forever.
+    let mut to_visit: Vec<(Option<String>, String, &Value, Vec<*const Value>)> =
+        vec![(prefix, property_key, property_value, Vec::new())];
 
-    while let Some((prefix, property_key, property_value)) = to_visit.pop() {
+    while let Some((prefix, property_key, property_value, mut ref_path)) = to_visit.pop() {
         let is_top_level = prefix.is_none();
         let prefixed_property_key = match prefix {
             None => property_key,
@@ -175,6 +177,7 @@ fn insert_values(
 
         if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
             let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
+            enter_ref(&mut ref_path, schema_ref, referenced_sub_schema)?;
 
             inner_properties = referenced_sub_schema.to_btree_ref_string_map()?
         }
@@ -217,6 +220,7 @@ fn insert_values(
                             Some(prefixed_property_key.clone()),
                             object_property_string,
                             object_property_value,
+                            ref_path.clone(),
                         ));
                     }
                 }
@@ -254,7 +258,33 @@ fn insert_values(
     Ok(())
 }
 
+/// Records `target`, the schema `schema_ref` resolved to, on the path of
+/// `$ref` targets from the root, refusing one already on it: expanding it
+/// again would never end.
+///
+/// Shared by every parser generation without a version gate. Under full
+/// validation the depth check runs first and refuses such a cycle in every
+/// generation, so this fires only on input the parse never finished before:
+/// accepted contracts, their fees and stored contracts parse as they did.
+fn enter_ref(
+    ref_path: &mut Vec<*const Value>,
+    schema_ref: &str,
+    target: &Value,
+) -> Result<(), DataContractError> {
+    let target = target as *const Value;
+    if ref_path.contains(&target) {
+        return Err(DataContractError::InvalidURI(format!(
+            "the ref '{}' contains cycles",
+            schema_ref
+        )));
+    }
+    ref_path.push(target);
+    Ok(())
+}
+
 // TODO: This is quite big
+/// `ref_path` holds the `$ref` targets resolved on the path from the root to
+/// this property; it is left as it was found on success.
 #[allow(clippy::too_many_arguments)]
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
@@ -264,13 +294,16 @@ fn insert_values_nested(
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
+    ref_path: &mut Vec<*const Value>,
     config: &DataContractConfig,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
+    let ref_path_len = ref_path.len();
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
     if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
         let referenced_sub_schema = resolve_uri(root_schema, schema_ref)?;
+        enter_ref(ref_path, schema_ref, referenced_sub_schema)?;
 
         inner_properties = referenced_sub_schema.to_btree_ref_string_map()?;
     }
@@ -359,6 +392,7 @@ fn insert_values_nested(
                         object_property_string,
                         object_property_value,
                         root_schema,
+                        ref_path,
                         config,
                         platform_version,
                     )?;
@@ -369,6 +403,7 @@ fn insert_values_nested(
         }
         property_type => property_type,
     };
+    ref_path.truncate(ref_path_len);
 
     let property_type =
         apply_property_reference(&inner_properties, property_type, platform_version)?;
@@ -2615,9 +2650,10 @@ pub(super) fn validate_generated_from_declarations(
 ///
 /// Only parser generation 3 calls it, once the core parse has run the
 /// meta-schema, so under full validation a malformed declaration is the
-/// meta-schema's to report. Versioned on `parse_property_constraints` in the
-/// platform version's document type schema versions: `None` selects the
-/// behavior of the versions that predate the keyword, which ignore it
+/// meta-schema's to report. Version 0 also reads `deleteConstraints`
+/// ([`apply_delete_constraints_v0`]). Versioned on `parse_property_constraints`
+/// in the platform version's document type schema versions: `None` selects the
+/// behavior of the versions that predate the keywords, which ignore them
 /// entirely.
 pub(super) fn apply_property_constraints(
     document_type: &mut DocumentTypeV2,
@@ -2680,7 +2716,14 @@ fn apply_property_constraints_v0(
     }
 
     document_type.property_constraints = constraints;
-    Ok(())
+    // The rules gating the owner's delete, in the same grammar and under the same version
+    apply_delete_constraints_v0(
+        document_type,
+        schema_defs,
+        document_type_name,
+        full_validation,
+        platform_version,
+    )
 }
 
 /// Checks one keyword's rules against the limits of `SystemLimits`: at most
@@ -2744,37 +2787,10 @@ fn validate_rule_limits(
 /// `canBeDeleted: false` or `"onlyWhenConsumed"`, where there is no delete to
 /// gate, and not indexOnly, whose delete carries the row's values instead of
 /// naming a stored document. The keyword arrives with meta-schema v3 and
-/// protocol version 14, so no stored contract breaks either rule. Versioned
-/// with [`apply_property_constraints`], on `parse_property_constraints`:
-/// `None` ignores the keyword, which no earlier meta-schema admits.
-pub(super) fn apply_delete_constraints(
-    document_type: &mut DocumentTypeV2,
-    schema_defs: Option<&BTreeMap<String, Value>>,
-    document_type_name: &str,
-    full_validation: bool,
-    platform_version: &PlatformVersion,
-) -> Result<(), DataContractError> {
-    match platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .parse_property_constraints
-    {
-        None => Ok(()),
-        Some(0) => apply_delete_constraints_v0(
-            document_type,
-            schema_defs,
-            document_type_name,
-            full_validation,
-            platform_version,
-        ),
-        Some(version) => Err(DataContractError::Unsupported(format!(
-            "parse_property_constraints version {version} is not supported"
-        ))),
-    }
-}
-
+/// protocol version 14, so no stored contract breaks either rule. Called by
+/// `apply_property_constraints_v0`, so one dispatch on `parse_property_constraints`
+/// parses both keywords: `None` ignores this one too, which no earlier
+/// meta-schema admits.
 fn apply_delete_constraints_v0(
     document_type: &mut DocumentTypeV2,
     schema_defs: Option<&BTreeMap<String, Value>>,
@@ -2841,7 +2857,9 @@ fn apply_delete_constraints_v0(
 /// `flattened_properties` in an `equal`, `notEqual` or `in`: as a string or as
 /// an identifier, `None` as an integer (or not at all). A typed array compares
 /// as its elements do, in a `contains`; anywhere else the reads refuse an array
-/// where a string or an identifier belongs.
+/// where a string or an identifier belongs. A byte array property is
+/// `EqualityKind::Bytes`, which only a `startsWith` or an `endsWith` tests; a
+/// typed array of byte arrays compares as nothing does.
 pub(super) fn property_equality_kind(
     flattened_properties: &IndexMap<String, DocumentProperty>,
     path: &str,
@@ -2856,6 +2874,7 @@ pub(super) fn property_equality_kind(
         .map(|property| &property.property_type)
     {
         Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(DocumentPropertyType::ByteArray(_)) => Some(EqualityKind::Bytes),
         Some(property_type) => equality_kind(property_type),
         None => None,
     }
@@ -2908,6 +2927,7 @@ pub(super) fn validate_property_constraint_reads(
             PropertyRead::Length => "measures",
             PropertyRead::Count => "counts the items of",
             PropertyRead::Elements(_) => "looks in",
+            PropertyRead::Bytes { .. } => "reads the bytes of",
         };
         match read {
             PropertyRead::Value => match document_type
@@ -2941,6 +2961,13 @@ pub(super) fn validate_property_constraint_reads(
                          integer or boolean: an identifier property is compared, by equal or \
                          notEqual, with a {{ \"const\": base58 }} or another identifier \
                          property, or with the identifiers an in lists"
+                    )));
+                }
+                // A byte array is read a byte at a time
+                Some(DocumentPropertyType::ByteArray(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type byteArray, not integer \
+                         or boolean: byteAt reads one of its bytes, and count how many it holds"
                     )));
                 }
                 Some(other) => {
@@ -3084,6 +3111,46 @@ pub(super) fn validate_property_constraint_reads(
                     return Err(structure_error(format!(
                         "{subject} looks in \"{path}\", which is not an array property \
                          of the document type (a nested one is named by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Bytes { extent } => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                // A byte past the most the array may hold is never there
+                Some(DocumentPropertyType::ByteArray(sizes)) => {
+                    if let Some(max_size) = sizes
+                        .max_size
+                        .filter(|max_size| extent > usize::from(*max_size))
+                    {
+                        return Err(structure_error(format!(
+                            "{subject} reads \"{path}\" as at least {extent} bytes long, but \
+                             its maxItems is {max_size}: the byte a byteAt reads, or the \
+                             constant it must start or end with, is never there"
+                        )));
+                    }
+                }
+                Some(property_type) if property_type.is_identifier() => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which has type identifier, \
+                         not byteArray: an identifier property is compared whole, by equal, \
+                         notEqual or in"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which has type {}, not \
+                         byteArray",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which is not a byte array \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
                     )));
                 }
             },
@@ -3393,7 +3460,10 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                 }
                                 AggregateKeyKind::Text => {
                                     // A constant the key's `enum` does not list is a typo:
-                                    // no document could match it
+                                    // no document could match it. `counted.schema()` is the
+                                    // schema as sent, which may spell a property with a type
+                                    // shorthand; only its `enum` is read here, which the
+                                    // expansion never changes
                                     if !enum_admits(counted.schema(), schema_defs, key, constant)? {
                                         return Err(error(format!(
                                             "{totals} with \"{key}\" at \"{constant}\", which is \
@@ -6486,6 +6556,163 @@ mod tests {
             &mut vec![],
             platform_version,
         )
+    }
+
+    /// The contract's `$defs` from a JSON object of definitions.
+    fn schema_defs_from(defs: serde_json::Value) -> BTreeMap<String, Value> {
+        platform_value::to_value(defs)
+            .expect("the definitions convert")
+            .into_btree_string_map()
+            .expect("the definitions are a map")
+    }
+
+    /// A document type with one property `p` that is a `$ref` to `target`.
+    fn schema_with_ref_property(target: &str) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": { "p": { "$ref": target, "position": 0 } },
+            "additionalProperties": false
+        })
+    }
+
+    fn assert_ref_cycle_refused(defs: serde_json::Value) {
+        let started = std::time::Instant::now();
+        let err = try_document_type_from_schema_with_defs(
+            schema_with_ref_property("#/$defs/a"),
+            &schema_defs_from(defs),
+            false,
+        )
+        .expect_err("a cyclic $ref should be refused");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "took {:?}",
+            started.elapsed()
+        );
+        assert!(
+            err.to_string()
+                .contains("the ref '#/$defs/a' contains cycles"),
+            "got {err}"
+        );
+    }
+
+    /// An object whose two members both `$ref` it back would expand without
+    /// end on the non-validating parse; it is refused instead.
+    #[test]
+    fn should_refuse_a_branching_ref_cycle_without_full_validation() {
+        assert_ref_cycle_refused(json!({
+            "a": {
+                "type": "object",
+                "properties": {
+                    "b": { "$ref": "#/$defs/a", "position": 0 },
+                    "c": { "$ref": "#/$defs/a", "position": 1 }
+                },
+                "additionalProperties": false
+            }
+        }));
+    }
+
+    #[test]
+    fn should_refuse_a_self_ref_without_full_validation() {
+        assert_ref_cycle_refused(json!({
+            "a": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/$defs/a", "position": 0 } },
+                "additionalProperties": false
+            }
+        }));
+    }
+
+    /// Only a `$ref` back to a target on the property's own path is a cycle:
+    /// two siblings may name the same definition.
+    #[test]
+    fn should_parse_sibling_refs_to_one_definition_without_full_validation() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "x": { "$ref": "#/$defs/leaf", "position": 0 },
+                "y": { "$ref": "#/$defs/leaf", "position": 1 }
+            },
+            "additionalProperties": false
+        });
+        let defs = schema_defs_from(json!({
+            "leaf": {
+                "type": "object",
+                "properties": { "v": { "type": "integer", "position": 0 } },
+                "additionalProperties": false
+            }
+        }));
+        let document_type = try_document_type_from_schema_with_defs(schema, &defs, false)
+            .expect("sibling refs should parse");
+        let flattened = document_type.flattened_properties();
+        assert!(flattened.contains_key("x.v"), "got {:?}", flattened.keys());
+        assert!(flattened.contains_key("y.v"), "got {:?}", flattened.keys());
+        let properties = document_type.properties();
+        assert!(properties.contains_key("x") && properties.contains_key("y"));
+    }
+
+    #[test]
+    fn should_parse_a_chain_of_distinct_refs_without_full_validation() {
+        let defs = schema_defs_from(json!({
+            "a": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/$defs/b", "position": 0 } },
+                "additionalProperties": false
+            },
+            "b": {
+                "type": "object",
+                "properties": { "c": { "$ref": "#/$defs/c", "position": 0 } },
+                "additionalProperties": false
+            },
+            "c": {
+                "type": "object",
+                "properties": { "v": { "type": "integer", "position": 0 } },
+                "additionalProperties": false
+            }
+        }));
+        let document_type = try_document_type_from_schema_with_defs(
+            schema_with_ref_property("#/$defs/a"),
+            &defs,
+            false,
+        )
+        .expect("a chain of distinct refs should parse");
+        assert!(
+            document_type.flattened_properties().contains_key("p.b.c.v"),
+            "got {:?}",
+            document_type.flattened_properties().keys()
+        );
+    }
+
+    /// An acyclic `$defs` graph reaching one definition along many paths is no
+    /// cycle, so the non-validating parse expands it in full: here into 2^12
+    /// properties. Refusing such a graph is left to the schema depth check,
+    /// which `check_tx` runs first; keep the size small.
+    #[test]
+    fn should_expand_an_acyclic_ref_dag_without_full_validation() {
+        const LEVELS: usize = 12;
+        let mut defs = serde_json::Map::new();
+        for i in 0..LEVELS {
+            let next = format!("#/$defs/d{}", i + 1);
+            defs.insert(
+                format!("d{i}"),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "b": { "$ref": next, "position": 0 },
+                        "c": { "$ref": next, "position": 1 }
+                    },
+                    "additionalProperties": false
+                }),
+            );
+        }
+        defs.insert(format!("d{LEVELS}"), json!({ "type": "integer" }));
+
+        let document_type = try_document_type_from_schema_with_defs(
+            schema_with_ref_property("#/$defs/d0"),
+            &schema_defs_from(serde_json::Value::Object(defs)),
+            false,
+        )
+        .expect("an acyclic ref graph should parse");
+        assert_eq!(document_type.flattened_properties().len(), 1 << LEVELS);
     }
 
     /// A key id property whose schema is a `$ref` to one of the contract's

@@ -108,11 +108,31 @@ impl TransportClient for CoreGrpcClient {
     }
 }
 
+/// Text a node released before request errors were answered with INVALID_ARGUMENT puts in an
+/// UNKNOWN or INTERNAL status when the request itself is wrong. Every node refuses such a
+/// request the same way, so sending it to the next node only gets that one banned too.
+const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
+    // A Drive query syntax error the handler returned as an error: INTERNAL.
+    "storage: query: ",
+    // A Drive query syntax error the handler reported: UNKNOWN.
+    "drive error: query: ",
+    // GroveDB declining to prove a query that asks for nothing, such as a limit of 0.
+    "proved path queries can not be for limit 0",
+];
+
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
+
+        if matches!(code, Unknown | Internal)
+            && OLDER_NODE_REQUEST_REFUSALS
+                .iter()
+                .any(|refusal| self.message().contains(refusal))
+        {
+            return false;
+        }
 
         matches!(
             code,
@@ -224,7 +244,14 @@ impl CanRetry for dapi_grpc::tonic::Status {
 /// - Implement the `method_name` function to return the name of the method as a string.
 /// - Implement the `execute_transport` function to execute the transport request using the provided client and settings.
 macro_rules! impl_transport_request_grpc {
+    // `names_nothing: |request| ...;` gives the request's `TransportRequest::names_nothing`.
+    (names_nothing: $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl_transport_request_grpc!(@impl $names_nothing; $request, $response, $client, $settings, $($method)+);
+    };
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl_transport_request_grpc!(@impl |_| None; $request, $response, $client, $settings, $($method)+);
+    };
+    (@impl $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
             type Client = $client;
 
@@ -234,6 +261,11 @@ macro_rules! impl_transport_request_grpc {
 
             fn method_name(&self) -> &'static str {
                 stringify!($($method)+)
+            }
+
+            fn names_nothing(&self) -> Option<&'static str> {
+                let names_nothing: fn(&$request) -> Option<&'static str> = $names_nothing;
+                names_nothing(self)
             }
 
             fn execute_transport<'c>(
@@ -465,6 +497,12 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_balances_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentitiesBalancesRequest,
     platform_proto::GetIdentitiesBalancesResponse,
     PlatformGrpcClient,
@@ -505,6 +543,18 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_contract_keys_request::Version::V0(v0)) if v0.prove => {
+            if v0.identities_ids.is_empty() {
+                Some("identities_ids must contain at least one identifier when requesting a proof")
+            } else if v0.purposes.is_empty() {
+                Some("purposes must contain at least one purpose when requesting a proof")
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
     platform_proto::GetIdentitiesContractKeysRequest,
     platform_proto::GetIdentitiesContractKeysResponse,
     PlatformGrpcClient,
@@ -553,6 +603,12 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_data_contracts_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetDataContractsRequest,
     platform_proto::GetDataContractsResponse,
     PlatformGrpcClient,
@@ -605,6 +661,12 @@ impl_transport_request_grpc!(
 
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetEvonodesProposedEpochBlocksByIdsRequest,
     platform_proto::GetEvonodesProposedEpochBlocksResponse,
     PlatformGrpcClient,
@@ -795,6 +857,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identity_token_balances_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentityTokenBalancesRequest,
     platform_proto::GetIdentityTokenBalancesResponse,
     PlatformGrpcClient,
@@ -804,6 +872,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_token_balances_request::Version::V0(v0)) if v0.prove && v0.identity_ids.is_empty() => Some(
+            "identity_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentitiesTokenBalancesRequest,
     platform_proto::GetIdentitiesTokenBalancesResponse,
     PlatformGrpcClient,
@@ -813,6 +887,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identity_token_infos_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentityTokenInfosRequest,
     platform_proto::GetIdentityTokenInfosResponse,
     PlatformGrpcClient,
@@ -822,6 +902,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_token_infos_request::Version::V0(v0)) if v0.prove && v0.identity_ids.is_empty() => Some(
+            "identity_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentitiesTokenInfosRequest,
     platform_proto::GetIdentitiesTokenInfosResponse,
     PlatformGrpcClient,
@@ -831,6 +917,12 @@ impl_transport_request_grpc!(
 
 // rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_token_statuses_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetTokenStatusesRequest,
     platform_proto::GetTokenStatusesResponse,
     PlatformGrpcClient,
@@ -930,6 +1022,12 @@ impl_transport_request_grpc!(
 
 // rpc getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_addresses_infos_request::Version::V0(v0)) if v0.prove && v0.addresses.is_empty() => Some(
+            "addresses must contain at least one address when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetAddressesInfosRequest,
     platform_proto::GetAddressesInfosResponse,
     PlatformGrpcClient,

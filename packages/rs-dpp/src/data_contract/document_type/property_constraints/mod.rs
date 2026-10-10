@@ -4,10 +4,10 @@
 //! expressions, a test of whether an integer expression takes one of listed
 //! values (`in`), a comparison of a string or an identifier property with
 //! constants (`equal`, `notEqual`, `in`) or with another property of its kind
-//! (`equal`, `notEqual`), a test of whether a string starts or ends with
-//! another (`startsWith`, `endsWith`), a test of whether an array property
-//! holds a value (`contains`), a test of whether the document holds a property
-//! (`present`, `absent`), or `anyOf`, `allOf`, `not`, `ifThen` or
+//! (`equal`, `notEqual`), a test of whether a string, or a byte array, starts
+//! or ends with another (`startsWith`, `endsWith`), a test of whether an array
+//! property holds a value (`contains`), a test of whether the document holds a
+//! property (`present`, `absent`), or `anyOf`, `allOf`, `not`, `ifThen` or
 //! `ifThenElse` over conditions; `notIn` is an `in` negated.
 //!
 //! ```json
@@ -43,8 +43,15 @@
 //! `length` and `byteLength`, the characters and the UTF-8 bytes of a string
 //! property, and `count`, the items of an array or byte array property. A
 //! property named on its own takes 0 when absent, and so does the size of one
-//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`). A string
-//! constant is written
+//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`).
+//! `countPresent` is how many of two or more properties the document holds,
+//! each as `present` tests it, so a rule bounds how many of a group are set:
+//! `{ "equal": [{ "countPresent": ["email", "phone", "handle"] }, 1] }` holds
+//! a document to exactly one, and an `in` listing `[1, 2]` to one or two.
+//! `byteAt` reads one byte of a byte array property, 0 to 255, at a literal
+//! index (`{ "in": [{ "byteAt": ["address", 0] }, [0, 1]] }`), and a byte the
+//! array does not hold, or one of an array the document leaves out, reads as
+//! 0, as a property left out does. A string constant is written
 //! `{ "const": "closed" }`, since a string on its own is a path; `equal` and
 //! `notEqual` compare one with a string property, or two bare paths naming
 //! string properties with each other, and an `in` whose values are strings
@@ -52,6 +59,9 @@
 //! property compared with strings a default. An identifier property compares
 //! the same ways, its constants written base58, without defaults, and so does
 //! `$ownerId`, the document's owner, which a transfer or a purchase changes.
+//! A byte array property is tested only by `startsWith` and `endsWith`, against
+//! a constant written in hex (`{ "const": "0001" }`) or another byte array
+//! property, without defaults: one the document leaves out takes no bytes.
 //! The block time and heights of the document's creation, last update and last
 //! transfer are integer operands too (`"$createdAt"`, `"$updatedAtBlockHeight"`,
 //! [`SystemProperty`]), on a document type that records them, so a price update
@@ -99,6 +109,7 @@ use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -131,12 +142,15 @@ const ENDS_WITH: &str = "endsWith";
 const LENGTH: &str = "length";
 const BYTE_LENGTH: &str = "byteLength";
 const COUNT: &str = "count";
+const COUNT_PRESENT: &str = "countPresent";
+const BYTE_AT: &str = "byteAt";
 /// The operand key of a string constant: `{ "const": "closed" }`.
 const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
-                            ifAbsent, length, byteLength, count, countOf or sumOf";
+                            ifAbsent, length, byteLength, count, countPresent, byteAt, countOf or \
+                            sumOf";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -532,6 +546,14 @@ pub enum ConstraintExpression {
     /// dotted `path`, as `measure` counts it, or 0 when the document leaves it
     /// out.
     Size { measure: SizeMeasure, path: String },
+    /// `countPresent`: how many of the properties at the dotted `paths`, two
+    /// or more and no two alike, the document holds, each as
+    /// [`PropertyConstraint::Present`] tests it.
+    CountPresent(Vec<String>),
+    /// `byteAt`: the byte, 0 to 255, at `index` (counted from 0) of the byte
+    /// array property at the dotted `path`, `{ "byteAt": ["address", 0] }`, or
+    /// 0 when the array does not hold that byte or the document leaves it out.
+    ByteAt { path: String, index: u16 },
     /// A system property, `"$createdAt"` say: its value in the
     /// [`DocumentSystemValues`] the rule is judged with.
     System(SystemProperty),
@@ -575,6 +597,11 @@ impl ConstraintExpression {
     /// * a size is never a fault: a property the document leaves out, or sets
     ///   to null, has size 0, and so does a value of another type than the
     ///   one measured, which the schema validation reported first refuses;
+    /// * a `countPresent` is never a fault: it counts the properties that are
+    ///   present, whatever their type;
+    /// * nor is a byte: one the array does not hold, of an array the document
+    ///   leaves out or sets to null, reads as 0, and so does one of a value
+    ///   that is no byte array, which the schema validation refuses first;
     /// * a system property takes its value in `system`, 0 when not given
     ///   ([`PropertyConstraint::violation`] does not judge a rule reading one it
     ///   is not given), and so does an aggregate;
@@ -614,6 +641,14 @@ impl ConstraintExpression {
                 i128::try_from(property_size(data, path, *measure))
                     .map_err(|_| PropertyConstraintViolation::Overflow)
             }
+            ConstraintExpression::CountPresent(paths) => {
+                // At most the number of paths, which always fits an `i128`
+                i128::try_from(paths.iter().filter(|path| is_present(data, path)).count())
+                    .map_err(|_| PropertyConstraintViolation::Overflow)
+            }
+            ConstraintExpression::ByteAt { path, index } => Ok(i128::from(
+                byte_at(data, path, usize::from(*index)).unwrap_or(0),
+            )),
             ConstraintExpression::Add(operands) => {
                 operands.iter().try_fold(0i128, |sum, operand| {
                     sum.checked_add(operand.evaluate(data, system)?)
@@ -686,9 +721,12 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_) => 0,
             // One for each key and the value it takes
             ConstraintExpression::Aggregate(read) => read.filter.len(),
+            // One for each property it tests, as a `present` is one
+            ConstraintExpression::CountPresent(paths) => paths.len(),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -710,6 +748,8 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_) => false,
             ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
+            | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_)
             | ConstraintExpression::Aggregate(_) => true,
             ConstraintExpression::Add(operands)
@@ -739,7 +779,9 @@ impl ConstraintExpression {
                 for binding in read.filter.values() {
                     if let AggregateBinding::Property { path, kind } = binding {
                         let read = match kind {
-                            None => PropertyRead::Value,
+                            // Never bytes: the parse reads a byte array as an
+                            // integer here, which the parsed type refuses
+                            None | Some(EqualityKind::Bytes) => PropertyRead::Value,
                             Some(EqualityKind::Text) => PropertyRead::Text,
                             Some(EqualityKind::Identifier) => PropertyRead::Identifier,
                         };
@@ -748,6 +790,18 @@ impl ConstraintExpression {
                 }
             }
             ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
+            ConstraintExpression::CountPresent(paths) => reads.extend(
+                paths
+                    .iter()
+                    .map(|path| (path.as_str(), PropertyRead::Presence)),
+            ),
+            // Byte `index` is there only in an array of `index + 1` bytes or more
+            ConstraintExpression::ByteAt { path, index } => reads.push((
+                path,
+                PropertyRead::Bytes {
+                    extent: usize::from(*index) + 1,
+                },
+            )),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -775,6 +829,8 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
+            | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::Aggregate(_) => {}
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -803,6 +859,8 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
+            | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_) => {}
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -834,6 +892,8 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
+            | ConstraintExpression::CountPresent(_)
+            | ConstraintExpression::ByteAt { .. }
             | ConstraintExpression::System(_) => None,
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -863,8 +923,8 @@ impl ConstraintExpression {
 pub enum PropertyRead {
     /// By its value, as an operand: an integer or boolean property.
     Value,
-    /// Only whether the document holds it, in a `present` or `absent`: a
-    /// property of any type, an object included.
+    /// Only whether the document holds it, in a `present`, `absent` or
+    /// `countPresent`: a property of any type, an object included.
     Presence,
     /// By its value, compared with string constants: a string property.
     Text,
@@ -878,6 +938,14 @@ pub enum PropertyRead {
     /// By its elements, which a `contains` looks among for a value of the
     /// kind given: a typed array property with elements of that kind.
     Elements(ElementKind),
+    /// By its bytes, in a `byteAt` operand or a `startsWith` or `endsWith` of
+    /// byte arrays: a byte array property. `extent` is how long the array must
+    /// be for the read to find what it looks for: one past the index a
+    /// `byteAt` reads, the length of a constant the array must start or end
+    /// with, and 0 for any other side of a `startsWith` or `endsWith`. A type
+    /// whose `maxItems` keeps the array shorter is refused, since the read
+    /// could never find what it looks for.
+    Bytes { extent: usize },
 }
 
 /// What a `contains` looks for among an array's elements, which decides the
@@ -893,17 +961,22 @@ pub enum ElementKind {
 }
 
 /// What a comparison of equality compares when it is not integers: strings or
-/// identifiers. [`parse_property_constraints`] asks it of every bare path on
-/// either side of an `equal` or `notEqual`, of an `in`'s operand, and of the
-/// array a `contains` looks in (the kind of its elements), since the
-/// declaration alone does not tell a string property, an identifier property
-/// or an integer one apart.
+/// identifiers, or what a `startsWith` or `endsWith` tests: strings or byte
+/// arrays. [`parse_property_constraints`] asks it of every bare path on either
+/// side of an `equal`, a `notEqual`, a `startsWith` or an `endsWith`, of an
+/// `in`'s operand, and of the array a `contains` looks in (the kind of its
+/// elements), since the declaration alone does not tell a string property, an
+/// identifier property, a byte array property or an integer one apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EqualityKind {
     /// A string property.
     Text,
     /// An identifier property.
     Identifier,
+    /// A byte array property, which only a `startsWith` or an `endsWith`
+    /// tests, against a constant written in hex or another byte array
+    /// property: `equal`, `notEqual`, `in` and `contains` never compare one.
+    Bytes,
 }
 
 /// A string property a string comparison reads: its dotted path, and the
@@ -956,9 +1029,15 @@ impl AffixPosition {
     /// folding or normalization, and every string starts and ends with the
     /// empty one.
     pub fn holds(self, text: &str, affix: &str) -> bool {
+        self.holds_bytes(text.as_bytes(), affix.as_bytes())
+    }
+
+    /// Whether `bytes` starts or ends with `affix`; every byte array starts
+    /// and ends with the empty one.
+    pub fn holds_bytes(self, bytes: &[u8], affix: &[u8]) -> bool {
         match self {
-            AffixPosition::Start => text.starts_with(affix),
-            AffixPosition::End => text.ends_with(affix),
+            AffixPosition::Start => bytes.starts_with(affix),
+            AffixPosition::End => bytes.ends_with(affix),
         }
     }
 }
@@ -980,6 +1059,27 @@ impl TextOperand {
         match self {
             TextOperand::Constant(value) => Some(value),
             TextOperand::Property(property) => property.value(data),
+        }
+    }
+}
+
+/// A side of a `startsWith` or `endsWith` of byte arrays: a constant, written
+/// in hex, or a byte array property, which takes no default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BytesOperand {
+    /// A `{ "const": hex }`.
+    Constant(Vec<u8>),
+    /// The byte array property at the dotted path.
+    Property(String),
+}
+
+impl BytesOperand {
+    /// The bytes it takes for a document whose properties are `data`, `None`
+    /// for a property left out ([`byte_array_value`]).
+    fn value<'a>(&'a self, data: &'a Value) -> Option<Cow<'a, [u8]>> {
+        match self {
+            BytesOperand::Constant(bytes) => Some(Cow::Borrowed(bytes)),
+            BytesOperand::Property(path) => byte_array_value(data, path),
         }
     }
 }
@@ -1077,6 +1177,16 @@ pub enum PropertyConstraint {
         position: AffixPosition,
         text: TextOperand,
         affix: TextOperand,
+    },
+    /// `startsWith` or `endsWith` of byte arrays: the bytes `bytes` takes
+    /// start or end, as `position` says, with those `affix` takes,
+    /// `{ "startsWith": ["address", { "const": "00" }] }`. A byte array
+    /// property the document leaves out takes no bytes, and the condition does
+    /// not hold for it.
+    BytesAffix {
+        position: AffixPosition,
+        bytes: BytesOperand,
+        affix: BytesOperand,
     },
     /// `contains`: the typed array property at the dotted path `array` holds
     /// an element equal to `needle`, `{ "contains": ["tags", { "const": "sale" }] }`.
@@ -1207,6 +1317,14 @@ impl PropertyConstraint {
                 (text.value(data), affix.value(data)),
                 (Some(text), Some(affix)) if position.holds(text, affix)
             )),
+            PropertyConstraint::BytesAffix {
+                position,
+                bytes,
+                affix,
+            } => Ok(matches!(
+                (bytes.value(data), affix.value(data)),
+                (Some(bytes), Some(affix)) if position.holds_bytes(&bytes, &affix)
+            )),
             PropertyConstraint::Contains { array, needle } => {
                 let elements = match data.get_optional_value_at_path(array) {
                     Ok(Some(Value::Array(elements))) => elements.as_slice(),
@@ -1319,7 +1437,8 @@ impl PropertyConstraint {
     /// constant, every `contains` with its array and what it looks for, every
     /// `present` or `absent` with the property it names, every
     /// arithmetic operator and every operand (an integer value, a property with
-    /// or without `ifAbsent`, a size or a system property).
+    /// or without `ifAbsent`, a size or a system property), and every
+    /// `countPresent` with one more for each property it tests.
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
@@ -1330,6 +1449,7 @@ impl PropertyConstraint {
             PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. } => 2,
             PropertyConstraint::TextIn { values, .. } => 1 + values.len(),
@@ -1423,6 +1543,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
@@ -1477,6 +1598,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1529,6 +1651,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1595,6 +1718,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1716,6 +1840,7 @@ impl PropertyConstraint {
             } => properties.push(property),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1764,6 +1889,7 @@ impl PropertyConstraint {
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1798,6 +1924,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::BytesAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1903,6 +2030,20 @@ impl PropertyConstraint {
                     }
                 }
             }
+            PropertyConstraint::BytesAffix { bytes, affix, .. } => {
+                // A constant the array must start or end with is as long as
+                // the array must be
+                if let BytesOperand::Property(path) = bytes {
+                    let extent = match affix {
+                        BytesOperand::Constant(constant) => constant.len(),
+                        BytesOperand::Property(_) => 0,
+                    };
+                    reads.push((path, PropertyRead::Bytes { extent }));
+                }
+                if let BytesOperand::Property(path) = affix {
+                    reads.push((path, PropertyRead::Bytes { extent: 0 }));
+                }
+            }
             PropertyConstraint::Contains { array, needle } => match needle {
                 ContainsNeedle::Integer(expression) => {
                     reads.push((array, PropertyRead::Elements(ElementKind::Integer)));
@@ -1983,10 +2124,15 @@ struct ParseContext<'a> {
 /// flat list says), or `not` with one condition that is not directly another
 /// `not`. An operand is an integer value, a property path, or an object with
 /// one key: `ifAbsent` with a path and an integer value, `add` or `multiply`
-/// with two or more operands, or `subtract`, `divide`, `modulo` or `power`
-/// with exactly two; a string property may take an `ifAbsent` with a string
-/// default instead. An integer value may be spelled as a float with no
-/// fractional part, as the meta-schema's `integer` type admits one. A literal
+/// with two or more operands, `subtract`, `divide`, `modulo` or `power`
+/// with exactly two, `countPresent` with two or more distinct property paths,
+/// or `byteAt` with a path and the index of a byte, an integer from 0 to
+/// 65535; a string property may take an `ifAbsent` with a string default
+/// instead. A `startsWith` or `endsWith` with a bare path naming a byte array
+/// property on either side tests byte arrays: each side such a path or a
+/// `const` of hex digits, two a byte. An integer value may be spelled as a
+/// float with no fractional part, as the meta-schema's `integer` type admits
+/// one. A literal
 /// 0 divisor, a literal negative exponent, a comparison or `in` that reads no
 /// property, which would hold for every document or for none, an ordering
 /// comparison of strings or identifiers, and a condition or operand deeper
@@ -2307,6 +2453,44 @@ fn parse_condition(
                     if key == STARTS_WITH { "start" } else { "end" }
                 ));
             };
+            let position = if key == STARTS_WITH {
+                AffixPosition::Start
+            } else {
+                AffixPosition::End
+            };
+            // A bare path naming a byte array property on either side tests byte
+            // arrays, and a const beside it is written in hex
+            let bare_kind = |value: &Value| value.as_text().and_then(kind_of);
+            match (bare_kind(text), bare_kind(affix)) {
+                (Some(EqualityKind::Bytes), None | Some(EqualityKind::Bytes))
+                | (None, Some(EqualityKind::Bytes)) => {
+                    let bytes = bytes_operand(text, &format!("{at}[0]"))?;
+                    let affix = bytes_operand(affix, &format!("{at}[1]"))?;
+                    if let (BytesOperand::Property(bytes), BytesOperand::Property(affix)) =
+                        (&bytes, &affix)
+                    {
+                        if bytes == affix {
+                            return Err(format!(
+                                "at {at} tests \"{bytes}\" against itself, so it would hold for \
+                                 every document or for none"
+                            ));
+                        }
+                    }
+                    at.truncate(parent);
+                    return Ok(PropertyConstraint::BytesAffix {
+                        position,
+                        bytes,
+                        affix,
+                    });
+                }
+                (Some(EqualityKind::Bytes), Some(_)) | (Some(_), Some(EqualityKind::Bytes)) => {
+                    return Err(format!(
+                        "at {at} tests a byte array property against a property that is not \
+                         one: a byte array starts or ends with a byte array"
+                    ));
+                }
+                _ => {}
+            }
             let text = text_operand(text, &format!("{at}[0]"))?;
             let affix = text_operand(affix, &format!("{at}[1]"))?;
             match (&text, &affix) {
@@ -2328,11 +2512,6 @@ fn parse_condition(
                 }
                 _ => {}
             }
-            let position = if key == STARTS_WITH {
-                AffixPosition::Start
-            } else {
-                AffixPosition::End
-            };
             PropertyConstraint::TextAffix {
                 position,
                 text,
@@ -2363,13 +2542,17 @@ fn parse_condition(
                     IdentifierSide::Constant(value) => ContainsNeedle::IdentifierConstant(value),
                     IdentifierSide::Property(path) => ContainsNeedle::IdentifierProperty(path),
                 },
-                None if is_const(needle) => {
+                // A byte array is no array of elements: looked in for an integer, as
+                // an array of integers is, it is refused against the parsed type
+                Some(EqualityKind::Bytes) | None if is_const(needle) => {
                     return Err(format!(
                         "at {at} is a const, but {array} holds no strings or identifiers: an \
                          integer is written as itself"
                     ));
                 }
-                None => ContainsNeedle::Integer(parse_expression(needle, at, depth + 1, context)?),
+                Some(EqualityKind::Bytes) | None => {
+                    ContainsNeedle::Integer(parse_expression(needle, at, depth + 1, context)?)
+                }
             };
             at.truncate(base);
             PropertyConstraint::Contains {
@@ -2412,6 +2595,13 @@ fn parse_condition(
                     || (bare_kind(left).is_some() && bare_kind(right).is_some())
                 {
                     let compare = match (bare_kind(left), bare_kind(right)) {
+                        (Some(EqualityKind::Bytes), _) | (_, Some(EqualityKind::Bytes)) => {
+                            return Err(format!(
+                                "at {at} compares a byte array property, which only startsWith \
+                                 and endsWith test, against a {{ \"const\": hex }} or another \
+                                 byte array property: byteAt reads one of its bytes"
+                            ));
+                        }
                         (Some(left_kind), Some(right_kind)) if left_kind != right_kind => {
                             return Err(format!(
                                 "at {at} compares a string property with an identifier \
@@ -2723,6 +2913,40 @@ fn text_operand(value: &Value, at: &str) -> Result<TextOperand, String> {
     })
 }
 
+/// A side at `at` (`startsWith[1]`) of a `startsWith` or `endsWith` of byte
+/// arrays: a `const` written in hex, an even number of hex digits (either
+/// case), or a bare path. What a path names is checked against the parsed
+/// document type.
+fn bytes_operand(value: &Value, at: &str) -> Result<BytesOperand, String> {
+    if is_const(value) {
+        let constant = single_entry(value).map_or(value, |(_, constant)| constant);
+        let Some(hex) = constant.as_text() else {
+            return Err(format!(
+                "at {at}.{CONST} must be a string of hex digits: a byte array constant is \
+                 written in hex"
+            ));
+        };
+        return hex::decode(hex).map(BytesOperand::Constant).map_err(|_| {
+            format!(
+                "at {at}.{CONST} holds \"{hex}\", which is not an even number of hex digits: \
+                 a byte array constant is written in hex, two digits a byte"
+            )
+        });
+    }
+    if let Some(path) = value.as_text() {
+        return Ok(BytesOperand::Property(path.to_string()));
+    }
+    if single_entry(value).is_some_and(|(key, _)| key == IF_ABSENT) {
+        return Err(format!(
+            "at {at} gives a byte array property a default, which byte arrays do not take"
+        ));
+    }
+    Err(format!(
+        "at {at} must be the path of a byte array property or a {{ \"const\": hex }}: a byte \
+         array starts or ends with a byte array"
+    ))
+}
+
 /// The comparison at `at` (`equal`) of `left` and `right`, a comparison of
 /// strings: only `equal` and `notEqual` compare them, and each side is a
 /// `const` string or a string property ([`text_side`]). `None` when both are
@@ -2896,6 +3120,45 @@ fn parse_expression(
                 path: path.to_string(),
             }
         }
+        // What the paths name is checked against the parsed document type
+        COUNT_PRESENT => ConstraintExpression::CountPresent(count_present_paths(operands, at)?),
+        // What the path names, and that the index is inside its maxItems, is
+        // checked against the parsed document type
+        BYTE_AT => {
+            let Some([path, index]) = operands.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list a byte array property path and the index of the byte \
+                     it reads, counted from 0"
+                ));
+            };
+            let Some(path) = path.as_text() else {
+                return Err(format!("at {at} must name a property path first"));
+            };
+            if path == OWNER_ID || SystemProperty::from_name(path).is_some() {
+                return Err(format!(
+                    "at {at} names {path}, but byteAt reads a byte array property"
+                ));
+            }
+            at.push_str("[1]");
+            if !is_number(index) {
+                return Err(format!(
+                    "at {at} must be the index of the byte, an integer from 0 to {}",
+                    u16::MAX
+                ));
+            }
+            let index = integer_value(index, at)?;
+            let Ok(index) = u16::try_from(index) else {
+                return Err(format!(
+                    "at {at} holds {index}, but the index of a byte is an integer from 0 to {}, \
+                     as a byte array's maxItems is",
+                    u16::MAX
+                ));
+            };
+            ConstraintExpression::ByteAt {
+                path: path.to_string(),
+                index,
+            }
+        }
         // Which document type it names, and what its keys name, is checked
         // once every document type of the contract is parsed
         COUNT_OF | SUM_OF => {
@@ -2917,6 +3180,35 @@ fn parse_expression(
     };
     at.truncate(parent);
     Ok(expression)
+}
+
+/// The paths a `countPresent` lists at `at`: two or more property paths, no
+/// two alike, in declared order. A repeat is refused on every parse, as a
+/// value an `in` lists twice is: it would count one property twice.
+fn count_present_paths(paths: &Value, at: &mut String) -> Result<Vec<String>, String> {
+    let Some(paths) = paths.as_array().filter(|paths| paths.len() >= 2) else {
+        return Err(format!("at {at} must list two or more property paths"));
+    };
+    let base = at.len();
+    let mut parsed = Vec::with_capacity(paths.len());
+    // Each path with the index it first appears at, for the errors
+    let mut seen = BTreeMap::new();
+    for (index, path) in paths.iter().enumerate() {
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{index}]");
+        let Some(path) = path.as_text() else {
+            return Err(format!("at {at} must name a property path"));
+        };
+        if let Some(earlier) = seen.insert(path, index) {
+            return Err(format!(
+                "at {at} repeats the path at {}[{earlier}]",
+                &at[..base]
+            ));
+        }
+        parsed.push(path.to_string());
+        at.truncate(base);
+    }
+    Ok(parsed)
 }
 
 /// A `countOf` (`sum` false) or `sumOf` at `at`, listing a document type,
@@ -3000,8 +3292,10 @@ fn parse_aggregate(
                          $ownerId and $id"
                     ))
                 }
+                // A byte array matches no key: it reads as an integer, which the
+                // parsed document type refuses
                 Value::Text(path) => AggregateBinding::Property {
-                    kind: (context.property_kind)(path),
+                    kind: (context.property_kind)(path).filter(|kind| *kind != EqualityKind::Bytes),
                     path: path.clone(),
                 },
                 binding if is_number(binding) => {
@@ -3190,6 +3484,73 @@ fn property_size(data: &Value, path: &str, measure: SizeMeasure) -> usize {
         (SizeMeasure::Count, Value::Bytes32(_) | Value::Identifier(_)) => 32,
         (SizeMeasure::Count, Value::Bytes36(_)) => 36,
         _ => 0,
+    }
+}
+
+/// The bytes of the byte array property at `path` in `data`, in whichever form
+/// the document gives them: `None` when it leaves the property out or sets it
+/// to null, and for a value that is no byte array, which the schema validation
+/// running first refuses. An array of integers, each 0 to 255, is the bytes it
+/// lists, as `count` reads it, so that a create carrying one is judged as the
+/// stored document, which holds the bytes, is.
+fn byte_array_value<'a>(data: &'a Value, path: &'a str) -> Option<Cow<'a, [u8]>> {
+    let Ok(Some(value)) = data.get_optional_value_at_path(path) else {
+        return None;
+    };
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .map(byte_item)
+            .collect::<Option<Vec<u8>>>()
+            .map(Cow::Owned),
+        value => byte_slice(value).map(Cow::Borrowed),
+    }
+}
+
+/// The byte at `index` of the byte array property at `path` in `data`, as
+/// [`byte_array_value`] reads the array, without collecting an array of
+/// integers into bytes: `None` when the array does not hold that byte, and
+/// when [`byte_array_value`] reads no array. Every element of an array of
+/// integers is checked, not only the one at `index`, so that an array holding
+/// anything but bytes reads no byte whichever one is asked for.
+fn byte_at(data: &Value, path: &str, index: usize) -> Option<u8> {
+    let Ok(Some(value)) = data.get_optional_value_at_path(path) else {
+        return None;
+    };
+    match value {
+        Value::Array(items) => {
+            let mut found = None;
+            for (position, item) in items.iter().enumerate() {
+                let byte = byte_item(item)?;
+                if position == index {
+                    found = Some(byte);
+                }
+            }
+            found
+        }
+        value => byte_slice(value)?.get(index).copied(),
+    }
+}
+
+/// The bytes a value holding them directly holds: `Value::Bytes` and the
+/// fixed-size forms; `None` for any other value.
+fn byte_slice(value: &Value) -> Option<&[u8]> {
+    match value {
+        Value::Bytes(bytes) => Some(bytes),
+        Value::Bytes20(bytes) => Some(bytes),
+        Value::Bytes32(bytes) | Value::Identifier(bytes) => Some(bytes),
+        Value::Bytes36(bytes) => Some(bytes),
+        _ => None,
+    }
+}
+
+/// The byte an element of an array of integers is: `None` for an element
+/// that is not an integer from 0 to 255.
+fn byte_item(item: &Value) -> Option<u8> {
+    if item.is_integer() {
+        item.to_integer::<u8>().ok()
+    } else {
+        None
     }
 }
 

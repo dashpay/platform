@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
+import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.QueriesNative
 
 /**
@@ -736,6 +737,29 @@ class Contracts internal constructor(private val sdk: Sdk) {
             )
         } ?: throw DashSdkError.InternalError("No propertyConstraints verdict returned")
         PropertyConstraintViolation.fromJson(json)
+    }
+
+    companion object {
+        /**
+         * [contractJson] (a contract as [fetchJson] and [fetchWithSerialization]
+         * return it) with its property type shorthands (protocol version 14)
+         * written in full: `"type": "identifier"` becomes the 32-byte identifier
+         * byte array and `"type": "bytes", "size": n` a byte array of exactly n
+         * bytes, in every document type schema (object members and typed array
+         * `items` included) and in `schemaDefs`. Everything else comes back as
+         * given. Rust expands them as Platform does when it parses the
+         * contract; the contract itself is stored as sent, so keep [contractJson]
+         * and read the schemas from this view. Needs no SDK; no network call.
+         * Port of the expansion Swift's `DataContractParser` runs before parsing.
+         *
+         * @throws DashSdkError.InvalidParameter for text that is not a JSON object.
+         */
+        fun expandPropertyTypeShorthands(contractJson: String): String {
+            NativeLoader.ensureLoaded()
+            return mapNativeErrors {
+                QueriesNative.dataContractJsonExpandPropertyTypeShorthands(contractJson)
+            } ?: throw DashSdkError.InternalError("No contract JSON returned")
+        }
     }
 }
 

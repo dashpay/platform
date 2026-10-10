@@ -65,9 +65,9 @@ use super::common;
 #[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
-    apply_delete_constraints, apply_property_constraints, parse_doctype_reference,
-    validate_encrypted_for_declarations, validate_generated_from_declarations,
-    validate_list_element_sources, validate_reference_lookup_sources,
+    apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
+    validate_generated_from_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -388,6 +388,35 @@ fn parse_generation_3(
         )));
     }
 
+    // A property type shorthand (`"type": "identifier"`, or `"type": "bytes"`
+    // with a `size`) is read as the long form it stands for: from here on
+    // every stage, the meta-schema, the document validator the core compiles
+    // and the `$ref` walks included, reads the expanded schema and `$defs`,
+    // so a shorthand parses to exactly what its long form parses to. The
+    // document type keeps the schema as sent (restored before returning),
+    // since that is what the contract stores, serializes and proves. Only a
+    // document type's parse expands the contract's `$defs`, so the `$defs` of
+    // a contract without document types stay as sent, unchecked, as before 14.
+    let expanded_schema_defs = schema_defs
+        .map(|schema_defs| {
+            DocumentType::expand_schema_defs_property_type_shorthands(
+                schema_defs,
+                full_validation,
+                platform_version,
+            )
+        })
+        .transpose()?
+        .flatten();
+    let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
+    let (schema, schema_as_sent) = match DocumentType::expand_property_type_shorthands(
+        &schema,
+        full_validation,
+        platform_version,
+    )? {
+        Some(expanded_schema) => (expanded_schema, Some(schema)),
+        None => (schema, None),
+    };
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -586,19 +615,11 @@ fn parse_generation_3(
     // integer properties they read and their transient flags are known; their
     // limits are checked under full validation only. The `enum`s their string
     // constants are checked against are read through `$ref`s into the
-    // contract's `$defs` too.
+    // contract's `$defs` too. The `deleteConstraints` rules with them, once
+    // `canBeDeleted` is resolved against the contract default and `indexOnly`
+    // and `"onlyWhenConsumed"` are applied: only a type whose owner deletes its
+    // stored documents declares them.
     apply_property_constraints(
-        &mut v2,
-        schema_defs,
-        name,
-        full_validation,
-        platform_version,
-    )
-    .map_err(consensus_or_protocol_data_contract_error)?;
-    // The `deleteConstraints` rules the same way, once `canBeDeleted` is resolved
-    // against the contract default and `indexOnly` and `"onlyWhenConsumed"` are
-    // applied: only a type whose owner deletes its stored documents declares them.
-    apply_delete_constraints(
         &mut v2,
         schema_defs,
         name,
@@ -668,6 +689,12 @@ fn parse_generation_3(
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
+    // Every stage above read the expanded schema; the document type holds the
+    // one the contract was sent with
+    if let Some(schema_as_sent) = schema_as_sent {
+        v2.schema = schema_as_sent;
     }
 
     Ok(v2)
@@ -1864,6 +1891,8 @@ impl DocumentType {
 }
 
 #[cfg(all(test, feature = "validation"))]
+mod byte_array_reads_tests;
+#[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
@@ -1904,6 +1933,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod non_transferable_token_cost_tests;
 #[cfg(test)]
 mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -1912,6 +1943,8 @@ mod owner_reference_tests;
 mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_type_shorthand_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_expression_tests;
 #[cfg(all(test, feature = "validation"))]

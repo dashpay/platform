@@ -74,12 +74,14 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod delete_constraints;
 mod deletion_options;
 mod derived_index_properties;
 mod duplicate_keys;
 mod moderated_document_reference;
 mod moderator_fields;
 mod preallocated_through_moderated_reference;
+mod restore_constraints;
 mod retraction;
 mod seated_team;
 
@@ -1520,6 +1522,18 @@ async fn should_not_be_active_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let setup = Setup::new_at(None, platform_version).await;
     let transaction = setup.platform.drive.grove.start_transaction();
+    let owner_balance = setup.balance(setup.owner.id(), Some(&transaction));
+    let owner_nonce = setup
+        .platform
+        .drive
+        .fetch_identity_contract_nonce(
+            setup.owner.id().to_buffer(),
+            setup.contract.id().to_buffer(),
+            true,
+            Some(&transaction),
+            platform_version,
+        )
+        .unwrap();
     // A team action's proposal and approval among them: the shipped prover and verifier v0
     // have their arms, which no transition of an earlier protocol version reaches.
     for action in [
@@ -1532,6 +1546,7 @@ async fn should_not_be_active_before_protocol_version_14() {
         ContractUserModerationAction::ApproveTeamAction {
             action_id: Identifier::new([0x67; 32]),
         },
+        restore_action(POST, vec![0]),
     ] {
         let moderation = setup.moderate(&setup.owner, action).await;
         let execution = setup.process(&moderation, &transaction);
@@ -1544,6 +1559,43 @@ async fn should_not_be_active_before_protocol_version_14() {
                     if message.contains("ContractUserModeration") && message.contains("not active")
             ),
             "expected the transition to be inactive before protocol version 14, got {execution:?}"
+        );
+        let admission = {
+            let state = setup.platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &setup.platform.drive,
+                state: &state,
+                config: &setup.platform.config,
+                core_rpc: &setup.platform.core_rpc,
+            };
+            setup.platform.check_tx(
+                &moderation.serialize_to_bytes().unwrap(),
+                FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+        };
+        let admission_error = format!("{:?}", admission.expect_err("expected inactive transition"));
+        assert!(admission_error.contains("StateTransitionIsNotActiveError"));
+        assert!(admission_error.contains("ContractUserModeration"));
+        assert!(admission_error.contains("current_protocol_version: 13"));
+        assert_eq!(
+            setup.balance(setup.owner.id(), Some(&transaction)),
+            owner_balance
+        );
+        assert_eq!(
+            setup
+                .platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    setup.owner.id().to_buffer(),
+                    setup.contract.id().to_buffer(),
+                    true,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap(),
+            owner_nonce
         );
     }
 }
