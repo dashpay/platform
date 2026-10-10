@@ -44,20 +44,17 @@ impl Sdk {
     {
         // Both verifications start from the same protocol version, each read
         // under the version the response reports when that one can not read it
-        // (`parse_proof_at_the_reported_version`). The request and response
-        // are copied on every call so a second verification can follow a
-        // fetch; the copy is small next to proof verification itself.
+        // (`parse_proof_at_the_reported_version`). Both borrow the request and
+        // response, which each parse copies, so a second verification can
+        // follow a fetch; the copy is small next to proof verification itself.
         let version = self.version();
         let arrival = MetadataArrival {
             height: self.metadata_last_seen_height.load(Ordering::Acquire),
             time_ms: chrono::Utc::now().timestamp_millis() as u64,
         };
-        let missing = match self.parse_proof_at_the_reported_version::<R, O>(
-            request.clone(),
-            response.clone(),
-            provider,
-            version,
-        ) {
+        let missing = match self
+            .parse_proof_at_the_reported_version::<R, O>(&request, &response, provider, version)
+        {
             Ok(verified) => {
                 self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
                 return Ok(verified);
@@ -91,7 +88,7 @@ impl Sdk {
 
         match fetch.await {
             Ok(Some(_)) => match self
-                .parse_proof_at_the_reported_version::<R, O>(request, response, provider, version)
+                .parse_proof_at_the_reported_version::<R, O>(&request, &response, provider, version)
             {
                 // The provider broke its contract, for example by not caching
                 // the key it returned. The node is not to blame for that.
