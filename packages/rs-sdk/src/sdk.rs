@@ -2576,26 +2576,23 @@ pub(crate) mod test {
             .expect("register epoch refresh expectation");
     }
 
-    /// How the scripted proof fails once it was read under a protocol version.
-    #[derive(Debug, Clone, Copy)]
-    enum ProbeFailure {
-        /// The provider lacks the key of the quorum that signed it
-        MissingKey,
-        /// The quorum signature does not verify
-        InvalidSignature,
-    }
+    /// The quorum the scripted proof names as its signer.
+    const PROBE_QUORUM: (u32, [u8; 32], u32) = (4, [7; 32], 1);
 
     /// The request of a stand-in for a proof holding what only some protocol versions read,
     /// such as a contract written with grammar protocol version 13 can not parse. It scripts
-    /// the proof: under a version below `decodes_from` it fails to decode, under one listed in
-    /// `fails_after_reading` it fails at the quorum signature or its key, and otherwise it holds
-    /// the version it was parsed under ([`ReadableFrom`]), its response reporting `reports`.
-    /// Every version it is parsed under is recorded in `attempts`, which its copies share.
+    /// the proof: under a version below `decodes_from` it fails to decode; once read, it asks
+    /// the provider for the key of [`PROBE_QUORUM`] when `key_needs_fetch`, failing while the
+    /// provider has none, and its quorum signature fails under the versions in
+    /// `signature_fails_at`; otherwise it holds the version it was parsed under
+    /// ([`ReadableFrom`]), its response reporting `reports`. Every version it is parsed under is
+    /// recorded in `attempts`, which its copies share.
     #[derive(Debug, Clone)]
     struct ProbeRequest {
         decodes_from: u32,
         reports: u32,
-        fails_after_reading: Vec<(u32, ProbeFailure)>,
+        key_needs_fetch: bool,
+        signature_fails_at: Vec<u32>,
         attempts: Arc<std::sync::Mutex<Vec<u32>>>,
     }
 
@@ -2604,13 +2601,19 @@ pub(crate) mod test {
             Self {
                 decodes_from,
                 reports,
-                fails_after_reading: Vec::new(),
+                key_needs_fetch: false,
+                signature_fails_at: Vec::new(),
                 attempts: Default::default(),
             }
         }
 
-        fn failing_after_reading(mut self, version: u32, failure: ProbeFailure) -> Self {
-            self.fails_after_reading.push((version, failure));
+        fn needing_its_key_fetched(mut self) -> Self {
+            self.key_needs_fetch = true;
+            self
+        }
+
+        fn with_signature_failing_at(mut self, version: u32) -> Self {
+            self.signature_fails_at.push(version);
             self
         }
 
@@ -2635,7 +2638,7 @@ pub(crate) mod test {
             _response: O,
             _network: Network,
             platform_version: &dpp::version::PlatformVersion,
-            _provider: &'a dyn dash_context_provider::ContextProvider,
+            provider: &'a dyn dash_context_provider::ContextProvider,
         ) -> Result<
             (
                 Option<Self>,
@@ -2659,37 +2662,102 @@ pub(crate) mod test {
                     error: "unsupported property type: bytes".to_string(),
                 });
             }
-            let failure = request
-                .fails_after_reading
-                .iter()
-                .find_map(|(at, failure)| (*at == version).then_some(*failure));
-            match failure {
-                Some(ProbeFailure::MissingKey) => {
-                    Err(drive_proof_verifier::Error::QuorumKeyUnavailable {
-                        quorum_type: 4,
-                        quorum_hash: [7; 32],
-                        core_chain_locked_height: 1,
-                        error: dash_context_provider::ContextProviderError::InvalidQuorum(
-                            "not cached".to_string(),
-                        ),
-                    })
+            let (quorum_type, quorum_hash, core_chain_locked_height) = PROBE_QUORUM;
+            if request.key_needs_fetch {
+                if let Err(error) = provider.get_quorum_public_key(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                ) {
+                    return Err(drive_proof_verifier::Error::QuorumKeyUnavailable {
+                        quorum_type,
+                        quorum_hash,
+                        core_chain_locked_height,
+                        error,
+                    });
                 }
-                Some(ProbeFailure::InvalidSignature) => {
-                    Err(drive_proof_verifier::Error::InvalidSignature {
-                        error: "the quorum signature does not verify".to_string(),
-                    })
-                }
-                None => Ok((
-                    Some(ReadableFrom(version)),
-                    ResponseMetadata {
-                        height: 1,
-                        time_ms: chrono::Utc::now().timestamp_millis() as u64,
-                        protocol_version: request.reports,
-                        ..Default::default()
-                    },
-                    Default::default(),
-                )),
             }
+            if request.signature_fails_at.contains(&version) {
+                return Err(drive_proof_verifier::Error::InvalidSignature {
+                    error: "the quorum signature does not verify".to_string(),
+                });
+            }
+            Ok((
+                Some(ReadableFrom(version)),
+                ResponseMetadata {
+                    height: 1,
+                    time_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    protocol_version: request.reports,
+                    ..Default::default()
+                },
+                Default::default(),
+            ))
+        }
+    }
+
+    /// A provider holding no quorum key until asked to fetch one, then holding it; it counts
+    /// the fetches.
+    #[derive(Default)]
+    struct KeyFetchedOnRequest {
+        fetched: std::sync::atomic::AtomicBool,
+        fetches: std::sync::atomic::AtomicUsize,
+    }
+
+    impl dash_context_provider::ContextProvider for KeyFetchedOnRequest {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &dpp::version::PlatformVersion,
+        ) -> Result<
+            Option<Arc<dpp::prelude::DataContract>>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            if self.fetched.load(std::sync::atomic::Ordering::SeqCst) {
+                Ok([7; 48])
+            } else {
+                Err(dash_context_provider::ContextProviderError::InvalidQuorum(
+                    "not cached".to_string(),
+                ))
+            }
+        }
+
+        fn fetch_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Option<dash_context_provider::QuorumKeyFuture> {
+            self.fetches
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.fetched
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Some(Box::pin(async { Ok(Some([7; 48])) }))
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            Ok(1)
         }
     }
 
@@ -2714,7 +2782,8 @@ pub(crate) mod test {
         sdk: &super::Sdk,
         request: &ProbeRequest,
     ) -> Result<u32, drive_proof_verifier::Error> {
-        let provider = sdk.context_provider().expect("the mock SDK has a provider");
+        // A provider holding no quorum key, which it is never asked to fetch here
+        let provider = KeyFetchedOnRequest::default();
         sdk.parse_proof_at_the_reported_version::<ProbeRequest, ReadableFrom>(
             request,
             &ProbeResponse,
@@ -2758,8 +2827,8 @@ pub(crate) mod test {
     fn should_report_a_failure_of_the_parse_under_the_reported_version() {
         let latest = latest();
         let sdk = sdk_seeded_at(latest - 2);
-        let request = ProbeRequest::new(latest - 1, latest - 1)
-            .failing_after_reading(latest - 1, ProbeFailure::InvalidSignature);
+        let request =
+            ProbeRequest::new(latest - 1, latest - 1).with_signature_failing_at(latest - 1);
 
         assert!(matches!(
             parse_probe(&sdk, &request),
@@ -2774,8 +2843,7 @@ pub(crate) mod test {
     fn should_report_a_signature_failure_under_the_newest_version_over_the_decoding_error() {
         let latest = latest();
         let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest, latest)
-            .failing_after_reading(latest, ProbeFailure::InvalidSignature);
+        let request = ProbeRequest::new(latest, latest).with_signature_failing_at(latest);
 
         assert!(matches!(
             parse_probe(&sdk, &request),
@@ -2789,8 +2857,7 @@ pub(crate) mod test {
     fn should_report_a_missing_quorum_key_found_under_the_newest_version() {
         let latest = latest();
         let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest, latest)
-            .failing_after_reading(latest, ProbeFailure::MissingKey);
+        let request = ProbeRequest::new(latest, latest).needing_its_key_fetched();
 
         assert!(matches!(
             parse_probe(&sdk, &request),
@@ -2798,13 +2865,44 @@ pub(crate) mod test {
         ));
     }
 
+    /// The quorum-key verification fetches the key a proof only a newer version reads is
+    /// signed with, and reads it again through the version fallback: under the SDK's version,
+    /// the newest and the one the response reports, which the SDK then learns
+    #[tokio::test]
+    async fn should_fetch_a_missing_key_and_read_the_proof_again_through_the_version_fallback() {
+        let latest = latest();
+        let sdk = sdk_seeded_at(latest - 2);
+        let provider = KeyFetchedOnRequest::default();
+        let request = ProbeRequest::new(latest - 1, latest - 1).needing_its_key_fetched();
+
+        let (object, _, _) = sdk
+            .verify_fetching_quorum_key::<ProbeRequest, ReadableFrom>(
+                request.clone(),
+                ProbeResponse,
+                &provider,
+                "probe",
+            )
+            .await
+            .expect("the proof is read once its key is fetched");
+
+        assert_eq!(object.expect("the probe holds an object").0, latest - 1);
+        assert_eq!(
+            provider.fetches.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(
+            request.attempts(),
+            [latest - 2, latest, latest - 2, latest, latest - 1]
+        );
+        assert_eq!(sdk.version().protocol_version, latest - 1);
+    }
+
     /// A proof read under the SDK's version whose signature fails is not read under another
     #[test]
     fn should_not_try_another_version_after_a_signature_failure() {
         let latest = latest();
         let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest - 1, latest)
-            .failing_after_reading(latest - 1, ProbeFailure::InvalidSignature);
+        let request = ProbeRequest::new(latest - 1, latest).with_signature_failing_at(latest - 1);
 
         assert!(matches!(
             parse_probe(&sdk, &request),
@@ -2864,8 +2962,7 @@ pub(crate) mod test {
         let latest = latest();
         let sdk = sdk_seeded_at(latest - 1);
         let provider = sdk.context_provider().expect("the mock SDK has a provider");
-        let request = ProbeRequest::new(latest, latest)
-            .failing_after_reading(latest, ProbeFailure::InvalidSignature);
+        let request = ProbeRequest::new(latest, latest).with_signature_failing_at(latest);
 
         sdk.verify_fetching_quorum_key::<ProbeRequest, ReadableFrom>(
             request,
