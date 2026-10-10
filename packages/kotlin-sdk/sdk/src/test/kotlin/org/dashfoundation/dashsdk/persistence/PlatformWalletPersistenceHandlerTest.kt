@@ -7964,7 +7964,9 @@ class PlatformWalletPersistenceHandlerTest {
         // shaped like the real thing: no address, no txid or outpoint in
         // either byte orientation, no script, no wallet id — and, as a
         // backstop against any future field, no long hex or address-length
-        // Base58 run at all. References are 12 hex characters.
+        // Base58 run at all. References are 12 hex characters, keyed: the
+        // plain SHA-256 prefix of a public outpoint (what anyone holding the
+        // logs could compute and match) never appears.
         val address = "yTestPrivacyFixtureAddress12345678"
         val healedTxid = ByteArray(32) { (0xa0 + it % 16).toByte() }
         val flippedTxid = ByteArray(32) { (0x30 + it % 16).toByte() }
@@ -8004,6 +8006,11 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(lines.any { it.contains("transportFailures=1") && it.contains("completed=false") })
         val walletRef = logReference(walletId)
         assertTrue("every summary names the wallet by reference", lines.filter { "completed=" in it }.all { "wallet=$walletRef" in it })
+        val flippedRef = logReference(makeOutpoint(flippedTxid, 1))
+        assertTrue(
+            "the flipped coin's line carries its in-process reference",
+            lines.any { it == "txos reconcile: item action=flipped_spent outpoint=$flippedRef wallet=$walletRef" },
+        )
 
         val forbidden = listOf(
             "address" to address,
@@ -8015,6 +8022,9 @@ class PlatformWalletPersistenceHandlerTest {
             "unknown txid" to unknownTxid.toHexLower(),
             "flipped outpoint" to makeOutpoint(flippedTxid, 1).toHexLower(),
             "wallet id" to walletId.toHexLower(),
+            "healed outpoint's unkeyed digest" to unkeyedReference(makeOutpoint(healedTxid, 0)),
+            "flipped outpoint's unkeyed digest" to unkeyedReference(makeOutpoint(flippedTxid, 1)),
+            "wallet id's unkeyed digest" to unkeyedReference(walletId),
         )
         val longHex = Regex("[0-9a-fA-F]{32,}")
         val base58Run = Regex("[1-9A-HJ-NP-Za-km-z]{26,}")
@@ -8024,6 +8034,29 @@ class PlatformWalletPersistenceHandlerTest {
             }
             assertNull("no 32+ character hex run: $line", longHex.find(line))
             assertNull("no address-length Base58 run: $line", base58Run.find(line))
+        }
+    }
+
+    /** The reference an UNKEYED digest would give [value] — what anyone
+     *  holding the logs could compute for a public outpoint. */
+    private fun unkeyedReference(value: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(value).copyOf(6).toHexLower()
+
+    @Test
+    fun logReferencesAreKeyedPerProcessAndStableWithinIt() {
+        // Stable within the process, so one run's lines still correlate;
+        // never the plain SHA-256 prefix, so a public outpoint cannot be
+        // hashed and matched against the logs.
+        val outpoint = makeOutpoint(ByteArray(32) { (0x40 + it).toByte() }, 3)
+        val ref = logReference(outpoint)
+        assertTrue("12 lower-hex characters: $ref", Regex("[0-9a-f]{12}").matches(ref))
+        assertEquals(ref, logReference(outpoint.copyOf()))
+        assertFalse("distinct values get distinct references", ref == logReference(makeOutpoint(ByteArray(32), 3)))
+        for (value in listOf(outpoint, walletId, ByteArray(0))) {
+            assertFalse(
+                "a reference must not be the unkeyed digest",
+                logReference(value) == unkeyedReference(value),
+            )
         }
     }
 

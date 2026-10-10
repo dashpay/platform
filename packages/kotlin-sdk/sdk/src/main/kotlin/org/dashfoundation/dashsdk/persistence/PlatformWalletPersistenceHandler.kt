@@ -2144,7 +2144,8 @@ class PlatformWalletPersistenceHandler(
     }
 
     /** One line per healed / healed-spent / flipped row: the action and
-     *  reference digests only — never the outpoint, address or amount. */
+     *  keyed references only ([logReference]) — never the outpoint,
+     *  address or amount. */
     private fun logReconcileItem(action: String, outpoint: ByteArray, walletRef: String) {
         Log.i(TAG, "txos reconcile: item action=$action outpoint=${logReference(outpoint)} wallet=$walletRef")
     }
@@ -5336,13 +5337,33 @@ internal fun String.hexToByteArrayOrNull(): ByteArray? =
     }
 
 /**
- * A log reference for [value]: the first 12 hex characters of its SHA-256 —
- * the Kotlin twin of Swift's `SDKLogger.reference`. Lets log lines from one
- * run be correlated (same wallet, same coin) without carrying the wallet id,
+ * A log reference for [value]: the first 12 hex characters of its
+ * HMAC-SHA256 under [logReferenceKey]. Lets log lines from one process run
+ * be correlated (same wallet, same coin) without carrying the wallet id,
  * txid or outpoint itself.
+ *
+ * Keyed, unlike Swift's `SDKLogger.reference` (a plain SHA-256 prefix):
+ * outpoints are public chain data, so an unkeyed digest lets anyone holding
+ * the logs hash candidate outpoints and match them, and the wallet
+ * reference on the same line then groups the matches into one wallet's
+ * history. The key is random per process and never logged, so a reference
+ * matches no digest computable outside the process and does not correlate
+ * across runs.
  */
 internal fun logReference(value: ByteArray): String =
-    java.security.MessageDigest.getInstance("SHA-256").digest(value).copyOf(6).toHex()
+    javax.crypto.Mac.getInstance(LOG_REFERENCE_MAC).run {
+        init(logReferenceKey)
+        doFinal(value)
+    }.copyOf(6).toHex()
+
+private const val LOG_REFERENCE_MAC = "HmacSHA256"
+
+/** The [logReference] key: 32 random bytes, drawn once per process on
+ *  first use and held only in memory. */
+private val logReferenceKey: javax.crypto.spec.SecretKeySpec by lazy {
+    val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+    javax.crypto.spec.SecretKeySpec(key, LOG_REFERENCE_MAC)
+}
 
 internal fun String.hexToByteArray(): ByteArray {
     require(length % 2 == 0) { "hex string must have even length, got $length" }
