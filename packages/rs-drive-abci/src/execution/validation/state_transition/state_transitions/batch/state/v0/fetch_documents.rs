@@ -448,7 +448,8 @@ pub(crate) fn hash_lookup_key(
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
 /// `reference_value` (the identifier property's value, one array element, the
-/// writer or the creator), the writer `owner_id` and the sources in
+/// writer or the creator, or the value of a string or byte array property
+/// carrying the reference), the writer `owner_id` and the sources in
 /// `document_data`, a document of `declaring_document_type`. `None` when no
 /// document matches, and when the key cannot be assembled or the index is
 /// missing or not unique. Contract registration and update refuse the last
@@ -471,7 +472,7 @@ pub(crate) fn fetch_document_through_lookup(
     document_type: DocumentTypeRef,
     declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
-    reference_value: Identifier,
+    reference_value: &Value,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     billed_key: Option<BilledLookupKey>,
@@ -486,12 +487,18 @@ pub(crate) fn fetch_document_through_lookup(
     if lookup.resolve_index(document_type).is_err() {
         return Ok(None);
     }
+    // A function's `"."` param reads an identifier (an element, the writer or
+    // the creator); a property carrying the reference is named by its path
+    let reference_id = match reference_value {
+        Value::Identifier(id) => Some(Identifier::from(*id)),
+        _ => None,
+    };
     let billed_key = billed_key.or_else(|| {
         lookup.hash_key().and_then(|(_, key)| {
             hash_lookup_key(
                 key,
                 declaring_document_type,
-                Some(reference_value),
+                reference_id,
                 document_data,
                 execution_context,
             )

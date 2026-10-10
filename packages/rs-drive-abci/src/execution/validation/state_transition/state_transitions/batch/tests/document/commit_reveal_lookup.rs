@@ -16,6 +16,8 @@
 //! secret`, `secret` transient too, and consumes it. `nestedClaim` reveals
 //! through a salt inside an object, `meta.salt`. `ticket` reveals, through its
 //! transient `secret`, an earlier ticket of its writer, and consumes it.
+//! A `post` added by some tests reads its `authorHandle` string into a `findBy`
+//! as is, no function, finding a `handle` by its unique `name`.
 
 use super::*;
 
@@ -1221,5 +1223,217 @@ mod commit_reveal_lookup_tests {
         assert!(lookup.is_checked_on_create_only());
         assert_eq!(lookup.minimum_age_blocks, Some(1));
         assert!(lookup.consume);
+    }
+
+    /// The fixture with a `handle`, unique by its `name` and `kind` (a
+    /// `permanentDocument` handle can not be deleted, a `deletableDocument` one
+    /// can), and a mutable `post` whose `authorHandle` string refers to it by that
+    /// name, read as is: `findBy: { "name": "." }`, no function.
+    fn handle_fixture(kind: &'static str) -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let schemas = &mut contract["documentSchemas"];
+            schemas["handle"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": kind == "deletableDocument",
+                "properties": {
+                    "name": { "type": "string", "maxLength": 63, "position": 0 }
+                },
+                "indices": [
+                    { "name": "name", "properties": [{ "name": "asc" }], "unique": true }
+                ],
+                "required": ["name"],
+                "additionalProperties": false
+            });
+            schemas["post"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": true,
+                "canBeDeleted": true,
+                "properties": {
+                    "authorHandle": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 0,
+                        "refersTo": {
+                            "type": kind,
+                            "documentType": "handle",
+                            "findBy": { "name": "." }
+                        }
+                    },
+                    "body": { "type": "string", "maxLength": 100, "position": 1 }
+                },
+                "required": ["authorHandle", "body"],
+                "additionalProperties": false
+            });
+        })
+    }
+
+    fn text(value: &str) -> Value {
+        Value::Text(value.to_string())
+    }
+
+    /// The handle `name` of `who`, made in `height`.
+    async fn make_handle(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        name: &str,
+        height: u64,
+    ) -> Document {
+        let (handle, result) = fixture
+            .create(who, "handle", &[("name", text(name))], &[], height)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        handle
+    }
+
+    /// A post of `who` by `author`, in `height`.
+    async fn post(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        author: &str,
+        height: u64,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                who,
+                "post",
+                &[("authorHandle", text(author)), ("body", text("gm"))],
+                &[],
+                height,
+            )
+            .await
+    }
+
+    /// A paid refusal of the post's `authorHandle` with
+    /// `ReferencedEntityNotFoundError` (40120): no handle has the name. The value
+    /// is no id and no hash stands for it, so the error's id is all zeros.
+    fn assert_no_handle(result: StateTransitionExecutionResult) {
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                ..
+            } if e.path() == "authorHandle"
+                && *e.entity_id() == Identifier::default()
+                && matches!(
+                    e.entity_type(),
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
+                        | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+                ),
+            "expected 40120 at authorHandle"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_create_a_document_whose_string_property_finds_a_document_by_that_value() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+
+        let (_, result) = post(&mut fixture, Who::Mallory, "alice", REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_string_value_no_document_has() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+
+        // The key is the value as is: a name differing by case finds nothing
+        for author in ["bob", "Alice"] {
+            let (_, result) = post(&mut fixture, Who::Alice, author, REVEAL_HEIGHT).await;
+            assert_no_handle(result);
+        }
+    }
+
+    /// A value read as is is judged again when a replace changes it, as an
+    /// identifier's reference is, unlike a value revealed into a computed key
+    #[tokio::test]
+    async fn should_re_validate_a_string_value_a_replace_changes() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+        make_handle(&mut fixture, Who::Alice, "bob", COMMIT_HEIGHT).await;
+        let (post, result) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text("carol")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text("bob")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A `deletableDocument` found by a string value is asked for on every
+    /// replace, as one by id is: once its handle is deleted, a replace keeping
+    /// the value is refused, and one naming another handle goes through
+    #[tokio::test]
+    async fn should_re_validate_a_deletable_document_found_by_a_string_value_on_every_replace() {
+        let mut fixture = handle_fixture("deletableDocument");
+        let alice = make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+        make_handle(&mut fixture, Who::Alice, "bob", COMMIT_HEIGHT).await;
+        let (post, result) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture
+            .delete(Who::Alice, "handle", &alice, REVEAL_HEIGHT)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("body", text("still here")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text("bob")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
     }
 }

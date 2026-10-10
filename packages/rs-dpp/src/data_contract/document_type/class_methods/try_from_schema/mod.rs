@@ -755,8 +755,8 @@ fn apply_property_reference_v0(
 
     // A string or byte array property's value is not an id: a declaration
     // with `findBy` on one is read by `apply_revealed_reference`, which admits
-    // only a value revealed into a computed key. Every other declaration on
-    // one is refused below
+    // only a document reference whose `findBy` reads the value. Every other
+    // declaration on one is refused below
     if is_revealed_declaration(&property_type, refers_to_value) {
         return Ok(property_type);
     }
@@ -821,8 +821,7 @@ fn apply_property_reference_v0(
         return Err(DataContractError::InvalidContractStructure(
             "refersTo is only allowed on identifier properties, except an identityPublicKey \
              reference with identityProperty, which sits on the key id property, and a document \
-             reference whose findBy function reveals a string or byte array property's value in \
-             a computed key"
+             reference whose findBy reads a string or byte array property's value"
                 .to_string(),
         ));
     }
@@ -834,11 +833,12 @@ fn apply_property_reference_v0(
 
 /// Reads the `refersTo` of a string or byte array property: its value is not
 /// an id, so the one declaration it may carry is a document reference, of
-/// either kind, found by a `findBy` whose function computes the key from the
-/// value, a commitment the value is revealed to (a salt a preorder hashed).
-/// `None` for every other property type, and for a declaration without
-/// `findBy`, which [`apply_property_reference`] folds into the type or
-/// refuses.
+/// either kind, found by a `findBy` reading the value: as `"."`, filling an
+/// index property holding the same kind of value (a name a document is unique
+/// by), or as a param of a function computing the key, a commitment the value
+/// is revealed to (a salt a preorder hashed). `None` for every other property
+/// type, and for a declaration without `findBy`, which
+/// [`apply_property_reference`] folds into the type or refuses.
 ///
 /// Versioned on `apply_property_reference`, the gate of the declaration it
 /// reads, and dispatched with it, so the declarations one skips the other
@@ -887,8 +887,8 @@ fn apply_revealed_reference_v0(
     let refused = || {
         DataContractError::InvalidContractStructure(
             "refersTo on a string or byte array property must be a permanentDocument or \
-             deletableDocument reference found by a findBy function reading the value: the value \
-             is not an id"
+             deletableDocument reference found by a findBy reading the value, as \".\" or a \
+             param of its function: the value is not an id"
                 .to_string(),
         )
     };
@@ -906,13 +906,16 @@ fn apply_revealed_reference_v0(
     }
     validate_reference_target_keys(&refers_to_map, reference_type)?;
     let target = parse_reference_target(&refers_to_map, reference_type)?;
-    // That the function reads the value, by the property's path, exactly
-    // once is a referring-side rule, checked once the type is parsed
-    let computed = target
+    // A key found by `findBy`, not a list: an `inList` holds ids. That the key
+    // reads the value exactly once, as `"."` or by the property's path in a
+    // function's params, is a referring-side rule, checked once the type is
+    // parsed, and that `"."` fills an index property of the value's kind a
+    // referenced-side one
+    let found_by_find_by = target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
-        .is_some_and(|lookup| lookup.is_checked_on_create_only());
-    if !computed {
+        .is_some();
+    if !found_by_find_by {
         return Err(refused());
     }
     Ok(Some(target))

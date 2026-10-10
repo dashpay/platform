@@ -343,10 +343,10 @@ impl DocumentReferenceLookup {
     /// (not listed under `immutable` with a condition, which could let a replace
     /// set it later unchecked), unless it is transient, never stored and read from
     /// the create alone. On a property the reference's own value must fill
-    /// the key exactly once, as a `"."` source or a param of the computed key,
-    /// and on a string or byte array property, `reference_type` not an
-    /// identifier, as a param only, a source having to match an index
-    /// property of the same kind. A param names a single property carrying
+    /// the key exactly once, as a `"."` source or a param of the computed key;
+    /// on a string or byte array property, not an identifier, a `"."` source
+    /// fills an index property holding the same kind of value, which
+    /// [`Self::referenced_side_error`] checks. A param names a single property carrying
     /// the reference by its path, never `"."`, which stands only for a value
     /// without one (each element of a typed array, the writer, the creator);
     /// only the lookup of an `ownerRefersTo` or `creatorRefersTo`,
@@ -379,22 +379,6 @@ impl DocumentReferenceLookup {
                      property carrying the reference by its path, \"{reference_path}\""
                 ));
             }
-        }
-        // A string or byte array carrying the reference is no identifier
-        let revealed = matches!(
-            carrier_type,
-            Some(DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))
-        );
-        if revealed
-            && self
-                .keys
-                .values()
-                .any(|source| matches!(source, LookupKeySource::ReferenceValue))
-        {
-            return Some(format!(
-                "\"{reference_path}\" is not an identifier, so its value fills the key as a \
-                 param of a computed key, not as a source of its own"
-            ));
         }
         if computed && !on_the_document {
             let reads = if named_by_path {
@@ -500,18 +484,23 @@ impl DocumentReferenceLookup {
         None
     }
 
-    /// Why this lookup, declared on a property of `declaring`, cannot resolve
-    /// in `referenced`, the referenced document type; `None` when it can. The
+    /// Why this lookup, declared on `declaring` (on the property at
+    /// `reference_property`, `None` for its owner or creator reference),
+    /// cannot resolve in `referenced`, the referenced document type; `None`
+    /// when it can. The
     /// properties `findBy` names must be exactly those of a unique index that
     /// does not bucket its first property ([`Self::resolve_index`]), so the key
     /// finds at most one document; the referenced type may not be `indexOnly`;
     /// no index property may be transient, a value no stored document holds;
     /// and each source must hold the same kind of value as the index property
-    /// it fills, or no document could ever match. The key must also stay with
-    /// the document it found, see [`Self::moving_key_part`].
+    /// it fills, or no document could ever match: `"."` holds an identifier,
+    /// or the value of the string or byte array property carrying the
+    /// reference. The key must also stay with the document it found, see
+    /// [`Self::moving_key_part`].
     pub fn referenced_side_error(
         &self,
         declaring: DocumentTypeRef,
+        reference_property: Option<&str>,
         referenced: DocumentTypeRef,
     ) -> Option<String> {
         let index_name = match self.resolve_index(referenced) {
@@ -547,9 +536,10 @@ impl DocumentReferenceLookup {
                 ));
             };
             let source_kind = match source {
-                // Both are identifiers, the reference's own value because
-                // `refersTo` is only allowed on identifiers
-                LookupKeySource::ReferenceValue | LookupKeySource::OwnerId => {
+                LookupKeySource::ReferenceValue => {
+                    reference_value_kind(declaring, reference_property)
+                }
+                LookupKeySource::OwnerId => {
                     std::mem::discriminant(&DocumentPropertyType::Identifier)
                 }
                 // A hash is a byte array exactly as long as the hash's output,
@@ -711,7 +701,8 @@ impl DocumentReferenceLookup {
 
     /// The equality values of the key the lookup assembles for one write, by
     /// index property name: `reference_value` for `"."` (the identifier
-    /// property's value, one array element, the writer or the creator),
+    /// property's value, one array element, the writer or the creator, or the
+    /// value of a string or byte array property carrying the reference),
     /// `owner_id` for `"$ownerId"`, the value at each source path in
     /// `document_data`, and `computed_key`, the hash the caller computed and
     /// billed, for a computed key: this never hashes, so a hash is never taken
@@ -724,7 +715,7 @@ impl DocumentReferenceLookup {
     /// Either way a key with a missing part finds no document.
     pub fn key_values(
         &self,
-        reference_value: Identifier,
+        reference_value: &Value,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         computed_key: Option<&Value>,
@@ -733,9 +724,7 @@ impl DocumentReferenceLookup {
             .iter()
             .map(|(index_property, source)| {
                 let value = match source {
-                    LookupKeySource::ReferenceValue => {
-                        Value::Identifier(reference_value.to_buffer())
-                    }
+                    LookupKeySource::ReferenceValue => reference_value.clone(),
                     LookupKeySource::OwnerId => Value::Identifier(owner_id.to_buffer()),
                     LookupKeySource::Property(path) => {
                         document_data.get_optional_at_path(path).ok()??.clone()
@@ -850,6 +839,26 @@ pub(crate) fn clearable_once_its_document_is_deleted(
                         )
                     )
             })
+}
+
+/// The kind of value `"."` stands for on a reference of `declaring` carried by
+/// the property at `reference_property` (`None` for the owner or creator
+/// reference): the value of a string or byte array property, and an
+/// identifier otherwise (an identifier property's value, an element of a
+/// typed array of them, the writer or the creator).
+fn reference_value_kind(
+    declaring: DocumentTypeRef,
+    reference_property: Option<&str>,
+) -> Discriminant<DocumentPropertyType> {
+    match reference_property
+        .and_then(|path| declaring.flattened_properties().get(path))
+        .map(|property| &property.property_type)
+    {
+        Some(carrier @ (DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))) => {
+            carrier.value_kind()
+        }
+        _ => std::mem::discriminant(&DocumentPropertyType::Identifier),
+    }
 }
 
 /// The kind of value an index property of `document_type` holds: a system
@@ -1016,7 +1025,11 @@ mod tests {
             None
         );
         assert_eq!(
-            lookup.referenced_side_error(declaring.as_ref(), join_request().as_ref()),
+            lookup.referenced_side_error(
+                declaring.as_ref(),
+                Some("memberId"),
+                join_request().as_ref()
+            ),
             None
         );
     }
@@ -1072,7 +1085,11 @@ mod tests {
             ),
         ] {
             let error = lookup(&keys)
-                .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+                .referenced_side_error(
+                    declaring.as_ref(),
+                    Some("memberId"),
+                    join_request().as_ref(),
+                )
                 .expect("findBy should be refused");
             assert!(error.contains(fragment), "{keys:?}: {error}");
         }
@@ -1082,7 +1099,11 @@ mod tests {
     fn should_refuse_a_source_of_the_wrong_value_kind() {
         let declaring = elected_charter();
         let error = lookup(&[("submittedCharterId", "note"), ("$ownerId", ".")])
-            .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+            .referenced_side_error(
+                declaring.as_ref(),
+                Some("memberId"),
+                join_request().as_ref(),
+            )
             .expect("the string source should be refused");
         assert!(error.contains("holds a different kind of value"), "{error}");
     }
@@ -1113,7 +1134,7 @@ mod tests {
         ]);
         let declaring = elected_charter();
         let refused = |referenced: DocumentType| {
-            lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref())
+            lookup.referenced_side_error(declaring.as_ref(), Some("memberId"), referenced.as_ref())
         };
 
         // A replace could move `submittedCharterId`, a transfer or a purchase `$ownerId`
@@ -1161,7 +1182,11 @@ mod tests {
             "transient": ["submittedCharterId"]
         }));
         let error = lookup
-            .referenced_side_error(elected_charter().as_ref(), referenced.as_ref())
+            .referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                referenced.as_ref(),
+            )
             .expect("an index over a transient property should be refused");
         assert!(
             error.contains(
@@ -1254,7 +1279,7 @@ mod tests {
         // A key id reference holds a u32 like the plain key id it is matched with
         let lookup = lookup(&[("keyId", "signerKeyId"), ("$ownerId", ".")]);
         assert_eq!(
-            lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref()),
+            lookup.referenced_side_error(declaring.as_ref(), Some("memberId"), referenced.as_ref()),
             None
         );
     }
@@ -1275,14 +1300,22 @@ mod tests {
             ])
         };
         let error = consuming
-            .referenced_side_error(elected_charter().as_ref(), keeps_history.as_ref())
+            .referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                keeps_history.as_ref(),
+            )
             .expect("consuming a type that keeps history should be refused");
         assert!(error.contains("its documents keep history"), "{error}");
 
         // The same type without the history may be consumed
         let deletable = join_request_with(platform_value!({ "canBeDeleted": true }));
         assert_eq!(
-            consuming.referenced_side_error(elected_charter().as_ref(), deletable.as_ref()),
+            consuming.referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                deletable.as_ref()
+            ),
             None
         );
     }
@@ -1310,14 +1343,19 @@ mod tests {
         let data = BTreeMap::from([("submittedCharterId".to_string(), Value::Identifier([5; 32]))]);
 
         assert_eq!(
-            lookup.key_values(member, &data, owner, None),
+            lookup.key_values(&Value::Identifier(member.to_buffer()), &data, owner, None),
             Some(BTreeMap::from([
                 ("$ownerId".to_string(), Value::Identifier([3; 32])),
                 ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
             ]))
         );
         assert_eq!(
-            lookup.key_values(member, &BTreeMap::new(), owner, None),
+            lookup.key_values(
+                &Value::Identifier(member.to_buffer()),
+                &BTreeMap::new(),
+                owner,
+                None
+            ),
             None
         );
         assert_eq!(
