@@ -2965,6 +2965,7 @@ mod tests {
         // height would return `None` with or without the guard, since nothing
         // is below the scan; only from above it can a missing guard rewind
         // the wallet a second time.
+        assert_eq!(synced_height(&manager, wallet_id).await, 1_475_801);
         set_synced_height(&manager, wallet_id, 1_561_776).await;
         assert_eq!(
             iw.dashpay()
@@ -2973,6 +2974,11 @@ mod tests {
                 .expect("rescan 2"),
             None,
             "the guard makes it single-shot, as for established contacts"
+        );
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            1_561_776,
+            "scan progress must not be rewound again"
         );
         assert_eq!(
             synced_height(&manager, wallet_id).await,
