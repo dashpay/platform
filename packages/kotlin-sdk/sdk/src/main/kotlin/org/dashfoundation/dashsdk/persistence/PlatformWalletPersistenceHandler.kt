@@ -1716,7 +1716,7 @@ class PlatformWalletPersistenceHandler(
             // Strict decode: an unknown key, a missing required field or a
             // mistyped value throws — the row would otherwise be healed with
             // a defaulted owner or a zero amount.
-            val page = engineJson.decodeFromString(EngineUtxoPage.serializer(), pageJson)
+            val page = decodeEngineUtxoPage(pageJson)
             tally.engineRows += page.utxos.size
 
             if (page.utxos.isNotEmpty()) {
@@ -2011,22 +2011,7 @@ class PlatformWalletPersistenceHandler(
                 continue
             }
             rows.add(row)
-            queries.add(
-                OutpointQuery(
-                    typeTag = owner.accountType,
-                    standardTag = owner.standardTag,
-                    index = owner.accountIndex,
-                    registrationIndex = owner.registrationIndex,
-                    keyClass = owner.keyClass,
-                    userIdentityId = owner.userIdentityId
-                        .takeIf { it.size == 32 && it.any { b -> b != 0.toByte() } }?.toHex(),
-                    friendIdentityId = owner.friendIdentityId
-                        .takeIf { it.size == 32 && it.any { b -> b != 0.toByte() } }?.toHex(),
-                    txid = txid.toHex(),
-                    vout = row.vout,
-                    scriptHex = row.scriptPubKey.toHex(),
-                ),
-            )
+            queries.add(outpointQueryFor(owner, txid, row.vout, row.scriptPubKey))
         }
         return UnspentPage(
             rows = rows,
@@ -5090,6 +5075,10 @@ class PlatformWalletPersistenceHandler(
          */
         private val engineJson = Json
 
+        /** One page of `walletManagerUtxosPageJson`, through [engineJson]. */
+        internal fun decodeEngineUtxoPage(pageJson: String): EngineUtxoPage =
+            engineJson.decodeFromString(EngineUtxoPage.serializer(), pageJson)
+
         /** One classification batch, as `walletManagerClassifyOutpoints`
          *  deserializes it (rs-unified-sdk-jni `OutpointQuery`). */
         internal fun encodeOutpointQueries(queries: List<OutpointQuery>): String =
@@ -5097,6 +5086,30 @@ class PlatformWalletPersistenceHandler(
                 kotlinx.serialization.builtins.ListSerializer(OutpointQuery.serializer()),
                 queries,
             )
+
+        /** The query for one store coin filed under [owner]: the account
+         *  tuple as the store holds it (an identity half only when it is a
+         *  set 32-byte id, as the native side emits them) plus the
+         *  outpoint and the script the store recorded. */
+        internal fun outpointQueryFor(
+            owner: AccountEntity,
+            txid: ByteArray,
+            vout: Int,
+            scriptPubKey: ByteArray,
+        ): OutpointQuery = OutpointQuery(
+            typeTag = owner.accountType,
+            standardTag = owner.standardTag,
+            index = owner.accountIndex,
+            registrationIndex = owner.registrationIndex,
+            keyClass = owner.keyClass,
+            userIdentityId = owner.userIdentityId
+                .takeIf { it.size == 32 && it.any { b -> b != 0.toByte() } }?.toHex(),
+            friendIdentityId = owner.friendIdentityId
+                .takeIf { it.size == 32 && it.any { b -> b != 0.toByte() } }?.toHex(),
+            txid = txid.toHex(),
+            vout = vout,
+            scriptHex = scriptPubKey.toHex(),
+        )
 
         /** [reconcileTxos] classification verdicts, mirroring
          *  `platform_wallet::manager::accessors::OutpointClass`. Only

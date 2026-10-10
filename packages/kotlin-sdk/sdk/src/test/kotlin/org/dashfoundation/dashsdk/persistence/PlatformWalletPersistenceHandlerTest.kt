@@ -8144,6 +8144,111 @@ class PlatformWalletPersistenceHandlerTest {
         assertNull(query["friendIdentityId"])
     }
 
+    // ── Cross-language golden fixture (shared with rs-unified-sdk-jni) ──
+
+    /**
+     * The checked-in TXO-reconcile transport payloads. The Rust
+     * `wallet_manager::tests` read the SAME file (`include_str!` of this
+     * resource): they serialize the real `UtxoPage` for four accessor
+     * entries and require `inventoryPage` exactly, and they deserialize
+     * `outpointQueries` through the real `OutpointQuery` conversion. Here
+     * the page is decoded by the production decoder and the queries are
+     * built by the production encoder, so neither codec can drift from the
+     * other without one of the two suites failing.
+     */
+    private fun reconcileGolden(): kotlinx.serialization.json.JsonObject =
+        javaClass.getResourceAsStream("/golden/txo_reconcile_transport_v1.json")
+            .use { requireNotNull(it) { "golden fixture resource missing" }.readBytes() }
+            .let { kotlinx.serialization.json.Json.parseToJsonElement(it.decodeToString()).jsonObject }
+
+    /** The four golden coins: txid bytes counting up from [first]. */
+    private fun goldenTxid(first: Int) = ByteArray(32) { (first + it).toByte() }
+    private fun goldenScript(fill: Int) =
+        byteArrayOf(0x76, 0xa9.toByte(), 0x14) + ByteArray(20) { fill.toByte() } +
+            byteArrayOf(0x88.toByte(), 0xac.toByte())
+    private val goldenUserIdentity = ByteArray(32) { 0xa1.toByte() }
+    private val goldenFriendIdentity = ByteArray(32) { 0xb2.toByte() }
+
+    @Test
+    fun theInventoryDecoderReadsTheGoldenRustPage() {
+        val page = PlatformWalletPersistenceHandler.decodeEngineUtxoPage(
+            reconcileGolden()["inventoryPage"]!!.toString(),
+        )
+
+        assertTrue(page.hasMore)
+        assertNotNull("a page with more to come carries its cursor", page.cursor)
+        assertEquals(
+            listOf(
+                // BIP44 account 0: every account field zero, and present.
+                PlatformWalletPersistenceHandler.EngineUtxoRow(
+                    0, 0, 0, 0, 0, null, null, goldenTxid(0x00).toHexLower(), 0, 19_549L,
+                    reconcileAddress, goldenScript(0x5b).toHexLower(), 1_534_921,
+                    true, false, false, false,
+                ),
+                // Non-default account fields, every flag set, and an amount
+                // past 32 bits.
+                PlatformWalletPersistenceHandler.EngineUtxoRow(
+                    0, 1, 2, 0, 0, null, null, goldenTxid(0x20).toHexLower(), 7, 5_000_000_000L,
+                    "yGoldenFixtureBip32Addr", goldenScript(0xc3).toHexLower(), 1_400_000,
+                    true, true, true, true,
+                ),
+                // A registration index, and a script with no address form.
+                PlatformWalletPersistenceHandler.EngineUtxoRow(
+                    3, 0, 0, 4, 0, null, null, goldenTxid(0x40).toHexLower(), 1, 100_000L,
+                    "", "", 0,
+                    false, false, false, false,
+                ),
+                // DashPay: both identity halves, as lower hex.
+                PlatformWalletPersistenceHandler.EngineUtxoRow(
+                    12, 0, 1, 0, 0, goldenUserIdentity.toHexLower(), goldenFriendIdentity.toHexLower(),
+                    goldenTxid(0x60).toHexLower(), 3, 250_000L,
+                    "yGoldenFixtureDashPayAddr", goldenScript(0xd4).toHexLower(), 1_534_000,
+                    true, true, false, false,
+                ),
+            ),
+            page.utxos,
+        )
+    }
+
+    @Test
+    fun classificationQueriesMatchTheGoldenRustInput() {
+        // The same four coins, filed under the store accounts they resolve
+        // to, through the encoder [readUnspentPage] uses. A zeroed identity
+        // half on a non-DashPay account goes out absent, as the native side
+        // emits it.
+        fun account(type: Int, index: Int, name: String) = org.dashfoundation.dashsdk.persistence.entities
+            .AccountEntity(walletId = walletId, accountType = type, accountIndex = index, accountTypeName = name)
+        val queries = listOf(
+            PlatformWalletPersistenceHandler.outpointQueryFor(
+                account(0, 0, "Standard").copy(userIdentityId = ByteArray(32)),
+                goldenTxid(0x00), 0, goldenScript(0x5b),
+            ),
+            PlatformWalletPersistenceHandler.outpointQueryFor(
+                account(0, 2, "Standard").copy(standardTag = 1),
+                goldenTxid(0x20), 7, goldenScript(0xc3),
+            ),
+            PlatformWalletPersistenceHandler.outpointQueryFor(
+                account(3, 0, "IdentityTopUp").copy(registrationIndex = 4),
+                goldenTxid(0x40), 1, ByteArray(0),
+            ),
+            PlatformWalletPersistenceHandler.outpointQueryFor(
+                account(12, 1, "DashpayReceivingFunds").copy(
+                    userIdentityId = goldenUserIdentity,
+                    friendIdentityId = goldenFriendIdentity,
+                ),
+                goldenTxid(0x60), 3, goldenScript(0xd4),
+            ),
+        )
+
+        val json = PlatformWalletPersistenceHandler.encodeOutpointQueries(queries)
+
+        assertEquals(
+            "Kotlin's classification batch drifted from the golden fixture the Rust deserializer is tested against",
+            reconcileGolden()["outpointQueries"],
+            kotlinx.serialization.json.Json.parseToJsonElement(json),
+        )
+    }
+
     /**
      * Drive the paged reconcile from one whole-inventory JSON blob — the
      * shape these tests describe an engine in. The blob is served the way
