@@ -33,6 +33,7 @@ import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.persistence.hexToByteArray
+import org.dashfoundation.dashsdk.persistence.logReference
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.persistence.toHex
 import org.json.JSONArray
@@ -1023,6 +1024,12 @@ class PlatformWalletManager(
         _wallets.value[key]?.let { runCatching { it.close() } }
         _wallets.update { it - key }
         _dashPayUnlockStatus.update { it - key }
+        // A TXO-store reconcile in flight for any wallet stops at its next
+        // page or store step (each re-checks under the callback gate, so
+        // none writes after the cascade below). Coarse on purpose — the
+        // cadence re-runs the others.
+        txoReconcile.bumpEpoch()
+        txoReconcile.forget(key)
 
         // 3. Snapshot → atomic secret delete → Room cascade, with both
         //    persistence callbacks and app-side key writers excluded.
@@ -1256,6 +1263,136 @@ class PlatformWalletManager(
     suspend fun accountBalances(walletId: ByteArray): String? = withContext(Dispatchers.IO) {
         mapNativeErrors { DashpayNative.walletManagerAccountBalances(managerHandle, walletId) }
     }
+
+    /**
+     * Reconcile the Room `txos` mirror of [walletId] against the engine,
+     * once the SPV scan has reached a trustworthy steady state — the Kotlin
+     * port of Swift's `reconcileCoreTxoStore(for:)` (dashpay/platform#4638
+     * Part 2). The mirror is what the engine is restored from at every
+     * launch, so this inserts engine coins the store lacks and marks spent
+     * the rows the engine proves spent; it never deletes a row, never
+     * un-marks one, and never acts on absence. See
+     * [PlatformWalletPersistenceHandler.reconcileTxos] for the passes.
+     *
+     * Gates, each a [TxoReconcileOutcome.Skipped] rather than an error, in
+     * order: the manager not closed; the wallet loaded; no run for it
+     * already in flight; SPV in steady state
+     * ([TxoReconcileGates.isSteadySyncState]); a scan tip
+     * ([TxoReconcileGates.scanTipHeight]); no latched sync fault
+     * ([syncFaultDetected] — a rejected round means rows are missing by
+     * design and a rescan is pending); and the wallet's own scan watermark
+     * as the engine holds it
+     * ([WalletManagerNative.walletManagerCoreWalletSyncedHeight], Swift's
+     * `platform_wallet_core_wallet_state`) within
+     * [TxoReconcileGates.TIP_MARGIN] blocks of the tip: the tip says how far
+     * the CLIENT got, and a wallet added behind the tip is still being
+     * scanned. Not the persisted Room `syncedHeight`: that copy trails the
+     * engine by up to one persistence round, and the SYNCED transition lands
+     * inside that window — gating on it skipped the run at the end of every
+     * restore.
+     *
+     * The run holds a [teardownGate] borrow, so the native manager is not
+     * destroyed under an engine read. [closeSuspending] and [removeWallet]
+     * bump the reconcile epoch first, and the run stops between pages,
+     * reporting `completed = false`.
+     *
+     * Runs automatically on the steady-state transition of the SPV progress
+     * poll and every 30 minutes while it lasts (see
+     * [maybeReconcileTxoStores]); hosts may also call it. Logs one skip
+     * line (reason and wallet reference) or the handler's summary line —
+     * counts and reference digests only.
+     */
+    suspend fun reconcileTxoStore(walletId: ByteArray): TxoReconcileOutcome {
+        val walletRef = logReference(walletId)
+        fun skip(reason: TxoReconcileSkipReason): TxoReconcileOutcome {
+            android.util.Log.d(
+                "PlatformWalletManager",
+                "txos reconcile: skipped reason=${reason.name} wallet=$walletRef",
+            )
+            return TxoReconcileOutcome.Skipped(reason)
+        }
+        if (isClosed) return skip(TxoReconcileSkipReason.MANAGER_CLOSED)
+        val key = walletId.toHex()
+        if (walletId.size != 32 || _wallets.value[key] == null) {
+            return skip(TxoReconcileSkipReason.WALLET_UNKNOWN)
+        }
+        if (!txoReconcile.tryBegin(key)) return skip(TxoReconcileSkipReason.ALREADY_RUNNING)
+        try {
+            val generation = txoReconcile.currentEpoch
+            val progress = _spvProgress.value
+            if (!TxoReconcileGates.isSteadySyncState(progress)) {
+                return skip(TxoReconcileSkipReason.NOT_STEADY_STATE)
+            }
+            val tipHeight = TxoReconcileGates.scanTipHeight(progress)
+                ?: return skip(TxoReconcileSkipReason.TIP_UNAVAILABLE)
+            return try {
+                teardownGate.withOp {
+                    if (syncFaultDetected()) return@withOp skip(TxoReconcileSkipReason.SYNC_FAULT_DETECTED)
+                    val walletSyncedHeight = try {
+                        withContext(Dispatchers.IO) {
+                            mapNativeErrors {
+                                WalletManagerNative.walletManagerCoreWalletSyncedHeight(managerHandle, walletId)
+                            }
+                        }
+                    } catch (notFound: DashSdkError.PlatformWallet.NotFound) {
+                        return@withOp skip(TxoReconcileSkipReason.WALLET_UNKNOWN)
+                    }
+                    if (!TxoReconcileGates.walletCaughtUp(walletSyncedHeight, tipHeight)) {
+                        return@withOp skip(TxoReconcileSkipReason.WALLET_BEHIND_TIP)
+                    }
+                    val isCancelled = { isClosed || txoReconcile.currentEpoch != generation }
+                    if (isCancelled()) return@withOp skip(TxoReconcileSkipReason.MANAGER_CLOSED)
+                    val report = persistenceHandler.reconcileTxos(
+                        walletId = walletId,
+                        tipHeight = tipHeight,
+                        isCancelled = isCancelled,
+                        engineUtxoPage = { cursor, limit ->
+                            reconcileEngineRead("engine inventory page", walletRef) {
+                                WalletManagerNative.walletManagerUtxosPageJson(
+                                    managerHandle, walletId, cursor, limit,
+                                )
+                            }
+                        },
+                        classifyOutpoints = { queriesJson ->
+                            reconcileEngineRead("outpoint classification", walletRef) {
+                                WalletManagerNative.walletManagerClassifyOutpoints(
+                                    managerHandle, walletId, queriesJson,
+                                )
+                            }
+                        },
+                    )
+                    txoReconcile.markRun(key, monotonicNowMs())
+                    TxoReconcileOutcome.Reconciled(report)
+                }
+            } catch (closing: IllegalStateException) {
+                // The teardown gate refuses new borrows once close began.
+                if (isClosed) skip(TxoReconcileSkipReason.MANAGER_CLOSED) else throw closing
+            }
+        } finally {
+            txoReconcile.end(key)
+        }
+    }
+
+    /**
+     * One engine read of the reconcile, off the caller's thread. A native
+     * failure is logged by kind and exception type only — the message of a
+     * native error can echo the input it rejected — and becomes the null
+     * the handler's stop-and-report contract is written against.
+     */
+    private suspend fun <T> reconcileEngineRead(what: String, walletRef: String, read: () -> T): T? =
+        withContext(Dispatchers.IO) {
+            try {
+                mapNativeErrors { read() }
+            } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                android.util.Log.w(
+                    "PlatformWalletManager",
+                    "txos reconcile: $what failed error=${t.javaClass.simpleName} wallet=$walletRef",
+                )
+                null
+            }
+        }
 
     /**
      * Refresh the persisted DashPay payment history for one identity:
@@ -2160,6 +2297,7 @@ class PlatformWalletManager(
                 if (running) {
                     runCatching { spvSyncProgress() }.getOrNull()?.let { next ->
                         if (next != _spvProgress.value) _spvProgress.value = next
+                        maybeReconcileTxoStores(next)
                     }
                     runCatching { spvTipUnixSeconds() }.getOrNull()?.let { tip ->
                         if (tip != _spvTipUnixSeconds.value) _spvTipUnixSeconds.value = tip
@@ -2172,6 +2310,46 @@ class PlatformWalletManager(
             }
         }
     }
+
+    /** In-flight runs, per-wallet cadence, the steady-state edge and the
+     *  cancellation epoch of the TXO-store reconcile. */
+    private val txoReconcile = TxoReconcileCoordinator()
+
+    /**
+     * SDK-internal trigger for [reconcileTxoStore], fed by every accepted
+     * read of the SPV progress poll: run every loaded wallet on the
+     * transition into steady state, and again every 30 minutes per wallet
+     * while it lasts (each wallet's last run is stamped when it is
+     * scheduled) — never while a run for that wallet is in flight, and
+     * never inline: the poll tick stays cheap. Lives here rather than in
+     * the host apps so every host gets the repair without wiring anything.
+     * A run that throws is logged (exception type and wallet reference
+     * only) and retried on the next cadence tick — never allowed to kill
+     * the progress poll.
+     */
+    private fun maybeReconcileTxoStores(progress: SpvSyncProgressData) {
+        if (isClosed) return
+        val loaded = wallets.value
+        val due = txoReconcile.walletsDue(progress, loaded.keys, monotonicNowMs())
+        for (key in due) {
+            val walletId = loaded[key]?.walletId ?: continue
+            scope.launch {
+                try {
+                    reconcileTxoStore(walletId)
+                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                    throw cancellation
+                } catch (t: Throwable) {
+                    android.util.Log.w(
+                        "PlatformWalletManager",
+                        "txos reconcile: run failed error=${t.javaClass.simpleName} " +
+                            "wallet=${logReference(walletId)}",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000
 
     // ── DashPay sync + seedless unlock ────────────────────────────────
     //
@@ -2599,6 +2777,10 @@ class PlatformWalletManager(
      * teardown hops to [Dispatchers.IO]).
      */
     suspend fun closeSuspending() {
+        // Stale any TXO-store reconcile in flight first: it stops at its next
+        // page or store step instead of holding teardown behind the rest of
+        // its walk.
+        txoReconcile.bumpEpoch()
         val bundle = bundleRef.getAndSet(0)
         if (bundle == 0L) return
         // NonCancellable from the moment the bundle is claimed: bundleRef

@@ -59,8 +59,8 @@ use platform_wallet_ffi::{
     InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
     PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
     SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
-    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
-    WalletChangeSetFFI, WalletRestoreEntryFFI,
+    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoCreditVerdictFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -216,6 +216,13 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
         },
         on_persist_wallet_changeset_chain_lock_height_fn: Some(
             tramp_persist_wallet_changeset_chain_lock_height,
+        ),
+        // Wired for every bridge: the base class's no-op body is exactly
+        // the behaviour of a host without the slot (verdicts only ever
+        // refine what the changeset callback writes), so there is no
+        // capability to strip the way the sweep slot has.
+        on_persist_wallet_changeset_utxo_verdicts_fn: Some(
+            tramp_persist_wallet_changeset_utxo_verdicts,
         ),
         ..Default::default()
     }
@@ -845,6 +852,59 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
             "onWalletChangesetChainLockHeight",
             "([BI)I",
             &[(&wid).into(), JValue::Int(jint_height(chain_lock_height)?)],
+        )?
+        .i()
+    })
+}
+
+/// Descriptor of `NativePersistenceBridge.onWalletChangesetUtxoVerdicts`:
+/// `(walletId, outpoints, verdicts, spentAtHeights, count)`. Outpoints ride
+/// as ONE flat `byte[]` of 36-byte keys (`pack_outpoint_key`, the shape the
+/// handler stores them in), the verdict codes as one `byte[]` and the
+/// observed-spent heights as one `int[]`, all N long — the same flat packing
+/// as the sweep batches, since the count is chain-controlled and this runs
+/// inside the atomic persistence callback.
+const WALLET_CHANGESET_UTXO_VERDICTS_DESCRIPTOR: &str = "([B[B[B[II)I";
+
+/// Deliver the round's credit verdicts (see
+/// `PersistWalletChangesetUtxoVerdictsFn`): every `Received` / `Change`
+/// output of the round's records the engine did NOT credit, with the
+/// reason. Fired by `store()` inside the begin/end bracket BEFORE the
+/// changeset callback and only on rounds that carry a verdict, so the
+/// handler has them in hand when the round's `utxos_added` entries arrive.
+/// One bridge call for the whole set, in the slot's outpoint order.
+unsafe extern "C" fn tramp_persist_wallet_changeset_utxo_verdicts(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    verdicts: *const UtxoCreditVerdictFFI,
+    verdicts_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let entries = slice_or_empty(verdicts, verdicts_count);
+        let mut packed_outpoints = Vec::with_capacity(entries.len() * 36);
+        let mut codes = Vec::with_capacity(entries.len());
+        let mut heights = Vec::with_capacity(entries.len());
+        for entry in entries {
+            packed_outpoints.extend_from_slice(&pack_outpoint_key(&entry.outpoint));
+            codes.push(entry.verdict);
+            heights.push(jint_height(entry.spent_at_height)?);
+        }
+        let outpoints_arr = env.byte_array_from_slice(&packed_outpoints)?;
+        let codes_arr = env.byte_array_from_slice(&codes)?;
+        let heights_arr = env.new_int_array(heights.len() as i32)?;
+        env.set_int_array_region(&heights_arr, 0, &heights)?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetUtxoVerdicts",
+            WALLET_CHANGESET_UTXO_VERDICTS_DESCRIPTOR,
+            &[
+                (&wid).into(),
+                (&outpoints_arr).into(),
+                (&codes_arr).into(),
+                (&heights_arr).into(),
+                JValue::Int(entries.len() as i32),
+            ],
         )?
         .i()
     })
@@ -4548,6 +4608,13 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     // literal at the `call_method` site in
     // `tramp_persist_wallet_changeset_chain_lock_height`.
     ("onWalletChangesetChainLockHeight", "([BI)I"),
+    // Same drift risk again: this slot fires only on rounds that carry a
+    // credit verdict. The same constant is bound at the `call_method` site
+    // in `tramp_persist_wallet_changeset_utxo_verdicts`.
+    (
+        "onWalletChangesetUtxoVerdicts",
+        WALLET_CHANGESET_UTXO_VERDICTS_DESCRIPTOR,
+    ),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
@@ -4733,6 +4800,14 @@ mod tests {
         // + count, (hasWinnerMinedHeight, winnerMinedHeight) — must match
         // `NativePersistenceBridge.onWalletChangesetTransactionsSwept`.
         assert_eq!(WALLET_CHANGESET_SWEEPS_DESCRIPTOR, "([B[BI[B[BIZI)I");
+    }
+
+    #[test]
+    fn utxo_verdicts_callback_descriptor_ships_flat_arrays_and_a_count() {
+        // walletId, packed 36-byte outpoints, verdict codes, observed-spent
+        // heights, count — must match
+        // `NativePersistenceBridge.onWalletChangesetUtxoVerdicts`.
+        assert_eq!(WALLET_CHANGESET_UTXO_VERDICTS_DESCRIPTOR, "([B[B[B[II)I");
     }
 
     #[test]
