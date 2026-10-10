@@ -6241,7 +6241,7 @@ class PlatformWalletPersistenceHandlerTest {
         isConfirmed: Boolean = true,
         isCoinbase: Boolean = false,
     ): String =
-        """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"txid":"$txidHex","vout":$vout,""" +
+        """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,"txid":"$txidHex","vout":$vout,""" +
             """"amount":$amount,"address":"$address","scriptHex":"76a914000088ac",""" +
             """"height":$height,"isConfirmed":$isConfirmed,"isInstantlocked":false,""" +
             """"isCoinbase":$isCoinbase,"isLocked":false}]}"""
@@ -6850,7 +6850,7 @@ class PlatformWalletPersistenceHandlerTest {
     /** Engine inventory JSON with both halves: unspent rows and spent outpoints. */
     private fun engineInventoryJson(unspent: List<Triple<String, Int, Long>>, spent: List<Pair<String, Int>>): String {
         val utxoRows = unspent.joinToString(",") { (txid, vout, amount) ->
-            """{"typeTag":0,"standardTag":0,"index":0,"txid":"$txid","vout":$vout,""" +
+            """{"typeTag":0,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,"txid":"$txid","vout":$vout,""" +
                 """"amount":$amount,"address":"yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd",""" +
                 """"scriptHex":"76a914000088ac","height":1400000,"isConfirmed":true,""" +
                 """"isInstantlocked":false,"isCoinbase":false,"isLocked":false}"""
@@ -6873,7 +6873,7 @@ class PlatformWalletPersistenceHandlerTest {
         typeTag: Int = 0,
         txidHex: String = txid.toHexLower(),
     ): String =
-        """{"typeTag":$typeTag,"standardTag":0,"index":0,"txid":"$txidHex","vout":$vout,""" +
+        """{"typeTag":$typeTag,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,"txid":"$txidHex","vout":$vout,""" +
             """"amount":$amount,"address":"$address","scriptHex":"$scriptHex",""" +
             """"height":$height,"isConfirmed":$isConfirmed,"isInstantlocked":false,""" +
             """"isCoinbase":false,"isLocked":false}"""
@@ -7228,7 +7228,7 @@ class PlatformWalletPersistenceHandlerTest {
             false, true, false, false,
         )
         val json =
-            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
+            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,""" +
                 """"txid":"${changeTxid.toHexLower()}","vout":5,"amount":42,""" +
                 """"address":"yTestAddr","scriptHex":"51",""" +
                 """"height":${reconcileTip - 3},"isConfirmed":true,""" +
@@ -7481,7 +7481,7 @@ class PlatformWalletPersistenceHandlerTest {
         )
 
         val json =
-            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
+            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,""" +
                 """"txid":"${changeTxid.toHexLower()}","vout":9,"amount":10000,""" +
                 """"address":"yContactPaid","scriptHex":"51",""" +
                 """"height":1400000,"isConfirmed":true,"isLocked":false}],"spent":[]}"""
@@ -7550,7 +7550,7 @@ class PlatformWalletPersistenceHandlerTest {
         // The tag is the authoritative foreign check: a contact's coin must
         // be skipped even when its address row never survived persistence.
         val json =
-            """{"utxos":[{"typeTag":13,"standardTag":0,"index":0,""" +
+            """{"utxos":[{"typeTag":13,"standardTag":0,"index":0,"registrationIndex":0,"keyClass":0,""" +
                 """"userIdentityId":"${"11".repeat(32)}","friendIdentityId":"${"22".repeat(32)}",""" +
                 """"txid":"${changeTxid.toHexLower()}","vout":13,"amount":10000,""" +
                 """"address":"yContactNoRow","scriptHex":"51",""" +
@@ -8106,6 +8106,33 @@ class PlatformWalletPersistenceHandlerTest {
             "nothing was healed from the malformed page",
             db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 40)),
         )
+    }
+
+    @Test
+    fun anInventoryRowMissingAnyAccountFieldFailsTheDecode() {
+        // The account tuple is the routing context a healed row is filed
+        // under. A row missing `index` must not decode as account 0 and be
+        // healed under the wrong owner; only the DashPay identity halves
+        // may be absent.
+        val complete = kotlinx.serialization.json.Json.parseToJsonElement(
+            engineRowJson(changeTxid, vout = 41),
+        ).jsonObject
+        fun page(row: Map<String, kotlinx.serialization.json.JsonElement>) =
+            """{"utxos":[${kotlinx.serialization.json.JsonObject(row)}],"cursor":null,"hasMore":false}"""
+        assertEquals(
+            1,
+            PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page(complete)).utxos.size,
+        )
+
+        for (key in listOf("typeTag", "standardTag", "index", "registrationIndex", "keyClass")) {
+            val thrown = runCatching {
+                PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page(complete - key))
+            }.exceptionOrNull()
+            assertTrue(
+                "a row without `$key` must fail the decode, got $thrown",
+                thrown is kotlinx.serialization.SerializationException,
+            )
+        }
     }
 
     @Test

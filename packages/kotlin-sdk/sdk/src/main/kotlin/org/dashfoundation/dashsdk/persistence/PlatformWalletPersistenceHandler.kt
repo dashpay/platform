@@ -1351,16 +1351,17 @@ class PlatformWalletPersistenceHandler(
      * loudly instead of healing a row with a defaulted owner or a zero
      * amount into the mirror the engine reloads from. The account tuple
      * (`typeTag`…`friendIdentityId`) is the routing context
-     * [findReconcileAccount] resolves the owning Room account by; the
-     * DashPay identity halves are absent on every non-DashPay account.
+     * [findReconcileAccount] resolves the owning Room account by, so every
+     * field of it is required except the DashPay identity halves, which are
+     * absent on every non-DashPay account.
      */
     @Serializable
     data class EngineUtxoRow(
         val typeTag: Int,
-        val standardTag: Int = 0,
-        val index: Int = 0,
-        val registrationIndex: Int = 0,
-        val keyClass: Int = 0,
+        val standardTag: Int,
+        val index: Int,
+        val registrationIndex: Int,
+        val keyClass: Int,
         val userIdentityId: String? = null,
         val friendIdentityId: String? = null,
         val txid: String,
