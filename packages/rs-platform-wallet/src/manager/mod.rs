@@ -14,6 +14,7 @@ mod wallet_lifecycle;
 
 pub(crate) use persistence_load::run_blocking_load;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,7 +25,12 @@ use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+use crate::changeset::{
+    persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
+    DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
+};
+use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::dpns_sync::DpnsSyncManager;
@@ -439,6 +445,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// The durable sync cursor each wallet's host last accepted, shared by
+    /// the wallet-event adapter and the DashPay rescan reconcile — the lock
+    /// that orders their cursor writes. See [`DurableCursors`].
+    pub(super) durable_cursors: DurableCursors,
     /// Per-WALLET in-broadcast fence maps, handed to every
     /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
     /// under each id.
@@ -500,16 +510,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Host-visible hard sync-fault latch. The
         // adapter raises it the first time it freezes a durable watermark.
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let durable_cursors = DurableCursors::default();
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
         // the persister.
         let event_adapter_cancel = CancellationToken::new();
-        let event_adapter_join = spawn_wallet_event_adapter(
+        let event_adapter_join = spawn_wallet_event_adapter_with_durable_cursors(
             Arc::clone(&wallet_manager),
             Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
+            Arc::clone(&durable_cursors),
             event_adapter_cancel.clone(),
         );
 
@@ -607,7 +619,160 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
+            durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+        }
+    }
+
+    /// Remove `wallet_id` from the inner manager, keeping its rewind
+    /// barrier's state under the id in the shared [`DurableCursors`] for a
+    /// successor registered under the same id (see
+    /// [`Self::inherit_rewind_barrier`]) — and for the adapter, which drops
+    /// the removed wallet's advances while nothing holds the id and counts
+    /// them off this state as it does. Called under the manager write lock,
+    /// which is what makes the hand-off atomic against the adapter.
+    pub(super) fn remove_from_wallet_manager(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> Result<(), key_wallet_manager::WalletError> {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let (_, info) = wm.remove_wallet(wallet_id)?;
+        let retiring = info
+            .rewind_barrier
+            .retire(WalletInfoInterface::account_generation(&info));
+        let mut retired = self.durable_cursors.retired();
+        let entry = retired.entry(*wallet_id).or_default();
+        entry.in_flight = entry.in_flight.saturating_add(retiring.in_flight);
+        entry.epoch = entry.epoch.max(retiring.epoch);
+        entry.account_generation = entry.account_generation.max(retiring.account_generation);
+        Ok(())
+    }
+
+    /// Settle the host's DashPay backfill record for a wallet about to be
+    /// published under `wallet_id`, holding the durable-cursor lock
+    /// (`durable_cursors`), and return the record the wallet carries in
+    /// memory.
+    ///
+    /// `record` is what the wallet would carry — its snapshot's record,
+    /// already filtered to the receival accounts it holds — and `own_cursor`
+    /// the scan cursor it starts from. `snapshot_cursor` is the host cursor
+    /// the pre-lock snapshot saw; an entry in `durable_cursors` wins over it.
+    /// `dropped` says the filter removed coverage from the snapshot's record.
+    ///
+    /// The host's record is replaced, before the wallet is visible to the
+    /// scanner, when it may disagree with what the wallet carries:
+    /// - the filter dropped coverage for accounts this wallet does not hold;
+    /// - an entry shows a same-id wallet was published in this process — it
+    ///   may have stored or invalidated coverage after the snapshot was read;
+    /// - the backend cannot hold the record durably and the snapshot held one.
+    ///
+    /// A replacement that puts coverage on the host while this wallet's cursor
+    /// is below the host's carries that cursor, as a rewind, in the same
+    /// round. Otherwise a crash right after it would restore the coverage
+    /// beside a cursor the wallet never scanned up to with those accounts
+    /// watched. The entry follows the cursor only once the round is
+    /// committed, so a lower cursor owed later is measured against it.
+    ///
+    /// A backend that cannot hold the record durably
+    /// ([`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage):
+    /// not inline, or not atomic) gets no record at all, the same as the
+    /// rescan sweep gives it: only an empty one is written — committed with a
+    /// `flush` where `store` only buffers — before the wallet is published,
+    /// so a record an earlier run left cannot outlive this one.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn settle_published_backfill(
+        &self,
+        durable_cursors: &mut BTreeMap<WalletId, DurableCursor>,
+        wallet_id: WalletId,
+        record: DashPayBackfillRecord,
+        dropped: bool,
+        own_cursor: u32,
+        snapshot_cursor: u32,
+    ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
+        let inline = self.persister.store_commits_inline();
+        let durable = persists_backfill_coverage(&*self.persister);
+        let predecessor = durable_cursors.contains_key(&wallet_id);
+        let held_on_host = !record.is_empty() || dropped;
+        let record = if durable {
+            record
+        } else {
+            DashPayBackfillRecord::default()
+        };
+        // A backend that cannot hold the record durably never had one
+        // written by this process, so only a record it handed back can need
+        // invalidating; one that can is replaced when the snapshot's record
+        // may disagree with what the wallet carries.
+        let replace = if durable {
+            dropped || predecessor
+        } else {
+            held_on_host
+        };
+        if !replace {
+            return Ok(record);
+        }
+        let host_cursor = durable_cursors
+            .get(&wallet_id)
+            .map_or(snapshot_cursor, |entry| entry.height);
+        let cursor = (!record.is_empty() && own_cursor < host_cursor).then_some(own_cursor);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            covered = record.covered.len(),
+            dropped,
+            predecessor,
+            durable,
+            cursor = ?cursor,
+            "the host's DashPay backfill record is replaced with the one this wallet \
+             carries before the wallet is published"
+        );
+        let changeset = PlatformWalletChangeSet {
+            core: cursor.map(|cursor| CoreChangeSet {
+                synced_height: Some(cursor),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(record.clone()),
+            ..PlatformWalletChangeSet::default()
+        };
+        self.persister.store(wallet_id, changeset).map_err(|e| {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to replace the host's DashPay backfill record; \
+                 the wallet was not published"
+            );
+            PlatformWalletError::from_store_failure(&*self.persister, e)
+        })?;
+        if !inline {
+            self.persister.flush(wallet_id).map_err(|e| {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "failed to commit the replaced DashPay backfill record; \
+                     the wallet was not published"
+                );
+                PlatformWalletError::from_flush_failure(e)
+            })?;
+        }
+        if let Some(cursor) = cursor {
+            durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
+        }
+        Ok(record)
+    }
+
+    /// Hand a newly published wallet the barrier state a removed wallet of
+    /// the same id left behind, so advances that wallet emitted — still
+    /// queued in, or already projected by, the shared adapter — are dropped
+    /// rather than stored against the new wallet's scan. Called inside the
+    /// critical section that publishes the wallet.
+    pub(super) fn inherit_rewind_barrier(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) {
+        let retired = self.durable_cursors.retired().remove(wallet_id);
+        if let (Some(retired), Some(info)) = (retired, wm.get_wallet_info_mut(wallet_id)) {
+            info.rewind_barrier.inherit(retired);
         }
     }
 
@@ -1188,6 +1353,8 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
         ));
         mgr.wallets.rcu(|wallets| {
             let mut next = std::collections::BTreeMap::clone(wallets);

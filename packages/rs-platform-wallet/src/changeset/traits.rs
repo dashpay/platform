@@ -271,6 +271,24 @@ pub trait PlatformWalletPersistence: Send + Sync {
         false
     }
 
+    /// Whether this backend persists the
+    /// [`DashPayBackfillRecord`](crate::changeset::DashPayBackfillRecord) a
+    /// changeset carries, and can replace one it holds.
+    ///
+    /// Durable backfill coverage also needs inline, atomic rounds (see
+    /// [`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage)).
+    /// A backend that answers `false` gets session-only coverage, and a
+    /// record it still hands back on load can only be invalidated through
+    /// [`store`](Self::store) — so a backend that cannot write the record
+    /// must fail such a store rather than acknowledge it.
+    ///
+    /// **Fail-closed:** the default is `false`. A backend that ignores the
+    /// record keeps the pre-record behaviour: the backfill re-runs on every
+    /// launch, slow but never lossy.
+    fn stores_dashpay_backfill(&self) -> bool {
+        false
+    }
+
     /// Compatibility summary for older invitation callers. It is true when the
     /// backend attests atomic changesets plus durably persisted invitation rows
     /// and asset-lock funding indices. This does not attest restart hydration;

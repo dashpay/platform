@@ -748,6 +748,23 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             );
         }
 
+        // The DashPay sync above ran its rescan sweep BEFORE the drain created
+        // the receival accounts, so it saw none of them. Run it once more now:
+        // with `synced_height == 0` (this sequence runs before SPV starts) the
+        // sweep marks every registered receival contact as covered by the
+        // coming full scan, instead of leaving it for the first post-scan
+        // sweep to rewind for. Not budgeted: a pass over in-memory state, no
+        // I/O.
+        if drained > 0 {
+            if let Err(e) = identity_wallet.dashpay().reconcile_dashpay_rescan().await {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "startup: post-drain DashPay rescan sweep failed"
+                );
+            }
+        }
+
         Ok(tally.into_outcome(started.elapsed()))
     }
 
@@ -1543,6 +1560,120 @@ mod tests {
         );
     }
 
+    /// The drain creates the receival accounts AFTER the DashPay sync has
+    /// already run its rescan sweep, so that sweep saw none of them. Startup
+    /// therefore runs the sweep once more once the drain has produced
+    /// something. This pins the consequence: the freshly drained contact is
+    /// marked covered while `synced_height` is still 0, so when the full
+    /// historical scan later advances past its funding height the recurring
+    /// sweep does not rewind mid-session to backfill a contact the scan had
+    /// already covered.
+    #[tokio::test]
+    async fn the_post_drain_sweep_marks_the_drained_contact_covered() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        // The sweep handles an ESTABLISHED contact, from its request pair's
+        // height. Give the queued contact both requests, ours and its reply
+        // (funded at 100), so the pair auto-establishes the relationship.
+        {
+            use crate::wallet::identity::ContactRequest;
+            use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+
+            let persister =
+                WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed identity");
+            managed
+                .add_sent_contact_request(
+                    ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                    &persister,
+                )
+                .expect("sent request persists");
+            managed
+                .add_incoming_contact_request(
+                    ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 100, 0),
+                    &persister,
+                )
+                .expect("incoming request persists");
+            assert!(
+                managed
+                    .dashpay()
+                    .established_contacts()
+                    .contains_key(&contact),
+                "the request pair establishes the contact the sweep handles"
+            );
+        }
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+        assert_eq!(outcome.contact_accounts_drained, 1);
+
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+            assert_eq!(
+                info.core_wallet.synced_height(),
+                0,
+                "bring-up runs before SPV starts; the sweep must not have rewound anything"
+            );
+            assert!(
+                info.identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed identity")
+                    .dashpay()
+                    .rescan_triggered
+                    .contains(&contact),
+                "the post-drain sweep must mark the drained contact covered by the coming scan"
+            );
+        }
+
+        // Advance the scan past the contact's funding height. The mark must
+        // hold: no rewind, because the full scan already covered it.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.core_wallet.update_synced_height(200);
+        }
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("sweep"),
+            None,
+            "a contact covered by the full historical scan must never trigger a rewind"
+        );
+        let wm = manager.wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .synced_height(),
+            200
+        );
+    }
+
     /// The gate is paid for only when there is something to protect. An empty
     /// queue means the drain would derive nothing, so no key material is
     /// resolved — which is what keeps this affordable on a warm launch.
@@ -1842,6 +1973,7 @@ mod tests {
                     identity_manager: crate::changeset::IdentityManagerStartState::default(),
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(crate::changeset::ClientStartState {

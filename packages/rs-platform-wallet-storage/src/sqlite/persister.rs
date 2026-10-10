@@ -1859,6 +1859,10 @@ fn load_one_wallet(
         // replay inert here, which is the behaviour this path had before the
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
+        // Not persisted by this backend yet: the backfill record rides the
+        // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
+        // pre-record behaviour here (a rewind per launch, never lossy).
+        dashpay_backfill: Default::default(),
     })
 }
 

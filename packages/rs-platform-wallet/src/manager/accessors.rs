@@ -836,13 +836,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// `synced_height` may regress here: that is safe because it is the
     /// filter-scan checkpoint, decoupled from the monotonic
-    /// `last_processed_height`, and every persisted sync cursor is
-    /// monotonic-max guarded (see `reconcile_dashpay_rescan`'s note), so a
-    /// transient rewind cannot corrupt state or persist a lower cursor.
+    /// `last_processed_height`, so a transient rewind cannot corrupt state.
     ///
     /// The rewound checkpoint lives only in the in-memory `WalletManager`; this
-    /// call does not persist it. If the process dies before the rescan finishes,
-    /// the host must issue this request again after restart. Requires SPV
+    /// call does not persist it — though the host will persist every height
+    /// the rescan then climbs through, so a relaunch resumes the climb from
+    /// wherever it got to rather than from the high-water. If the process dies
+    /// before the rescan finishes and the host wants it restarted from
+    /// `from_height`, it must issue this request again after restart. Requires SPV
     /// running for an immediate effect; otherwise it takes effect when SPV next
     /// starts in the same process and its filter loop first ticks.
     ///
@@ -865,6 +866,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return true;
         }
         info.core_wallet.update_synced_height(from_height);
+        // Advances the engine emitted before this reset must not be stored
+        // after it.
+        info.rewind_barrier.arm();
+        // Not persisted here, so remember it as owed: the next DashPay
+        // backfill record round carries it as that round's cursor, and no
+        // coverage reaches disk beside a durable cursor this reset retracted
+        // in memory only (dashpay/platform#4302 review).
+        let epoch = info.rewind_barrier.epoch();
+        info.dashpay_backfill.owe_cursor(from_height, epoch);
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
             from_height,
@@ -1946,6 +1956,8 @@ mod txo_inventory_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);

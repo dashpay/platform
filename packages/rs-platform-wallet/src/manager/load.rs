@@ -13,6 +13,10 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dpp::prelude::Identifier;
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
 
@@ -129,6 +133,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
+                dashpay_backfill,
             } = wallet_state;
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -222,14 +227,36 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            let platform_info = PlatformWalletInfo {
+            let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
+                dashpay_backfill,
+                rewind_barrier: Default::default(),
             };
+            // A restored outbound-account marker says the contact's external
+            // account was built from its current xpub, which suppresses the
+            // startup rebuild. It must not vouch for a pool the host kept
+            // across a rotation: the host replaces the account's xpub but may
+            // keep the old pool's addresses, and `send_payment` hands out a
+            // pooled address before deriving a new one. So any external pool
+            // holding an address its current xpub does not derive loses its
+            // contact's marker, and the first contact sweep rebuilds it from
+            // the current xpub, as every cold start did before the marker
+            // was persisted (dashpay/platform#4302 review).
+            let distrusted =
+                distrust_markers_of_foreign_external_pools(&wallet, &mut platform_info);
+            if distrusted > 0 {
+                tracing::warn!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    contacts = distrusted,
+                    "load: restored DashPay external pools hold addresses their current xpub \
+                     does not derive; their accounts will be rebuilt"
+                );
+            }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
             // chainlock dispatcher promotion-evicts a restored spender
@@ -237,6 +264,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
                 &platform_info,
             );
+
+            // The cursor the host just handed back is the durable one; it
+            // seeds the shared record of it as the wallet is published below.
+            let loaded_cursor = platform_info.core_wallet.metadata.synced_height;
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(
@@ -265,17 +296,77 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             //
             // The existence check and the insert share one write-lock scope
             // so a concurrent loader can't slip between them (TOCTOU).
+            //
+            // The durable cursor is seeded in that same scope, under the
+            // cursor lock taken first (its order: cursor lock, then manager).
+            // The insert makes the wallet visible to the scanner and the
+            // event adapter; seeding after it would let an adapter commit or
+            // a reconcile record a newer durable height first, and the seed
+            // would then overwrite it with the stale loaded one. An entry a
+            // removed same-id predecessor left behind is what the host holds
+            // now — a commit of its may have been accepted after the start
+            // state was read — so it wins over the loaded cursor, and a
+            // loaded cursor below it is owed to the host like any in-memory
+            // reset, in this wallet's inherited epoch, so no coverage is
+            // recorded beside the host's higher cursor without a reset
+            // (dashpay/platform#4302 review).
+            //
+            // The same predecessor can also have changed the host's DashPay
+            // backfill record after the start state was read: stored coverage
+            // for a receival account this snapshot does not hold, or
+            // invalidated coverage this snapshot still carries. So when an
+            // entry shows a same-id wallet was published in this process, the
+            // record this wallet carries replaces the host's before the wallet
+            // is published, paired with the loaded cursor when that is below
+            // the host's (`settle_published_backfill`). The existence check
+            // comes first, so a wallet still registered under this id is never
+            // overwritten, and every publisher holds the cursor lock, so none
+            // appears before the insert.
             {
-                let mut wm = self.wallet_manager.write().await;
-                if wm.get_wallet(&wallet_id).is_some() {
+                let mut durable_cursors = self.durable_cursors.lock().await;
+                if self
+                    .wallet_manager
+                    .read()
+                    .await
+                    .get_wallet(&wallet_id)
+                    .is_some()
+                {
                     continue 'load;
                 }
+                match self.settle_published_backfill(
+                    &mut durable_cursors,
+                    wallet_id,
+                    std::mem::take(&mut platform_info.dashpay_backfill),
+                    false,
+                    loaded_cursor,
+                    loaded_cursor,
+                ) {
+                    Ok(record) => platform_info.dashpay_backfill = record,
+                    Err(e) => {
+                        load_error = Some(e);
+                        break 'load;
+                    }
+                }
+                let mut wm = self.wallet_manager.write().await;
                 if let Err(e) = wm.insert_wallet(wallet, platform_info) {
                     load_error = Some(PlatformWalletError::WalletCreation(format!(
                         "Failed to register persisted wallet in WalletManager: {}",
                         e
                     )));
                     break 'load;
+                }
+                let host_cursor = durable_cursors
+                    .get(&wallet_id)
+                    .map_or(loaded_cursor, |entry| entry.height);
+                durable_cursors
+                    .entry(wallet_id)
+                    .or_insert(crate::changeset::DurableCursor::at(loaded_cursor));
+                self.inherit_rewind_barrier(&mut wm, &wallet_id);
+                if loaded_cursor < host_cursor {
+                    if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+                        let epoch = info.rewind_barrier.epoch();
+                        info.dashpay_backfill.owe_cursor(loaded_cursor, epoch);
+                    }
                 }
             }
             inserted_in_manager.push(wallet_id);
@@ -340,6 +431,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.lock_notify),
                 Arc::clone(&persister_dyn),
                 broadcaster,
+                Arc::clone(&self.sync_fault),
+                Arc::clone(&self.durable_cursors),
             );
 
             // Initialize the platform-address provider. If the snapshot
@@ -465,7 +558,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
+                    if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,
@@ -718,6 +811,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -784,6 +878,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -823,6 +918,7 @@ mod idempotent_load_tests {
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
+                dashpay_backfill: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
@@ -1281,6 +1377,74 @@ mod idempotent_load_tests {
             "and out of the inner manager, so a retry can re-insert it"
         );
     }
+}
+
+/// Clear the outbound-account marker of every established contact whose
+/// restored DashPay external pool holds an address the account's current
+/// xpub (on `wallet`) does not derive at that index, so the contact sweep
+/// rebuilds the account instead of trusting the pool. Returns how many
+/// markers were cleared.
+fn distrust_markers_of_foreign_external_pools(
+    wallet: &key_wallet::Wallet,
+    info: &mut PlatformWalletInfo,
+) -> usize {
+    let foreign: Vec<_> = info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .iter()
+        .filter(|(key, managed)| {
+            wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(key)
+                .is_some_and(|account| {
+                    managed
+                        .managed_account_type()
+                        .address_pools()
+                        .into_iter()
+                        .any(|pool| !pool_derives_from(pool, &account.account_xpub))
+                })
+        })
+        .map(|(key, _)| *key)
+        .collect();
+    let mut cleared = 0;
+    for key in foreign {
+        let owner = Identifier::from(key.user_identity_id);
+        let contact = Identifier::from(key.friend_identity_id);
+        let marker = info
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .and_then(|managed| managed.established_contact_mut(&contact))
+            .and_then(|established| established.external_account_reference.take());
+        if marker.is_some() {
+            cleared += 1;
+        }
+    }
+    cleared
+}
+
+/// Whether every address in `pool` is the one `xpub` derives at its index —
+/// checked by regenerating a scratch pool with the same layout.
+fn pool_derives_from(pool: &AddressPool, xpub: &ExtendedPubKey) -> bool {
+    let Some(highest) = pool.highest_generated else {
+        return true;
+    };
+    let mut derived = AddressPool::new_without_generation(
+        pool.base_path.clone(),
+        pool.pool_type,
+        pool.gap_limit,
+        pool.network,
+    );
+    if derived
+        .generate_addresses(highest.saturating_add(1), &KeySource::Public(*xpub), true)
+        .is_err()
+    {
+        return false;
+    }
+    pool.addresses
+        .iter()
+        .all(|(index, info)| derived.address_at_index(*index).as_ref() == Some(&info.address))
 }
 
 #[cfg(test)]

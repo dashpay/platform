@@ -54,13 +54,14 @@ use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
-    IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
-    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
-    WalletChangeSetFFI, WalletRestoreEntryFFI,
+    ContactRequestRemovalFFI, CoreAddressEntryFFI, DashPayBackfillCoveredContactFFI,
+    DpnsNameStateFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
+    IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI, OutPointFFI,
+    PaymentRestoreEntryFFI, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, SweepBatchFFI,
+    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
+    WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -205,11 +206,49 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// sync watermark with it, and the round is refused one layer up instead of
 /// advancing past a removal that never happened. Wiring the slot for every
 /// subclass would make "slot present" prove nothing.
+///
+/// The DashPay backfill slot is likewise wired only when the bridge
+/// OVERRIDES `onWalletChangesetHeader`, the callback that stores the cursor.
+/// `on_persist_wallet_changeset_fn` is always wired, so Rust's "cursor
+/// delivered" gate cannot tell a stored cursor from one handed to the
+/// inherited no-op header. A bridge that persists the backfill record but
+/// not the cursor would then commit coverage for a rewind while keeping the
+/// old cursor, and that coverage would suppress the recovery scan after a
+/// restart (dashpay/platform#4302 review). Without the slot the record is
+/// never delivered and every launch re-runs the backfill: slow, never lossy.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
-    let sweeps_overridden = bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept");
+    extension_for(BridgeOverrides {
+        sweeps: bridge_overrides(
+            env,
+            bridge,
+            "onWalletChangesetTransactionsSwept",
+            WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
+        ),
+        header: bridge_overrides(
+            env,
+            bridge,
+            "onWalletChangesetHeader",
+            WALLET_CHANGESET_HEADER_DESCRIPTOR,
+        ),
+    })
+}
+
+/// Which optional `NativePersistenceBridge` callbacks the concrete bridge
+/// supplies its own body for (see [`bridge_overrides`]).
+#[derive(Debug, Clone, Copy)]
+struct BridgeOverrides {
+    /// `onWalletChangesetTransactionsSwept`.
+    sweeps: bool,
+    /// `onWalletChangesetHeader`, which carries the scan cursor.
+    header: bool,
+}
+
+/// The extension slots wired for a bridge with `overrides` (see
+/// [`build_extension`]).
+fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
-        on_persist_wallet_changeset_sweeps_fn: if sweeps_overridden {
+        on_persist_wallet_changeset_sweeps_fn: if overrides.sweeps {
             Some(tramp_persist_wallet_changeset_sweeps)
         } else {
             None
@@ -217,20 +256,41 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
         on_persist_wallet_changeset_chain_lock_height_fn: Some(
             tramp_persist_wallet_changeset_chain_lock_height,
         ),
+        on_persist_wallet_dashpay_backfill_fn: if overrides.header {
+            Some(tramp_persist_wallet_dashpay_backfill)
+        } else {
+            None
+        },
         ..Default::default()
     }
 }
 
 /// Whether `bridge`'s concrete class — or any superclass strictly below
-/// `NativePersistenceBridge` — declares a method named `name`. A Kotlin
-/// `override fun` is a declared method of the overriding class, so walking
-/// `getDeclaredMethods()` up the hierarchy until the abstract bridge answers
-/// "did a subclass supply its own body". Any JNI failure counts as "not
-/// overridden" (the pending exception is cleared): the consequence is a
-/// slot left unwired, which Rust turns into a stripped capability — the
-/// safe direction, never a silently swallowed removal.
-fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
-    fn probe(env: &mut JNIEnv, bridge: &JObject, name: &str) -> Result<bool, jni::errors::Error> {
+/// `NativePersistenceBridge` — declares the method `name` with the JNI
+/// `descriptor` the trampoline calls. A Kotlin `override fun` is a declared
+/// method of the overriding class, so walking `getDeclaredMethods()` up the
+/// hierarchy until the abstract bridge answers "did a subclass supply its own
+/// body". The descriptor has to match, not just the name: an overload such
+/// as `onWalletChangesetHeader(walletId, height)` leaves the callback the
+/// trampoline invokes inherited, and must not count. Any JNI failure counts
+/// as "not overridden" (the pending exception is cleared): the consequence is
+/// a slot left unwired, which Rust turns into a stripped capability — the
+/// safe direction, never a silently swallowed write.
+fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str, descriptor: &str) -> bool {
+    fn class_name(env: &mut JNIEnv, class: &JObject) -> Result<String, jni::errors::Error> {
+        let name: JString = env
+            .call_method(class, "getName", "()Ljava/lang/String;", &[])?
+            .l()?
+            .into();
+        let name = env.get_string(&name)?.to_str().map(str::to_owned);
+        Ok(name.unwrap_or_default())
+    }
+    fn probe(
+        env: &mut JNIEnv,
+        bridge: &JObject,
+        name: &str,
+        descriptor: &str,
+    ) -> Result<bool, jni::errors::Error> {
         let base = env.find_class("org/dashfoundation/dashsdk/ffi/NativePersistenceBridge")?;
         let mut class = env.get_object_class(bridge)?;
         loop {
@@ -253,12 +313,28 @@ fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
                     .call_method(&method, "getName", "()Ljava/lang/String;", &[])?
                     .l()?
                     .into();
-                let matches = env
+                let same_name = env
                     .get_string(&method_name)?
                     .to_str()
                     .map(|s| s == name)
                     .unwrap_or(false);
-                if matches {
+                if !same_name {
+                    continue;
+                }
+                let params: JObjectArray = env
+                    .call_method(&method, "getParameterTypes", "()[Ljava/lang/Class;", &[])?
+                    .l()?
+                    .into();
+                let mut param_names = Vec::new();
+                for p in 0..env.get_array_length(&params)? {
+                    let param = env.get_object_array_element(&params, p)?;
+                    param_names.push(class_name(env, &param)?);
+                }
+                let return_type = env
+                    .call_method(&method, "getReturnType", "()Ljava/lang/Class;", &[])?
+                    .l()?;
+                let return_name = class_name(env, &return_type)?;
+                if method_descriptor(&param_names, &return_name) == descriptor {
                     return Ok(true);
                 }
             }
@@ -271,13 +347,41 @@ fn bridge_overrides(env: &mut JNIEnv, bridge: &JObject, name: &str) -> bool {
             class = superclass.into();
         }
     }
-    match probe(env, bridge, name) {
+    match probe(env, bridge, name, descriptor) {
         Ok(overridden) => overridden,
         Err(_) => {
             let _ = env.exception_clear();
             false
         }
     }
+}
+
+/// The JNI descriptor of a method whose parameter and return types
+/// `Class.getName()` reports as `params` and `return_type` — `int`, `[B`,
+/// `java.lang.String`, `[Ljava.lang.String;` and so on.
+fn method_descriptor(params: &[String], return_type: &str) -> String {
+    fn type_descriptor(name: &str) -> String {
+        match name {
+            "boolean" => "Z".to_owned(),
+            "byte" => "B".to_owned(),
+            "char" => "C".to_owned(),
+            "short" => "S".to_owned(),
+            "int" => "I".to_owned(),
+            "long" => "J".to_owned(),
+            "float" => "F".to_owned(),
+            "double" => "D".to_owned(),
+            "void" => "V".to_owned(),
+            array if array.starts_with('[') => array.replace('.', "/"),
+            class => format!("L{};", class.replace('.', "/")),
+        }
+    }
+    let mut descriptor = String::from("(");
+    for param in params {
+        descriptor.push_str(&type_descriptor(param));
+    }
+    descriptor.push(')');
+    descriptor.push_str(&type_descriptor(return_type));
+    descriptor
 }
 
 /// `release_fn` for the persistence vtable: frees the boxed
@@ -690,7 +794,7 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
             .call_method(
                 bridge,
                 "onWalletChangesetHeader",
-                "([BZIZJJJJ[B)I",
+                WALLET_CHANGESET_HEADER_DESCRIPTOR,
                 &[
                     (&wid).into(),
                     JValue::Bool(has_synced as u8),
@@ -776,6 +880,11 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
 /// header's `(hasSyncedHeight, syncedHeight)`, not a sentinel.
 const WALLET_CHANGESET_SWEEPS_DESCRIPTOR: &str = "([B[BI[B[BIZI)I";
 
+/// `onWalletChangesetHeader`'s descriptor, shared by the `call_method` site,
+/// the descriptor table and the override probe that gates the DashPay
+/// backfill slot on it, so the three cannot drift apart.
+const WALLET_CHANGESET_HEADER_DESCRIPTOR: &str = "([BZIZJJJJ[B)I";
+
 unsafe fn persist_changeset_sweep_batch(
     env: &mut JNIEnv,
     bridge: &JObject,
@@ -845,6 +954,63 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
             "onWalletChangesetChainLockHeight",
             "([BI)I",
             &[(&wid).into(), JValue::Int(jint_height(chain_lock_height)?)],
+        )?
+        .i()
+    })
+}
+
+/// Wire size of one covered contact in the flat `covered` array handed to
+/// `onWalletChangesetDashPayBackfill` and read back from
+/// `WalletRestoreData.dashPayBackfillCovered`: owner (32) ‖ contact (32) ‖
+/// `accountIndex` (u32) ‖ `coveredFrom` (u32), both little-endian. The same
+/// layout as
+/// `DashPayBackfillRecord::covered_bytes`, so the handler can store the array
+/// as one opaque blob and hand it straight back at load.
+const DASHPAY_BACKFILL_COVERED_ENTRY_LEN: usize = 32 + 32 + 4 + 4;
+
+/// Descriptor of `NativePersistenceBridge.onWalletChangesetDashPayBackfill`:
+/// `(walletId, floor, rewoundFrom, covered, coveredCount)`. The cover set is
+/// shipped as ONE flat `byte[]` of `72·N` bytes plus a count, the same packing
+/// the sweep slot uses for its txids, rather than one JVM allocation per
+/// contact — a contact-heavy wallet records hundreds.
+const WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR: &str = "([BII[BI)I";
+
+/// Deliver the wallet's DashPay backfill record (see
+/// `PersistWalletDashPayBackfillFn`) — the durable half of the coreHeight
+/// rescan guard (dashpay/platform#4302). Whole-record semantics: the handler
+/// replaces what it holds on the wallet row.
+unsafe extern "C" fn tramp_persist_wallet_dashpay_backfill(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    floor: u32,
+    rewound_from: u32,
+    covered: *const DashPayBackfillCoveredContactFFI,
+    covered_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let entries = slice_or_empty(covered, covered_count);
+        let mut packed = Vec::with_capacity(entries.len() * DASHPAY_BACKFILL_COVERED_ENTRY_LEN);
+        for entry in entries {
+            packed.extend_from_slice(&entry.owner_identity_id);
+            packed.extend_from_slice(&entry.contact_identity_id);
+            packed.extend_from_slice(&entry.account_index.to_le_bytes());
+            packed.extend_from_slice(&entry.covered_from.to_le_bytes());
+        }
+        let packed_arr = env.byte_array_from_slice(&packed)?;
+        let count = i32::try_from(entries.len())
+            .map_err(|_| jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments))?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetDashPayBackfill",
+            WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
+            &[
+                (&wid).into(),
+                JValue::Int(jint_height(floor)?),
+                JValue::Int(jint_height(rewound_from)?),
+                (&packed_arr).into(),
+                JValue::Int(count),
+            ],
         )?
         .i()
     })
@@ -1500,7 +1666,7 @@ unsafe fn persist_contact_upsert(
     env.call_method(
         bridge,
         "onPersistContactUpsert",
-        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
+        CONTACT_UPSERT_DESCRIPTOR,
         &[
             wid.into(),
             (&owner).into(),
@@ -1520,10 +1686,24 @@ unsafe fn persist_contact_upsert(
             JValue::Bool(c.is_hidden as u8),
             (&contact_account_label).into(),
             (&accepted).into(),
+            JValue::Bool(c.has_external_account_reference as u8),
+            JValue::Int(if c.has_external_account_reference {
+                c.external_account_reference as i32
+            } else {
+                0
+            }),
         ],
     )?
     .i()
 }
+
+/// Descriptor of `NativePersistenceBridge.onPersistContactUpsert`. The
+/// trailing `(Z, I)` pair is `EstablishedContact::external_account_reference`
+/// as `(hasExternalAccountReference, externalAccountReference)` — the marker
+/// whose loss across restart rebuilt every outbound contact account on every
+/// launch (dashpay/platform#4302).
+const CONTACT_UPSERT_DESCRIPTOR: &str =
+    "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I";
 
 /// Copy `len` `u32`s from `ptr` (or 0 when null) into a JVM `int[]`
 /// (bit-pattern cast — DIP-15 account indices never exceed `i32::MAX`
@@ -1973,6 +2153,11 @@ struct WalletRestoreStaged {
     /// minted null / 0 at seal (no chainlock persisted). A single flat
     /// buffer, freed with one `free_raw_bytes`.
     last_applied_chain_lock: Vec<u8>,
+    /// The DashPay backfill record's cover set. `Copy` POD like the
+    /// platform-address balances: minted in one shot at seal, freed with a
+    /// single `free_raw_slice`. The record's scalars and presence flag ride
+    /// on `entry` directly.
+    dashpay_backfill_covered: Vec<DashPayBackfillCoveredContactFFI>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -2169,6 +2354,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  unresolved_asset_lock_tx_records,
                  provider_special_txs,
                  last_applied_chain_lock,
+                 dashpay_backfill_covered,
              }| {
                 // Flat POD array — no nested owned buffers, so the whole
                 // `Vec<AddressBalanceEntryFFI>` mints in one shot and
@@ -2290,6 +2476,13 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     entry.last_applied_chain_lock_bytes,
                     entry.last_applied_chain_lock_bytes_len,
                 ) = vec_into_raw(last_applied_chain_lock);
+
+                // DashPay backfill cover set — flat POD array, one mint, one
+                // `free_raw_slice` (see `tramp_load_wallet_list_free`).
+                (
+                    entry.dashpay_backfill_covered,
+                    entry.dashpay_backfill_covered_count,
+                ) = vec_into_raw(dashpay_backfill_covered);
 
                 // Identities: mint each identity's nested key / contact /
                 // ignored-sender arrays first, then the identity array
@@ -2572,6 +2765,18 @@ fn build_wallet_restore_entry(
     // fallback can fire at launch. Empty → null / 0 at seal.
     let last_applied_chain_lock = read_bytes_field_vec(env, holder, "lastAppliedChainLockBytes")?;
 
+    // Persisted DashPay backfill record (dashpay/platform#4302) — the
+    // durable half of the coreHeight rescan guard. A blob that is not a
+    // whole number of entries is read as NO record rather than a shorter
+    // cover set: a contact missing from the set costs one redundant rewind,
+    // a contact wrongly present is never backfilled again.
+    let (
+        has_dashpay_backfill,
+        dashpay_backfill_floor,
+        dashpay_backfill_rewound_from,
+        dashpay_backfill_covered,
+    ) = build_dashpay_backfill_restore(env, holder)?;
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -2605,6 +2810,11 @@ fn build_wallet_restore_entry(
         last_applied_chain_lock_bytes_len: 0,
         provider_special_txs: ptr::null(),
         provider_special_txs_count: 0,
+        has_dashpay_backfill,
+        dashpay_backfill_floor,
+        dashpay_backfill_rewound_from,
+        dashpay_backfill_covered: ptr::null(),
+        dashpay_backfill_covered_count: 0,
     };
     Ok(WalletRestoreStaged {
         entry,
@@ -2617,7 +2827,63 @@ fn build_wallet_restore_entry(
         unresolved_asset_lock_tx_records,
         provider_special_txs,
         last_applied_chain_lock,
+        dashpay_backfill_covered,
     })
+}
+
+/// Read the Kotlin `WalletRestoreData.dashPayBackfill*` fields: the presence
+/// flag, the two scalars, and the cover set unpacked from its flat
+/// `72·N`-byte blob (see [`DASHPAY_BACKFILL_COVERED_ENTRY_LEN`]) into staged
+/// [`DashPayBackfillCoveredContactFFI`] rows. A blob whose length is not a
+/// whole number of entries yields `(false, 0, 0, [])` — no record — and a
+/// `warn`, never a partial cover set.
+fn build_dashpay_backfill_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<(bool, u32, u32, Vec<DashPayBackfillCoveredContactFFI>), jni::errors::Error> {
+    let present = env.get_field(holder, "hasDashPayBackfill", "Z")?.z()?;
+    if !present {
+        return Ok((false, 0, 0, Vec::new()));
+    }
+    let floor = env.get_field(holder, "dashPayBackfillFloor", "I")?.i()?;
+    let rewound_from = env
+        .get_field(holder, "dashPayBackfillRewoundFrom", "I")?
+        .i()?;
+    let blob = read_bytes_field_vec(env, holder, "dashPayBackfillCovered")?;
+    if floor < 0
+        || rewound_from < 0
+        || !blob
+            .len()
+            .is_multiple_of(DASHPAY_BACKFILL_COVERED_ENTRY_LEN)
+    {
+        log::warn!(
+            "load: malformed DashPay backfill record on the wallet row (floor={floor}, \
+             rewound_from={rewound_from}, blob_len={}); reading as no record",
+            blob.len()
+        );
+        return Ok((false, 0, 0, Vec::new()));
+    }
+    let (chunks, _) = blob.as_chunks::<DASHPAY_BACKFILL_COVERED_ENTRY_LEN>();
+    let covered = chunks
+        .iter()
+        .map(|chunk| {
+            let mut owner_identity_id = [0u8; 32];
+            let mut contact_identity_id = [0u8; 32];
+            let mut account_index = [0u8; 4];
+            let mut height = [0u8; 4];
+            owner_identity_id.copy_from_slice(&chunk[..32]);
+            contact_identity_id.copy_from_slice(&chunk[32..64]);
+            account_index.copy_from_slice(&chunk[64..68]);
+            height.copy_from_slice(&chunk[68..72]);
+            DashPayBackfillCoveredContactFFI {
+                owner_identity_id,
+                contact_identity_id,
+                account_index: u32::from_le_bytes(account_index),
+                covered_from: u32::from_le_bytes(height),
+            }
+        })
+        .collect();
+    Ok((true, floor as u32, rewound_from as u32, covered))
 }
 
 /// Read the Kotlin `WalletRestoreData.utxos` array into staged
@@ -3323,6 +3589,15 @@ fn build_contact_restore(
     let is_hidden = env.get_field(holder, "isHidden", "Z")?.z()?;
     let contact_account_label = read_opt_cstring_field(env, holder, "contactAccountLabel")?;
     let accepted_accounts = read_u32_array_field(env, holder, "acceptedAccounts")?;
+    let has_external_account_reference = env
+        .get_field(holder, "hasExternalAccountReference", "Z")?
+        .z()?;
+    let external_account_reference = if has_external_account_reference {
+        env.get_field(holder, "externalAccountReference", "I")?
+            .i()? as u32
+    } else {
+        0
+    };
 
     let row = ContactRequestFFI {
         owner_id,
@@ -3346,6 +3621,8 @@ fn build_contact_restore(
         contact_account_label: ptr::null(),
         accepted_accounts: ptr::null(),
         accepted_accounts_len: 0,
+        has_external_account_reference,
+        external_account_reference,
     };
     Ok(ContactRestoreStaged {
         row,
@@ -3612,6 +3889,9 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                 e.last_applied_chain_lock_bytes,
                 e.last_applied_chain_lock_bytes_len,
             );
+
+            // DashPay backfill cover set — flat POD slice, one mint at seal.
+            free_raw_slice(e.dashpay_backfill_covered, e.dashpay_backfill_covered_count);
 
             // identities + nested key / contact / ignored-sender /
             // payment / contact-profile arrays (each key's `data` buffer +
@@ -4521,7 +4801,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onPersistAccountAddressPoolEntry",
         "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
     ),
-    ("onWalletChangesetHeader", "([BZIZJJJJ[B)I"),
+    (
+        "onWalletChangesetHeader",
+        WALLET_CHANGESET_HEADER_DESCRIPTOR,
+    ),
     ("onWalletChangesetAccountBegin", "([BIBBII[B[BIZIZ)I"),
     ("onWalletChangesetAccountEnd", "([BI)I"),
     (
@@ -4549,6 +4832,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     // `tramp_persist_wallet_changeset_chain_lock_height`.
     ("onWalletChangesetChainLockHeight", "([BI)I"),
     (
+        "onWalletChangesetDashPayBackfill",
+        WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
+    ),
+    (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
          Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
@@ -4564,10 +4851,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ("onPersistTokenBalanceUpsert", "([B[B[BJ)I"),
     ("onPersistTokenBalanceRemoval", "([B[B[B)I"),
     ("onPersistContactIgnored", "([B[B[BZ)I"),
-    (
-        "onPersistContactUpsert",
-        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
-    ),
+    ("onPersistContactUpsert", CONTACT_UPSERT_DESCRIPTOR),
     ("onPersistContactRemovalSent", "([B[B[B)I"),
     ("onPersistContactRemovalIncoming", "([B[B[B)I"),
     ("onPersistAssetLockUpsert", "([B[B[BIBIJB[B)I"),
@@ -4719,6 +5003,65 @@ mod tests {
     /// A height past `i32::MAX` must refuse the call, never wrap into a
     /// negative `Int` the handler would read as absent or as a bogus
     /// collection boundary.
+    /// The override probe compares the reflected descriptor, not the name: an
+    /// overload of `onWalletChangesetHeader` leaves the callback the
+    /// trampoline invokes inherited, so it must not wire the backfill slot.
+    #[test]
+    fn the_override_probe_matches_the_called_descriptor_not_an_overload() {
+        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        let header = names(&[
+            "[B", "boolean", "int", "boolean", "long", "long", "long", "long", "[B",
+        ]);
+        assert_eq!(
+            method_descriptor(&header, "int"),
+            WALLET_CHANGESET_HEADER_DESCRIPTOR,
+            "the real override resolves to the descriptor the trampoline calls"
+        );
+        assert_ne!(
+            method_descriptor(&names(&["[B", "int"]), "int"),
+            WALLET_CHANGESET_HEADER_DESCRIPTOR,
+            "an overload is not the callback"
+        );
+        let sweeps = names(&["[B", "[B", "int", "[B", "[B", "int", "boolean", "int"]);
+        assert_eq!(
+            method_descriptor(&sweeps, "int"),
+            WALLET_CHANGESET_SWEEPS_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(&names(&["java.lang.String", "[Ljava.lang.String;"]), "void"),
+            "(Ljava/lang/String;[Ljava/lang/String;)V"
+        );
+    }
+
+    /// A bridge that inherits the no-op `onWalletChangesetHeader` stores no
+    /// cursor, so it must not be handed the DashPay backfill record either:
+    /// coverage committed beside a cursor that was never lowered would
+    /// suppress the recovery scan after a restart. Overriding the header is
+    /// what wires the slot; the sweep slot keeps its own probe.
+    #[test]
+    fn the_backfill_slot_is_wired_only_for_a_bridge_that_stores_the_cursor() {
+        let inherited_header = extension_for(BridgeOverrides {
+            sweeps: true,
+            header: false,
+        });
+        assert!(
+            inherited_header
+                .on_persist_wallet_dashpay_backfill_fn
+                .is_none(),
+            "an inherited header means the record is never delivered"
+        );
+        assert!(inherited_header
+            .on_persist_wallet_changeset_sweeps_fn
+            .is_some());
+
+        let own_header = extension_for(BridgeOverrides {
+            sweeps: false,
+            header: true,
+        });
+        assert!(own_header.on_persist_wallet_dashpay_backfill_fn.is_some());
+        assert!(own_header.on_persist_wallet_changeset_sweeps_fn.is_none());
+    }
+
     #[test]
     fn a_height_past_i32_max_is_refused_rather_than_wrapped() {
         assert_eq!(jint_height(0).unwrap(), 0);
