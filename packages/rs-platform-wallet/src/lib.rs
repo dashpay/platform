@@ -54,7 +54,7 @@ pub use manager::platform_address_sync::{
     DEFAULT_SYNC_INTERVAL_SECS,
 };
 pub use manager::PlatformWalletManager;
-pub use spv::SpvRuntime;
+pub use spv::{SpvQuorumPublicKey, SpvRuntime};
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
