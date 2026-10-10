@@ -1982,9 +1982,9 @@ class PlatformWalletPersistenceHandler(
      *
      * Watch-only DIP-15 contact rows are excluded via [foreignAccountIds].
      * Production changeset writes leave txos.accountId null and route
-     * ownership through coreAddressId -> core_addresses.accountId, so the
-     * owner resolves BOTH paths — an accountId-only check silently
-     * classifies every contact row.
+     * ownership through the address projection, so the owner resolves
+     * BOTH paths ([resolveTxoOwnerAccount]) — an accountId-only check
+     * silently classifies every contact row.
      */
     private suspend fun readUnspentPage(
         walletId: ByteArray,
@@ -1997,10 +1997,11 @@ class PlatformWalletPersistenceHandler(
         val queries = ArrayList<OutpointQuery>(fetched.size)
         var unresolvedAccount = 0
         var skippedForeign = 0
+        val accountByAddress = HashMap<String, AccountEntity?>()
         for (row in fetched) {
             val txid = row.txid
             if (txid == null || txid.size != 32 || row.outpoint.size != OUTPOINT_BYTES) continue
-            val owner = reconcileOwnerAccount(row)
+            val owner = resolveTxoOwnerAccount(row, accountByAddress)
             if (owner == null) {
                 unresolvedAccount++
                 continue
@@ -2038,13 +2039,28 @@ class PlatformWalletPersistenceHandler(
         )
     }
 
-    /** Owning Room account of a store row: the explicit link first, then
-     *  the address projection production writes actually use. */
-    private suspend fun reconcileOwnerAccount(row: TxoEntity): AccountEntity? {
-        row.accountId?.let { return database.accountDao().getById(it) }
-        val addr = row.coreAddressId ?: return null
-        val ownerId = database.coreAddressDao().getByAddress(addr)?.accountId ?: return null
-        return database.accountDao().getById(ownerId)
+    /**
+     * Owning Room account of a `txos` row — the one resolution the restore
+     * loader ([buildUtxoRestoreData]) and the reconcile ([readUnspentPage])
+     * share, so every row the loader hands back to Rust is a row the
+     * reconcile can ask the engine about. The explicit link first, then the
+     * address projection production writes use, keyed by the row's own
+     * address: [upsertUtxoRow] leaves `coreAddressId` null when the address
+     * row is not there yet, and the address-pool callback that inserts it
+     * later does not backfill the TXO, so `coreAddressId` alone misses rows
+     * the loader restores. [accountByAddress] memoises the address leg
+     * across one walk (a wallet's coins cluster on few addresses).
+     */
+    private suspend fun resolveTxoOwnerAccount(
+        txo: TxoEntity,
+        accountByAddress: MutableMap<String, AccountEntity?>,
+    ): AccountEntity? {
+        txo.accountId?.let { id -> database.accountDao().getById(id)?.let { return it } }
+        val address = txo.coreAddressId ?: txo.address.takeIf { it.isNotEmpty() } ?: return null
+        return accountByAddress.getOrPut(address) {
+            database.coreAddressDao().getByAddress(address)
+                ?.accountId?.let { database.accountDao().getById(it) }
+        }
     }
 
     /**
@@ -4194,11 +4210,7 @@ class PlatformWalletPersistenceHandler(
                     continue
                 }
             }
-            val account = txo.accountId?.let { database.accountDao().getById(it) }
-                ?: accountByAddress.getOrPut(txo.address) {
-                    database.coreAddressDao().getByAddress(txo.address)
-                        ?.accountId?.let { database.accountDao().getById(it) }
-                }
+            val account = resolveTxoOwnerAccount(txo, accountByAddress)
             if (account == null) {
                 Log.w(TAG, "load: skipping UTXO with no resolvable account (address=${txo.address})")
                 continue

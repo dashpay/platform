@@ -7172,6 +7172,51 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("an unasked row is not counted as engine-unknown", 0, report.unknown)
     }
 
+    @Test
+    fun aRowWhoseAddressArrivedAfterItResolvesItsOwnerTheWayTheRestoreDoes() = runTest {
+        // The changeset write links `coreAddressId` only when the address
+        // row already exists, and the address-pool callback that inserts it
+        // later does not backfill the TXO. The restore loader still routes
+        // such a row to its account through the row's own address, so it is
+        // handed back to the engine at every launch; the reconcile must
+        // resolve it the same way, or a coin the engine proves spent is
+        // counted unresolved on every run and restored forever.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        val txid = ByteArray(32) { 0x74 }
+        seedUnspentTxo(txid)
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = reconcileAddress,
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+        val stored = db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!
+        assertNull("the address row arrived after the TXO and nothing backfilled it", stored.coreAddressId)
+        assertNull(stored.accountId)
+        assertEquals("the restore routes the row through its own address", 1, restoredUtxoCount())
+        val engine = FakeEngine(inventoryJson(spent = listOf(txid to 0)))
+
+        val report = handler.reconcileWith(engine)
+
+        assertTrue(report.completed)
+        assertEquals("the owner resolves through the row's address", 0, report.unresolvedAccount)
+        assertEquals(1, report.storeRows)
+        assertEquals(1, report.flipped)
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent)
+        assertEquals("the flipped coin leaves the restore set", 0, restoredUtxoCount())
+        // Asked under the account the restore would have routed it to.
+        val query = engine.queries.single()
+        assertEquals(account.accountType, query["typeTag"]!!.jsonPrimitive.int)
+        assertEquals(account.accountIndex, query["index"]!!.jsonPrimitive.int)
+    }
+
     // ── 3. A consistent store stays untouched ─────────────────────────
 
     @Test
