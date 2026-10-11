@@ -113,6 +113,17 @@ internal object QueriesNative {
         ownerId: ByteArray,
     ): String?
 
+    /**
+     * [contractJson] (a contract as [dataContractFetchJson] returns it) with
+     * its property type shorthands (protocol version 14) written in full:
+     * `"type": "identifier"` and `"type": "bytes", "size": n` become the byte
+     * array they stand for, in every document type schema and in
+     * `schemaDefs`; everything else comes back as given. Takes no SDK handle;
+     * no network call. Throws on error (null input, text that is not a JSON
+     * object).
+     */
+    external fun dataContractJsonExpandPropertyTypeShorthands(contractJson: String): String?
+
     /** JSON array of documents. whereJson/orderByJson may be null. */
     external fun documentSearch(
         sdk: Long,

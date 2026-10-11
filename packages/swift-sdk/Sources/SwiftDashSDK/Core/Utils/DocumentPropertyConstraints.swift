@@ -285,6 +285,9 @@ public struct PropertyConstraintRead: Hashable, Sendable {
         /// By its elements, which a `contains` looks among: a typed array
         /// property.
         case elements
+        /// By its bytes, in a `byteAt` operand or a `startsWith` or `endsWith`
+        /// of byte arrays: a byte array property.
+        case bytes
         /// A kind this build does not know, by its name.
         case other(String)
 
@@ -297,6 +300,7 @@ public struct PropertyConstraintRead: Hashable, Sendable {
             case "length": self = .length
             case "count": self = .count
             case "elements": self = .elements
+            case "bytes": self = .bytes
             default: self = .other(name)
             }
         }
@@ -311,6 +315,7 @@ public struct PropertyConstraintRead: Hashable, Sendable {
             case .length: return "length"
             case .count: return "count"
             case .elements: return "elements"
+            case .bytes: return "bytes"
             case let .other(name): return name
             }
         }

@@ -10,7 +10,7 @@ use crate::data_contract::document_type::class_methods::try_from_schema::{
 };
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentType,
+    DocumentType, ReferenceHolder,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
@@ -242,7 +242,13 @@ impl DocumentType {
                     if kind != referenced.document_reference_kind() {
                         continue;
                     }
-                    if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
+                    let reference_property = match holder {
+                        ReferenceHolder::Property(path) => Some(path),
+                        ReferenceHolder::Owner | ReferenceHolder::Creator => None,
+                    };
+                    if let Some(reason) =
+                        lookup.referenced_side_error(declaring, reference_property, referenced)
+                    {
                         let at = if leaf_path.is_empty() {
                             String::new()
                         } else {

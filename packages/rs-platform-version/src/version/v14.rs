@@ -1606,17 +1606,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
 ///     `sys.hash` namespace beside the string transformations of
 ///     `generatedFrom`, which refuses it. A string or byte array property may
-///     now carry a `refersTo` whose function reads its value
-///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
-///     the property keeps its type. The document such a key finds is a
+///     now carry a `refersTo` whose `findBy` reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`):
+///     through a function, or as `"."`, which fills an index property holding
+///     the same kind of value (`DocumentReferenceLookup::referenced_side_error`,
+///     told the property carrying the reference) and is judged as an
+///     identifier's value is, on a create and on the replaces that re-validate
+///     it (`key_values` and the write-time fetch read `"."` as a `Value`; a
+///     refusal carries an all-zero entity id, the value being no id, and a
+///     `deletableDocument` one may not sit under an `immutable` property). The
+///     document an index finds must hold each string or byte array part of the
+///     key exactly, since the key encoding reads the empty string as `"\0"` and
+///     an empty byte array as no value, and a key part no index entry can hold
+///     (longer than 255 bytes) finds nothing without a read, for a property
+///     source of those kinds too (`fetch_document_through_lookup`); the
+///     property keeps its type. The document a function's key finds is a
 ///     commitment made earlier, so the reference is judged when the document is
 ///     created only: its params may be transient or optional, every stored value
 ///     it reads must be fixed once written, and a replace leaves it alone.
 ///     Document create structure validation 1 refuses a create missing a param,
 ///     repeating a key on the way to one, or whose variable-length param holds
 ///     the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a `findBy`
-///     function the reference may declare `minimumAgeBlocks`, judged by
+///     (`DocumentReferencePreimageInvalidError`, 10423). A reference judged
+///     on the create alone (`DocumentReferenceLookup::is_checked_on_create_only`:
+///     beside a `findBy` function, or any `findBy` on a document type whose
+///     documents are never replaced, `documentsMutable: false`, since a replace
+///     is the one write that judges a reference again), and not beside
+///     `inList`, may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and `consume`, which deletes the found document with the create
@@ -1625,7 +1641,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
 ///     beside the document fetch. Such a `deletableDocument` reference, judged
 ///     on the create alone, may sit on an `immutable` property, which
-///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     `validate_no_immutable_deletable_element_references` otherwise refuses,
+///     and its `findBy` may read `$ownerId` on a transferable or tradeable
+///     referring type (item 32 refuses that otherwise): a transfer or a
+///     purchase moves the writer part of its key, but no later write judges it.
 ///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
 ///     writer's own, and `consume` requires it, into the declaring contract,
 ///     on a type whose owners may delete, that keeps no history, declares no
@@ -1640,7 +1659,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     transient; on a mutable type such a reference may not be an `anyOf`
 ///     operand; and no property a function reads may be listed under
 ///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
-///     `deletableDocument` target through a function, and the `findBy` of an
+///     `deletableDocument` target judged on the create alone, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
 ///     a parent byte for byte; the DPNS contract and its create trigger are
@@ -2052,8 +2071,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
 ///     of its complete fee) uses versioned allowances of 400 effective bytes
 ///     per action and 500 flat bytes, covering the complete execution-event
-///     admission estimate. Actual fees remain metered. Nullifiers revealed by
-///     shields before this version are not added.
+///     admission estimate. Actual fees remain metered. Before the first PV14
+///     candidate's transitions, the activation transaction adds the rho of
+///     every retained CREDIT note to the permanent nullifier set, including
+///     historical shielding outputs. Existing entries and their flags remain
+///     unchanged. The protocol upgrade ladder runs this one-time migration
+///     when crossing into PV14, with 2048 notes per page and 2048 inserts per
+///     batch; token pools are not backfilled.
 ///
 /// 77. **Owner identities for shared and extended-address masternodes**: from
 ///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
@@ -2227,6 +2251,79 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Full property schema validation and `deleteConstraints` are not added to restore.
 ///     Earlier versions are unchanged: contract moderation is inactive before version 14.
 ///
+/// 88. **Rules that read the bytes of a byte array**: the `propertyConstraints`
+///     grammar (item 39; meta-schema v3 and `parse_property_constraints` 0, in
+///     place) gains a `byteAt` integer operand, `{ "byteAt": [path, index] }`,
+///     the byte (0 to 255) at a literal index from 0 to 65535 of a byte array
+///     property, 0 when the array does not hold it or the document leaves it
+///     out, one node; and `startsWith` and `endsWith` test byte arrays when a
+///     side names a byte array property, the other a `{ "const": hex }` or
+///     another byte array property, three nodes, not holding for an array left
+///     out (`PropertyConstraint::BytesAffix`). Parser generation 3 refuses a read
+///     of anything but a stored byte array property, an index at or past its
+///     `maxItems`, a constant longer than it, a constant that is not an even
+///     number of hex digits, a default for a byte array, and an `equal`,
+///     `notEqual`, `in` or `contains` of one (10231). `immutable` conditions,
+///     `retractedWhen` and `deleteConstraints` read bytes the same way.
+///     Inert before this version: the earlier meta-schemas refuse
+///     `propertyConstraints` and their parsers ignore it.
+///
+/// 89. **Non-transferable tokens**: a format 1 token configuration
+///     (`TokenConfigurationV1`) gains `transferable`, `true` when absent and
+///     fixed at creation (no `TokenConfigUpdate` item). With `false` the batch
+///     advanced structure validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses every `TokenTransfer` from the contract the action carries
+///     (`TokenNotTransferableError`, 40726, paid, and in check tx); the
+///     document type parser, in place, refuses a cost in the contract's own
+///     such token that pays the contract owner instead of burning it
+///     (`NonTransferableTokenPaymentMustBurnError`, 10280); data contract
+///     create and update state validation 0, in place, refuse a cost in
+///     another contract's such token (40726), reusing the read that checks the
+///     token exists, external burns being refused already (10261);
+///     document-base state validation 2 refuses a payment to the contract
+///     owner in the contract's own such token again (40726), from the
+///     configuration in hand; `validate_shielded_pool_rules` refuses it with a
+///     shielded pool (`NonTransferableTokenShieldedPoolError`, 10279, unpaid
+///     at the pre-activation gate); and the pool threshold
+///     `TokenConfigUpdate` items are refused on a format 1 configuration
+///     without a pool. Mints, claims, direct purchases, burns, freezes and
+///     burn payments for the contract's own documents are unchanged.
+///     Inert before this version: only format 1 can be non-transferable, and
+///     the pre-activation gate refuses that format on every earlier version.
+///
+/// 91. **Property type shorthands, `identifier` and `bytes`**: a property
+///     schema may write `"type": "identifier"` for `"type": "array",
+///     "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType":
+///     "application/x.dash.dpp.identifier"`, and `"type": "bytes", "size": n`
+///     for `"type": "array", "byteArray": true, "minItems": n, "maxItems": n`,
+///     on a property at any level, the `items` of a typed array and a
+///     `schemaDefs` definition. `DocumentType::expand_property_type_shorthands`
+///     0 (`expand_property_type_shorthands`, new in `CONTRACT_VERSIONS_V6`,
+///     `None` in the earlier tables) rewrites them into the long form before
+///     anything reads the schema: parser generation 3, in place, expands the
+///     document type schema and the contract's `$defs` before the meta-schema
+///     (v3, unchanged), the core parse with its `$ref` walks, the validator it
+///     compiles and every later stage; `validate_document` 1, in place,
+///     expands before compiling a stored contract's validator;
+///     `validate_schema_compatibility` 1, in place, expands the old and the
+///     new document type schemas and `$defs` before diffing, so rewriting a
+///     property or a definition between the two spellings is no change; and
+///     the check_tx schema-depth pre-check walks the rewritten schema, as the
+///     block's check does. The document type, the stored contract and the
+///     transition keep the schema as sent. Refused (10231) under full
+///     validation: `byteArray`, `minItems`, `maxItems` or `contentMediaType`
+///     beside a shorthand, `size` on `identifier`, and `bytes` without a
+///     `size` from 1 to `SYSTEM_LIMITS_V4.max_field_value_size` (5120).
+///     Without full validation nothing is refused and a shorthand that can not
+///     be rewritten is left as sent, so a contract stored before this version
+///     keeps loading even where it holds one no reader looks at (the `$defs`
+///     of a contract without document types, which are left unexpanded, or an
+///     entry a repeated key shadows), as the upgrade's read of every stored
+///     contract requires. The schema validation fee is charged on the long
+///     form. Inert before this version: the expansion rewrites nothing there,
+///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
+///     parser generations 0 to 2 refuse them as unsupported property types.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -2338,7 +2435,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

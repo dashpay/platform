@@ -276,6 +276,14 @@ data class PropertyConstraintRead(
             override val name: String get() = "elements"
         }
 
+        /**
+         * By its bytes, in a `byteAt` operand or a `startsWith` or `endsWith`
+         * of byte arrays: a byte array property.
+         */
+        data object Bytes : Kind {
+            override val name: String get() = "bytes"
+        }
+
         /** A kind this build does not know, by its name: one a later native library reports. */
         data class Other(override val name: String) : Kind
 
@@ -289,6 +297,7 @@ data class PropertyConstraintRead(
                 Length.name -> Length
                 Count.name -> Count
                 Elements.name -> Elements
+                Bytes.name -> Bytes
                 else -> Other(name)
             }
         }

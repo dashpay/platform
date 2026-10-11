@@ -4,7 +4,7 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 
 | | |
 |---|---|
-| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; for one form of `identityPublicKey`, an integer key id property; and a string or byte array property whose value a `findBy` function reveals (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
+| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; for one form of `identityPublicKey`, an integer key id property; and a string or byte array property whose value `findBy` reads, as is (see [A string or byte array key](refers-to-lookup.md#a-string-or-byte-array-key)) or through a function (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
 | **Value** | An object: `type`, naming one [target](#targets), with the [keys](#keys) that target takes; or an object holding only `anyOf` or only `allOf` (see [Expressions](refers-to-expressions.md)). |
 | **Default** | Absent: the identifier is not checked against anything. |
 | **Since** | protocol version 14 |
@@ -278,7 +278,7 @@ A replace checks a reference again only when its outcome could have changed:
 | any document reference with a `where` entry whose value is `"$ownerId"` | every replace |
 | `permanentDocument` with `findBy`, `inList` included | also when a property `findBy` reads changed |
 | `deletableDocument`, by id or with `findBy` | every replace |
-| a document reference with a `findBy` function | never: the whole declaration, its `where` included, is judged on the create alone (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)) |
+| a document reference with a `findBy` function | never: the whole declaration, its `where` included, is judged on the create alone (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)); a type whose documents are never replaced has no replace at all |
 | `identityPublicKey` with `keyIdProperty` | the identity or the key id changed |
 | key id with `identityProperty: "$ownerId"` | every replace |
 | key id with `identityProperty: "$creatorId"` | the key id changed |

@@ -402,6 +402,43 @@ fn should_refuse_find_by_reading_the_writer_on_a_type_that_can_change_owner() {
     contract(transferable).expect("a key that does not read the writer holds");
 }
 
+/// A reference judged on the create alone may read the writer in its `findBy` on a type that
+/// can change owner: no later write judges it again, so a transfer or a purchase moves no key it
+/// reads. Here the referring type's documents are never replaced; beside a function it is
+/// `commit_reveal_lookup_tests`'. Both on registration and on a stored contract's parse, while
+/// a type whose documents can be replaced stays refused (above)
+#[test]
+fn should_accept_find_by_reading_the_writer_on_a_type_never_replaced_that_can_change_owner() {
+    let reads_the_writer = charter_contract(permanent_join_request(json!({
+        "submittedCharterId": ".",
+        "$ownerId": "$ownerId"
+    })));
+    for (keyword, value) in [("transferable", json!(1)), ("tradeMode", json!(1))] {
+        let mut never_replaced = reads_the_writer.clone();
+        never_replaced["documentSchemas"]["electedCharter"][keyword] = value;
+        never_replaced["documentSchemas"]["electedCharter"]["documentsMutable"] = json!(false);
+        for full_validation in [true, false] {
+            let parsed = contract_on(
+                never_replaced.clone(),
+                full_validation,
+                PlatformVersion::latest(),
+            )
+            .expect("a reference judged on the create alone may read the writer");
+            let DocumentPropertyType::IdentifierWithReference(target) = member_id_type(&parsed)
+            else {
+                panic!("expected memberId to carry its reference");
+            };
+            let lookup = target
+                .as_any_document_reference()
+                .and_then(|declaration| declaration.lookup)
+                .expect("the memberId lookup")
+                .clone();
+            assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
+            assert!(lookup.is_checked_on_create_only(false));
+        }
+    }
+}
+
 /// A `deletableDocument` reference may find its document by `findBy` too: a key into a
 /// deletable type may find a later document once the one it found is deleted, so the reference
 /// means a document with this key exists now, and every replace re-validates it. The

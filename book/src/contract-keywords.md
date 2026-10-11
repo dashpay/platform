@@ -151,6 +151,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | Key | Takes | What it does | Since | Read more |
 |---|---|---|---|---|
 | `type` | `string`, `integer`, `number`, `boolean`, `object`, `array` | The kind of value. An array is a byte array or a typed array. | 1 | [type](contract-keywords/property-schemas.md#type) |
+| `type` (shorthands) | `identifier`, or `bytes` with `size` | One keyword for an identifier, or for a byte array of exactly `size` bytes (1 to 5120); read as the long form, stored as sent. | 14 | [Shorthands](contract-keywords/property-schemas.md#shorthands-identifier-and-bytes) |
 | `position` | integer | The property's place in the stored document. Required; top-level positions run 0, 1, 2 with no gap. | 1 | [position](contract-keywords/property-schemas.md#position) · [Document Serialization](serialization/document-serialization.md) |
 | `minLength`, `maxLength` | integer | A string's length in characters. | 1 | [Strings](contract-keywords/property-schemas.md#strings) |
 | `pattern` | regular expression | A string must match it. Needs `maxLength` of at most 50000. | 1 | [Strings](contract-keywords/property-schemas.md#strings) |
@@ -176,7 +177,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `generatedFrom.params` | property paths | The properties the function reads, in order. | 14 | [Params](contract-keywords/generated-from.md#params) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 
-A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
+A typed array's element (`items`) takes `type` (the `identifier` and `bytes` shorthands included, with `size`), `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
 
 ### refersTo
 
@@ -194,8 +195,8 @@ A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `e
 | `findBy` | 1 to 10 entries: referenced property → `"."`, `"$ownerId"`, a path or a function | Finds the document through the unique index of `documentType` over exactly these properties, in any order; `"."` is the value itself. Without it the value is the document's `$id`. | 14 | [findBy](contract-keywords/refers-to-lookup.md) · [internals](data-model/documents.md#found-by-a-unique-index-findby) |
 | `findBy.<property>` | `{ "function": "sys.hash.sha256d", "params" }` | A function entry: the referenced property holds the hash of `params` (paths, `{ "const": text }`, `"."` for a value without a path), which fills that part of the key, finding a commitment made earlier. At most one. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) · [internals](data-model/documents.md#commit-and-reveal-a-findby-function) |
 | `where` | 1 to 10 entries `{ "<referenced property>": "<referring value>" }` | Checked on the document found: each referenced property (or `$ownerId`, `$creatorId`, `$id`) must equal the referring property. A value of `"$ownerId"`, the writer, makes a write gate. Never finds the document. | 14 | [where](contract-keywords/refers-to.md#where) |
-| `minimumAgeBlocks` | 1 to 4294967295 | Beside a `findBy` function: the commitment was created at least this many blocks before the create. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
-| `consume` | `true` | Beside a `findBy` function, on a `deletableDocument` with the `where` entry `"$ownerId": "$ownerId"`, into a type with `canBeDeleted` `true` or `"onlyWhenConsumed"` and no `deleteConstraints`: the create deletes the writer's commitment. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
+| `minimumAgeBlocks` | 1 to 4294967295 | Beside `findBy`, on a reference judged on the create alone (a `findBy` function, or a type whose documents are never replaced): the document found was created at least this many blocks before the create. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
+| `consume` | `true` | Beside `findBy`, on a reference judged on the create alone (a `findBy` function, or a type whose documents are never replaced), on a `deletableDocument` with the `where` entry `"$ownerId": "$ownerId"`, into a type with `canBeDeleted` `true` or `"onlyWhenConsumed"` and no `deleteConstraints`: the create deletes the writer's commitment. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
 | `inList` | typed array path | On a `permanentDocument` whose `findBy` is `{ "$id": <property> }`: the list on that document the value must be in. | 14 | [List Elements](contract-keywords/refers-to-list-element.md) · [internals](data-model/documents.md#an-element-of-a-list-inlist) |
 | `keyIdProperty` | integer property path | On an identity property: the property holding the key id. | 14 | [keyIdProperty and identityProperty](contract-keywords/refers-to.md#keyidproperty-and-identityproperty) |
 | `identityProperty` | `"$ownerId"`, `"$creatorId"` or a path | On a key id property: whose key it is. | 14 | [keyIdProperty and identityProperty](contract-keywords/refers-to.md#keyidproperty-and-identityproperty) |
@@ -238,7 +239,7 @@ A rule is one condition, in `propertyConstraints` and in `deleteConstraints` ali
 | `not` | a condition | The condition does not hold. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `ifThen`, `ifThenElse` | `[if, then]`, `[if, then, else]` | The second condition holds when the first does (and, for `ifThenElse`, the third when it does not); only the branch taken is evaluated. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `notIn` | `[a, [values]]` | `a` takes none of the listed values. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
-| `startsWith`, `endsWith` | `[text, affix]` | A string starts or ends with another, byte for byte. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `startsWith`, `endsWith` | `[text, affix]` | A string starts or ends with another, byte for byte; or a byte array with another, or with a hex constant. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions), [Byte arrays](contract-keywords/property-constraints.md#byte-arrays) |
 | `contains` | `[array, value]` | A typed array holds an element equal to the value. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 
 Expressions:
@@ -255,8 +256,9 @@ Expressions:
 | `length`, `byteLength` | a string path | A string's length in characters, or in UTF-8 bytes. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `count` | an array path | The elements of a typed array, or the bytes of a byte array. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `countPresent` | `[path, path, ...]` | How many of two or more properties the document holds, each as `present` tests it. | 14 | [How many of a group](contract-keywords/property-constraints.md#how-many-of-a-group) |
+| `byteAt` | `[path, index]` | The byte, 0 to 255, at an index of a byte array; 0 when the array does not hold it or is left out. | 14 | [Byte arrays](contract-keywords/property-constraints.md#byte-arrays) |
 | `$createdAt`, `$updatedAt`, `$transferredAt`, `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight`, `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight` | a path | A time or height the document records, when listed in `required`. | 14 | [Times and heights](contract-keywords/property-constraints.md#times-and-heights) |
-| `const` | a string | A string constant, or a base58 identifier, as one side of `equal` or `notEqual`. | 14 | [Strings](contract-keywords/property-constraints.md#strings) |
+| `const` | a string | A string constant, or a base58 identifier, as one side of `equal` or `notEqual`; hex digits as one side of a `startsWith` or `endsWith` of byte arrays. | 14 | [Strings](contract-keywords/property-constraints.md#strings) |
 | `$ownerId` | | The document's owner, as an identifier side. | 14 | [Identifiers and $ownerId](contract-keywords/property-constraints.md#identifiers-and-ownerid) |
 | `$id` | | The document's id, as the value a `countOf` or `sumOf` filter matches by: `{ "pollId": "$id" }`, the documents pointing at it. | 14 | [Totals of other documents](contract-keywords/property-constraints.md#totals-of-other-documents) |
 

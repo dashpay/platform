@@ -10,6 +10,7 @@ Each entry of a document type's `properties` is a property schema: JSON Schema (
 | [`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`](#numbers) | integers and numbers | Loosened or removed only, keeping an integer's width; `multipleOf` fixed |
 | [`enum`, `const`](#enum-and-const) | any | `enum` may gain values; `const` may be removed |
 | [`byteArray`, `contentMediaType`](#byte-arrays-and-identifiers) | byte arrays | Fixed |
+| [`"identifier"`, `"bytes"` and `size`](#shorthands-identifier-and-bytes) | identifiers and fixed-size byte arrays | Switching to or from the long form is no change; otherwise as the long form |
 | [`minItems`, `maxItems`, `uniqueItems`, `contains`](#arrays) | arrays | Loosened or removed only; `contains` fixed |
 | [`properties`, `required`, `additionalProperties`, `minProperties`, `maxProperties`, `dependentRequired`](#objects) | objects | Members may be added; the rest fixed, except `dependentRequired` may lose entries |
 | [`$ref`](#ref) | any | Fixed |
@@ -21,6 +22,7 @@ Each section gives the error a contract update gets for breaking its rules. Most
 
 When a contract is registered or updated:
 
+- From protocol version 14, a property written with a [shorthand](#shorthands-identifier-and-bytes) is read as the long form it stands for. Every check below sees the long form; the contract is stored as it was sent.
 - The schema is checked against the document meta-schema. A keyword the meta-schema does not allow where it is written, or a value of the wrong shape, is refused with `JsonSchemaError` (10101).
 - The parser reads each property's type and bounds, and refuses what the meta-schema cannot express (`InvalidContractStructure`, 10231).
 - The schema is compiled for validating documents. A `pattern` that is not a valid regular expression, or a `format` the validator does not know, is refused here (`JsonSchemaError`, 10101).
@@ -54,9 +56,9 @@ An optional property adds one byte in front that says whether it is present. See
 | | |
 |---|---|
 | **Where** | Every property; also the elements of a typed array |
-| **Value** | One of `"string"`, `"integer"`, `"number"`, `"boolean"`, `"object"`, `"array"` |
+| **Value** | One of `"string"`, `"integer"`, `"number"`, `"boolean"`, `"object"`, `"array"`; from protocol version 14 also the [shorthands](#shorthands-identifier-and-bytes) `"identifier"` and `"bytes"` |
 | **Since** | protocol version 1 |
-| **On update** | Fixed (`IncompatibleDocumentTypeSchemaError`, 10246) |
+| **On update** | Fixed (`IncompatibleDocumentTypeSchemaError`, 10246), except that a shorthand and its long form are the same type |
 | **Errors** | `JsonSchemaError` (10101): a document value of another type |
 
 `type` is a single name. A list of types, and `"null"`, are refused at registration: every stored value needs one known encoding.
@@ -192,6 +194,62 @@ Stored documents and index entries hold each integer at its width, so a contract
 - `contentMediaType: "application/x.dash.dpp.identifier"` makes a byte array an identifier. It must come with `byteArray: true`, `minItems: 32` and `maxItems: 32`, and it may not carry `uniqueItems`. An identifier is shown in base58, and it is the kind of property [`distinctFrom`](distinct-from.md) and most [`refersTo`](refers-to.md) targets are declared on.
 - A byte array used in an index needs a `maxItems` of at most 255 (`InvalidIndexedPropertyConstraintError`, 10205).
 - On a typed array, `contentMediaType` belongs on the `items`, not on the array.
+- From protocol version 14, an identifier and a byte array of fixed length can each be written in one keyword; see [Shorthands](#shorthands-identifier-and-bytes).
+
+## Shorthands: `identifier` and `bytes`
+
+| | |
+|---|---|
+| **Keywords** | `"type": "identifier"`; `"type": "bytes"` with `size` |
+| **Where** | Every property, at every level, the elements of a typed array, and the definitions in `schemaDefs` |
+| **Value** | `size`: an integer from 1 to 5120 |
+| **Since** | protocol version 14 |
+| **On update** | Rewriting a property or a definition from the shorthand to its long form, or back, is no change. Any other change follows the rules of the long form. |
+| **Errors** | `InvalidContractStructure` (10231) at registration; `JsonSchemaError` (10101) before protocol version 14 |
+
+Each shorthand stands for a byte array written in full:
+
+| Shorthand | Stands for |
+|---|---|
+| `"type": "identifier"` | `"type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"` |
+| `"type": "bytes", "size": n` | `"type": "array", "byteArray": true, "minItems": n, "maxItems": n` |
+
+Written in full, a payment's recipient and the hash of the transaction that paid it are:
+
+```json
+"recipientId": {
+  "type": "array",
+  "byteArray": true,
+  "minItems": 32,
+  "maxItems": 32,
+  "contentMediaType": "application/x.dash.dpp.identifier",
+  "position": 1
+},
+"txHash": {
+  "type": "array",
+  "byteArray": true,
+  "minItems": 32,
+  "maxItems": 32,
+  "position": 2
+}
+```
+
+With the shorthands they are:
+
+```json
+"recipientId": { "type": "identifier", "position": 1 },
+"txHash": { "type": "bytes", "size": 32, "position": 2 }
+```
+
+The two spellings are the same property: a value is validated, indexed and stored exactly as under the long form, in the same bytes.
+
+- The contract is stored, and read back, exactly as it was sent. The platform reads a shorthand as its long form wherever it reads a schema: the meta-schema check, the parser, the schema documents are validated against, and the comparison a contract update is judged by.
+- A shorthand takes every keyword its long form takes: `position`, a [`refersTo`](refers-to.md) or [`distinctFrom`](distinct-from.md) on an identifier, an [`encryptedFor`](encrypted-for.md) on bytes, and the rest. It may be a member of an object, the `items` of a [typed array](typed-arrays.md), or a definition a [`$ref`](#ref) names.
+- A shorthand does not repeat what it says. `byteArray`, `minItems`, `maxItems` or `contentMediaType` beside it is refused (10231), and so is `size` on an identifier, which is always 32 bytes. `bytes` needs a `size` (10231); a byte array of variable length is written in full.
+- `size` is at least 1 and at most 5120, the most bytes a document field may hold (`max_field_value_size`), so that the property can be filled (10231). A byte array used in an index needs a `size` of at most 255 (`InvalidIndexedPropertyConstraintError`, 10205).
+- An error about a property written with a shorthand names the long form, since that is what was checked: `minItems` and `maxItems` stand for `size`, and `"type": "array"`, `byteArray` and `contentMediaType` for `identifier`. An update changing a `size` from 32 to 20, for example, is refused for changing the property's `minItems` and `maxItems` (`DocumentTypeUpdateError`, 40212), and one turning an `identifier` into `bytes` at `/properties/<name>/contentMediaType` (10246).
+- The fee for validating the schema at registration is charged on the long form, as for a contract written in full. The contract's storage is charged on the bytes sent.
+- Before protocol version 14 neither `identifier` nor `bytes` is a type the meta-schema knows, and a contract writing one is refused (10101).
 
 ## Arrays
 
@@ -275,6 +333,7 @@ A property of any document type of the contract then reads `"shippingAddress": {
 - Only local references, starting with `#`, are allowed. The platform places `schemaDefs` under `$defs` in every document type (see [`$schema` and `$defs`](document-shape.md#schema-and-defs)).
 - A reference that does not resolve, or that leads back to itself, is refused (10207).
 - The property keeps its own `position`; the definition supplies everything else.
+- A definition may be written with a [shorthand](#shorthands-identifier-and-bytes): `"schemaDefs": { "owner": { "type": "identifier" } }`.
 - The `$ref` itself cannot change on update. The definition it points at can, under the rules of the keywords it holds (`IncompatibleDataContractSchemaError`, 10213).
 
 ## Annotations

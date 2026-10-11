@@ -100,6 +100,37 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         ]
         """
 
+    /// Rules reading the bytes of byte arrays, as the FFI reports them
+    /// (rs-sdk-ffi's `should_read_and_check_the_bytes_of_byte_arrays`): a
+    /// `byteAt` operand reads an address's type byte, and a `startsWith` of
+    /// byte arrays tests a payload's tag.
+    private let byteRulesJSON = """
+        [
+          {
+            "name": "addressType",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [{ "kind": "bytes", "path": "corePaymentAddress" }],
+            "rule": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] }
+          },
+          {
+            "name": "taggedPayload",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [
+              { "kind": "presence", "path": "payload" },
+              { "kind": "bytes", "path": "payload" }
+            ],
+            "rule": {
+              "anyOf": [
+                { "absent": "payload" },
+                { "startsWith": ["payload", { "const": "cafe" }] }
+              ]
+            }
+          }
+        ]
+        """
+
     /// Rules reading system times and heights, as the FFI reports them: the
     /// `listing` type of rs-sdk-ffi's
     /// `should_read_the_clock_for_system_times_and_skip_block_heights`, and a
@@ -368,10 +399,26 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         )
     }
 
+    func testByteArrayReadsDecodeAsBytes() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: byteRulesJSON)
+
+        XCTAssertEqual(rules.map(\.name), ["addressType", "taggedPayload"])
+        XCTAssertEqual(rules[0].reads, [PropertyConstraintRead(path: "corePaymentAddress", kind: .bytes)])
+        // The `absent` reads the payload's presence, the `startsWith` its bytes
+        XCTAssertEqual(
+            rules[1].reads,
+            [
+                PropertyConstraintRead(path: "payload", kind: .presence),
+                PropertyConstraintRead(path: "payload", kind: .bytes)
+            ]
+        )
+        XCTAssertEqual(rules[0].ruleJSON, #"{"in":[{"byteAt":["corePaymentAddress",0]},[0,1]]}"#)
+    }
+
     func testEveryReadKindNameRoundTrips() {
-        let names = ["value", "presence", "text", "identifier", "length", "count", "elements"]
+        let names = ["value", "presence", "text", "identifier", "length", "count", "elements", "bytes"]
         let kinds: [PropertyConstraintRead.Kind] = [
-            .value, .presence, .text, .identifier, .length, .count, .elements
+            .value, .presence, .text, .identifier, .length, .count, .elements, .bytes
         ]
         XCTAssertEqual(names.map(PropertyConstraintRead.Kind.init(name:)), kinds)
         XCTAssertEqual(kinds.map(\.name), names)

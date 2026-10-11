@@ -105,6 +105,39 @@ class DocumentPropertyConstraintsTest {
     """.trimIndent()
 
     /**
+     * Rules reading the bytes of byte arrays, as the FFI reports them
+     * (rs-sdk-ffi's `should_read_and_check_the_bytes_of_byte_arrays`): a
+     * `byteAt` operand reads an address's type byte, and a `startsWith` of
+     * byte arrays tests a payload's tag.
+     */
+    private val byteRulesJson = """
+        [
+          {
+            "name": "addressType",
+            "readsOwner": false,
+            "reads": [{ "kind": "bytes", "path": "corePaymentAddress" }],
+            "readsSystem": [],
+            "rule": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] }
+          },
+          {
+            "name": "taggedPayload",
+            "readsOwner": false,
+            "reads": [
+              { "kind": "presence", "path": "payload" },
+              { "kind": "bytes", "path": "payload" }
+            ],
+            "readsSystem": [],
+            "rule": {
+              "anyOf": [
+                { "absent": "payload" },
+                { "startsWith": ["payload", { "const": "cafe" }] }
+              ]
+            }
+          }
+        ]
+    """.trimIndent()
+
+    /**
      * Rules reading system times and heights (rs-sdk-ffi's
      * `should_read_the_clock_for_system_times_and_skip_block_heights`), plus
      * one reading an update time twice and a Core height, in declared order.
@@ -192,6 +225,25 @@ class DocumentPropertyConstraintsTest {
             rules[2].reads,
         )
         assertEquals("""{"lessThanOrEqual":[{"byteLength":"title"},12]}""", rules[2].ruleJson)
+    }
+
+    @Test
+    fun `should decode byte array reads as bytes`() {
+        val rules = DocumentPropertyConstraint.listFromJson(byteRulesJson)
+
+        assertEquals(listOf("addressType", "taggedPayload"), rules.map { it.name })
+        assertEquals(
+            listOf(PropertyConstraintRead("corePaymentAddress", PropertyConstraintRead.Kind.Bytes)),
+            rules[0].reads,
+        )
+        assertEquals(
+            listOf(
+                PropertyConstraintRead("payload", PropertyConstraintRead.Kind.Presence),
+                PropertyConstraintRead("payload", PropertyConstraintRead.Kind.Bytes),
+            ),
+            rules[1].reads,
+        )
+        assertEquals("""{"in":[{"byteAt":["corePaymentAddress",0]},[0,1]]}""", rules[0].ruleJson)
     }
 
     /** The names come through as Rust reports them, in declared order, a repeat kept. */
@@ -343,7 +395,7 @@ class DocumentPropertyConstraintsTest {
 
     @Test
     fun `should round trip every read kind name`() {
-        val names = listOf("value", "presence", "text", "identifier", "length", "count", "elements")
+        val names = listOf("value", "presence", "text", "identifier", "length", "count", "elements", "bytes")
         val kinds = listOf(
             PropertyConstraintRead.Kind.Value,
             PropertyConstraintRead.Kind.Presence,
@@ -352,6 +404,7 @@ class DocumentPropertyConstraintsTest {
             PropertyConstraintRead.Kind.Length,
             PropertyConstraintRead.Kind.Count,
             PropertyConstraintRead.Kind.Elements,
+            PropertyConstraintRead.Kind.Bytes,
         )
 
         assertEquals(kinds, names.map(PropertyConstraintRead.Kind::fromName))

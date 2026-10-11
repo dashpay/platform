@@ -44,6 +44,14 @@
 //! A keyword that still has no rule is frozen as well: its change is reported
 //! as incompatible instead of failing the update as an unsupported keyword.
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
+//!
+//! Both schemas are compared with their property type shorthands
+//! (`"type": "identifier"`, `"type": "bytes"` with a `size`) rewritten into
+//! the long form they stand for, as the parse reads them
+//! ([`DocumentType::expand_property_type_shorthands`]), so rewriting a
+//! property, or a definition of the `{"$defs": ..}` comparison, from one
+//! spelling to the other is no change. Only this generation does: the
+//! shorthands exist from protocol version 14, the only version selecting it.
 
 use crate::data_contract::document_type::property_names::{
     ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
@@ -53,6 +61,7 @@ use crate::data_contract::document_type::property_names::{
     TOKEN_COST, TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::JsonValue;
 use crate::validation::SimpleValidationResult;
@@ -65,6 +74,8 @@ use json_schema_compatibility_validator::{
     KEYWORD_COMPATIBILITY_RULES,
 };
 use once_cell::sync::Lazy;
+use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::ops::Deref;
 
@@ -215,6 +226,28 @@ fn prepared_for_diff(schema: &JsonValue) -> Cow<'_, JsonValue> {
     }
 }
 
+/// `schema` with its property type shorthands rewritten into the long form, or
+/// `schema` itself when it holds none. Both schemas compared were parsed with
+/// their contracts, so the rewrite refuses nothing here; the JSON goes through
+/// a `Value` and back, which keeps every value it does not rewrite.
+fn with_shorthands_expanded<'a>(
+    schema: &'a JsonValue,
+    platform_version: &PlatformVersion,
+) -> Result<Cow<'a, JsonValue>, ProtocolError> {
+    match DocumentType::expand_property_type_shorthands(
+        &Value::from(schema),
+        false,
+        platform_version,
+    )? {
+        Some(expanded) => Ok(Cow::Owned(
+            expanded
+                .try_into_validating_json()
+                .map_err(ProtocolError::ValueError)?,
+        )),
+        None => Ok(Cow::Borrowed(schema)),
+    }
+}
+
 /// Pairing invariant: stripping `indices`, top-level `required` and
 /// `immutable` unconditionally is only safe because every `PlatformVersion`
 /// that selects this generation (`validate_schema_compatibility: 1`) also
@@ -227,9 +260,12 @@ fn prepared_for_diff(schema: &JsonValue) -> Cow<'_, JsonValue> {
 pub(super) fn validate_schema_compatibility_v1(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
-    let original_schema = prepared_for_diff(original_schema);
-    let new_schema = prepared_for_diff(new_schema);
+    let original_schema = with_shorthands_expanded(original_schema, platform_version)?;
+    let new_schema = with_shorthands_expanded(new_schema, platform_version)?;
+    let original_schema = prepared_for_diff(&original_schema);
+    let new_schema = prepared_for_diff(&new_schema);
 
     match validate_schemas_compatibility(&original_schema, &new_schema, OPTIONS.deref()) {
         Ok(result) => {
@@ -975,6 +1011,74 @@ mod tests {
             ProtocolError::DataContractError(DataContractError::JsonSchema(
                 JsonSchemaError::SchemaCompatibilityValidationError(message)
             )) if message == "schema keyword 'tokenCost' at path '/tokenCost/create/amount' is not supported"
+        );
+    }
+
+    /// A document type schema with `hash` and the definition `owner`, each
+    /// written with a shorthand (`shorthand`) or in full.
+    fn spelled(shorthand: bool) -> (serde_json::Value, serde_json::Value) {
+        let (hash, owner) = if shorthand {
+            (
+                json!({ "type": "bytes", "size": 32, "position": 0 }),
+                json!({ "type": "identifier" }),
+            )
+        } else {
+            (
+                json!({ "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0 }),
+                json!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                }),
+            )
+        };
+        (
+            json!({
+                "type": "object",
+                "properties": {
+                    "hash": hash,
+                    "ownerId": { "$ref": "#/$defs/owner", "position": 1 }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "$defs": { "owner": owner } }),
+        )
+    }
+
+    /// Both spellings are the same schema: rewriting a property or a
+    /// definition from one to the other, in either direction, is no change.
+    #[test]
+    fn should_compare_a_shorthand_as_the_long_form_it_stands_for() {
+        let platform_version = PlatformVersion::latest();
+        for (old, new) in [(true, false), (false, true)] {
+            let (old_schema, old_defs) = spelled(old);
+            let (new_schema, new_defs) = spelled(new);
+            let result = validate_schema_compatibility(&old_schema, &new_schema, platform_version)
+                .expect("the schemas compare");
+            assert!(result.is_valid(), "{old} -> {new}: {:?}", result.errors);
+            let result = validate_schema_compatibility(&old_defs, &new_defs, platform_version)
+                .expect("the definitions compare");
+            assert!(result.is_valid(), "{old} -> {new}: {:?}", result.errors);
+        }
+    }
+
+    /// A real change is still one: an identifier is no plain 32-byte array.
+    #[test]
+    fn should_still_report_a_change_behind_a_shorthand() {
+        let platform_version = PlatformVersion::latest();
+        let (_, old_defs) = spelled(true);
+        let new_defs = json!({ "$defs": { "owner": { "type": "bytes", "size": 32 } } });
+        let result = validate_schema_compatibility(&old_defs, &new_defs, platform_version)
+            .expect("the definitions compare");
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|operation| operation.path == "/$defs/owner/contentMediaType"),
+            "{:?}",
+            result.errors
         );
     }
 }

@@ -755,8 +755,8 @@ fn apply_property_reference_v0(
 
     // A string or byte array property's value is not an id: a declaration
     // with `findBy` on one is read by `apply_revealed_reference`, which admits
-    // only a value revealed into a computed key. Every other declaration on
-    // one is refused below
+    // only a document reference whose `findBy` reads the value. Every other
+    // declaration on one is refused below
     if is_revealed_declaration(&property_type, refers_to_value) {
         return Ok(property_type);
     }
@@ -821,8 +821,7 @@ fn apply_property_reference_v0(
         return Err(DataContractError::InvalidContractStructure(
             "refersTo is only allowed on identifier properties, except an identityPublicKey \
              reference with identityProperty, which sits on the key id property, and a document \
-             reference whose findBy function reveals a string or byte array property's value in \
-             a computed key"
+             reference whose findBy reads a string or byte array property's value"
                 .to_string(),
         ));
     }
@@ -834,11 +833,12 @@ fn apply_property_reference_v0(
 
 /// Reads the `refersTo` of a string or byte array property: its value is not
 /// an id, so the one declaration it may carry is a document reference, of
-/// either kind, found by a `findBy` whose function computes the key from the
-/// value, a commitment the value is revealed to (a salt a preorder hashed).
-/// `None` for every other property type, and for a declaration without
-/// `findBy`, which [`apply_property_reference`] folds into the type or
-/// refuses.
+/// either kind, found by a `findBy` reading the value: as `"."`, filling an
+/// index property holding the same kind of value (a name a document is unique
+/// by), or as a param of a function computing the key, a commitment the value
+/// is revealed to (a salt a preorder hashed). `None` for every other property
+/// type, and for a declaration without `findBy`, which
+/// [`apply_property_reference`] folds into the type or refuses.
 ///
 /// Versioned on `apply_property_reference`, the gate of the declaration it
 /// reads, and dispatched with it, so the declarations one skips the other
@@ -887,8 +887,8 @@ fn apply_revealed_reference_v0(
     let refused = || {
         DataContractError::InvalidContractStructure(
             "refersTo on a string or byte array property must be a permanentDocument or \
-             deletableDocument reference found by a findBy function reading the value: the value \
-             is not an id"
+             deletableDocument reference found by a findBy reading the value, as \".\" or a \
+             param of its function: the value is not an id"
                 .to_string(),
         )
     };
@@ -906,13 +906,16 @@ fn apply_revealed_reference_v0(
     }
     validate_reference_target_keys(&refers_to_map, reference_type)?;
     let target = parse_reference_target(&refers_to_map, reference_type)?;
-    // That the function reads the value, by the property's path, exactly
-    // once is a referring-side rule, checked once the type is parsed
-    let computed = target
+    // A key found by `findBy`, not a list: an `inList` holds ids. That the key
+    // reads the value exactly once, as `"."` or by the property's path in a
+    // function's params, is a referring-side rule, checked once the type is
+    // parsed, and that `"."` fills an index property of the value's kind a
+    // referenced-side one
+    let found_by_find_by = target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
-        .is_some_and(|lookup| lookup.is_checked_on_create_only());
-    if !computed {
+        .is_some();
+    if !found_by_find_by {
         return Err(refused());
     }
     Ok(Some(target))
@@ -1188,9 +1191,13 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks` and `consume` describe the document a `findBy`
-    // function finds, a commitment: they sit beside `findBy` and need it (its
-    // parse checks for the function computing the key)
+    // `minimumAgeBlocks` and `consume` describe the document `findBy` finds
+    // when the referring document is created: they sit beside `findBy` and need
+    // it. That the reference is judged on the create alone (a function in
+    // `findBy`, or a declaring type whose documents are never replaced) needs
+    // the declaring type, and is checked once it is parsed
+    // (`validate_reference_lookup_sources`); `inList` refuses both
+    // (`parse_list_element_reference`)
     if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
         .into_iter()
         .find(|keyword| refers_to_map.contains_key(*keyword))
@@ -1198,7 +1205,7 @@ fn validate_reference_target_keys(
         if !refers_to_map.contains_key(property_names::FIND_BY) {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "{reference_type} refersTo does not take {keyword} without findBy: it describes \
-                 the document a findBy function finds"
+                 the document findBy finds when the referring document is created"
             )));
         }
     }
@@ -1509,6 +1516,9 @@ fn parse_where(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
+/// `minimumAgeBlocks` and `consume` are refused on every parse: they describe
+/// a document `findBy` finds by a key, which a list element reference has no
+/// field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
     find_by_value: &Value,
@@ -1516,6 +1526,16 @@ fn parse_list_element_reference(
     document_type_name: String,
     mut property_agreement: BTreeMap<String, String>,
 ) -> Result<ListElementReference, DataContractError> {
+    if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
+        || refers_to_map.contains_key(property_names::CONSUME)
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume: they \
+             describe a document findBy finds by a key, and inList checks that a list holds the \
+             value"
+                .to_string(),
+        ));
+    }
     let find_by_map = find_by_value.to_btree_ref_string_map()?;
     let document_id_property = match find_by_map.get(ID) {
         Some(value) if find_by_map.len() == 1 => value.as_text(),
@@ -1764,6 +1784,7 @@ pub(super) fn parse_doctype_reference(
     schema: &Value,
     keyword: &str,
     value: &str,
+    documents_mutable: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
     if platform_version
@@ -1847,17 +1868,19 @@ pub(super) fn parse_doctype_reference(
             // keeps to targets that hold for good
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
                 if keyword == property_names::OWNER_REFERS_TO => {}
-            // A lookup with a computed key is judged when the document is
-            // created only, by its creator: a commitment the creator revealed,
-            // which no replace asks for again, so the creator's gate cannot
-            // outlive a transfer
+            // A lookup judged when the document is created only (a commitment
+            // the creator revealed, or on a type whose documents are never
+            // replaced), which no replace asks for again, so the creator's gate
+            // cannot outlive a transfer
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
-                if lookup.is_checked_on_create_only() => {}
+                if lookup.is_checked_on_create_only(documents_mutable) => {}
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} does not take a deletableDocument reference unless its findBy \
-                     key is computed: the creator never changes, and a document a transfer \
-                     handed on could not be replaced once the one findBy found is deleted"
+                    "{keyword}{at} does not take a deletableDocument reference unless it is \
+                     judged on the create alone (a findBy function, or a document type whose \
+                     documents are never replaced): the creator never changes, and a document a \
+                     transfer handed on could not be replaced once the one findBy found is \
+                     deleted"
                 )))
             }
             DocumentPropertyReferenceTarget::PermanentDocument { .. }
@@ -2000,14 +2023,6 @@ fn parse_find_by(
             ))
         }
     };
-    if computed_keys == 0 && (minimum_age_blocks.is_some() || consume) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo minimumAgeBlocks and consume need a findBy function computing the key: \
-             they describe the commitment a create reveals"
-                .to_string(),
-        ));
-    }
-
     Ok(DocumentReferenceLookup {
         minimum_age_blocks,
         consume,
@@ -2061,6 +2076,7 @@ pub(super) fn validate_reference_lookup_sources(
                         declaration.property_agreement,
                     )
                 })
+                .or_else(|| age_or_consume_error(document_type, lookup))
             {
                 let at = if leaf_path.is_empty() {
                     String::new()
@@ -2075,6 +2091,24 @@ pub(super) fn validate_reference_lookup_sources(
         }
     }
     Ok(())
+}
+
+/// Why a lookup declared on `document_type` may not declare `minimumAgeBlocks` or `consume`;
+/// `None` when it declares neither or may. Both describe the document found when the
+/// referring document is created, so the reference must be judged on the create alone
+/// ([`DocumentReferenceLookup::is_checked_on_create_only`]): its key holds a `findBy` function,
+/// or the type's documents are never replaced.
+fn age_or_consume_error(
+    document_type: DocumentTypeRef,
+    lookup: &DocumentReferenceLookup,
+) -> Option<String> {
+    let declares = lookup.minimum_age_blocks.is_some() || lookup.consume;
+    (declares && !lookup.is_checked_on_create_only(document_type.documents_mutable())).then(|| {
+        "minimumAgeBlocks and consume describe the document found when the referring document \
+         is created, so the reference must be judged on the create alone: give findBy a \
+         function, or make the document type immutable (documentsMutable: false)"
+            .to_string()
+    })
 }
 
 /// Why a `refersTo` leaf whose key a `findBy` function computes, at
@@ -2096,7 +2130,7 @@ fn create_only_leaf_error(
     lookup: &DocumentReferenceLookup,
     property_agreement: &BTreeMap<String, String>,
 ) -> Option<String> {
-    if !lookup.is_checked_on_create_only() {
+    if !lookup.is_checked_on_create_only(document_type.documents_mutable()) {
         return None;
     }
     if document_type.documents_mutable()
@@ -2857,7 +2891,9 @@ fn apply_delete_constraints_v0(
 /// `flattened_properties` in an `equal`, `notEqual` or `in`: as a string or as
 /// an identifier, `None` as an integer (or not at all). A typed array compares
 /// as its elements do, in a `contains`; anywhere else the reads refuse an array
-/// where a string or an identifier belongs.
+/// where a string or an identifier belongs. A byte array property is
+/// `EqualityKind::Bytes`, which only a `startsWith` or an `endsWith` tests; a
+/// typed array of byte arrays compares as nothing does.
 pub(super) fn property_equality_kind(
     flattened_properties: &IndexMap<String, DocumentProperty>,
     path: &str,
@@ -2872,6 +2908,7 @@ pub(super) fn property_equality_kind(
         .map(|property| &property.property_type)
     {
         Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(DocumentPropertyType::ByteArray(_)) => Some(EqualityKind::Bytes),
         Some(property_type) => equality_kind(property_type),
         None => None,
     }
@@ -2924,6 +2961,7 @@ pub(super) fn validate_property_constraint_reads(
             PropertyRead::Length => "measures",
             PropertyRead::Count => "counts the items of",
             PropertyRead::Elements(_) => "looks in",
+            PropertyRead::Bytes { .. } => "reads the bytes of",
         };
         match read {
             PropertyRead::Value => match document_type
@@ -2957,6 +2995,13 @@ pub(super) fn validate_property_constraint_reads(
                          integer or boolean: an identifier property is compared, by equal or \
                          notEqual, with a {{ \"const\": base58 }} or another identifier \
                          property, or with the identifiers an in lists"
+                    )));
+                }
+                // A byte array is read a byte at a time
+                Some(DocumentPropertyType::ByteArray(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type byteArray, not integer \
+                         or boolean: byteAt reads one of its bytes, and count how many it holds"
                     )));
                 }
                 Some(other) => {
@@ -3100,6 +3145,46 @@ pub(super) fn validate_property_constraint_reads(
                     return Err(structure_error(format!(
                         "{subject} looks in \"{path}\", which is not an array property \
                          of the document type (a nested one is named by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Bytes { extent } => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                // A byte past the most the array may hold is never there
+                Some(DocumentPropertyType::ByteArray(sizes)) => {
+                    if let Some(max_size) = sizes
+                        .max_size
+                        .filter(|max_size| extent > usize::from(*max_size))
+                    {
+                        return Err(structure_error(format!(
+                            "{subject} reads \"{path}\" as at least {extent} bytes long, but \
+                             its maxItems is {max_size}: the byte a byteAt reads, or the \
+                             constant it must start or end with, is never there"
+                        )));
+                    }
+                }
+                Some(property_type) if property_type.is_identifier() => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which has type identifier, \
+                         not byteArray: an identifier property is compared whole, by equal, \
+                         notEqual or in"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which has type {}, not \
+                         byteArray",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} reads the bytes of \"{path}\", which is not a byte array \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
                     )));
                 }
             },
@@ -3409,7 +3494,10 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                 }
                                 AggregateKeyKind::Text => {
                                     // A constant the key's `enum` does not list is a typo:
-                                    // no document could match it
+                                    // no document could match it. `counted.schema()` is the
+                                    // schema as sent, which may spell a property with a type
+                                    // shorthand; only its `enum` is read here, which the
+                                    // expansion never changes
                                     if !enum_admits(counted.schema(), schema_defs, key, constant)? {
                                         return Err(error(format!(
                                             "{totals} with \"{key}\" at \"{constant}\", which is \
