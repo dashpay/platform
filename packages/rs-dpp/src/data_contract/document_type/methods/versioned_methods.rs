@@ -11,8 +11,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    DocumentPropertyType, DocumentType, DocumentTypeRef, Index, CONTRACT_VERSION_STAMP_MAX_SIZE,
-    DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+    typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef, Index,
+    CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -842,11 +842,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         key: &str,
         value: &Value,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let Some(DocumentPropertyType::TypedArray(typed_array)) = self
-            .flattened_properties()
-            .get(key)
-            .map(|property| &property.property_type)
-        else {
+        let Some(typed_array) = typed_array_property(self.flattened_properties(), key) else {
             return self.serialize_value_for_key_v0(key, value);
         };
         let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
@@ -869,15 +865,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         key: &str,
         value: &[u8],
     ) -> Result<Value, ProtocolError> {
-        match self
-            .flattened_properties()
-            .get(key)
-            .map(|property| &property.property_type)
-        {
-            Some(DocumentPropertyType::TypedArray(typed_array)) => {
-                typed_array.item_type.decode_value_for_tree_keys(value)
-            }
-            _ => self.deserialize_value_for_key_v0(key, value),
+        match typed_array_property(self.flattened_properties(), key) {
+            Some(typed_array) => typed_array.item_type.decode_value_for_tree_keys(value),
+            None => self.deserialize_value_for_key_v0(key, value),
         }
     }
 

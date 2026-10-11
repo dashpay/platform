@@ -41,6 +41,7 @@ pub mod preallocation;
 pub mod random_index;
 pub mod summable_off_count_index;
 pub mod time_range;
+mod typed_arrays;
 
 pub use bucketing::IndexBucketing;
 pub(crate) use derived_index_property::{

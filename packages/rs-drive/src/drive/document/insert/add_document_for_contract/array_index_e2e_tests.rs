@@ -9,10 +9,11 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
 use crate::query::{
-    key_array_element_clauses, CountMode, DocumentCountRequest, DocumentCountResponse,
-    DocumentRankedRequest, DocumentRankedResponse, DriveDocumentCountQuery, DriveDocumentQuery,
-    DriveDocumentRankedQuery, OrderClause, RankedAxis, RankedEntry, RankedEntryValue,
-    SelectProjection, WhereClause, WhereOperator, RANKED_COUNT_ORDER_KEY,
+    answers_per_element, key_array_element_clauses, BindingSource, CountMode, DocumentCountRequest,
+    DocumentCountResponse, DocumentRankedRequest, DocumentRankedResponse, DriveDocumentCountQuery,
+    DriveDocumentQuery, DriveDocumentRankedQuery, DriveSubQuery, OrderClause, RankedAxis,
+    RankedEntry, RankedEntryValue, SelectProjection, SubQueryBinding, SubQueryKind, WhereClause,
+    WhereOperator, RANKED_COUNT_ORDER_KEY,
 };
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -448,6 +449,85 @@ fn should_move_only_the_changed_entries_on_update() {
     }
 }
 
+/// Pricing a write without applying it walks the same element fan-out with
+/// estimated layers: a create and a replace of a real post, and a delete,
+/// which prices the stored post as the worst case (`maxItems` estimated
+/// elements per array, each a key of its own). None of them touches state.
+#[test]
+fn should_price_writes_of_an_indexed_array_without_applying_them() {
+    let (drive, contract) = setup();
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let root_hash = |drive: &Drive| {
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash")
+    };
+    let document = post(1, Some(&["dash", "news"]), Some(&[[7; 32]]));
+    let before = root_hash(&drive);
+    let create = drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(OWNER),
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("the create is priced");
+    assert!(create.storage_fee > 0 && create.processing_fee > 0);
+    assert_eq!(root_hash(&drive), before, "pricing writes nothing");
+
+    insert(&drive, &contract, &document);
+    let stored = root_hash(&drive);
+    let mut replaced = document.clone();
+    replaced.set(
+        "hashtags",
+        Value::Array(vec![Value::Text("crypto".to_string())]),
+    );
+    let replace = drive
+        .update_document_for_contract(
+            &replaced,
+            &contract,
+            document_type,
+            Some(OWNER),
+            BlockInfo::default(),
+            false,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+            None,
+        )
+        .expect("the replace is priced");
+    let delete = drive
+        .delete_document_for_contract(
+            Identifier::from([1; 32]),
+            &contract,
+            "post",
+            BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("the delete is priced");
+    assert!(replace.processing_fee > 0 && delete.processing_fee > 0);
+    assert_eq!(root_hash(&drive), stored, "pricing writes nothing");
+}
+
 #[test]
 fn should_keep_shared_element_trees_when_another_post_holds_the_element() {
     let (drive, contract) = setup();
@@ -749,10 +829,94 @@ fn should_refuse_shapes_that_could_repeat_or_misread_a_post() {
             platform_value!({"where": [["$ownerId", "==", Identifier::from(OWNER)]]}),
             "query must be for valid indexes",
         ),
+        // `$id` is no typed array: an element clause on it is refused, not
+        // dropped from a query that would then read every post.
+        (
+            platform_value!({"where": [["$id", "contains", Identifier::from([1; 32])]]}),
+            "read the elements of a typed array",
+        ),
+        (
+            platform_value!({
+                "where": [["$id", "containsAny", [Identifier::from([1; 32])]]],
+                "orderBy": [["$id", "asc"]]
+            }),
+            "read the elements of a typed array",
+        ),
     ] {
         let error = query_error(&drive, &contract, query.clone());
         assert!(error.contains(expected), "{query:?}: {error}");
     }
+}
+
+/// A composite query reads one element at most in each sub-query: a
+/// sub-query's documents are read out of the merged proof without the
+/// repeats `containsAny` reaches a post under, and a count sub-query keys its
+/// element pin as the count surface does.
+#[test]
+fn should_read_one_element_at_most_in_a_sub_query() {
+    let (_drive, contract) = tagged_posts();
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let page = || {
+        documents_query(
+            &contract,
+            platform_value!({"where": [["hashtags", "contains", "dash"]], "limit": 10}),
+        )
+    };
+
+    let mut composite = page();
+    composite.sub_queries.push(DriveSubQuery {
+        contract: &contract,
+        document_type,
+        kind: SubQueryKind::Documents,
+        where_clauses: element_clause(
+            WhereOperator::ContainsAny,
+            platform_value!(["dash", "news"]),
+        ),
+        order_by: vec![OrderClause {
+            field: "hashtags".to_string(),
+            ascending: true,
+        }],
+        limit: Some(10),
+        binding: None,
+    });
+    let error = composite
+        .validate_composite(platform_version)
+        .expect_err("containsAny in a sub-query is refused");
+    assert!(
+        error
+            .to_string()
+            .contains("containsAny is not supported in a sub-query"),
+        "{error}"
+    );
+
+    // A count sub-query judges its element clauses as the count surface
+    // does: an equality on the array is refused, not keyed as an element.
+    let mut composite = page();
+    composite.sub_queries.push(DriveSubQuery {
+        contract: &contract,
+        document_type,
+        kind: SubQueryKind::Count,
+        where_clauses: element_clause(WhereOperator::Equal, Value::Text("dash".to_string())),
+        order_by: vec![],
+        limit: None,
+        binding: Some(SubQueryBinding {
+            source: BindingSource::Page,
+            source_property: "$ownerId".to_string(),
+            field: "$ownerId".to_string(),
+        }),
+    });
+    let error = composite
+        .sub_query_count_query(
+            &composite.sub_queries[0],
+            &[Identifier::from(OWNER)],
+            platform_version,
+        )
+        .expect_err("an equality on a typed array is refused");
+    assert!(
+        format!("{error:?}").contains("read with contains or containsAny"),
+        "{error:?}"
+    );
 }
 
 fn element_clause(operator: WhereOperator, value: Value) -> Vec<WhereClause> {
@@ -802,8 +966,15 @@ fn proved_counts(
         other => panic!("expected a proof, got {other:?}"),
     };
     // The verifier keys the clauses as the prover did.
-    let keyed = key_array_element_clauses(where_clauses, document_type, true, platform_version)
-        .expect("keyed");
+    let several_elements_allowed =
+        answers_per_element(matches!(mode, CountMode::GroupByIn), &where_clauses);
+    let keyed = key_array_element_clauses(
+        where_clauses,
+        document_type,
+        several_elements_allowed,
+        platform_version,
+    )
+    .expect("keyed");
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &keyed,
@@ -868,11 +1039,36 @@ fn should_count_the_posts_holding_each_element() {
             ("news".to_string(), 2),
         ])
     );
-    // A total over several elements would count post 4 three times.
-    let error = count(&drive, &contract, several, CountMode::Aggregate, false)
-        .expect_err("a total over several elements is refused");
+    // A total over several elements would count post 4 three times, and a
+    // range clause folds a group's totals: both refused, naming the rule.
+    let error = count(
+        &drive,
+        &contract,
+        several.clone(),
+        CountMode::Aggregate,
+        false,
+    )
+    .expect_err("a total over several elements is refused");
     assert!(
-        format!("{error:?}").contains("only answered per element"),
+        format!("{error:?}").contains("only answered grouped by \\\"hashtags\\\" alone"),
+        "{error:?}"
+    );
+    let mut several_in_a_range = several;
+    several_in_a_range.push(WhereClause {
+        field: "$createdAt".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(0),
+    });
+    let error = count(
+        &drive,
+        &contract,
+        several_in_a_range,
+        CountMode::GroupByIn,
+        false,
+    )
+    .expect_err("a range beside several elements is refused");
+    assert!(
+        format!("{error:?}").contains("and without a range clause"),
         "{error:?}"
     );
     // An empty string is an element like any other.

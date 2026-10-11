@@ -1,4 +1,6 @@
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::typed_array_property;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::document_type::{
     IndexBucketing, IntegerRangeTransform, TimeRangeTransform,
@@ -173,7 +175,9 @@ use dpp::version::FeatureVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub use canonicalize::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
+pub use canonicalize::{
+    answers_per_element, key_array_element_clauses, validate_and_canonicalize_where_clauses,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -2515,7 +2519,8 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
-    /// Versioned preflight over the non-primary-key `In` clause shape.
+    /// Versioned preflight over the shape of the query's where clauses, run
+    /// by the server and the verifier alike before any lowering.
     ///
     /// Runs before any cursor storage lookup or proof processing so the
     /// rejection precedence matches each protocol version's contract: v0
@@ -2523,9 +2528,12 @@ impl<'a> DriveDocumentQuery<'a> {
     /// `startAt`/`startAfter` document is ever fetched (matching the
     /// pre-protocol-version-14 parse-time rejection), and v1 rejects the
     /// unsupported multi-`In` + cursor combination with `Unsupported`
-    /// before spending state or proof work on the cursor. The lowering
-    /// keeps equivalent guards for callers that reach it directly.
-    pub fn validate_in_clause_shape(
+    /// before spending state or proof work on the cursor. v1 also judges the
+    /// clauses reading the elements of a typed array
+    /// ([`Self::validate_array_element_shape`]): grouping v1 leaves no such
+    /// clause out of `internal_clauses`, so every one is judged here. The
+    /// lowering keeps equivalent guards for callers that reach it directly.
+    pub fn validate_where_clause_shape(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -2553,7 +2561,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 self.validate_array_element_shape(platform_version)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "DriveDocumentQuery::validate_in_clause_shape".to_string(),
+                method: "DriveDocumentQuery::validate_where_clause_shape".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             })),
@@ -2595,14 +2603,6 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let is_typed_array = |field: &str| {
-            self.document_type
-                .flattened_properties()
-                .get(field)
-                .is_some_and(|property| {
-                    matches!(property.property_type, DocumentPropertyType::TypedArray(_))
-                })
-        };
         // A typed array is read by its elements and nothing else, and an
         // element operator reads a typed array, with values of its element
         // type: an equality on the array would otherwise key its value as an
@@ -2637,7 +2637,9 @@ impl<'a> DriveDocumentQuery<'a> {
             let walked_by_elements = self.internal_clauses.in_clauses.iter().any(|clause| {
                 clause.field == *field && clause.operator == WhereOperator::ContainsAny
             });
-            if is_typed_array(field) && !walked_by_elements {
+            let is_typed_array =
+                typed_array_property(self.document_type.flattened_properties(), field).is_some();
+            if is_typed_array && !walked_by_elements {
                 return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
                     "a typed array can only be ordered by with containsAny on it, which walks \
                      its elements in that order",
@@ -2654,20 +2656,25 @@ impl<'a> DriveDocumentQuery<'a> {
     /// document. The first occurrence stays. The proof carries every
     /// occurrence, so the server and the verifier drop the same ones, and the
     /// page may hold fewer documents than the limit, which counts occurrences.
+    /// A row is told apart by the stored document's bytes, borrowed from the
+    /// row: nothing is copied.
     #[cfg(any(feature = "server", feature = "verify"))]
     fn drop_repeated_element_matches<T, F>(&self, rows: Vec<T>, stored_document: F) -> Vec<T>
     where
-        F: Fn(&T) -> Option<Vec<u8>>,
+        F: Fn(&T) -> Option<&[u8]>,
     {
         if !self.matches_several_elements() {
             return rows;
         }
-        let mut seen = HashSet::new();
+        let first_occurrences: Vec<bool> = {
+            let mut seen: HashSet<&[u8]> = HashSet::new();
+            rows.iter()
+                .map(|row| stored_document(row).is_none_or(|bytes| seen.insert(bytes)))
+                .collect()
+        };
         rows.into_iter()
-            .filter(|row| match stored_document(row) {
-                Some(bytes) => seen.insert(bytes),
-                None => true,
-            })
+            .zip(first_occurrences)
+            .filter_map(|(row, first)| first.then_some(row))
             .collect()
     }
 
@@ -2681,7 +2688,7 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        self.validate_in_clause_shape(platform_version)?;
+        self.validate_where_clause_shape(platform_version)?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
@@ -2901,7 +2908,7 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<Document>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        self.validate_in_clause_shape(platform_version)?;
+        self.validate_where_clause_shape(platform_version)?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
@@ -3049,7 +3056,9 @@ impl<'a> DriveDocumentQuery<'a> {
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::document::DocumentV0Getters;
         let mut serialized_documents = self
-            .drop_repeated_element_matches(serialized_documents, |document| Some(document.clone()));
+            .drop_repeated_element_matches(serialized_documents, |document| {
+                Some(document.as_slice())
+            });
         if !self.pads_cursor_page(platform_version) {
             return Ok((serialized_documents, 0));
         }
@@ -3079,16 +3088,15 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<(QueryResultElements, u16), Error> {
         use dpp::document::DocumentV0Getters;
         use grovedb::query_result_type::QueryResultElement;
+        // A summable type stores its documents as `ItemWithSumItem`, read as
+        // an item all the same.
         elements.elements = self.drop_repeated_element_matches(elements.elements, |row| {
             let element = match row {
                 QueryResultElement::ElementResultItem(element)
                 | QueryResultElement::KeyElementPairResultItem((_, element))
                 | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => element,
             };
-            match element {
-                Element::Item(bytes, _) => Some(bytes.clone()),
-                _ => None,
-            }
+            element.as_item_bytes().ok()
         });
         if !self.pads_cursor_page(platform_version) {
             return Ok((elements, 0));

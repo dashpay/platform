@@ -7,7 +7,7 @@ use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::EphemeralPricing;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::fee::Credits;
 use dpp::prelude::TimestampMillis;
 use platform_version::version::fee::FeeVersion;
@@ -125,21 +125,8 @@ pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u6
                     .map(|transform| transform.overlap_factor()))
                 .map_or(1, |windows| windows.max(1));
             let elements = index
-                .properties
-                .iter()
-                .find_map(|property| {
-                    match document_type
-                        .flattened_properties()
-                        .get(&property.name)
-                        .map(|definition| &definition.property_type)
-                    {
-                        Some(DocumentPropertyType::TypedArray(typed_array)) => {
-                            Some(u64::from(typed_array.max_items))
-                        }
-                        _ => None,
-                    }
-                })
-                .map_or(1, |elements| elements.max(1));
+                .typed_array_max_items(document_type.flattened_properties())
+                .map_or(1, |elements| u64::from(elements.max(1)));
             (index.properties.len() as u64)
                 .saturating_mul(windows)
                 .saturating_mul(elements)

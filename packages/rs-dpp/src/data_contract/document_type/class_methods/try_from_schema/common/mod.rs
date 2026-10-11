@@ -32,8 +32,9 @@ use crate::data_contract::document_type::property::array::TypedArrayProperty;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
-    is_transient, property_at_path, top_level_property, DocumentPropertyReferenceTarget,
-    KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
+    is_transient, property_at_path, top_level_property, typed_array_property,
+    DocumentPropertyReferenceTarget, KeyIdReference, KeyReferenceIdentityProperty,
+    PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
     parse_property_constraint_condition, PropertyConstraint, SystemProperty, STORED_DOCUMENT_PREFIX,
@@ -1019,9 +1020,10 @@ fn parse_indices(
                     // set. `skip_if_absent` keeps what the contract declared, so the keyword's
                     // query rules do not apply: an indexed array is read through `contains`.
                     if ctx.generation.admit_indexed_arrays
-                        && index.properties.iter().any(|property| {
-                            is_typed_array_property(flattened_document_properties, &property.name)
-                        })
+                        && index
+                            .typed_arrays(flattened_document_properties)
+                            .next()
+                            .is_some()
                     {
                         let declared = std::mem::take(&mut index.skip_if_absent_properties);
                         index.skip_if_absent_properties = index
@@ -1029,10 +1031,11 @@ fn parse_indices(
                             .iter()
                             .filter(|property| {
                                 declared.contains(&property.name)
-                                    || is_typed_array_property(
+                                    || typed_array_property(
                                         flattened_document_properties,
                                         &property.name,
                                     )
+                                    .is_some()
                             })
                             .map(|property| property.name.clone())
                             .collect();
@@ -1470,18 +1473,8 @@ fn parse_indices(
     if ctx.generation.admit_indexed_arrays {
         let indexed_arrays: BTreeMap<String, u16> = indices
             .values()
-            .flat_map(|index| index.properties.iter())
-            .filter_map(|property| {
-                match flattened_document_properties
-                    .get(&property.name)
-                    .map(|definition| &definition.property_type)
-                {
-                    Some(DocumentPropertyType::TypedArray(typed_array)) => {
-                        Some((property.name.clone(), typed_array.max_items))
-                    }
-                    _ => None,
-                }
-            })
+            .flat_map(|index| index.typed_arrays(flattened_document_properties))
+            .map(|(_, name, typed_array)| (name.to_string(), typed_array.max_items))
             .collect();
         if !indexed_arrays.is_empty() {
             index_structure.stamp_indexed_arrays(&indexed_arrays);
@@ -1489,18 +1482,6 @@ fn parse_indices(
     }
 
     Ok((indices, index_structure))
-}
-
-/// Whether `property_name` names a typed array property of the document type.
-fn is_typed_array_property(
-    flattened_document_properties: &IndexMap<String, DocumentProperty>,
-    property_name: &str,
-) -> bool {
-    flattened_document_properties
-        .get(property_name)
-        .is_some_and(|property| {
-            matches!(property.property_type, DocumentPropertyType::TypedArray(_))
-        })
 }
 
 /// The rules an index naming a typed array must follow beyond its element's key limits
@@ -1524,22 +1505,8 @@ fn validate_indexed_array_index(
     index: &Index,
     flattened_document_properties: &IndexMap<String, DocumentProperty>,
 ) -> Result<(), ProtocolError> {
-    let arrays: Vec<(usize, &str, &TypedArrayProperty)> = index
-        .properties
-        .iter()
-        .enumerate()
-        .filter_map(|(position, property)| {
-            match flattened_document_properties
-                .get(&property.name)
-                .map(|definition| &definition.property_type)
-            {
-                Some(DocumentPropertyType::TypedArray(typed_array)) => {
-                    Some((position, property.name.as_str(), typed_array))
-                }
-                _ => None,
-            }
-        })
-        .collect();
+    let arrays: Vec<(usize, &str, &TypedArrayProperty)> =
+        index.typed_arrays(flattened_document_properties).collect();
     let Some(&(position, array_name, typed_array)) = arrays.first() else {
         return Ok(());
     };
@@ -1693,17 +1660,9 @@ fn validate_index_entries_per_document(
         let windows = index
             .bucketing()
             .map_or(1, |bucketing| bucketing.overlap_factor().max(1));
-        let elements = index.properties.iter().find_map(|property| {
-            match flattened_document_properties
-                .get(&property.name)
-                .map(|definition| &definition.property_type)
-            {
-                Some(DocumentPropertyType::TypedArray(typed_array)) => {
-                    Some(u64::from(typed_array.max_items))
-                }
-                _ => None,
-            }
-        });
+        let elements = index
+            .typed_array_max_items(flattened_document_properties)
+            .map(u64::from);
         has_indexed_array |= elements.is_some();
         entries = entries.saturating_add(windows.saturating_mul(elements.unwrap_or(1).max(1)));
     }
@@ -4057,9 +4016,20 @@ fn skip_if_absent_index_error(
     let declared_skip_properties: Vec<&String> = index
         .skip_if_absent_properties
         .iter()
-        .filter(|property| !is_typed_array_property(flattened_properties, property))
+        .filter(|property| typed_array_property(flattened_properties, property).is_none())
         .collect();
     if declared_skip_properties.is_empty() {
+        // The array alone: the index skips a document without elements whether the keyword
+        // is declared or not, so the keyword adds nothing.
+        if let Some((_, array, _)) = index.typed_arrays(flattened_properties).next() {
+            return Some(format!(
+                "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but its only \
+                 skip property is the typed array \"{}\", which every index naming it skips \
+                 on already: a document whose list is empty or absent is never entered. \
+                 Remove the flag, or name another optional property of the index",
+                index_name, document_type_name, array,
+            ));
+        }
         return Some(format!(
             "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but none of its \
              properties is optional: a required or system property can never be absent, so \

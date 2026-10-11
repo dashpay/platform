@@ -215,8 +215,9 @@ impl Index {
             let Some(property) = flattened_properties.get(&candidate.name) else {
                 continue;
             };
-            // Only a scalar reference can bind: an index property is never a
-            // typed array, so element references never reach an index. A
+            // Only a scalar reference can bind: a preallocated index is on an
+            // indexOnly type, which indexes no typed array, so element
+            // references never reach one. A
             // lookup reference of either kind never matches either: its value
             // is not the referenced document's `$id`. Nor
             // does a reference expression (`anyOf` / `allOf`), even of

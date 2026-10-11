@@ -9,7 +9,9 @@ use crate::query::{QuerySyntaxSimpleValidationResult, QuerySyntaxValidationResul
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentType, DocumentTypeRef};
+use dpp::data_contract::document_type::{
+    typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef,
+};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -1266,12 +1268,8 @@ impl<'a> WhereClause {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let names_typed_array = document_type
-            .flattened_properties()
-            .get(&self.field)
-            .is_some_and(|property| {
-                matches!(property.property_type, DocumentPropertyType::TypedArray(_))
-            });
+        let names_typed_array =
+            typed_array_property(document_type.flattened_properties(), &self.field).is_some();
         if names_typed_array != self.operator.reads_array_elements() {
             return Err(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(if names_typed_array {

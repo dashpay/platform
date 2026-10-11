@@ -5,7 +5,9 @@
 //! blanket `MultipleInClauses`; whether more than one `In` clause is
 //! *accepted* stays a decision of the versioned path-query lowering.
 //!
-//! Everything except the `In` handling is byte-identical to v0.
+//! Everything except the `In` handling and the typed array element operators
+//! (`Contains`, `ContainsAny`, which the dispatcher refuses before v0 runs) is
+//! byte-identical to v0.
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -35,12 +37,17 @@ pub(super) fn group_where_clauses_v1(
         where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                // An element of a typed array is an equality on the key the
-                // array's index enters the document under.
-                Equal | Contains => match where_clause.is_identifier() {
+                Equal => match where_clause.is_identifier() {
                     true => None,
                     false => Some(where_clause.clone()),
                 },
+                // An element of a typed array is an equality on the key the
+                // array's index enters the document under. It is grouped on
+                // every field, `$id` included: the primary key slots take only
+                // `Equal` and `In`, so an element clause on `$id` left out here
+                // would be dropped from the query instead of refused by
+                // `WhereClause::validate_array_element_clause`.
+                Contains => Some(where_clause.clone()),
                 _ => None,
             });
     let mut known_fields: BTreeSet<String> = BTreeSet::new();
@@ -63,11 +70,13 @@ pub(super) fn group_where_clauses_v1(
     let in_clauses_array = where_clauses
         .iter()
         .filter_map(|where_clause| match where_clause.operator {
-            // Several elements of a typed array are an `In` on its keys.
-            In | ContainsAny => match where_clause.is_identifier() {
+            In => match where_clause.is_identifier() {
                 true => None,
                 false => Some(where_clause.clone()),
             },
+            // Several elements of a typed array are an `In` on its keys,
+            // grouped on every field as `Contains` is above.
+            ContainsAny => Some(where_clause.clone()),
             _ => None,
         })
         .collect::<Vec<WhereClause>>();

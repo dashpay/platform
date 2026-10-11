@@ -11,7 +11,9 @@ use crate::util::type_constants::{
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, IndexLevel};
+use dpp::data_contract::document_type::{
+    typed_array_property, DocumentPropertyType, DocumentTypeRef, IndexLevel,
+};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
@@ -333,10 +335,8 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                 let (index_level, base_event) = size_info_with_base_event.ok_or(Error::Drive(
                     DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
                 ))?;
-                let Some(DocumentPropertyType::TypedArray(typed_array)) = document_type
-                    .flattened_properties()
-                    .get(key_path)
-                    .map(|property| &property.property_type)
+                let Some(typed_array) =
+                    typed_array_property(document_type.flattened_properties(), key_path)
                 else {
                     return Err(Error::Fee(
                         FeeError::DocumentTypeFieldNotFoundForEstimation(format!(

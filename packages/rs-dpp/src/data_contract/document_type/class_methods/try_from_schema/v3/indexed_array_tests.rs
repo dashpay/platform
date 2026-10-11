@@ -317,6 +317,42 @@ fn should_not_judge_a_required_array_by_the_declared_skip_rules() {
     parse(schema).expect("a required array still skips a document with an empty list");
 }
 
+/// `skipIfAbsent` whose only skip property would be the array adds nothing:
+/// the index skips a document without elements anyway. It is refused with a
+/// reason naming the array, not as a keyword on required properties.
+#[test]
+fn should_refuse_a_declared_skip_whose_only_skip_property_is_the_array() {
+    for skip_if_absent in [platform_value!(true), platform_value!(["hashtags"])] {
+        let schema = post_schema(
+            hashtags(10),
+            platform_value!([{
+                "name": "byHashtag",
+                "properties": [{ "hashtags": "asc" }, { "$createdAt": "asc" }],
+                "skipIfAbsent": skip_if_absent
+            }]),
+        );
+        expect_structure_error(
+            parse(schema),
+            "its only skip property is the typed array \"hashtags\"",
+        );
+    }
+    // Beside another optional property the keyword skips on that one.
+    let schema = post_schema(
+        hashtags(10),
+        platform_value!([{
+            "name": "byHashtagLanguage",
+            "properties": [{ "hashtags": "asc" }, { "language": "asc" }],
+            "skipIfAbsent": true
+        }]),
+    );
+    let document_type = parse(schema).expect("language is an optional skip property");
+    let index = document_type
+        .indexes()
+        .get("byHashtagLanguage")
+        .expect("the index");
+    assert_eq!(index.skip_if_absent_properties, ["hashtags", "language"]);
+}
+
 #[test]
 fn should_refuse_an_indexed_array_on_an_index_only_type() {
     let schema = platform_value!({

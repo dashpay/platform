@@ -57,7 +57,7 @@ use crate::query::drive_document_sum_query::index_picker::{
 };
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use crate::query::{
-    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    answers_per_element, key_array_element_clauses, validate_and_canonicalize_where_clauses,
     validate_resolved_time_range_clause_shapes,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -93,14 +93,13 @@ impl Drive {
             &request.where_clauses,
             &request.resolved_time_ranges,
         )?;
-        // A typed array's elements are keyed first, for both paths: per element
-        // only when the request groups by them (see
-        // [`key_array_element_clauses`]).
-        let groups_by_element = matches!(request.mode, AverageMode::GroupByIn)
-            && !request
-                .where_clauses
-                .iter()
-                .any(|clause| is_range_operator(clause.operator));
+        // A typed array's elements are keyed first, for both paths: several
+        // only when the request answers per element (see
+        // [`answers_per_element`]).
+        let groups_by_element = answers_per_element(
+            matches!(request.mode, AverageMode::GroupByIn),
+            &request.where_clauses,
+        );
         request.where_clauses = key_array_element_clauses(
             std::mem::take(&mut request.where_clauses),
             request.document_type,

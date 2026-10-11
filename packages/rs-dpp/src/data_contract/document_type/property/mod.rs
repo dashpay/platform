@@ -231,6 +231,20 @@ impl DocumentProperty {
     }
 }
 
+/// The typed array property `name` names among a document type's
+/// `flattened_properties` (protocol version 14), or `None` when it names no
+/// property or a property of another type. The one reading of "is this a
+/// typed array" shared by the parser, the write walkers, pricing and queries.
+pub fn typed_array_property<'a>(
+    flattened_properties: &'a IndexMap<String, DocumentProperty>,
+    name: &str,
+) -> Option<&'a TypedArrayProperty> {
+    match &flattened_properties.get(name)?.property_type {
+        DocumentPropertyType::TypedArray(typed_array) => Some(typed_array),
+        _ => None,
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct StringPropertySizes {
     pub min_length: Option<u16>,
