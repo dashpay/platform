@@ -11,16 +11,19 @@ use crate::data_contract::config::moderation::{ContractModerationConfig, Contrac
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use crate::data_contract::document_type::class_methods::where_condition_literal_error;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::property_constraints::SystemProperty;
 use crate::data_contract::document_type::property_constraints::{
     data_with_referenced_documents, referenced_fields, DocumentSystemValues,
     REFERENCED_DOCUMENT_KEY,
 };
+use crate::data_contract::document_type::property_constraints::{PropertyRead, SystemProperty};
 use crate::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType, WhereBound,
-    WhereCondition, WhereLiteral, WhereOrdering,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType, DocumentTypeRef,
+    WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering,
+    WhereOrderingBound,
 };
+use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::string_encoding::Encoding;
 use platform_value::{platform_value, Identifier, Value};
@@ -75,6 +78,7 @@ fn poll() -> Value {
                 "position": 8
             },
             "curatorId": identifier(9, None),
+            "payload": { "type": "array", "byteArray": true, "maxItems": 34, "position": 10 },
         },
         "transient": ["note"],
         "required": ["question", "option0", "option1", "$createdAt"],
@@ -252,6 +256,27 @@ fn judged(vote_data: Value, poll_values: Value) -> Value {
         .into_btree_string_map()
         .expect("the vote data is a map");
     data_with_referenced_documents(&data, BTreeMap::from([("pollId".to_string(), poll_values)]))
+        .expect("the values are put under the reference")
+}
+
+/// Judges `vote_data`, a vote of `vote`, by the rules reading the poll it
+/// names, whose values are `poll_values`, with `system`.
+fn judge(
+    vote: DocumentTypeRef,
+    vote_data: Value,
+    poll_values: Value,
+    system: &DocumentSystemValues,
+) -> SimpleConsensusValidationResult {
+    let data: BTreeMap<String, Value> = vote_data
+        .into_btree_string_map()
+        .expect("the vote data is a map");
+    vote.validate_referencing_property_constraints(
+        &data,
+        BTreeMap::from([("pollId".to_string(), poll_values)]),
+        system,
+        PlatformVersion::latest(),
+    )
+    .expect("the rules evaluate")
 }
 
 #[test]
@@ -275,32 +300,22 @@ fn should_judge_a_rule_by_the_values_of_the_referenced_document() {
     });
     let poll_id = Value::Identifier([5; 32]);
     let vote_data = platform_value!({ "pollId": poll_id.clone(), "pollOwnerId": poll_owner.clone(), "choice": 1u8 });
-    let data = judged(vote_data.clone(), open_poll.clone());
-    let result = vote
-        .validate_referencing_property_constraints(&data, &system, PlatformVersion::latest())
-        .expect("the rules evaluate");
+    let result = judge(vote, vote_data.clone(), open_poll.clone(), &system);
     assert!(result.is_valid(), "{:?}", result.errors);
 
     // The poll has two options, so choice 2 is none of them
-    let data = judged(
+    let result = judge(
+        vote,
         platform_value!({ "pollId": poll_id.clone(), "pollOwnerId": poll_owner.clone(), "choice": 2u8 }),
         open_poll.clone(),
+        &system,
     );
-    let result = vote
-        .validate_referencing_property_constraints(&data, &system, PlatformVersion::latest())
-        .expect("the rules evaluate");
     assert!(format!("{:?}", result.errors).contains("choiceIsAnOption"));
 
     // Past the end
     let mut ended = open_poll.clone();
     ended.set_value("endsAt", Value::U64(900)).expect("set");
-    let result = vote
-        .validate_referencing_property_constraints(
-            &judged(vote_data.clone(), ended),
-            &system,
-            PlatformVersion::latest(),
-        )
-        .expect("the rules evaluate");
+    let result = judge(vote, vote_data.clone(), ended, &system);
     assert!(format!("{:?}", result.errors).contains("castBeforeTheEnd"));
 
     // A multiple-choice poll is no single-choice vote's
@@ -308,25 +323,13 @@ fn should_judge_a_rule_by_the_values_of_the_referenced_document() {
     multi
         .set_value("multiChoice", Value::Bool(true))
         .expect("set");
-    let result = vote
-        .validate_referencing_property_constraints(
-            &judged(vote_data.clone(), multi),
-            &system,
-            PlatformVersion::latest(),
-        )
-        .expect("the rules evaluate");
+    let result = judge(vote, vote_data.clone(), multi, &system);
     assert!(format!("{:?}", result.errors).contains("singleChoicePoll"));
 
     // A poll without an end is open for good: the default stands in for endsAt
     let mut endless = open_poll;
     endless.remove("endsAt").expect("remove");
-    let result = vote
-        .validate_referencing_property_constraints(
-            &judged(vote_data.clone(), endless),
-            &system,
-            PlatformVersion::latest(),
-        )
-        .expect("the rules evaluate");
+    let result = judge(vote, vote_data.clone(), endless, &system);
     assert!(result.is_valid(), "{:?}", result.errors);
 }
 
@@ -495,8 +498,12 @@ fn should_refuse_a_read_the_referenced_type_can_not_answer() {
 /// operand of the type, while the referenced document's own identifiers
 /// (`$id`, `$ownerId`, `$creatorId`), always identifiers, take a base58 `const`
 /// too.
+/// The parse of a rule does not know what a field of a referenced document
+/// holds, so a string constant compared with one reads as the field holds: an
+/// identifier written base58, a byte array hex. Registration, with the
+/// referenced type in hand, checks the constant spells one.
 #[test]
-fn should_compare_a_referenced_identifier_as_the_rule_says() {
+fn should_compare_a_referenced_field_as_what_it_holds() {
     let base58 = Identifier::new([4; 32]).to_string(Encoding::Base58);
     parse_rules(platform_value!({
         "rule": { "equal": [{ "referenced": ["pollId", "curatorId"] }, "pollOwnerId"] }
@@ -506,12 +513,185 @@ fn should_compare_a_referenced_identifier_as_the_rule_says() {
         "rule": { "notEqual": [{ "referenced": ["pollId", "$ownerId"] }, { "const": base58.clone() }] }
     }))
     .expect("the referenced document's owner takes a base58 const");
+    let types = parse_rules(platform_value!({
+        "curated": { "equal": [{ "referenced": ["pollId", "curatorId"] }, { "const": base58.clone() }] },
+        "listed": { "in": [{ "referenced": ["pollId", "curatorId"] }, [base58.clone(), Identifier::new([5; 32]).to_string(Encoding::Base58)]] },
+        "multihash": { "startsWith": [{ "referenced": ["pollId", "payload"] }, { "const": "1220" }] },
+        "voterListed": { "contains": [{ "referenced": ["pollId", "voters"] }, { "const": base58.clone() }] }
+    }))
+    .expect("an identifier takes base58 constants and a byte array a hex affix");
+    let vote = types.get("vote").expect("the vote type").as_ref();
+    let system = DocumentSystemValues::owned_by(Identifier::new([3; 32]));
+    let vote_data = platform_value!({ "pollId": Value::Identifier([5; 32]), "pollOwnerId": Value::Identifier([4; 32]), "choice": 0u8 });
+    // The values as a stored poll decodes them: identifiers as identifiers, a
+    // byte array as bytes
+    let poll = |curator: u8, payload: Vec<u8>, voter: u8| {
+        Value::Map(vec![
+            (
+                Value::Text("curatorId".to_string()),
+                Value::Identifier([curator; 32]),
+            ),
+            (Value::Text("payload".to_string()), Value::Bytes(payload)),
+            (
+                Value::Text("voters".to_string()),
+                Value::Array(vec![Value::Identifier([voter; 32])]),
+            ),
+        ])
+    };
+    let result = judge(
+        vote,
+        vote_data.clone(),
+        poll(4, vec![0x12, 0x20, 0xab], 4),
+        &system,
+    );
+    assert!(result.is_valid(), "{:?}", result.errors);
+    for (poll_values, broken) in [
+        (poll(6, vec![0x12, 0x20], 4), "curated"),
+        (poll(4, vec![0x12, 0x21], 4), "multihash"),
+        (poll(4, vec![0x12, 0x20], 7), "voterListed"),
+    ] {
+        let result = judge(vote, vote_data.clone(), poll_values, &system);
+        assert!(
+            format!("{:?}", result.errors).contains(broken),
+            "expected {broken} to break: {:?}",
+            result.errors
+        );
+    }
+
+    for (rule, needle) in [
+        (
+            platform_value!({ "equal": [{ "referenced": ["pollId", "curatorId"] }, { "const": "not base58 0OIl" }] }),
+            "which spells none",
+        ),
+        (
+            platform_value!({ "startsWith": [{ "referenced": ["pollId", "payload"] }, { "const": "zz" }] }),
+            "which is not hex",
+        ),
+        (
+            platform_value!({ "startsWith": [{ "referenced": ["pollId", "curatorId"] }, { "const": "12" }] }),
+            "which has no start or end",
+        ),
+        (
+            platform_value!({ "equal": [{ "referenced": ["pollId", "curatorId"] }, "label"] }),
+            "a string property of the type",
+        ),
+        (
+            platform_value!({ "equal": [{ "referenced": ["pollId", "endsAt"] }, { "const": "soon" }] }),
+            "which spells none",
+        ),
+    ] {
+        expect_structure_error(parse_rules(platform_value!({ "rule": rule })), needle);
+    }
+}
+
+/// Two fields of referenced documents compared with each other compare by
+/// value, whatever they hold, one left out equalling nothing; registration
+/// refuses two that hold different kinds of value, which never agree.
+#[test]
+fn should_compare_two_referenced_fields_by_value() {
+    let types = parse_rules(platform_value!({
+        "sameStatus": { "equal": [{ "referenced": ["pollId", "status"] }, { "referenced": ["postId", "hashtag"] }] }
+    }))
+    .expect("two strings compare");
+    let vote = types.get("vote").expect("the vote type").as_ref();
+    let system = DocumentSystemValues::owned_by(Identifier::new([3; 32]));
+    let data: BTreeMap<String, Value> = platform_value!({ "pollId": Value::Identifier([5; 32]), "postId": Value::Identifier([6; 32]), "choice": 0u8 })
+        .into_btree_string_map()
+        .expect("a map");
+    let judge_with = |status: Option<&str>, hashtag: Option<&str>| {
+        let poll = status.map_or_else(
+            || platform_value!({}),
+            |status| platform_value!({ "status": status }),
+        );
+        let post = hashtag.map_or_else(
+            || platform_value!({}),
+            |hashtag| platform_value!({ "hashtag": hashtag }),
+        );
+        vote.validate_referencing_property_constraints(
+            &data,
+            BTreeMap::from([("pollId".to_string(), poll), ("postId".to_string(), post)]),
+            &system,
+            PlatformVersion::latest(),
+        )
+        .expect("the rules evaluate")
+        .is_valid()
+    };
+    assert!(judge_with(Some("open"), Some("open")));
+    assert!(!judge_with(Some("open"), Some("closed")));
+    assert!(!judge_with(None, None));
+
     expect_structure_error(
         parse_rules(platform_value!({
-            "rule": { "equal": [{ "referenced": ["pollId", "curatorId"] }, { "const": base58 }] }
+            "rule": { "equal": [{ "referenced": ["pollId", "endsAt"] }, { "referenced": ["postId", "hashtag"] }] }
         })),
-        "compares \"pollId.curatorId\" with a string",
+        "which hold different kinds of value",
     );
+    expect_structure_error(
+        parse_rules(platform_value!({
+            "rule": { "notEqual": [{ "referenced": ["pollId", "endsAt"] }, { "referenced": ["pollId", "status"] }] }
+        })),
+        "which does not",
+    );
+}
+
+/// A reference inside an object is read through by its dotted path.
+#[test]
+fn should_read_through_a_reference_inside_an_object() {
+    let mut nested = vote(
+        poll_reference(),
+        platform_value!({
+            "beforeTheEnd": { "lessThan": ["$createdAt", { "referenced": ["meta.pollId", "endsAt"] }] }
+        }),
+        vec![],
+    );
+    nested
+        .set_value_at_full_path(
+            "properties.meta",
+            platform_value!({
+                "type": "object",
+                "properties": { "pollId": identifier(0, Some(poll_reference())) },
+                "required": ["pollId"],
+                "additionalProperties": false,
+                "position": 6,
+            }),
+        )
+        .expect("the vote takes the object");
+    let types = parse(nested).expect("a nested reference reads");
+    let vote = types.get("vote").expect("the vote type").as_ref();
+    let rule = vote
+        .property_constraints()
+        .get("beforeTheEnd")
+        .expect("the rule");
+    assert_eq!(
+        rule.referenced_reads(),
+        vec![("meta.pollId", "endsAt", PropertyRead::Value)]
+    );
+    let system = DocumentSystemValues {
+        created_at: Some(1_000),
+        ..DocumentSystemValues::owned_by(Identifier::new([3; 32]))
+    };
+    let data: BTreeMap<String, Value> = platform_value!({ "pollId": Value::Identifier([5; 32]), "pollOwnerId": Value::Identifier([4; 32]), "choice": 0u8, "meta": { "pollId": Value::Identifier([5; 32]) } })
+        .into_btree_string_map()
+        .expect("a map");
+    for (ends_at, holds) in [(2_000u64, true), (500, false)] {
+        let result = vote
+            .validate_referencing_property_constraints(
+                &data,
+                BTreeMap::from([(
+                    "meta.pollId".to_string(),
+                    platform_value!({ "endsAt": ends_at }),
+                )]),
+                &system,
+                PlatformVersion::latest(),
+            )
+            .expect("the rules evaluate");
+        assert_eq!(
+            result.is_valid(),
+            holds,
+            "endsAt {ends_at}: {:?}",
+            result.errors
+        );
+    }
 }
 
 #[test]
@@ -785,15 +965,15 @@ fn should_refuse_a_malformed_referenced_operand() {
             "must list a reference property",
         ),
         (
-            platform_value!({ "lessThan": [{ "referenced": ["meta.pollId", "endsAt"] }, 5] }),
-            "a reference property is a top-level property",
+            platform_value!({ "lessThan": [{ "referenced": ["meta..pollId", "endsAt"] }, 5] }),
+            "a reference property is the dotted path",
         ),
         (
             platform_value!({ "lessThan": [{ "referenced": ["pollId", "$revision"] }, 5] }),
             "a field of the referenced document",
         ),
         (
-            platform_value!({ "lessThan": ["$referenced.pollId.endsAt", 5] }),
+            platform_value!({ "lessThan": ["$referenced.pollId.$.endsAt", 5] }),
             "is written { \"referenced\"",
         ),
     ] {
@@ -869,18 +1049,18 @@ fn should_parse_where_entries_that_are_not_equalities() {
         conditions.get("endsAt"),
         Some(&WhereCondition::Ordering {
             ordering: WhereOrdering::GreaterThan,
-            bound: WhereBound::System(SystemProperty::CreatedAt)
+            bound: WhereOrderingBound::System(SystemProperty::CreatedAt)
         })
     );
     assert_eq!(
         conditions.get("option0"),
-        Some(&WhereCondition::NotEqual(WhereBound::Property(
+        Some(&WhereCondition::NotEqual(WhereNotEqualBound::Property(
             "label".to_string()
         )))
     );
     assert_eq!(
         conditions.get("$id"),
-        Some(&WhereCondition::NotEqual(WhereBound::Writer))
+        Some(&WhereCondition::NotEqual(WhereNotEqualBound::Writer))
     );
     // The equality stays an equality
     assert_eq!(conditions.len(), 5);
@@ -973,4 +1153,83 @@ fn should_hold_a_moderated_writer_inequality_to_what_every_record_keeps() {
         )
         .expect("the property applies");
     expect_structure_error(parse(refused), "compares the writer");
+}
+
+/// A `where` literal no value of the referenced property can equal, or an
+/// ordering no value of it meets, would refuse every write or hold for every
+/// one, so registration refuses it, the referenced type in hand.
+#[test]
+fn should_refuse_a_where_literal_the_referenced_property_never_holds() {
+    let types = parse_rules(pollr_rules()).expect("the types parse");
+    let poll = types.get("poll").expect("the poll type").as_ref();
+    let text = |text: &str| WhereLiteral::Text(text.to_string());
+    let error = |property: &str, kind: WhereLiteralKind, condition: WhereCondition| {
+        where_condition_literal_error(poll, None, property, kind, &condition)
+            .expect("the schema reads")
+    };
+    for (property, kind, condition, reason) in [
+        (
+            "status",
+            WhereLiteralKind::Text,
+            WhereCondition::Constant(text("paused")),
+            "enum values",
+        ),
+        (
+            "option0",
+            WhereLiteralKind::Text,
+            WhereCondition::NotEqual(WhereNotEqualBound::Constant(text(&"x".repeat(101)))),
+            "of a length",
+        ),
+        (
+            "payload",
+            WhereLiteralKind::Bytes,
+            WhereCondition::In(vec![text("cafe"), text("CAFE")]),
+            "an earlier literal",
+        ),
+        (
+            "endsAt",
+            WhereLiteralKind::Integer,
+            WhereCondition::Constant(WhereLiteral::Integer(-1)),
+            "outside the values",
+        ),
+        (
+            "endsAt",
+            WhereLiteralKind::Integer,
+            WhereCondition::Ordering {
+                ordering: WhereOrdering::GreaterThan,
+                bound: WhereOrderingBound::Constant(9007199254740991),
+            },
+            "no value the referenced property holds",
+        ),
+    ] {
+        let refused = error(property, kind, condition);
+        assert!(
+            refused
+                .as_deref()
+                .is_some_and(|refused| refused.contains(reason)),
+            "{property}: {refused:?}"
+        );
+    }
+    for (property, kind, condition) in [
+        (
+            "status",
+            WhereLiteralKind::Text,
+            WhereCondition::In(vec![text("open"), text("closed")]),
+        ),
+        (
+            "payload",
+            WhereLiteralKind::Bytes,
+            WhereCondition::In(vec![text("cafe"), text("beef")]),
+        ),
+        (
+            "endsAt",
+            WhereLiteralKind::Integer,
+            WhereCondition::Ordering {
+                ordering: WhereOrdering::GreaterThanOrEqual,
+                bound: WhereOrderingBound::Constant(9007199254740991),
+            },
+        ),
+    ] {
+        assert_eq!(error(property, kind, condition), None, "{property}");
+    }
 }

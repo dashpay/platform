@@ -16,6 +16,9 @@ const TOPIC: &str = "topic";
 const THREAD_POST: &str = "threadPost";
 const LISTING: &str = "listing";
 const OFFER: &str = "offer";
+const ARTICLE: &str = "article";
+const COMMENT: &str = "comment";
+const STALL: &str = "stall";
 
 fn identifier_property(position: u64, refers_to: Value) -> Value {
     platform_value!({
@@ -95,6 +98,9 @@ fn thread_post_schema() -> Value {
             "text": { "type": "string", "minLength": 1, "maxLength": 50, "position": 1 },
         },
         "required": ["topicId", "text"],
+        "indices": [
+            { "name": "byTopic", "properties": [{ "topicId": "asc" }], "countable": "countable" }
+        ],
         "propertyConstraints": {
             "topicOpen": { "equal": [{ "referenced": ["topicId", "open"] }, 1] }
         },
@@ -149,6 +155,82 @@ fn offer_schema() -> Value {
     })
 }
 
+/// An article its owner may close, which moderators take down, each removal
+/// keeping its text and its status
+fn article_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": false,
+        "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["text", "status"] },
+        "properties": {
+            "text": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
+            "status": { "type": "string", "enum": ["open", "closed"], "maxLength": 10, "position": 1 },
+        },
+        "required": ["text", "status"],
+        "additionalProperties": false,
+    })
+}
+
+/// A comment on an open article, which may quote it
+fn comment_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": false,
+        "properties": {
+            "articleId": identifier_property(
+                0,
+                platform_value!({
+                    "type": "moderatedDocument",
+                    "documentType": ARTICLE,
+                    "where": { "status": { "const": "open" } },
+                }),
+            ),
+            "quote": { "type": "string", "maxLength": 50, "position": 1 },
+            "body": { "type": "string", "minLength": 1, "maxLength": 50, "position": 2 },
+        },
+        "required": ["articleId", "body"],
+        "propertyConstraints": {
+            "quotesTheArticle": {
+                "anyOf": [
+                    { "absent": "quote" },
+                    { "equal": ["quote", { "referenced": ["articleId", "text"] }] }
+                ]
+            }
+        },
+        "additionalProperties": false,
+    })
+}
+
+/// A stall on a topic, kept to a hundred and one posts on it while it is
+/// open, with a note only moderators write
+fn stall_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": false,
+        "moderatorAbilities": { "changeFields": ["note"] },
+        "properties": {
+            "topicId": identifier_property(
+                0,
+                platform_value!({ "type": "permanentDocument", "documentType": TOPIC }),
+            ),
+            "note": { "type": "string", "maxLength": 50, "position": 1 },
+        },
+        "required": ["topicId"],
+        "propertyConstraints": {
+            "fewPosts": {
+                "lessThanOrEqual": [
+                    { "countOf": [THREAD_POST, { "topicId": "topicId" }] },
+                    { "add": [{ "referenced": ["topicId", "open"] }, 100] }
+                ]
+            }
+        },
+        "additionalProperties": false,
+    })
+}
+
 async fn setup() -> Setup {
     Setup::new_at_with(
         Some(moderators_without_lists()),
@@ -160,6 +242,9 @@ async fn setup() -> Setup {
             add_document_type(contract, THREAD_POST, thread_post_schema());
             add_document_type(contract, LISTING, listing_schema());
             add_document_type(contract, OFFER, offer_schema());
+            add_document_type(contract, ARTICLE, article_schema());
+            add_document_type(contract, COMMENT, comment_schema());
+            add_document_type(contract, STALL, stall_schema());
         },
     )
     .await
@@ -444,4 +529,95 @@ async fn should_check_where_conditions_against_a_removal_record() {
         &setup.process_at(&refused, ends_at, &transaction),
         "{ \"greaterThan\": \"$updatedAt\" }",
     );
+}
+
+/// A rule reads the article a comment names, so every replace of the comment
+/// checks the reference, its `where` whole: once the article's owner closes it,
+/// no comment on it is edited, and a moderator's removal of the article
+/// changes nothing, the record keeping the closed status.
+#[tokio::test]
+async fn should_check_every_where_entry_of_a_removed_document_a_rule_reads() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (mut article, create_article) = create_with(
+        &setup,
+        &setup.user,
+        ARTICLE,
+        vec![("text", "hello".into()), ("status", "open".into())],
+    )
+    .await;
+    assert_success(&setup.process(&create_article, &transaction));
+    let (comment, create_comment) = create_with(
+        &setup,
+        &setup.stranger,
+        COMMENT,
+        vec![
+            ("articleId", id_value(article.id())),
+            ("quote", "hello".into()),
+            ("body", "nice".into()),
+        ],
+    )
+    .await;
+    assert_success(&setup.process(&create_comment, &transaction));
+
+    article.set("status", "closed".into());
+    let close = replacement(&setup.user, &setup.contract, ARTICLE, &mut article).await;
+    assert_success(&setup.process(&close, &transaction));
+    let mut edit = comment.clone();
+    edit.set("body", "an edit".into());
+    let refused = replacement(&setup.stranger, &setup.contract, COMMENT, &mut edit).await;
+    assert_where_refused(
+        &setup.process(&refused, &transaction),
+        "{ \"const\": \"open\" }",
+    );
+
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(ARTICLE, article.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+    let mut edit = comment.clone();
+    edit.set("body", "another edit".into());
+    let refused = replacement(&setup.stranger, &setup.contract, COMMENT, &mut edit).await;
+    assert_where_refused(
+        &setup.process(&refused, &transaction),
+        "{ \"const\": \"open\" }",
+    );
+}
+
+/// A moderator's change of a field judges no rule reading a referenced
+/// document, and reads none of its totals: the stall's rule, reading the posts
+/// on its topic and the topic itself, is left for the owner's writes.
+#[tokio::test]
+async fn should_change_a_field_without_reading_a_total_of_a_rule_it_does_not_judge() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (topic, create_topic) = create_with(
+        &setup,
+        &setup.user,
+        TOPIC,
+        vec![("open", Value::Bool(true))],
+    )
+    .await;
+    assert_success(&setup.process(&create_topic, &transaction));
+    let (stall, create_stall) = create_with(
+        &setup,
+        &setup.stranger,
+        STALL,
+        vec![("topicId", id_value(topic.id()))],
+    )
+    .await;
+    assert_success(&setup.process(&create_stall, &transaction));
+
+    let change = setup
+        .moderate(
+            &setup.moderator,
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: STALL.to_string(),
+                document_id: stall.id(),
+                fields: BTreeMap::from([("note".to_string(), Value::Text("tidy".to_string()))]),
+                reason: ContractModerationReason::from_text("handled"),
+            },
+        )
+        .await;
+    assert_success(&setup.process(&change, &transaction));
 }

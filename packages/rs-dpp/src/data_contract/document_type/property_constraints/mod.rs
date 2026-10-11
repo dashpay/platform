@@ -98,6 +98,7 @@ mod tests;
 
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::document::PropertyConstraintViolation;
+use crate::data_contract::document_type::property::is_referenced_system_agreement_property;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -184,9 +185,9 @@ pub const STORED_DOCUMENT_KEY: &str = "$old";
 
 /// The operand key of a value of the document a reference of the type points
 /// at: `{ "referenced": ["pollId", "endsAt"] }` is the `endsAt` of the
-/// document the top-level property `pollId` refers to. It stands wherever a
-/// property path does, and is read as the path
-/// `$referenced.pollId.endsAt` ([`REFERENCED_DOCUMENT_PREFIX`]).
+/// document the property `pollId` refers to. It stands wherever a property
+/// path does, and is read as the path `$referenced.pollId.$.endsAt`
+/// ([`referenced_path`]).
 pub const REFERENCED: &str = "referenced";
 
 /// The key the values of the documents the type's references point at sit
@@ -199,26 +200,28 @@ pub const REFERENCED: &str = "referenced";
 pub const REFERENCED_DOCUMENT_KEY: &str = "$referenced";
 
 /// The prefix of the path a `referenced` operand is read through:
-/// `$referenced.<reference property>.<field>`.
+/// `$referenced.<reference property>.$.<field>`.
 pub const REFERENCED_DOCUMENT_PREFIX: &str = "$referenced.";
 
-/// The fields of a referenced document a `referenced` operand may read beside
-/// its schema properties and the nine times and heights: its identifiers,
-/// which compare as identifiers.
-pub const REFERENCED_IDENTIFIER_FIELDS: [&str; 3] = [DOCUMENT_ID, OWNER_ID, CREATOR_ID];
+/// The segment between the reference property, which may be a dotted path
+/// (`meta.pollId`), and the field of the document it points at, which may be
+/// one too, in the path a `referenced` operand is read through: no property is
+/// named `$`.
+const REFERENCED_FIELD_SEPARATOR: &str = ".$.";
 
 /// The reference property and the field of the document it points at that the
-/// path a `referenced` operand is read through names: `("pollId", "endsAt")`
-/// for `$referenced.pollId.endsAt`. `None` for any other path.
+/// path a `referenced` operand is read through names: `("meta.pollId",
+/// "endsAt")` for `$referenced.meta.pollId.$.endsAt`. `None` for any other
+/// path.
 pub fn referenced_read(path: &str) -> Option<(&str, &str)> {
     path.strip_prefix(REFERENCED_DOCUMENT_PREFIX)?
-        .split_once('.')
+        .split_once(REFERENCED_FIELD_SEPARATOR)
 }
 
 /// The path a `referenced` operand reading `field` through `reference` is read
 /// through ([`REFERENCED_DOCUMENT_PREFIX`]).
 pub fn referenced_path(reference: &str, field: &str) -> String {
-    format!("{REFERENCED_DOCUMENT_PREFIX}{reference}.{field}")
+    format!("{REFERENCED_DOCUMENT_PREFIX}{reference}{REFERENCED_FIELD_SEPARATOR}{field}")
 }
 
 /// What `rules` read of the documents the type's references point at: by
@@ -247,50 +250,104 @@ pub fn referenced_document_values<'a>(
     document: &Document,
     fields: impl IntoIterator<Item = &'a str>,
 ) -> Result<Value, platform_value::Error> {
-    let system = DocumentSystemValues::of_document(document);
     let mut values = Value::Map(Vec::new());
     for field in fields {
-        let value = match field {
-            DOCUMENT_ID => Some(Value::Identifier(document.id().to_buffer())),
-            OWNER_ID => Some(Value::Identifier(document.owner_id().to_buffer())),
-            CREATOR_ID => document
-                .creator_id()
-                .map(|creator_id| Value::Identifier(creator_id.to_buffer())),
-            field => match SystemProperty::from_name(field) {
-                Some(property) => system.value(property).map(Value::I128),
-                None => document.properties().get_optional_at_path(field)?.cloned(),
-            },
-        };
-        if let Some(value) = value {
-            values.set_value_at_full_path(field, value)?;
+        if let Some(value) = referenced_document_value(document, field)? {
+            values.set_value_at_full_path(field, value.into_owned())?;
         }
     }
     Ok(values)
 }
 
+/// The value `field` names of `document`, a document a reference points at,
+/// as a rule or a `where` entry reads it: a schema property at its dotted path,
+/// `$id`, `$ownerId` and `$creatorId` as identifiers, a time or height as an
+/// integer. `None` when the document holds none there; an error when a value
+/// on the way down a dotted path is no object.
+pub fn referenced_document_value<'a>(
+    document: &'a Document,
+    field: &str,
+) -> Result<Option<Cow<'a, Value>>, platform_value::Error> {
+    Ok(match field {
+        DOCUMENT_ID => Some(Cow::Owned(Value::Identifier(document.id().to_buffer()))),
+        OWNER_ID => Some(Cow::Owned(Value::Identifier(
+            document.owner_id().to_buffer(),
+        ))),
+        CREATOR_ID => document
+            .creator_id()
+            .map(|creator_id| Cow::Owned(Value::Identifier(creator_id.to_buffer()))),
+        field => match SystemProperty::from_name(field) {
+            Some(property) => DocumentSystemValues::of_document(document)
+                .value(property)
+                .map(|value| Cow::Owned(Value::I128(value))),
+            None => document
+                .properties()
+                .get_optional_at_path(field)?
+                .map(Cow::Borrowed),
+        },
+    })
+}
+
 /// The data a rule reading a referenced document is judged against: the
 /// document's properties, `data`, with `referenced`, each reference property and
 /// the values its rules read of the document it points at
-/// ([`referenced_document_values`]), under [`REFERENCED_DOCUMENT_KEY`]. A
-/// reference the document leaves out has no entry, and reads as absent.
+/// ([`referenced_document_values`]), where [`referenced_path`] reads them, under
+/// [`REFERENCED_DOCUMENT_KEY`]. A reference the document leaves out has no
+/// entry, and reads as absent.
 pub fn data_with_referenced_documents(
     data: &BTreeMap<String, Value>,
     referenced: BTreeMap<String, Value>,
-) -> Value {
+) -> Result<Value, platform_value::Error> {
+    let mut documents = Value::Map(Vec::new());
+    for (reference, values) in referenced {
+        // The path of the separator segment, without the leading `$referenced.`
+        let at = format!("{reference}{REFERENCED_FIELD_SEPARATOR}");
+        documents.set_value_at_full_path(at.trim_end_matches('.'), values)?;
+    }
     let mut entries: Vec<(Value, Value)> = data
         .iter()
         .map(|(property, value)| (Value::Text(property.clone()), value.clone()))
         .collect();
-    entries.push((
-        Value::Text(REFERENCED_DOCUMENT_KEY.to_string()),
-        Value::Map(
-            referenced
-                .into_iter()
-                .map(|(reference, values)| (Value::Text(reference), values))
-                .collect(),
-        ),
-    ));
-    Value::Map(entries)
+    entries.push((Value::Text(REFERENCED_DOCUMENT_KEY.to_string()), documents));
+    Ok(Value::Map(entries))
+}
+
+/// Whether `text` spells `identifier` in base58, as a constant compared with an
+/// identifier is written: decoded in place, 32 bytes exactly.
+pub(crate) fn spells_identifier(text: &str, identifier: &[u8; 32]) -> bool {
+    let mut decoded = [0u8; 32];
+    matches!(bs58::decode(text).onto(&mut decoded), Ok(32)) && decoded == *identifier
+}
+
+/// Whether `text` spells `bytes` in hex, two digits of either case a byte, as a
+/// constant compared with a byte array is written: read beside the bytes.
+pub(crate) fn spells_bytes(text: &str, bytes: &[u8]) -> bool {
+    text.len() == 2 * bytes.len()
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            text.get(2 * index..2 * index + 2)
+                .filter(|digits| digits.bytes().all(|digit| digit.is_ascii_hexdigit()))
+                .and_then(|digits| u8::from_str_radix(digits, 16).ok())
+                == Some(*byte)
+        })
+}
+
+/// Whether `value`, a value of a referenced document a rule reads, is the one
+/// the string `constant` spells: a string itself, an identifier in base58, a
+/// byte array in hex. The parse of a rule does not know what a referenced
+/// field holds (its type may be another contract's), so a string constant
+/// compared with one reads as the field's value says; registration checks the
+/// constant spells a value of the field's type. Consensus reads the value from
+/// a stored document or removal record, decoded under the referenced type: an
+/// identifier as `Value::Identifier`, a byte array as one of the bytes values,
+/// never the other.
+fn spelled_by(value: &Value, constant: &str) -> bool {
+    match value {
+        Value::Text(text) => text == constant,
+        Value::Identifier(identifier) => spells_identifier(constant, identifier),
+        value => value
+            .as_bytes_slice()
+            .is_ok_and(|bytes| spells_bytes(constant, bytes)),
+    }
 }
 
 /// How the two sides of a comparison must compare.
@@ -353,7 +410,7 @@ impl ConstraintComparison {
 /// transfer (a create, a transfer or a purchase). A rule may read one only on a
 /// document type that records it, by listing it in `required`, so every stored
 /// document of the type holds it. A `where` entry of a `refersTo` may bound an
-/// ordering by one too (`WhereBound::System`), which embeds it in the reference
+/// ordering by one too (`WhereOrderingBound::System`), which embeds it in the reference
 /// errors, so it encodes.
 // @append_only
 #[derive(
@@ -1144,6 +1201,31 @@ pub struct TextProperty {
 }
 
 impl TextProperty {
+    /// The value a document whose properties are `data` holds at a path a
+    /// `referenced` operand reads when it is no string: an identifier, a byte
+    /// array, an integer or a boolean of the referenced document, compared as
+    /// what it is ([`spelled_by`], `Value::same_scalar_data`). `None` for a
+    /// string, a value left out, and every property of the type's own.
+    fn referenced_other<'a>(&'a self, data: &'a Value) -> Option<&'a Value> {
+        if !self.path.starts_with(REFERENCED_DOCUMENT_PREFIX) {
+            return None;
+        }
+        match data.get_optional_value_at_path(&self.path) {
+            Ok(Some(Value::Text(_) | Value::Null)) | Ok(None) | Err(_) => None,
+            Ok(Some(value)) => Some(value),
+        }
+    }
+
+    /// Whether the property, for a document whose properties are `data`, is the
+    /// string `constant` spells ([`Self::value`], or [`Self::referenced_other`]
+    /// read as [`spelled_by`] says).
+    fn equals_constant(&self, data: &Value, constant: &str) -> bool {
+        self.value(data) == Some(constant)
+            || self
+                .referenced_other(data)
+                .is_some_and(|value| spelled_by(value, constant))
+    }
+
     /// The string a document whose properties are `data` gives the property:
     /// the one it holds, or `if_absent` when it leaves the property out or
     /// sets it to null (where an operand takes its `ifAbsent` value). `None`
@@ -1212,6 +1294,20 @@ impl TextOperand {
         match self {
             TextOperand::Constant(value) => Some(value),
             TextOperand::Property(property) => property.value(data),
+        }
+    }
+
+    /// The bytes it takes for a document whose properties are `data` where a
+    /// byte array of a referenced document is tested: a constant read as hex,
+    /// a byte array a `referenced` operand reads ([`TextProperty::referenced_other`]).
+    /// `None` for anything else.
+    fn bytes<'a>(&'a self, data: &'a Value) -> Option<Cow<'a, [u8]>> {
+        match self {
+            TextOperand::Constant(value) => hex::decode(value).ok().map(Cow::Owned),
+            TextOperand::Property(property) => match property.referenced_other(data)? {
+                Value::Identifier(_) => None,
+                value => value.as_bytes_slice().ok().map(Cow::Borrowed),
+            },
         }
     }
 }
@@ -1419,7 +1515,7 @@ impl PropertyConstraint {
                 property,
                 value,
             } => {
-                let equal = property.value(data) == Some(value.as_str());
+                let equal = property.equals_constant(data, value);
                 Ok(equal == (*comparison == ConstraintComparison::Equal))
             }
             PropertyConstraint::TextCompareProperties {
@@ -1427,15 +1523,23 @@ impl PropertyConstraint {
                 left,
                 right,
             } => {
-                let equal = matches!(
-                    (left.value(data), right.value(data)),
-                    (Some(left), Some(right)) if left == right
-                );
+                // Two strings, or two values of referenced documents that are no
+                // strings, compared as what they are
+                let equal = match (left.value(data), right.value(data)) {
+                    (Some(left), Some(right)) => left == right,
+                    _ => matches!(
+                        (left.referenced_other(data), right.referenced_other(data)),
+                        (Some(left), Some(right)) if left.same_scalar_data(right)
+                    ),
+                };
                 Ok(equal == (*comparison == ConstraintComparison::Equal))
             }
-            PropertyConstraint::TextIn { property, values } => Ok(property
-                .value(data)
-                .is_some_and(|text| values.contains(text))),
+            PropertyConstraint::TextIn { property, values } => Ok(match property.value(data) {
+                Some(text) => values.contains(text),
+                None => property
+                    .referenced_other(data)
+                    .is_some_and(|value| values.iter().any(|constant| spelled_by(value, constant))),
+            }),
             PropertyConstraint::IdentifierCompare {
                 comparison,
                 path,
@@ -1466,10 +1570,14 @@ impl PropertyConstraint {
                 position,
                 text,
                 affix,
-            } => Ok(matches!(
-                (text.value(data), affix.value(data)),
-                (Some(text), Some(affix)) if position.holds(text, affix)
-            )),
+            } => Ok(match (text.value(data), affix.value(data)) {
+                (Some(text), Some(affix)) => position.holds(text, affix),
+                // A byte array of a referenced document, its affix in hex
+                _ => matches!(
+                    (text.bytes(data), affix.bytes(data)),
+                    (Some(bytes), Some(affix)) if position.holds_bytes(&bytes, &affix)
+                ),
+            }),
             PropertyConstraint::BytesAffix {
                 position,
                 bytes,
@@ -1490,9 +1598,15 @@ impl PropertyConstraint {
                             element.is_integer() && element.to_integer::<i128>().ok() == Some(value)
                         })
                     }
-                    ContainsNeedle::TextConstant(value) => elements
-                        .iter()
-                        .any(|element| element.as_text() == Some(value.as_str())),
+                    // Among the identifiers or byte arrays of a referenced
+                    // document as the constant spells them
+                    ContainsNeedle::TextConstant(value) => {
+                        let referenced = array.starts_with(REFERENCED_DOCUMENT_PREFIX);
+                        elements.iter().any(|element| {
+                            element.as_text() == Some(value.as_str())
+                                || (referenced && spelled_by(element, value))
+                        })
+                    }
                     ContainsNeedle::TextProperty(property) => {
                         property.value(data).is_some_and(|value| {
                             elements
@@ -1548,6 +1662,15 @@ impl PropertyConstraint {
         }
     }
 
+    /// Whether a write judging rules with `system` judges this one: a rule
+    /// reading a referenced document only where `system` says the data holds
+    /// the values it reads ([`DocumentSystemValues::referenced_documents`]), a
+    /// create or a replace once its references hold. Consensus reads no total
+    /// of a rule the write does not judge.
+    pub fn is_judged_with(&self, system: &DocumentSystemValues) -> bool {
+        system.referenced_documents || !self.reads_referenced()
+    }
+
     /// Why a document whose properties are `data` and whose system values are
     /// `system` breaks the rule, `None` when it meets it: the first fault met
     /// on the way ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`]
@@ -1564,7 +1687,7 @@ impl PropertyConstraint {
         data: &Value,
         system: &DocumentSystemValues,
     ) -> Option<PropertyConstraintViolation> {
-        if (!system.referenced_documents && self.reads_referenced())
+        if !self.is_judged_with(system)
             || self
                 .system_reads()
                 .into_iter()
@@ -1656,6 +1779,20 @@ impl PropertyConstraint {
         let mut reads = Vec::new();
         let _ = self.visit_property_reads(&mut |path, read| {
             reads.push((path, read));
+            ControlFlow::Continue(())
+        });
+        reads
+    }
+
+    /// The properties of the document type itself the rule reads, each with how
+    /// it reads it, in declared order: [`Self::property_reads`] without the
+    /// values of referenced documents, which [`Self::referenced_reads`] lists.
+    pub fn own_property_reads(&self) -> Vec<(&str, PropertyRead)> {
+        let mut reads = Vec::new();
+        let _ = self.visit_property_reads(&mut |path, read| {
+            if !path.starts_with(REFERENCED_DOCUMENT_PREFIX) {
+                reads.push((path, read));
+            }
             ControlFlow::Continue(())
         });
         reads
@@ -1943,6 +2080,55 @@ impl PropertyConstraint {
         let mut affixes = Vec::new();
         self.collect_text_affixes(&mut affixes);
         affixes
+    }
+
+    /// Every pair of properties the rule compares with each other as strings,
+    /// in declared order: the two sides of an `equal` or `notEqual` of string
+    /// properties, of a `startsWith` or `endsWith` of two, and an array and the
+    /// property a `contains` looks for in it. A field of a referenced document
+    /// compared so is read as what it holds, which must be what its peer holds.
+    pub fn text_peers(&self) -> Vec<(&str, &str)> {
+        let mut peers = Vec::new();
+        self.collect_text_peers(&mut peers);
+        peers
+    }
+
+    fn collect_text_peers<'a>(&'a self, peers: &mut Vec<(&'a str, &'a str)>) {
+        match self {
+            PropertyConstraint::TextCompareProperties { left, right, .. } => {
+                peers.push((&left.path, &right.path))
+            }
+            PropertyConstraint::TextAffix {
+                text: TextOperand::Property(text),
+                affix: TextOperand::Property(affix),
+                ..
+            } => peers.push((&text.path, &affix.path)),
+            PropertyConstraint::Contains {
+                array,
+                needle: ContainsNeedle::TextProperty(needle),
+            } => peers.push((array, &needle.path)),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_text_peers(peers);
+                }
+            }
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_peers(peers)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_peers(peers);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn collect_text_affixes<'a>(&'a self, affixes: &mut Vec<(&'a str, &'a str, AffixPosition)>) {
@@ -2467,10 +2653,11 @@ fn bare_path(path: &str, at: &str) -> Result<String, String> {
 }
 
 /// The path a `referenced` operand at `at` listing `operands` is read through:
-/// exactly two strings, the name of a top-level property of the type (the
-/// reference, whose declaration is checked against the parsed document type),
-/// then a field of the document it points at: a dotted property path, its
-/// `$id`, `$ownerId` or `$creatorId`, or one of the nine times and heights.
+/// exactly two strings, the dotted path of a property of the type (the
+/// reference, a nested one through the objects around it, whose declaration is
+/// checked against the parsed document type), then a field of the document it
+/// points at: a dotted property path, its `$id`, `$ownerId` or `$creatorId`, or
+/// one of the nine times and heights.
 fn referenced_operand(operands: &Value, at: &str) -> Result<String, String> {
     let at = if at.is_empty() {
         REFERENCED.to_string()
@@ -2484,13 +2671,13 @@ fn referenced_operand(operands: &Value, at: &str) -> Result<String, String> {
              document it refers to"
         ));
     };
-    if !is_rule_name(reference) {
+    if reference.is_empty() || !reference.split('.').all(is_rule_name) {
         return Err(format!(
-            "at {at}[0] names \"{reference}\", but a reference property is a top-level \
-             property, named with 1 to 64 letters, digits or underscores"
+            "at {at}[0] names \"{reference}\", but a reference property is the dotted path \
+             of a property of the type, each name of 1 to 64 letters, digits or underscores"
         ));
     }
-    let is_field = REFERENCED_IDENTIFIER_FIELDS.contains(&field.as_str())
+    let is_field = is_referenced_system_agreement_property(field)
         || SystemProperty::from_name(field).is_some()
         || (!field.is_empty() && field.split('.').all(is_rule_name));
     if !is_field {
@@ -2512,9 +2699,7 @@ fn path_kind(context: &ParseContext, path: &str) -> Option<EqualityKind> {
         return Some(EqualityKind::Identifier);
     }
     if let Some((_, field)) = referenced_read(path) {
-        return REFERENCED_IDENTIFIER_FIELDS
-            .contains(&field)
-            .then_some(EqualityKind::Identifier);
+        return is_referenced_system_agreement_property(field).then_some(EqualityKind::Identifier);
     }
     (context.property_kind)(path)
 }
@@ -2904,11 +3089,24 @@ fn parse_condition(
                 // two bare paths naming string or identifier properties, compare
                 // strings or identifiers, as the properties named decide
                 let (left_kind, right_kind) = side_kinds(context, left, right);
+                // Two fields of referenced documents, whose types the parse does
+                // not know, compared with each other by value, whatever they hold
+                let open = |side: &Value| {
+                    named_path(side, "")
+                        .and_then(Result::ok)
+                        .is_some_and(|path| has_open_kind(&path))
+                };
+                let open_pair = matches!(
+                    comparison,
+                    ConstraintComparison::Equal | ConstraintComparison::NotEqual
+                ) && open(left)
+                    && open(right);
                 if is_const(left)
                     || is_const(right)
                     || is_text_if_absent(left)
                     || is_text_if_absent(right)
                     || (left_kind.is_some() && right_kind.is_some())
+                    || open_pair
                 {
                     let compare = match (left_kind, right_kind) {
                         (Some(EqualityKind::Bytes), _) | (_, Some(EqualityKind::Bytes)) => {
@@ -3693,11 +3891,11 @@ fn is_number(value: &Value) -> bool {
     value.is_integer() || matches!(value, Value::Float(_))
 }
 
-/// An integer literal at `at`: an integer, or a float with no fractional part,
-/// in the range of an `i128`.
-fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
-    let integer = match value {
-        // The cast is exact: the float is a whole number inside the range
+/// The integer a declaration's number spells: an integer, or a float with no
+/// fractional part inside the range of a 128-bit signed integer, the cast then
+/// exact. `None` for any other value.
+pub(crate) fn whole_integer(value: &Value) -> Option<i128> {
+    match value {
         Value::Float(float)
             if float.fract() == 0.0 && *float >= i128::MIN as f64 && *float < i128::MAX as f64 =>
         {
@@ -3705,8 +3903,13 @@ fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
         }
         Value::Float(_) => None,
         _ => value.to_integer::<i128>().ok(),
-    };
-    integer.ok_or_else(|| {
+    }
+}
+
+/// An integer literal at `at`: an integer, or a float with no fractional part,
+/// in the range of an `i128`.
+fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
+    whole_integer(value).ok_or_else(|| {
         format!(
             "at {at} holds {}, which is not an integer in the range of a 128-bit signed \
              integer",

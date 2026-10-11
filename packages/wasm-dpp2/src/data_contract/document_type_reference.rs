@@ -18,7 +18,8 @@ use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
-    LookupKeySource, PropertyReference, WhereBound, WhereCondition, WhereLiteral,
+    LookupKeySource, PropertyReference, WhereCondition, WhereLiteral, WhereNotEqualBound,
+    WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
@@ -250,8 +251,11 @@ export type DocumentPropertyReferenceTarget =
        * resolves to the document or, once a moderator removed it, to its
        * removal record, which a restore can bring the document back from. A
        * replace keeps it, re-validating it only when the value or a property
-       * `where` reads changes (every replace for a `where` value `$ownerId`),
-       * as for `permanentDocument`.
+       * `where` reads changes, as for `permanentDocument`; on every replace
+       * for a `where` value `$ownerId`, a `notEqual` bounded by `$ownerId`,
+       * an ordering bounded by `$updatedAt` or `$transferredAt` (or their
+       * heights), and a reference a `propertyConstraints` rule reads through,
+       * which checks its whole `where`.
        */
       type: 'moderatedDocument';
       /**
@@ -599,14 +603,25 @@ fn where_constant_to_js(literal: &WhereLiteral, path: &str) -> WasmDppResult<JsV
     Ok(constant.into())
 }
 
-/// The bound of a `notEqual` or an ordering as the schema writes it: a path,
-/// `'$ownerId'`, a time or height, or `{ const }`.
-fn where_bound_to_js(bound: &WhereBound, path: &str) -> WasmDppResult<JsValue> {
+/// The bound of a `notEqual` as the schema writes it: a path, `'$ownerId'` or
+/// `{ const }`.
+fn not_equal_bound_to_js(bound: &WhereNotEqualBound, path: &str) -> WasmDppResult<JsValue> {
     Ok(match bound {
-        WhereBound::Property(property) => JsValue::from_str(property),
-        WhereBound::Writer => JsValue::from_str(OWNER_ID),
-        WhereBound::System(property) => JsValue::from_str(property.name()),
-        WhereBound::Constant(literal) => where_constant_to_js(literal, path)?,
+        WhereNotEqualBound::Property(property) => JsValue::from_str(property),
+        WhereNotEqualBound::Writer => JsValue::from_str(OWNER_ID),
+        WhereNotEqualBound::Constant(literal) => where_constant_to_js(literal, path)?,
+    })
+}
+
+/// The bound of an ordering as the schema writes it: a path, a time or
+/// height, or `{ const }`.
+fn ordering_bound_to_js(bound: &WhereOrderingBound, path: &str) -> WasmDppResult<JsValue> {
+    Ok(match bound {
+        WhereOrderingBound::Property(property) => JsValue::from_str(property),
+        WhereOrderingBound::System(property) => JsValue::from_str(property.name()),
+        WhereOrderingBound::Constant(integer) => {
+            where_constant_to_js(&WhereLiteral::Integer(*integer), path)?
+        }
     })
 }
 
@@ -614,9 +629,8 @@ fn where_bound_to_js(bound: &WhereBound, path: &str) -> WasmDppResult<JsValue> {
 fn where_condition_to_js(condition: &WhereCondition, path: &str) -> WasmDppResult<JsValue> {
     let value = match condition {
         WhereCondition::Constant(literal) => where_literal_to_js(literal),
-        WhereCondition::NotEqual(bound) | WhereCondition::Ordering { bound, .. } => {
-            where_bound_to_js(bound, path)?
-        }
+        WhereCondition::NotEqual(bound) => not_equal_bound_to_js(bound, path)?,
+        WhereCondition::Ordering { bound, .. } => ordering_bound_to_js(bound, path)?,
         WhereCondition::In(literals) => {
             let values = Array::new();
             for literal in literals {

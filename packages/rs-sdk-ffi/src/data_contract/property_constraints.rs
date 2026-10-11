@@ -41,7 +41,7 @@ use dash_sdk::dpp::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use dash_sdk::dpp::data_contract::document_type::property_constraints::{
-    referenced_read, AggregateKind, AggregateRead, DocumentSystemValues, PropertyRead,
+    AggregateKind, AggregateRead, DocumentSystemValues, PropertyRead,
 };
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
@@ -326,9 +326,8 @@ fn property_constraints_json(
             )
         })?;
         let reads: Vec<serde_json::Value> = constraint
-            .property_reads()
+            .own_property_reads()
             .into_iter()
-            .filter(|(path, _)| referenced_read(path).is_none())
             .map(|(path, read)| json!({ "path": path, "kind": read_kind_name(read) }))
             .collect();
         let reads_referenced: Vec<serde_json::Value> = constraint

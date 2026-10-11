@@ -62,7 +62,8 @@ pub use reference_expression::{
 };
 pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
 pub use reference_where::{
-    WhereBound, WhereCondition, WhereLiteral, WhereLiteralKind, WhereOrdering,
+    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
+    WhereOrdering, WhereOrderingBound,
 };
 
 #[cfg(test)]

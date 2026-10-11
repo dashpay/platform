@@ -9,10 +9,10 @@ use crate::data_contract::document_type::property::reference_where::{
     WHERE_CONST, WHERE_IN, WHERE_NOT_EQUAL,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_delete_constraints, parse_property_constraints, referenced_read, AffixPosition,
-    AggregateBinding, AggregateKind, AggregateRead, ElementKind, EqualityKind, PropertyConstraint,
-    PropertyRead, SystemChange, SystemProperty, REFERENCED_DOCUMENT_PREFIX,
-    REFERENCED_IDENTIFIER_FIELDS, STORED_DOCUMENT_PREFIX,
+    parse_delete_constraints, parse_property_constraints, referenced_path, referenced_read,
+    whole_integer, AffixPosition, AggregateBinding, AggregateKind, AggregateRead, ElementKind,
+    EqualityKind, PropertyConstraint, PropertyRead, SystemChange, SystemProperty,
+    REFERENCED_DOCUMENT_PREFIX, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, owner_can_change,
@@ -32,7 +32,8 @@ use crate::data_contract::document_type::{
     EncryptionScheme, GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements,
     KeyIdReference, KeyReferenceIdentityProperty, ListElementReference, LookupHashKey,
     LookupKeySource, PropertyReference, ReferenceCombinator, ReferenceOperands, SystemFunction,
-    WhereBound, WhereCondition, WhereLiteral, WhereOrdering, COMBINABLE_REFERENCE_TARGET_TYPES,
+    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
+    WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1291,7 +1292,10 @@ fn parse_reference_target(
                     where_conditions
                         .iter()
                         .filter(|(_, condition)| {
-                            matches!(condition, WhereCondition::NotEqual(WhereBound::Writer))
+                            matches!(
+                                condition,
+                                WhereCondition::NotEqual(WhereNotEqualBound::Writer)
+                            )
                         })
                         .map(|(referenced_property, _)| referenced_property),
                 );
@@ -1615,11 +1619,11 @@ fn parse_where_condition(
         WHERE_CONST => Ok(WhereCondition::Constant(literal(body, WHERE_CONST)?)),
         WHERE_NOT_EQUAL => {
             let bound = match body {
-                Value::Text(path) if path == OWNER_ID => WhereBound::Writer,
-                Value::Text(path) => WhereBound::Property(
+                Value::Text(path) if path == OWNER_ID => WhereNotEqualBound::Writer,
+                Value::Text(path) => WhereNotEqualBound::Property(
                     parse_where_referring_property(referenced_property, path)?.to_string(),
                 ),
-                body => WhereBound::Constant(constant(body, WHERE_NOT_EQUAL)?),
+                body => WhereNotEqualBound::Constant(constant(body, WHERE_NOT_EQUAL)?),
             };
             Ok(WhereCondition::NotEqual(bound))
         }
@@ -1627,7 +1631,7 @@ fn parse_where_condition(
             let Some(values) = body.as_array().filter(|values| values.len() >= 2) else {
                 return Err(invalid("in must list two or more values".to_string()));
             };
-            let mut literals = BTreeSet::new();
+            let mut literals = Vec::with_capacity(values.len());
             let mut first_kind = None;
             for (index, value) in values.iter().enumerate() {
                 let parsed = literal(value, &format!("in[{index}]"))?;
@@ -1638,9 +1642,10 @@ fn parse_where_condition(
                          all integers, all booleans or all strings"
                     )));
                 }
-                if !literals.insert(parsed) {
+                if literals.contains(&parsed) {
                     return Err(invalid(format!("in[{index}] repeats an earlier value")));
                 }
+                literals.push(parsed);
             }
             Ok(WhereCondition::In(literals))
         }
@@ -1669,13 +1674,13 @@ fn parse_where_condition(
                     )));
                 }
                 Value::Text(path) => match SystemProperty::from_name(path) {
-                    Some(property) => WhereBound::System(property),
-                    None => WhereBound::Property(
+                    Some(property) => WhereOrderingBound::System(property),
+                    None => WhereOrderingBound::Property(
                         parse_where_referring_property(referenced_property, path)?.to_string(),
                     ),
                 },
                 body => match constant(body, ordering_key)? {
-                    integer @ WhereLiteral::Integer(_) => WhereBound::Constant(integer),
+                    WhereLiteral::Integer(integer) => WhereOrderingBound::Constant(integer),
                     _ => {
                         return Err(invalid(format!(
                             "{ordering_key}.const must be an integer: an ordering compares \
@@ -2343,6 +2348,31 @@ fn create_only_leaf_error(
                  make a `deletableDocument` reference required, since a replace can clear an \
                  optional one once its document is deleted) or transient"
             )
+        })
+        .or_else(|| {
+            // A time or height a later write changes, which no replace reads
+            // again here; the writer, `$ownerId`, is admitted as above
+            declaration
+                .where_conditions
+                .values()
+                .find_map(|condition| match condition.bound_read() {
+                    Some(WhereBoundRead::System(property))
+                        if WhereBoundRead::System(property).changes_without_a_write() =>
+                    {
+                        Some(property)
+                    }
+                    _ => None,
+                })
+                .map(|property| {
+                    format!(
+                        "where is bounded by \"{}\" beside a findBy function, so it is judged \
+                         when the document is created only, while a later write changes \"{}\": \
+                         bound it by a time or height of the create ($createdAt or one of its \
+                         heights)",
+                        property.name(),
+                        property.name()
+                    )
+                })
         })
 }
 
@@ -3420,17 +3450,14 @@ pub(super) fn validate_property_constraint_reads(
     allow_referenced_reads: bool,
     structure_error: &dyn Fn(String) -> DataContractError,
 ) -> Result<(), DataContractError> {
-    for (path, read) in constraint.property_reads() {
-        if path.starts_with(REFERENCED_DOCUMENT_PREFIX) {
-            if !allow_referenced_reads {
-                return Err(structure_error(format!(
-                    "{subject} reads a value of the document a reference points at, which only \
-                     a propertyConstraints rule does: its writes are the ones that check the \
-                     references"
-                )));
-            }
-            continue;
-        }
+    // What a rule reads of a referenced document is checked with its reference
+    if !allow_referenced_reads && constraint.reads_referenced() {
+        return Err(structure_error(format!(
+            "{subject} reads a value of the document a reference points at, which only a \
+             propertyConstraints rule does: its writes are the ones that check the references"
+        )));
+    }
+    for (path, read) in constraint.own_property_reads() {
         let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
         if let Some(error) = property_read_error(
             DocumentTypeRef::V2(document_type),
@@ -3502,55 +3529,25 @@ pub(super) fn validate_property_constraint_reads(
         }
     }
     // A constant or a default a string property's `enum` does not list is a
-    // typo: the property could never hold it
-    // The enums of a referenced type are checked with what is read of it
-    let own = |path: &&str| !path.starts_with(REFERENCED_DOCUMENT_PREFIX);
-    for (path, constant) in constraint
-        .text_constants()
-        .into_iter()
-        .filter(|(path, _)| own(path))
-    {
-        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
-        if !enum_admits(&document_type.schema, schema_defs, lookup, constant)? {
-            return Err(structure_error(format!(
-                "{subject} compares \"{path}\" with \"{constant}\", which is not one of \
-                 its enum values"
-            )));
+    // typo: the property could never hold it. The enums of a referenced type
+    // are checked with what is read of it
+    let lookup = |path: &str| -> Result<Option<String>, DataContractError> {
+        if path.starts_with(REFERENCED_DOCUMENT_PREFIX) {
+            return Ok(None);
         }
-    }
-    // A constant a string property must start or end with, when the property
-    // declares an `enum`, must fit one of its values, or the test never holds
-    for (path, affix, position) in constraint
-        .text_affixes()
-        .into_iter()
-        .filter(|(path, _, _)| own(path))
-    {
-        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
-        if !enum_any(&document_type.schema, schema_defs, lookup, |member| {
-            position.holds(member, affix)
-        })? {
-            let tests = match position {
-                AffixPosition::Start => "starts with",
-                AffixPosition::End => "ends with",
-            };
-            return Err(structure_error(format!(
-                "{subject} tests whether \"{path}\" {tests} \"{affix}\", which none \
-                 of its enum values does"
-            )));
-        }
-    }
-    for (path, default) in constraint
-        .text_defaults()
-        .into_iter()
-        .filter(|(path, _)| own(path))
-    {
-        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
-        if !enum_admits(&document_type.schema, schema_defs, lookup, default)? {
-            return Err(structure_error(format!(
-                "{subject} gives \"{path}\" the default \"{default}\", which is not \
-                 one of its enum values"
-            )));
-        }
+        stored_path(path, subject, allow_stored_reads)
+            .map(|lookup| Some(lookup.to_string()))
+            .map_err(structure_error)
+    };
+    if let Some(reason) = enum_miss(
+        constraint,
+        subject,
+        &document_type.schema,
+        schema_defs,
+        &lookup,
+        &|path| path.to_string(),
+    )? {
+        return Err(structure_error(reason));
     }
     Ok(())
 }
@@ -3635,9 +3632,9 @@ pub(super) fn validate_referencing_rules(
         // A moderator's change of a key of a total over the type's own
         // documents moves the total, the rule reading the key itself or not
         let moderated_field = constraint
-            .property_paths()
+            .own_property_reads()
             .into_iter()
-            .filter(|path| !path.starts_with(REFERENCED_DOCUMENT_PREFIX))
+            .map(|(path, _)| path)
             .chain(
                 constraint
                     .aggregate_reads()
@@ -3669,6 +3666,21 @@ pub(super) fn validate_referencing_rules(
     Ok(())
 }
 
+/// What the property `reference` of `document_type` refers to, as every
+/// reference check reads it ([`DocumentTypeRef::reference_declarations`]): its
+/// value's target, its elements', a key id's, or the one its value reveals
+/// into a `findBy` key. `None` for a property holding no reference.
+fn property_reference<'a>(
+    document_type: DocumentTypeRef<'a>,
+    reference: &str,
+) -> Option<PropertyReference<'a>> {
+    document_type
+        .reference_declarations()
+        .find_map(|(holder, property_reference)| {
+            (holder.path() == reference).then_some(property_reference)
+        })
+}
+
 /// Why a rule of `document_type` may not read a document through its property
 /// `reference`, `None` when it may: it must be a top-level property of the
 /// type, not transient, holding one reference to one document it finds by id
@@ -3676,13 +3688,13 @@ pub(super) fn validate_referencing_rules(
 /// value `findBy` reads included), so the reference check reads exactly that
 /// document whenever the rule is judged.
 fn referencing_property_error(document_type: DocumentTypeRef, reference: &str) -> Option<String> {
-    let Some(property) = document_type.flattened_properties().get(reference) else {
+    if !document_type.flattened_properties().contains_key(reference) {
         return Some(
             "which is not a property of the document type holding a reference: a \
              reference read through is a top-level property"
                 .to_string(),
         );
-    };
+    }
     if is_transient(document_type, reference) {
         return Some(
             "which is transient: the reference a stored document was judged through would \
@@ -3690,8 +3702,8 @@ fn referencing_property_error(document_type: DocumentTypeRef, reference: &str) -
                 .to_string(),
         );
     }
-    let target = match property.property_type.reference() {
-        Some(PropertyReference::Value(target)) => target,
+    let target = match property_reference(document_type, reference) {
+        Some(PropertyReference::Value(target) | PropertyReference::Revealed(target)) => target,
         Some(PropertyReference::Elements { .. }) => {
             return Some(
                 "whose refersTo is on the elements of a typed array, which point at several \
@@ -3702,11 +3714,7 @@ fn referencing_property_error(document_type: DocumentTypeRef, reference: &str) -
         Some(PropertyReference::KeyId(_)) => {
             return Some("whose refersTo names an identity key, not a document".to_string())
         }
-        Some(PropertyReference::Revealed(target)) => target,
-        None => match &property.revealed_reference {
-            Some(target) => target,
-            None => return Some("which carries no refersTo".to_string()),
-        },
+        None => return Some("which carries no refersTo".to_string()),
     };
     if target.combinator().is_some() {
         return Some(
@@ -3791,7 +3799,7 @@ pub fn referenced_reads_error(
                 label(field)
             )));
         }
-        if REFERENCED_IDENTIFIER_FIELDS.contains(&field) {
+        if is_referenced_system_agreement_property(field) {
             if read != PropertyRead::Identifier {
                 return Ok(Some(format!(
                     "{subject} reads \"{}\", an identifier, which a rule compares by equal, \
@@ -3826,56 +3834,392 @@ pub fn referenced_reads_error(
             }
             continue;
         }
+        // A field the parse compares as a string, not knowing the referenced
+        // type, that holds something else: read as what it holds
+        match referenced_textual_read(rule, subject, referenced, reference, field, read, &label) {
+            Some(Ok(())) => continue,
+            Some(Err(reason)) => return Ok(Some(reason)),
+            None => {}
+        }
         if let Some(reason) = property_read_error(referenced, subject, &label(field), field, read) {
             return Ok(Some(reason));
         }
     }
     // A constant or a default the referenced property's `enum` does not list
-    fn read_through<'a>(path: &'a str, reference: &str) -> Option<&'a str> {
-        referenced_read(path).and_then(|(read_reference, field)| {
-            (read_reference == reference && !field.starts_with('$')).then_some(field)
-        })
-    }
-    let schema = referenced.schema();
-    for (path, constant) in rule.text_constants() {
-        let Some(field) = read_through(path, reference) else {
-            continue;
-        };
-        if !enum_admits(schema, referenced_schema_defs, field, constant)? {
-            return Ok(Some(format!(
-                "{subject} compares \"{}\" with \"{constant}\", which is not one of its enum \
-                 values",
-                label(field)
-            )));
-        }
-    }
-    for (path, affix, position) in rule.text_affixes() {
-        let Some(field) = read_through(path, reference) else {
-            continue;
-        };
-        if !enum_any(schema, referenced_schema_defs, field, |member| {
-            position.holds(member, affix)
-        })? {
-            return Ok(Some(format!(
-                "{subject} tests \"{}\" against \"{affix}\", which none of its enum values \
-                 fits",
-                label(field)
-            )));
-        }
-    }
-    for (path, default) in rule.text_defaults() {
-        let Some(field) = read_through(path, reference) else {
-            continue;
-        };
-        if !enum_admits(schema, referenced_schema_defs, field, default)? {
-            return Ok(Some(format!(
-                "{subject} gives \"{}\" the default \"{default}\", which is not one of its \
-                 enum values",
-                label(field)
-            )));
-        }
+    let lookup = |path: &str| -> Result<Option<String>, DataContractError> {
+        Ok(referenced_read(path).and_then(|(read_reference, field)| {
+            (read_reference == reference && !field.starts_with('$')).then(|| field.to_string())
+        }))
+    };
+    if let Some(reason) = enum_miss(
+        rule,
+        subject,
+        referenced.schema(),
+        referenced_schema_defs,
+        &lookup,
+        &|path| referenced_read(path).map_or_else(|| path.to_string(), |(_, field)| label(field)),
+    )? {
+        return Ok(Some(reason));
     }
     Ok(None)
+}
+
+/// How a rule reads `field` of `referenced` through `reference` where its
+/// parse, which does not know the referenced type, compares it as a string
+/// (`read`: a [`PropertyRead::Text`] read, or the string elements of an array
+/// a `contains` looks in) though it holds something else. `None` when the
+/// field holds strings, or the read is no such one, for the ordinary checks.
+/// Otherwise the field is read as what it holds, which is sound when every
+/// string constant compared with it spells a value of its type (base58 for an
+/// identifier, hex of a size it takes for a byte array, which alone has a
+/// start and an end a rule tests), no string default is given it, and every
+/// property compared with it is another field of a referenced document
+/// holding the same kind ([`referenced_peer_kind_error`] for one of another
+/// reference): `Some(Ok(()))`, and `Some(Err(reason))` when not.
+fn referenced_textual_read(
+    rule: &PropertyConstraint,
+    subject: &str,
+    referenced: DocumentTypeRef,
+    reference: &str,
+    field: &str,
+    read: PropertyRead,
+    label: &dyn Fn(&str) -> String,
+) -> Option<Result<(), String>> {
+    let property_type = &referenced.flattened_properties().get(field)?.property_type;
+    let (kind, element_type) = match (read, property_type) {
+        (PropertyRead::Text, property_type) => {
+            (WhereLiteralKind::of(property_type)?, property_type)
+        }
+        (PropertyRead::Elements(ElementKind::Text), DocumentPropertyType::TypedArray(array)) => {
+            let item_type = array.item_type.as_ref();
+            (WhereLiteralKind::of(item_type)?, item_type)
+        }
+        _ => return None,
+    };
+    if kind == WhereLiteralKind::Text {
+        return None;
+    }
+    let path = referenced_path(reference, field);
+    let named = label(field);
+    let held = match kind {
+        WhereLiteralKind::Integer => "an integer",
+        WhereLiteralKind::Boolean => "a boolean",
+        WhereLiteralKind::Identifier => "an identifier",
+        WhereLiteralKind::Bytes => "a byte array",
+        WhereLiteralKind::Text => "a string",
+    };
+    let refuse = |reason: String| Some(Err(format!("{subject} {reason}")));
+    if rule
+        .text_defaults()
+        .iter()
+        .any(|(read_path, _)| *read_path == path)
+    {
+        return refuse(format!(
+            "gives \"{named}\" a string default, but it holds {held}"
+        ));
+    }
+    for (read_path, affix, _) in rule.text_affixes() {
+        if read_path != path {
+            continue;
+        }
+        if kind != WhereLiteralKind::Bytes {
+            return refuse(format!(
+                "tests whether \"{named}\" starts or ends with \"{affix}\", but it holds \
+                 {held}, which has no start or end a rule tests"
+            ));
+        }
+        if hex::decode(affix).is_err() {
+            return refuse(format!(
+                "tests whether \"{named}\" starts or ends with \"{affix}\", which is not hex, \
+                 as a byte array is written"
+            ));
+        }
+    }
+    for (read_path, constant) in rule.text_constants() {
+        if read_path != path {
+            continue;
+        }
+        let spells = match kind {
+            WhereLiteralKind::Identifier => {
+                Identifier::from_string(constant, Encoding::Base58).is_ok()
+            }
+            WhereLiteralKind::Bytes => hex::decode(constant).is_ok_and(|bytes| {
+                let DocumentPropertyType::ByteArray(sizes) = element_type else {
+                    return true;
+                };
+                !sizes
+                    .min_size
+                    .is_some_and(|minimum| bytes.len() < usize::from(minimum))
+                    && !sizes
+                        .max_size
+                        .is_some_and(|maximum| bytes.len() > usize::from(maximum))
+            }),
+            WhereLiteralKind::Integer | WhereLiteralKind::Boolean | WhereLiteralKind::Text => false,
+        };
+        if !spells {
+            return refuse(format!(
+                "compares \"{named}\", which holds {held}, with \"{constant}\", which spells \
+                 none: an identifier is written base58, a byte array hex of a size it takes, \
+                 and an integer or a boolean is compared with no string"
+            ));
+        }
+    }
+    for (left, right) in rule.text_peers() {
+        let other = if left == path {
+            right
+        } else if right == path {
+            left
+        } else {
+            continue;
+        };
+        let Some((other_reference, other_field)) = referenced_read(other) else {
+            return refuse(format!(
+                "compares \"{named}\", which holds {held}, with \"{other}\", a string \
+                 property of the type"
+            ));
+        };
+        if other_reference == reference
+            && WhereLiteralKind::of_referenced(referenced, other_field) != Some(kind)
+        {
+            return refuse(format!(
+                "compares \"{named}\", which holds {held}, with \"{}\", which does not",
+                label(other_field)
+            ));
+        }
+    }
+    Some(Ok(()))
+}
+
+/// Why `rule`, `subject` in the messages, compares two fields of documents
+/// different references point at that hold different kinds of value (a string
+/// with an identifier, say), so that the comparison could never hold; `None`
+/// when it does not. `kind_of` gives what the field of the document a
+/// reference points at holds, `None` when the referenced type is not in hand
+/// (another contract's, at the contract parse), which leaves the pair to
+/// registration. A pair through one reference is checked with its other reads
+/// ([`referenced_reads_error`]).
+pub fn referenced_peer_kind_error(
+    rule: &PropertyConstraint,
+    subject: &str,
+    kind_of: &dyn Fn(&str, &str) -> Option<WhereLiteralKind>,
+) -> Option<String> {
+    referenced_peer_kind_mismatch(rule, subject, kind_of).map(|(_, reason)| reason)
+}
+
+/// [`referenced_peer_kind_error`] with the reference of the pair's first
+/// side, which the registration error names.
+pub fn referenced_peer_kind_mismatch<'a>(
+    rule: &'a PropertyConstraint,
+    subject: &str,
+    kind_of: &dyn Fn(&str, &str) -> Option<WhereLiteralKind>,
+) -> Option<(&'a str, String)> {
+    rule.text_peers().into_iter().find_map(|(left, right)| {
+        let (left_reference, left_field) = referenced_read(left)?;
+        let (right_reference, right_field) = referenced_read(right)?;
+        if left_reference == right_reference {
+            return None;
+        }
+        let left_kind = kind_of(left_reference, left_field)?;
+        let right_kind = kind_of(right_reference, right_field)?;
+        (left_kind != right_kind).then(|| {
+            (
+                left_reference,
+                format!(
+                    "{subject} compares \"{left_reference}.{left_field}\" with \
+                     \"{right_reference}.{right_field}\", which hold different kinds of value, \
+                     so the two never agree"
+                ),
+            )
+        })
+    })
+}
+
+/// Why the literals of a `where` entry keyed by `property` of `referenced`,
+/// whose value reads as `kind`, leave the entry unable to hold, `None` when
+/// they do not: each literal reads as `kind` ([`WhereLiteral::value_for`]) and
+/// is a value the property can hold ([`where_literal_error`]), an `in` lists
+/// values distinct once read (`"cafe"` and `"CAFE"` are one byte array), and
+/// an ordering's integer leaves a value the property can hold on its side.
+/// Registration only, with the referenced type in hand: a stored contract
+/// passed it.
+pub fn where_condition_literal_error(
+    referenced: DocumentTypeRef,
+    referenced_schema_defs: Option<&BTreeMap<String, Value>>,
+    property: &str,
+    kind: WhereLiteralKind,
+    condition: &WhereCondition,
+) -> Result<Option<String>, DataContractError> {
+    match condition {
+        WhereCondition::Constant(literal)
+        | WhereCondition::NotEqual(WhereNotEqualBound::Constant(literal)) => {
+            where_literal_error(referenced, referenced_schema_defs, property, kind, literal)
+        }
+        WhereCondition::In(literals) => {
+            let mut read: Vec<Value> = Vec::with_capacity(literals.len());
+            for literal in literals {
+                if let Some(reason) = where_literal_error(
+                    referenced,
+                    referenced_schema_defs,
+                    property,
+                    kind,
+                    literal,
+                )? {
+                    return Ok(Some(reason));
+                }
+                let Some(value) = literal.value_for(kind) else {
+                    continue;
+                };
+                if read.iter().any(|earlier| earlier.same_scalar_data(&value)) {
+                    return Ok(Some(format!(
+                        "the literal {literal} reads as a value an earlier literal of the in \
+                         already is"
+                    )));
+                }
+                read.push(value);
+            }
+            Ok(None)
+        }
+        WhereCondition::Ordering {
+            ordering,
+            bound: WhereOrderingBound::Constant(bound),
+        } => {
+            let Some((minimum, maximum)) =
+                integer_range(referenced, referenced_schema_defs, property)?
+            else {
+                return Ok(None);
+            };
+            let can_hold = match ordering {
+                WhereOrdering::GreaterThan => maximum > *bound,
+                WhereOrdering::GreaterThanOrEqual => maximum >= *bound,
+                WhereOrdering::LessThan => minimum < *bound,
+                WhereOrdering::LessThanOrEqual => minimum <= *bound,
+            };
+            Ok((!can_hold).then(|| {
+                format!(
+                    "no value the referenced property holds, from {minimum} to {maximum}, is \
+                     {} {bound}",
+                    ordering.wire_name()
+                )
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Why `literal`, compared with `property` of `referenced` read as `kind`,
+/// can never equal a value the property holds, `None` when it can: it reads as
+/// `kind` and, for a schema property, is one of its `enum` values, of a length
+/// (a string) or a size (a byte array) it takes, and inside its range (an
+/// integer).
+fn where_literal_error(
+    referenced: DocumentTypeRef,
+    referenced_schema_defs: Option<&BTreeMap<String, Value>>,
+    property: &str,
+    kind: WhereLiteralKind,
+    literal: &WhereLiteral,
+) -> Result<Option<String>, DataContractError> {
+    let Some(value) = literal.value_for(kind) else {
+        return Ok(Some(format!(
+            "the literal {literal} is not {}, as the referenced property holds",
+            kind.describe()
+        )));
+    };
+    if is_referenced_system_agreement_property(property) {
+        return Ok(None);
+    }
+    let Some(declared) = referenced.flattened_properties().get(property) else {
+        return Ok(None);
+    };
+    let reason = match (&declared.property_type, &value) {
+        (DocumentPropertyType::String(sizes), Value::Text(text)) => {
+            let length = text.chars().count();
+            if sizes
+                .min_length
+                .is_some_and(|minimum| length < usize::from(minimum))
+                || sizes
+                    .max_length
+                    .is_some_and(|maximum| length > usize::from(maximum))
+                || sizes
+                    .max_bytes
+                    .is_some_and(|maximum| text.len() > usize::from(maximum))
+            {
+                Some("is not of a length the referenced property takes".to_string())
+            } else if !enum_admits(referenced.schema(), referenced_schema_defs, property, text)? {
+                Some("is not one of the referenced property's enum values".to_string())
+            } else {
+                None
+            }
+        }
+        (DocumentPropertyType::ByteArray(sizes), Value::Bytes(bytes)) => {
+            let size = bytes.len();
+            (sizes
+                .min_size
+                .is_some_and(|minimum| size < usize::from(minimum))
+                || sizes
+                    .max_size
+                    .is_some_and(|maximum| size > usize::from(maximum)))
+            .then(|| "is not of a size the referenced property takes".to_string())
+        }
+        (_, value) if kind == WhereLiteralKind::Integer => {
+            match (
+                integer_range(referenced, referenced_schema_defs, property)?,
+                value.to_integer::<i128>().ok(),
+            ) {
+                (Some((minimum, maximum)), Some(integer))
+                    if integer < minimum || integer > maximum =>
+                {
+                    Some(format!(
+                        "is outside the values the referenced property holds, {minimum} to \
+                         {maximum}"
+                    ))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    Ok(reason.map(|reason| format!("the literal {literal} {reason}")))
+}
+
+/// The integers the property `property` of `referenced` can hold: those of
+/// its type, inside its schema's `minimum` and `maximum`. `None` for a
+/// property that is no integer.
+fn integer_range(
+    referenced: DocumentTypeRef,
+    referenced_schema_defs: Option<&BTreeMap<String, Value>>,
+    property: &str,
+) -> Result<Option<(i128, i128)>, DataContractError> {
+    let Some(declared) = referenced.flattened_properties().get(property) else {
+        return Ok(None);
+    };
+    let (mut minimum, mut maximum): (i128, i128) = match declared.property_type {
+        DocumentPropertyType::U8 => (0, u8::MAX.into()),
+        DocumentPropertyType::I8 => (i8::MIN.into(), i8::MAX.into()),
+        DocumentPropertyType::U16 => (0, u16::MAX.into()),
+        DocumentPropertyType::I16 => (i16::MIN.into(), i16::MAX.into()),
+        DocumentPropertyType::U32 => (0, u32::MAX.into()),
+        DocumentPropertyType::I32 => (i32::MIN.into(), i32::MAX.into()),
+        DocumentPropertyType::U64 => (0, u64::MAX.into()),
+        DocumentPropertyType::I64 => (i64::MIN.into(), i64::MAX.into()),
+        DocumentPropertyType::U128 => (0, i128::MAX),
+        DocumentPropertyType::I128 => (i128::MIN, i128::MAX),
+        _ => return Ok(None),
+    };
+    if let Some(schema) = schema_at_path(referenced.schema(), referenced_schema_defs, property)? {
+        if let Some(declared_minimum) = schema
+            .get(property_names::MINIMUM)
+            .and_then(|value| whole_integer(value))
+        {
+            minimum = minimum.max(declared_minimum);
+        }
+        if let Some(declared_maximum) = schema
+            .get(property_names::MAXIMUM)
+            .and_then(|value| whole_integer(value))
+        {
+            maximum = maximum.min(declared_maximum);
+        }
+    }
+    Ok(Some((minimum, maximum)))
 }
 
 /// Checks what every `propertyConstraints` rule of `document_types`, one
@@ -3902,32 +4246,41 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                 .into_iter()
                 .map(|(reference, _, _)| reference)
                 .collect();
-            for reference in references {
-                let Some(property) = declaring.flattened_properties().get(reference) else {
-                    continue;
-                };
-                let Some(declaration) = property
-                    .property_type
-                    .reference()
-                    .and_then(|reference| reference.target())
-                    .or(property.revealed_reference.as_ref())
-                    .and_then(DocumentPropertyReferenceTarget::as_any_document_reference)
-                else {
-                    continue;
-                };
+            // The referenced type of the same contract a reference points at
+            let same_contract = |reference: &str| {
+                let declaration = property_reference(declaring, reference)?
+                    .target()?
+                    .as_any_document_reference()?;
                 if declaration
                     .contract_id
                     .is_some_and(|referenced_contract| referenced_contract != contract_id)
                 {
-                    continue;
+                    return None;
                 }
-                let Some(referenced) = document_types.get(declaration.document_type_name) else {
+                let referenced = document_types.get(declaration.document_type_name)?.as_ref();
+                (declaration.kind == referenced.document_reference_kind())
+                    .then_some((declaration, referenced))
+            };
+            if let Some(reason) = referenced_peer_kind_error(
+                constraint,
+                &format!("rule \"{rule}\""),
+                &|reference, field| {
+                    same_contract(reference).and_then(|(_, referenced)| {
+                        WhereLiteralKind::of_referenced(referenced, field)
+                    })
+                },
+            ) {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "document type \"{type_name}\" {} {reason}",
+                        property_names::PROPERTY_CONSTRAINTS
+                    )),
+                ));
+            }
+            for reference in references {
+                let Some((declaration, referenced)) = same_contract(reference) else {
                     continue;
                 };
-                let referenced = referenced.as_ref();
-                if declaration.kind != referenced.document_reference_kind() {
-                    continue;
-                }
                 let records_creator_id = referenced.should_use_creator_id(
                     contract_system_version,
                     contract_config_version,
@@ -4199,6 +4552,65 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
         }
     }
     Ok(())
+}
+
+/// Why a string constant, affix or default `rule` (described by `subject`)
+/// compares with a property of `schema` is none its `enum` admits, `None` when
+/// each is: a constant or a default the `enum` does not list, or an affix none
+/// of its values fits, is a typo the property could never meet. `lookup`
+/// gives the property of `schema` a rule path reads, `None` for one it does
+/// not check here, and `label` names a rule path in the message.
+fn enum_miss(
+    rule: &PropertyConstraint,
+    subject: &str,
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    lookup: &dyn Fn(&str) -> Result<Option<String>, DataContractError>,
+    label: &dyn Fn(&str) -> String,
+) -> Result<Option<String>, DataContractError> {
+    for (path, constant) in rule.text_constants() {
+        let Some(property) = lookup(path)? else {
+            continue;
+        };
+        if !enum_admits(schema, schema_defs, &property, constant)? {
+            return Ok(Some(format!(
+                "{subject} compares \"{}\" with \"{constant}\", which is not one of its enum \
+                 values",
+                label(path)
+            )));
+        }
+    }
+    for (path, affix, position) in rule.text_affixes() {
+        let Some(property) = lookup(path)? else {
+            continue;
+        };
+        if !enum_any(schema, schema_defs, &property, |member| {
+            position.holds(member, affix)
+        })? {
+            let tests = match position {
+                AffixPosition::Start => "starts with",
+                AffixPosition::End => "ends with",
+            };
+            return Ok(Some(format!(
+                "{subject} tests whether \"{}\" {tests} \"{affix}\", which none of its enum \
+                 values does",
+                label(path)
+            )));
+        }
+    }
+    for (path, default) in rule.text_defaults() {
+        let Some(property) = lookup(path)? else {
+            continue;
+        };
+        if !enum_admits(schema, schema_defs, &property, default)? {
+            return Ok(Some(format!(
+                "{subject} gives \"{}\" the default \"{default}\", which is not one of its \
+                 enum values",
+                label(path)
+            )));
+        }
+    }
+    Ok(None)
 }
 
 /// Whether the string property at the dotted `path` of `schema`, a document

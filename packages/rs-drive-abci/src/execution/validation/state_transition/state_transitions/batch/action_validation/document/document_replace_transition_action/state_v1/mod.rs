@@ -4,7 +4,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::property_constraints::{
-    data_with_referenced_documents, DocumentSystemValues, PropertyConstraint, STORED_DOCUMENT_KEY,
+    DocumentSystemValues, STORED_DOCUMENT_KEY,
 };
 use std::collections::BTreeMap;
 use dpp::identifier::Identifier;
@@ -172,25 +172,19 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
         // The rules reading a document a reference points at (protocol version 14), judged
         // once the references hold, with the values their checks read, as on a create: every
         // replace judges every rule, and the structure validation judged the others
-        if document_type
-            .property_constraints()
-            .values()
-            .any(PropertyConstraint::reads_referenced)
-        {
-            let result = document_type
-                .validate_referencing_property_constraints(
-                    &data_with_referenced_documents(self.data(), referenced_documents),
-                    &DocumentSystemValues {
-                        aggregates: Some(self.property_constraint_aggregates().clone()),
-                        referenced_documents: true,
-                        ..system
-                    },
-                    platform_version,
-                )
-                .map_err(Error::Protocol)?;
-            if !result.is_valid() {
-                return Ok(result);
-            }
+        let result = document_type
+            .validate_referencing_property_constraints(
+                self.data(),
+                referenced_documents,
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..system
+                },
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         Ok(SimpleConsensusValidationResult::new())

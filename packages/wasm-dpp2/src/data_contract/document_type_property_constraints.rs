@@ -22,7 +22,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::property_constraints::{
-    AggregateKind, DocumentSystemValues, PropertyRead, referenced_read,
+    AggregateKind, DocumentSystemValues, PropertyRead,
 };
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
@@ -465,11 +465,7 @@ pub(crate) fn property_constraints_for_document_type(
         set_field(&object, "rule", &rule_to_js(declared, name)?, name)?;
 
         let reads = Array::new();
-        for (path, read) in constraint
-            .property_reads()
-            .into_iter()
-            .filter(|(path, _)| referenced_read(path).is_none())
-        {
+        for (path, read) in constraint.own_property_reads() {
             let entry = Object::new();
             set_field(&entry, "path", &JsValue::from_str(path), name)?;
             set_field(

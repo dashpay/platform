@@ -5,11 +5,9 @@ use dpp::consensus::state::document::document_contest_maximum_contenders_reached
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::property_constraints::{
-    data_with_referenced_documents, DocumentSystemValues, PropertyConstraint,
-};
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::identifier::Identifier;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -166,26 +164,21 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         // once the references hold, with the values their checks read: the structure
         // validation judged every other rule, and could not judge these before the reads.
         // A type without such a rule judges nothing more, and copies nothing
-        let document_type = self.base().document_type()?;
-        if document_type
-            .property_constraints()
-            .values()
-            .any(PropertyConstraint::reads_referenced)
-        {
-            let result = document_type
-                .validate_referencing_property_constraints(
-                    &data_with_referenced_documents(self.data(), referenced_documents),
-                    &DocumentSystemValues {
-                        aggregates: Some(self.property_constraint_aggregates().clone()),
-                        referenced_documents: true,
-                        ..system
-                    },
-                    platform_version,
-                )
-                .map_err(Error::Protocol)?;
-            if !result.is_valid() {
-                return Ok(result);
-            }
+        let result = self
+            .base()
+            .document_type()?
+            .validate_referencing_property_constraints(
+                self.data(),
+                referenced_documents,
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..system
+                },
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         // A non-contested create must not take the id of a live contested

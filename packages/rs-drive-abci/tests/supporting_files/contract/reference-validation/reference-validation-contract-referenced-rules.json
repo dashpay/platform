@@ -248,6 +248,115 @@
       },
       "required": ["ballotId", "$createdAt", "$updatedAt"],
       "additionalProperties": false
+    },
+    "ballotList": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "ballotIds": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "documentType": "ballot",
+              "where": { "endsAt": { "greaterThan": { "const": 100 } } }
+            }
+          },
+          "position": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ballotOrAuction": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "targetId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "anyOf": [
+              {
+                "type": "permanentDocument",
+                "documentType": "ballot",
+                "where": { "endsAt": { "greaterThan": { "const": 100 } } }
+              },
+              {
+                "type": "permanentDocument",
+                "documentType": "auction",
+                "where": { "status": { "const": "open" } }
+              }
+            ]
+          },
+          "position": 0
+        }
+      },
+      "required": ["targetId"],
+      "additionalProperties": false
+    },
+    "pass": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "eventCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "event",
+            "findBy": { "code": "." },
+            "where": { "capacity": { "greaterThan": { "const": 1 } } }
+          },
+          "position": 0
+        }
+      },
+      "required": ["eventCode"],
+      "additionalProperties": false
+    },
+    "nestedVote": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "meta": {
+          "type": "object",
+          "properties": {
+            "pollId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "refersTo": { "type": "deletableDocument", "documentType": "poll" },
+              "position": 0
+            }
+          },
+          "required": ["pollId"],
+          "additionalProperties": false,
+          "position": 0
+        }
+      },
+      "required": ["meta"],
+      "propertyConstraints": {
+        "singleChoicePoll": { "equal": [{ "referenced": ["meta.pollId", "multiChoice"] }, 0] }
+      },
+      "additionalProperties": false
     }
   }
 }

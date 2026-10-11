@@ -206,6 +206,19 @@ for (const ref of contract.documentTypeReferences('note')) {
   // the writer's own `$ownerId`: a write gate such as
   // `{ '$ownerId': '$ownerId' }` lets only the referenced document's current
   // owner create or replace the referring document.
+  // A value may instead be a condition object with one key, as the schema
+  // writes it: `{ const: v }`, `{ notEqual: b }`, `{ in: [v1, v2] }`, or an
+  // ordering such as `{ lessThanOrEqual: 'amount' }` or
+  // `{ greaterThan: '$updatedAt' }` (a bound is a referring property,
+  // `'$ownerId'`, a time or height, or `{ const: v }`; an integer past
+  // Number.MAX_SAFE_INTEGER is a bigint). Tell the two apart by type:
+  for (const [referenced, value] of Object.entries(ref.where ?? {})) {
+    if (typeof value === 'string') {
+      // an equality with the referring property `value`
+    } else {
+      // a condition, e.g. { in: ['open', 'extended'] }
+    }
+  }
   console.log(ref.path, ref.type);
 }
 

@@ -7051,6 +7051,107 @@ mod tests {
             );
         }
 
+        /// A where entry that can never hold refuses at registration, as one
+        /// of another kind does: a notEqual bounded by the reference's own
+        /// value, which found the document; a literal no value of the
+        /// referenced property equals; an ordering no value of it meets.
+        #[tokio::test]
+        async fn should_reject_a_where_entry_that_can_never_hold() {
+            for (fixture, referenced_property, reason) in [
+                (
+                    "where-not-equal-reference",
+                    "$id",
+                    "the referring property cannot be the reference property itself",
+                ),
+                (
+                    "where-literal-enum",
+                    "status",
+                    "is not one of the referenced property's enum values",
+                ),
+                (
+                    "where-ordering-range",
+                    "reservePrice",
+                    "no value the referenced property holds",
+                ),
+            ] {
+                let result = run_contract_create_with_foreign(
+                    &format!(
+                        "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-{fixture}.json"
+                    ),
+                    REFERENCED_RULES_CONTRACT_PATH,
+                )
+                .await;
+
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                        ),
+                        ..
+                    } if e.referenced_property() == referenced_property
+                        && e.reason().contains(reason),
+                    "{fixture}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_comparing_fields_of_another_contracts_documents_of_two_kinds()
+        {
+            // An auction's status, a string, never equals an event's
+            // capacity, an integer, and only registration sees both types
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-peer-kinds.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRuleReadInvalidError(e)
+                    ),
+                    ..
+                } if e.rule() == "statusIsCapacity"
+                    && e.reason().contains("which hold different kinds of value")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_where_entry_a_removal_record_lacks_on_a_reference_a_rule_reads() {
+            // The reply's rule reads the post through its moderatedDocument
+            // reference, so every replace checks the reference's where, which a
+            // removal record answers only for what it keeps: not the status
+            let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }));
+            let result = run_contract_create_with_foreign_and_config(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-moderated-where-unkept.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+                config,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referenced_property() == "status"
+                    && e.reason().contains("a rule reads the document through this \
+                       moderatedDocument reference")
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_a_where_literal_of_another_kind_than_the_referenced_property() {
             let result = run_contract_create_with_foreign(

@@ -28,14 +28,15 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::{
     is_referenced_system_agreement_property, DocumentPropertyType,
 };
-use crate::data_contract::document_type::property_constraints::SystemProperty;
+use crate::data_contract::document_type::property_constraints::{
+    spells_bytes, spells_identifier, whole_integer, SystemProperty,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::OWNER_ID;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value};
 use serde::Serialize;
-use std::collections::BTreeSet;
 use std::fmt;
 
 /// The key of a `where` entry's literal: `{ "const": ... }`.
@@ -140,17 +141,8 @@ impl WhereLiteral {
         match value {
             Value::Bool(flag) => Some(WhereLiteral::Boolean(*flag)),
             Value::Text(text) => Some(WhereLiteral::Text(text.clone())),
-            // The cast is exact: the float is a whole number inside the range
-            Value::Float(float)
-                if float.fract() == 0.0
-                    && *float >= i128::MIN as f64
-                    && *float < i128::MAX as f64 =>
-            {
-                Some(WhereLiteral::Integer(*float as i128))
-            }
-            value if value.is_integer() => {
-                value.to_integer::<i128>().ok().map(WhereLiteral::Integer)
-            }
+            Value::Float(_) => whole_integer(value).map(WhereLiteral::Integer),
+            value if value.is_integer() => whole_integer(value).map(WhereLiteral::Integer),
             _ => None,
         }
     }
@@ -187,6 +179,15 @@ impl WhereLiteral {
             (WhereLiteral::Text(text), WhereLiteralKind::Text) => {
                 matches!(value, Value::Text(held) if held == text)
             }
+            // Decoded in place, beside the held bytes
+            (WhereLiteral::Text(text), WhereLiteralKind::Identifier) => value
+                .as_bytes_slice()
+                .ok()
+                .and_then(|held| <&[u8; 32]>::try_from(held).ok())
+                .is_some_and(|held| spells_identifier(text, held)),
+            (WhereLiteral::Text(text), WhereLiteralKind::Bytes) => value
+                .as_bytes_slice()
+                .is_ok_and(|held| spells_bytes(text, held)),
             _ => self
                 .value_for(kind)
                 .is_some_and(|literal| value.same_scalar_data(&literal)),
@@ -199,65 +200,92 @@ impl fmt::Display for WhereLiteral {
         match self {
             WhereLiteral::Integer(integer) => write!(f, "{integer}"),
             WhereLiteral::Boolean(flag) => write!(f, "{flag}"),
-            WhereLiteral::Text(text) => write!(f, "\"{text}\""),
+            // As a JSON string, quotes and backslashes escaped
+            WhereLiteral::Text(text) => match serde_json::to_string(text) {
+                Ok(quoted) => f.write_str(&quoted),
+                Err(_) => Err(fmt::Error),
+            },
         }
     }
 }
 
-/// What the referenced side of a `notEqual` or of an ordering is compared
-/// with.
+/// What the referenced side of a `notEqual` must differ from.
 // Embedded in `DocumentPropertyReferenceTarget`, which consensus errors carry.
 // @append_only
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
 #[serde(rename_all = "camelCase")]
-pub enum WhereBound {
+pub enum WhereNotEqualBound {
     /// A property of the referring document, by its dotted path.
     Property(String),
     /// `"$ownerId"`: the writer.
     Writer,
     /// `{ "const": ... }`: a literal.
     Constant(WhereLiteral),
+}
+
+impl fmt::Display for WhereNotEqualBound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WhereNotEqualBound::Property(path) => write!(f, "\"{path}\""),
+            WhereNotEqualBound::Writer => write!(f, "\"{OWNER_ID}\""),
+            WhereNotEqualBound::Constant(literal) => write!(f, "{{ \"const\": {literal} }}"),
+        }
+    }
+}
+
+/// What the referenced side of an ordering, an integer, is compared with.
+// Embedded in `DocumentPropertyReferenceTarget`, which consensus errors carry.
+// @append_only
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
+#[serde(rename_all = "camelCase")]
+pub enum WhereOrderingBound {
+    /// An integer property of the referring document, by its dotted path.
+    Property(String),
+    /// `{ "const": ... }`: an integer.
+    Constant(i128),
     /// A time or height the referring document records (`"$createdAt"`),
-    /// which its type lists in `required`: an ordering only.
+    /// which its type lists in `required`.
     System(SystemProperty),
 }
 
-impl WhereBound {
-    /// The property of the referring document the bound reads, `None` for the
-    /// writer, a literal or a time or height.
-    pub fn referring_property(&self) -> Option<&str> {
+impl fmt::Display for WhereOrderingBound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WhereBound::Property(path) => Some(path),
-            WhereBound::Writer | WhereBound::Constant(_) | WhereBound::System(_) => None,
+            WhereOrderingBound::Property(path) => write!(f, "\"{path}\""),
+            WhereOrderingBound::Constant(integer) => write!(f, "{{ \"const\": {integer} }}"),
+            WhereOrderingBound::System(property) => write!(f, "\"{}\"", property.name()),
         }
     }
+}
 
-    /// Whether the value the bound reads may differ between two writes of the
-    /// referring document that change none of its properties: the writer, who
-    /// may be a new owner after a transfer or a purchase, and the time and
-    /// heights of the last update or transfer. An entry with such a bound is
-    /// checked again on every replace, as a writer gate is.
-    pub fn changes_without_a_write(&self) -> bool {
+/// A value of the referring write a `notEqual` or an ordering compares the
+/// referenced side with ([`WhereCondition::bound_read`]).
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum WhereBoundRead<'a> {
+    /// The referring document's property at this dotted path.
+    Property(&'a str),
+    /// The writer, an identifier.
+    Writer,
+    /// A time or height the referring document records, an integer.
+    System(SystemProperty),
+}
+
+impl WhereBoundRead<'_> {
+    /// Whether the value may differ between two writes of the referring
+    /// document that change none of its properties: the writer, who may be a
+    /// new owner after a transfer or a purchase, and the time and heights of
+    /// the last update or transfer. An entry reading one is checked again on
+    /// every replace, as a writer gate is.
+    pub fn changes_without_a_write(self) -> bool {
         match self {
-            WhereBound::Writer => true,
-            WhereBound::System(property) => !matches!(
+            WhereBoundRead::Writer => true,
+            WhereBoundRead::System(property) => !matches!(
                 property,
                 SystemProperty::CreatedAt
                     | SystemProperty::CreatedAtBlockHeight
                     | SystemProperty::CreatedAtCoreBlockHeight
             ),
-            WhereBound::Property(_) | WhereBound::Constant(_) => false,
-        }
-    }
-}
-
-impl fmt::Display for WhereBound {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WhereBound::Property(path) => write!(f, "\"{path}\""),
-            WhereBound::Writer => write!(f, "\"{OWNER_ID}\""),
-            WhereBound::Constant(literal) => write!(f, "{{ \"const\": {literal} }}"),
-            WhereBound::System(property) => write!(f, "\"{}\"", property.name()),
+            WhereBoundRead::Property(_) => false,
         }
     }
 }
@@ -321,17 +349,18 @@ pub enum WhereCondition {
     /// `{ "notEqual": bound }`: not equal to the bound, a property of the
     /// referring document, the writer or a literal; the negation of an
     /// equality, so two absent sides are equal and one absent side differs.
-    NotEqual(WhereBound),
+    NotEqual(WhereNotEqualBound),
     /// `{ "in": [literal, ...] }`: equal to one of two or more distinct
-    /// literals. A referenced side the document leaves out is in none.
-    In(BTreeSet<WhereLiteral>),
+    /// literals, in the order the declaration lists them. A referenced side
+    /// the document leaves out is in none.
+    In(Vec<WhereLiteral>),
     /// `{ "greaterThan": bound }` and the other orderings: an integer that
-    /// compares with the bound, a property of the referring document, a
-    /// literal or a time or height of the referring document, this way. Holds
-    /// only when both sides have a value.
+    /// compares with the bound, an integer property of the referring document,
+    /// an integer or a time or height of the referring document, this way.
+    /// Holds only when both sides have a value.
     Ordering {
         ordering: WhereOrdering,
-        bound: WhereBound,
+        bound: WhereOrderingBound,
     },
 }
 
@@ -346,36 +375,54 @@ impl WhereCondition {
         }
     }
 
-    /// The bound a `notEqual` or an ordering compares with, `None` for a
-    /// literal or a list of them.
-    pub fn bound(&self) -> Option<&WhereBound> {
+    /// The value of the referring write the condition compares with, `None`
+    /// for one that carries its own: a literal or a list of them.
+    pub fn bound_read(&self) -> Option<WhereBoundRead<'_>> {
         match self {
-            WhereCondition::NotEqual(bound) | WhereCondition::Ordering { bound, .. } => Some(bound),
-            WhereCondition::Constant(_) | WhereCondition::In(_) => None,
+            WhereCondition::NotEqual(WhereNotEqualBound::Property(path))
+            | WhereCondition::Ordering {
+                bound: WhereOrderingBound::Property(path),
+                ..
+            } => Some(WhereBoundRead::Property(path)),
+            WhereCondition::NotEqual(WhereNotEqualBound::Writer) => Some(WhereBoundRead::Writer),
+            WhereCondition::Ordering {
+                bound: WhereOrderingBound::System(property),
+                ..
+            } => Some(WhereBoundRead::System(*property)),
+            WhereCondition::Constant(_)
+            | WhereCondition::In(_)
+            | WhereCondition::NotEqual(WhereNotEqualBound::Constant(_))
+            | WhereCondition::Ordering {
+                bound: WhereOrderingBound::Constant(_),
+                ..
+            } => None,
         }
     }
 
     /// The property of the referring document the condition reads, `None`
     /// when it reads none.
     pub fn referring_property(&self) -> Option<&str> {
-        self.bound().and_then(WhereBound::referring_property)
+        match self.bound_read() {
+            Some(WhereBoundRead::Property(path)) => Some(path),
+            _ => None,
+        }
     }
 
     /// Whether the condition is checked again on every replace of the
-    /// referring document, as a writer gate is: its bound is the writer or the
+    /// referring document, as a writer gate is: it reads the writer or the
     /// time or heights of the last update or transfer
-    /// ([`WhereBound::changes_without_a_write`]).
+    /// ([`WhereBoundRead::changes_without_a_write`]).
     pub fn is_rechecked_on_every_replace(&self) -> bool {
-        self.bound()
-            .is_some_and(WhereBound::changes_without_a_write)
+        self.bound_read()
+            .is_some_and(WhereBoundRead::changes_without_a_write)
     }
 
     /// Whether the condition holds for `referenced`, the referenced side's
     /// value (`None` when the document leaves it out) of `kind` (`None` for a
     /// property no literal reads as, which registration refuses a literal
-    /// for), and `bound`, the value of a bound the referring document reads
-    /// (`None` when it leaves it out, and for a literal or a list, which carry
-    /// their own): a time or height reads as an integer, the writer as an
+    /// for), and `bound`, the value [`Self::bound_read`] names (`None` when the
+    /// write leaves it out, and for a literal or a list, which carry their
+    /// own): a time or height reads as an integer, the writer as an
     /// identifier.
     pub fn holds(
         &self,
@@ -393,9 +440,13 @@ impl WhereCondition {
         match self {
             WhereCondition::Constant(literal) => equals_literal(literal),
             WhereCondition::In(literals) => literals.iter().any(equals_literal),
-            WhereCondition::NotEqual(WhereBound::Constant(literal)) => !equals_literal(literal),
+            WhereCondition::NotEqual(WhereNotEqualBound::Constant(literal)) => {
+                !equals_literal(literal)
+            }
             // The negation of an equality entry: both absent agree
-            WhereCondition::NotEqual(_) => !match (referenced, bound) {
+            WhereCondition::NotEqual(
+                WhereNotEqualBound::Property(_) | WhereNotEqualBound::Writer,
+            ) => !match (referenced, bound) {
                 (Some(referenced), Some(bound)) => referenced.same_scalar_data(bound),
                 (None, None) => true,
                 (Some(_), None) | (None, Some(_)) => false,
@@ -410,9 +461,8 @@ impl WhereCondition {
                         .and_then(|value| value.to_integer::<i128>().ok())
                 };
                 let bound = match declared {
-                    WhereBound::Constant(WhereLiteral::Integer(integer)) => Some(*integer),
-                    WhereBound::Constant(_) => None,
-                    WhereBound::Property(_) | WhereBound::Writer | WhereBound::System(_) => {
+                    WhereOrderingBound::Constant(integer) => Some(*integer),
+                    WhereOrderingBound::Property(_) | WhereOrderingBound::System(_) => {
                         integer(bound)
                     }
                 };
@@ -451,7 +501,7 @@ impl fmt::Display for WhereCondition {
 mod tests {
     use super::*;
 
-    fn ordering(ordering: WhereOrdering, bound: WhereBound) -> WhereCondition {
+    fn ordering(ordering: WhereOrdering, bound: WhereOrderingBound) -> WhereCondition {
         WhereCondition::Ordering { ordering, bound }
     }
 
@@ -532,7 +582,7 @@ mod tests {
 
     #[test]
     fn should_negate_equality_for_not_equal() {
-        let other = WhereCondition::NotEqual(WhereBound::Writer);
+        let other = WhereCondition::NotEqual(WhereNotEqualBound::Writer);
         let kind = Some(WhereLiteralKind::Identifier);
         let writer = Value::Identifier([1; 32]);
         assert!(!other.holds(Some(&Value::Identifier([1; 32])), kind, Some(&writer)));
@@ -540,15 +590,15 @@ mod tests {
 
         // Both sides absent are equal, so notEqual does not hold; one absent
         // differs, so it does
-        let unlike = WhereCondition::NotEqual(WhereBound::Property("tag".to_string()));
+        let unlike = WhereCondition::NotEqual(WhereNotEqualBound::Property("tag".to_string()));
         let kind = Some(WhereLiteralKind::Text);
         assert!(!unlike.holds(None, kind, None));
         assert!(unlike.holds(Some(&Value::Text("a".to_string())), kind, None));
         assert!(unlike.holds(None, kind, Some(&Value::Text("a".to_string()))));
 
-        let not_closed = WhereCondition::NotEqual(WhereBound::Constant(WhereLiteral::Text(
-            "closed".to_string(),
-        )));
+        let not_closed = WhereCondition::NotEqual(WhereNotEqualBound::Constant(
+            WhereLiteral::Text("closed".to_string()),
+        ));
         assert!(not_closed.holds(None, kind, None));
         assert!(!not_closed.holds(Some(&Value::Text("closed".to_string())), kind, None));
     }
@@ -558,7 +608,7 @@ mod tests {
         let kind = Some(WhereLiteralKind::Integer);
         let after_creation = ordering(
             WhereOrdering::GreaterThan,
-            WhereBound::System(SystemProperty::CreatedAt),
+            WhereOrderingBound::System(SystemProperty::CreatedAt),
         );
         assert!(after_creation.holds(Some(&Value::U64(10)), kind, Some(&Value::U64(9))));
         assert!(!after_creation.holds(Some(&Value::U64(9)), kind, Some(&Value::U64(9))));
@@ -567,14 +617,14 @@ mod tests {
 
         let at_most_amount = ordering(
             WhereOrdering::LessThanOrEqual,
-            WhereBound::Property("amount".to_string()),
+            WhereOrderingBound::Property("amount".to_string()),
         );
         assert!(at_most_amount.holds(Some(&Value::I64(-5)), kind, Some(&Value::U32(0))));
         assert!(!at_most_amount.holds(Some(&Value::I64(1)), kind, Some(&Value::U32(0))));
 
         let at_least_ten = ordering(
             WhereOrdering::GreaterThanOrEqual,
-            WhereBound::Constant(WhereLiteral::Integer(10)),
+            WhereOrderingBound::Constant(10),
         );
         assert!(at_least_ten.holds(Some(&Value::U16(10)), kind, None));
         assert!(!at_least_ten.holds(Some(&Value::U16(9)), kind, None));
@@ -584,25 +634,27 @@ mod tests {
 
     #[test]
     fn should_recheck_on_every_replace_only_bounds_that_change_without_a_write() {
-        assert!(WhereCondition::NotEqual(WhereBound::Writer).is_rechecked_on_every_replace());
+        assert!(
+            WhereCondition::NotEqual(WhereNotEqualBound::Writer).is_rechecked_on_every_replace()
+        );
         assert!(ordering(
             WhereOrdering::LessThan,
-            WhereBound::System(SystemProperty::UpdatedAt)
+            WhereOrderingBound::System(SystemProperty::UpdatedAt)
         )
         .is_rechecked_on_every_replace());
         assert!(ordering(
             WhereOrdering::LessThan,
-            WhereBound::System(SystemProperty::TransferredAtBlockHeight)
+            WhereOrderingBound::System(SystemProperty::TransferredAtBlockHeight)
         )
         .is_rechecked_on_every_replace());
         assert!(!ordering(
             WhereOrdering::LessThan,
-            WhereBound::System(SystemProperty::CreatedAt)
+            WhereOrderingBound::System(SystemProperty::CreatedAt)
         )
         .is_rechecked_on_every_replace());
         assert!(!ordering(
             WhereOrdering::LessThan,
-            WhereBound::Property("amount".to_string())
+            WhereOrderingBound::Property("amount".to_string())
         )
         .is_rechecked_on_every_replace());
         assert!(
@@ -615,7 +667,7 @@ mod tests {
         assert_eq!(
             ordering(
                 WhereOrdering::GreaterThan,
-                WhereBound::System(SystemProperty::CreatedAt)
+                WhereOrderingBound::System(SystemProperty::CreatedAt)
             )
             .to_string(),
             "{ \"greaterThan\": \"$createdAt\" }"
@@ -631,7 +683,38 @@ mod tests {
                     .collect()
             )
             .to_string(),
-            "{ \"in\": [1, 2] }"
+            "{ \"in\": [2, 1] }"
+        );
+        // A string as JSON writes it, quotes and backslashes escaped
+        assert_eq!(
+            WhereCondition::Constant(WhereLiteral::Text("say \"hi\" \\o/".to_string())).to_string(),
+            r#"{ "const": "say \"hi\" \\o/" }"#
+        );
+    }
+
+    #[test]
+    fn should_compare_a_literal_as_the_value_it_reads_as() {
+        let id = Identifier::new([7; 32]);
+        let base58 = WhereLiteral::Text(id.to_string(Encoding::Base58));
+        let kind = WhereLiteralKind::Identifier;
+        assert!(base58.equals(&Value::Identifier([7; 32]), kind));
+        assert!(base58.equals(&Value::Bytes(vec![7; 32]), kind));
+        assert!(!base58.equals(&Value::Identifier([8; 32]), kind));
+        assert!(!WhereLiteral::Text("not base58 0OIl".to_string())
+            .equals(&Value::Identifier([7; 32]), kind));
+
+        let kind = WhereLiteralKind::Bytes;
+        for hex in ["cafe", "CAFE", "CaFe"] {
+            assert!(
+                WhereLiteral::Text(hex.to_string()).equals(&Value::Bytes(vec![0xca, 0xfe]), kind)
+            );
+        }
+        assert!(!WhereLiteral::Text("cafe".to_string()).equals(&Value::Bytes(vec![0xca]), kind));
+        assert!(
+            !WhereLiteral::Text("+a+e".to_string()).equals(&Value::Bytes(vec![0x0a, 0x0e]), kind)
+        );
+        assert!(
+            !WhereLiteral::Text("caf".to_string()).equals(&Value::Bytes(vec![0xca, 0x0f]), kind)
         );
     }
 }

@@ -194,7 +194,7 @@ mod referenced_rules_tests {
         assert_successful(&result, "the auction closes");
         bid.set("amount", Value::U32(300));
         let result = setup.replace("bid", &mut bid).await;
-        assert_where_refused(&result, "{ \"in\": [\"extended\", \"open\"] }");
+        assert_where_refused(&result, "{ \"in\": [\"open\", \"extended\"] }");
     }
 
     /// The `where` entries that are not an equality: a literal the referenced
@@ -297,6 +297,116 @@ mod referenced_rules_tests {
             .replace_at("ballotEntry", &mut entry, &block_at(5_000))
             .await;
         assert_where_refused(&result, "{ \"greaterThan\": \"$updatedAt\" }");
+    }
+
+    /// `where` conditions hold on every form of document reference: on each
+    /// element of a typed array, on each leaf of an `anyOf` (which holds
+    /// through either, refusing with its last leaf's refusal when none does),
+    /// and on the document a `findBy` finds.
+    #[tokio::test]
+    async fn should_check_where_conditions_on_every_reference_form() {
+        let mut setup = ReferenceTestSetup::new(CONTRACT_PATH, 6106);
+        let (open_ballot, result) = setup
+            .create("ballot", &[("endsAt", Value::U64(5_000))])
+            .await;
+        assert_successful(&result, "the ballot must be created");
+        let (short_ballot, result) = setup.create("ballot", &[("endsAt", Value::U64(50))]).await;
+        assert_successful(&result, "the ballot must be created");
+
+        let (_, result) = setup
+            .create(
+                "ballotList",
+                &[("ballotIds", Value::Array(vec![id_value(&open_ballot)]))],
+            )
+            .await;
+        assert_successful(&result, "every element names a ballot ending after 100");
+        let (_, result) = setup
+            .create(
+                "ballotList",
+                &[(
+                    "ballotIds",
+                    Value::Array(vec![id_value(&open_ballot), id_value(&short_ballot)]),
+                )],
+            )
+            .await;
+        assert_where_refused(&result, "{ \"greaterThan\": { \"const\": 100 } }");
+
+        let (open_auction, result) = setup
+            .create(
+                "auction",
+                &[
+                    ("reservePrice", Value::U32(1)),
+                    ("status", Value::Text("open".to_string())),
+                ],
+            )
+            .await;
+        assert_successful(&result, "the auction must be created");
+        let (closed_auction, result) = setup
+            .create(
+                "auction",
+                &[
+                    ("reservePrice", Value::U32(1)),
+                    ("status", Value::Text("closed".to_string())),
+                ],
+            )
+            .await;
+        assert_successful(&result, "the auction must be created");
+        for target in [&open_ballot, &open_auction] {
+            let (_, result) = setup
+                .create("ballotOrAuction", &[("targetId", id_value(target))])
+                .await;
+            assert_successful(&result, "one leaf holds");
+        }
+        // The ballot leaf's condition fails, and the auction leaf finds no
+        // auction, the last refusal
+        let (_, result) = setup
+            .create("ballotOrAuction", &[("targetId", id_value(&short_ballot))])
+            .await;
+        assert_not_found(&result);
+        let (_, result) = setup
+            .create(
+                "ballotOrAuction",
+                &[("targetId", id_value(&closed_auction))],
+            )
+            .await;
+        assert_where_refused(&result, "{ \"const\": \"open\" }");
+
+        for (code, capacity) in [("small", 1u32), ("large", 5)] {
+            let (_, result) = setup
+                .create(
+                    "event",
+                    &[
+                        ("code", Value::Text(code.to_string())),
+                        ("capacity", Value::U32(capacity)),
+                    ],
+                )
+                .await;
+            assert_successful(&result, "the event must be created");
+        }
+        let (_, result) = setup
+            .create("pass", &[("eventCode", Value::Text("large".to_string()))])
+            .await;
+        assert_successful(&result, "the event found holds more than one");
+        let (_, result) = setup
+            .create("pass", &[("eventCode", Value::Text("small".to_string()))])
+            .await;
+        assert_where_refused(&result, "{ \"greaterThan\": { \"const\": 1 } }");
+    }
+
+    /// A reference inside an object is read through by its dotted path.
+    #[tokio::test]
+    async fn should_read_through_a_reference_inside_an_object() {
+        let mut setup = ReferenceTestSetup::new(CONTRACT_PATH, 6107);
+        let single = poll(&mut setup, &[]).await;
+        let multiple = poll(&mut setup, &[("multiChoice", Value::Bool(true))]).await;
+        let meta =
+            |poll: &Document| Value::Map(vec![(Value::Text("pollId".to_string()), id_value(poll))]);
+        let (_, result) = setup.create("nestedVote", &[("meta", meta(&single))]).await;
+        assert_successful(&result, "a single-choice poll takes the vote");
+        let (_, result) = setup
+            .create("nestedVote", &[("meta", meta(&multiple))])
+            .await;
+        assert_rule_broken(&result, "singleChoicePoll");
     }
 
     /// A reference found by `findBy` reads the document the key finds, for the

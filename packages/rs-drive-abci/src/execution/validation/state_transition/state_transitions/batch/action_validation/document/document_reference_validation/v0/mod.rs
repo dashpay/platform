@@ -22,11 +22,11 @@ use dpp::data_contract::document_type::{
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
 use dpp::data_contract::document_type::property_constraints::{
-    referenced_document_values, referenced_fields, DocumentSystemValues,
+    referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
 };
-use dpp::data_contract::document_type::{WhereBound, WhereCondition, WhereLiteralKind};
+use dpp::data_contract::document_type::{WhereBoundRead, WhereCondition, WhereLiteralKind};
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
+use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
@@ -259,6 +259,14 @@ fn validate_document_type_references_v0(
     // The documents this write's references fetch by id, shared among them
     let mut fetched_documents = FetchedDocuments::default();
 
+    // The foreign contracts this write's references resolved, so each is
+    // fetched, and billed, once whatever number of declarations, elements of a
+    // typed array and leaves of an expression name it. Reached from protocol
+    // version 14 only (document create state validation 2 and replace state
+    // validation 1), where a reference a rule reads through is checked on
+    // every replace
+    let mut referenced_contracts = BTreeMap::new();
+
     // What the type's `propertyConstraints` rules read of the documents its references
     // point at, by reference property (protocol version 14). Every replace judges every
     // rule, so each such reference is checked on every replace, and once it holds the
@@ -462,10 +470,6 @@ fn validate_document_type_references_v0(
         } else {
             false
         };
-
-        // The referenced contracts this declaration resolved, so the
-        // elements of a typed array fetch a foreign contract once
-        let mut referenced_contracts = BTreeMap::new();
 
         if !holds_elements {
             let referenced_id = match holder {
@@ -1219,10 +1223,8 @@ fn validate_reference_target_v0(
             let referenced_contract = if effective_contract_id == contract.id() {
                 contract
             } else {
-                // The elements of one typed array share their declaration,
-                // so they resolve its contract once: the first element's
-                // fetch is billed and the rest reuse it. A single
-                // reference comes with a map of its own, one fetch
+                // Every reference of the write resolves a contract once: the
+                // first fetch is billed and the rest reuse it
                 let fetch_info = match referenced_contracts.get(&effective_contract_id) {
                     Some(resolved) => resolved.clone(),
                     None => {
@@ -1504,25 +1506,10 @@ fn validate_reference_target_v0(
                     // registration validated that each faces an identifier
                     // property on the referring side, so the two compare as
                     // identifiers below.
-                    let referenced_value: Option<Cow<Value>> = match referenced_property.as_str() {
-                        OWNER_ID => Some(Cow::Owned(Value::Identifier(
-                            referenced_document.owner_id().to_buffer(),
-                        ))),
-                        ID => Some(Cow::Owned(Value::Identifier(
-                            referenced_document.id().to_buffer(),
-                        ))),
-                        CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
-                            Cow::Owned(Value::Identifier(creator_id.to_buffer()))
-                        }),
-                        _ => {
-                            let Ok(referenced_value) = referenced_document
-                                .properties()
-                                .get_optional_at_path(referenced_property)
-                            else {
-                                return Ok(mismatch());
-                            };
-                            referenced_value.map(Cow::Borrowed)
-                        }
+                    let Ok(referenced_value) =
+                        referenced_document_value(referenced_document, referenced_property)
+                    else {
+                        return Ok(mismatch());
                     };
                     let (referring_value, referenced_value) =
                         match (referring_value, referenced_value) {
@@ -1549,25 +1536,10 @@ fn validate_reference_target_v0(
                 // literal reads as the referenced property's kind says, of the type
                 // just resolved, since it may be another contract's
                 for (referenced_property, condition) in where_conditions {
-                    let referenced_value = match referenced_property.as_str() {
-                        OWNER_ID => Some(Cow::Owned(Value::Identifier(
-                            referenced_document.owner_id().to_buffer(),
-                        ))),
-                        ID => Some(Cow::Owned(Value::Identifier(
-                            referenced_document.id().to_buffer(),
-                        ))),
-                        CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
-                            Cow::Owned(Value::Identifier(creator_id.to_buffer()))
-                        }),
-                        _ => match referenced_document
-                            .properties()
-                            .get_optional_at_path(referenced_property)
-                        {
-                            Ok(value) => value.map(Cow::Borrowed),
-                            Err(_) => {
-                                return Ok(condition_mismatch(path, condition, referenced_property))
-                            }
-                        },
+                    let Ok(referenced_value) =
+                        referenced_document_value(referenced_document, referenced_property)
+                    else {
+                        return Ok(condition_mismatch(path, condition, referenced_property));
                     };
                     let kind = WhereLiteralKind::of_referenced(
                         referenced_document_type,
@@ -1748,17 +1720,59 @@ fn where_bound_value<'a>(
     owner_id: Identifier,
     referring_system: &DocumentSystemValues,
 ) -> Option<Cow<'a, Value>> {
-    match condition.bound()? {
-        WhereBound::Property(path) => document_data
+    match condition.bound_read()? {
+        WhereBoundRead::Property(path) => document_data
             .get_optional_at_path(path)
             .ok()
             .flatten()
             .map(Cow::Borrowed),
-        WhereBound::Writer => Some(Cow::Owned(Value::Identifier(owner_id.to_buffer()))),
-        WhereBound::System(property) => referring_system
-            .value(*property)
+        WhereBoundRead::Writer => Some(Cow::Owned(Value::Identifier(owner_id.to_buffer()))),
+        WhereBoundRead::System(property) => referring_system
+            .value(property)
             .map(|value| Cow::Owned(Value::I128(value))),
-        WhereBound::Constant(_) => None,
+    }
+}
+
+/// What a removal record holds of the document a moderator removed, read field
+/// by field: its `$id`, its `$ownerId` at the removal, which no transfer can
+/// move since (a removed document can not be transferred, and a restore brings
+/// it back as it was), and the values of the fields its type keeps under
+/// `deleteKeepsFields` (a kept path, or one inside a kept object), decoded under
+/// `referenced_document_type` on the first read of one.
+struct RemovalRecord<'a> {
+    removal: &'a ContractDocumentRemoval,
+    document_id: Identifier,
+    referenced_document_type: DocumentTypeRef<'a>,
+    kept_values: Option<BTreeMap<String, Value>>,
+}
+
+impl RemovalRecord<'_> {
+    /// The record's value of `field`, `Some(None)` when it keeps the field and
+    /// the document held none there, `None` when it keeps no such field. A
+    /// record whose values do not read under the type is a corrupted state, an
+    /// error rather than a refusal.
+    fn value(&mut self, field: &str) -> Result<Option<Option<Value>>, Error> {
+        Ok(match field {
+            OWNER_ID => Some(Some(Value::Identifier(
+                self.removal.document_owner_id.to_buffer(),
+            ))),
+            ID => Some(Some(Value::Identifier(self.document_id.to_buffer()))),
+            field => {
+                let kept_paths = self
+                    .referenced_document_type
+                    .moderator_deletion_kept_fields();
+                if !is_path_listed(kept_paths, field) {
+                    return Ok(None);
+                }
+                if self.kept_values.is_none() {
+                    self.kept_values =
+                        Some(self.removal.kept_values(self.referenced_document_type)?);
+                }
+                self.kept_values
+                    .as_ref()
+                    .map(|kept_values| kept_value_at(kept_paths, kept_values, field).flatten())
+            }
+        })
     }
 }
 
@@ -1784,7 +1798,10 @@ fn where_bound_value<'a>(
 /// on a `moderatedDocument` reference against the referenced `$ownerId` or
 /// `$id` alone, since a writer gate is asked about on every replace. A pair the replace does not ask about held when it was last
 /// checked, against a document whose values the removal froze, and is left as
-/// it is. No read: the record was read and billed by the caller.
+/// it is, unless a rule reads the document through the reference: then every
+/// entry is checked, as the replace checks every entry against a document in
+/// state, and registration keeps each to what every record holds. No read: the
+/// record was read and billed by the caller.
 ///
 /// In place in generation 0: reached from protocol version 14 only, the only
 /// version whose parser produces a `moderatedDocument` reference.
@@ -1802,38 +1819,35 @@ fn validate_pairs_against_removal(
     path: &str,
     rule_reads: Option<RuleReads<'_>>,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let kept_paths = referenced_document_type.moderator_deletion_kept_fields();
-    let mut kept_values = None;
+    let mut record = RemovalRecord {
+        removal,
+        document_id,
+        referenced_document_type,
+        kept_values: None,
+    };
+    let removed = |referenced_property: &str| {
+        SimpleConsensusValidationResult::new_with_error(
+            ReferencedDocumentRemovedError::new(
+                document_id,
+                path.to_string(),
+                referenced_property.to_string(),
+            )
+            .into(),
+        )
+    };
+    // A rule reading the document has the reference checked on every replace,
+    // its `where` whole, as against a document in state; registration keeps
+    // every entry of such a reference to what every record holds
+    let checks_every_entry = rule_reads.is_some();
     for (referring_property, referenced_property) in property_agreement {
-        let rechecked = is_referring_system_agreement_property(referring_property)
+        let rechecked = checks_every_entry
+            || is_referring_system_agreement_property(referring_property)
             || is_changed_field(changed_fields, referring_property);
         if !rechecked {
             continue;
         }
-        let referenced_value = match referenced_property.as_str() {
-            OWNER_ID => Some(Cow::Owned(Value::Identifier(
-                removal.document_owner_id.to_buffer(),
-            ))),
-            ID => Some(Cow::Owned(Value::Identifier(document_id.to_buffer()))),
-            property if !is_path_listed(kept_paths, property) => {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ReferencedDocumentRemovedError::new(
-                        document_id,
-                        path.to_string(),
-                        referenced_property.clone(),
-                    )
-                    .into(),
-                ))
-            }
-            property => {
-                let kept_values = match &mut kept_values {
-                    Some(kept_values) => kept_values,
-                    None => kept_values.insert(removal.kept_values(referenced_document_type)?),
-                };
-                kept_value_at(kept_paths, kept_values, property)
-                    .flatten()
-                    .map(Cow::Owned)
-            }
+        let Some(referenced_value) = record.value(referenced_property)? else {
+            return Ok(removed(referenced_property));
         };
         // As against a document in state: the writer for `$ownerId`, a
         // property of the document otherwise, one unreadable a mismatch
@@ -1865,36 +1879,20 @@ fn validate_pairs_against_removal(
     }
     // The other `where` entries the replace asks about again, as the pairs
     // above: one bounded by a changed property, or by a value that changes
-    // without a write (the writer, the last update or transfer). Registration
-    // keeps an entry asked about on every replace to what every record holds
+    // without a write (the writer, the last update or transfer), or every one
+    // when a rule reads the document. Registration keeps an entry asked about
+    // on every replace to what every record holds
     for (referenced_property, condition) in where_conditions {
-        let rechecked = condition.is_rechecked_on_every_replace()
+        let rechecked = checks_every_entry
+            || condition.is_rechecked_on_every_replace()
             || condition
                 .referring_property()
                 .is_some_and(|property| is_changed_field(changed_fields, property));
         if !rechecked {
             continue;
         }
-        let referenced_value = match referenced_property.as_str() {
-            OWNER_ID => Some(Value::Identifier(removal.document_owner_id.to_buffer())),
-            ID => Some(Value::Identifier(document_id.to_buffer())),
-            property if !is_path_listed(kept_paths, property) => {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ReferencedDocumentRemovedError::new(
-                        document_id,
-                        path.to_string(),
-                        referenced_property.clone(),
-                    )
-                    .into(),
-                ))
-            }
-            property => {
-                let kept_values = match &mut kept_values {
-                    Some(kept_values) => kept_values,
-                    None => kept_values.insert(removal.kept_values(referenced_document_type)?),
-                };
-                kept_value_at(kept_paths, kept_values, property).flatten()
-            }
+        let Some(referenced_value) = record.value(referenced_property)? else {
+            return Ok(removed(referenced_property));
         };
         let kind = WhereLiteralKind::of_referenced(referenced_document_type, referenced_property);
         let bound = where_bound_value(condition, document_data, owner_id, referring_system);
@@ -1908,22 +1906,11 @@ fn validate_pairs_against_removal(
     if let Some(rule_reads) = rule_reads {
         let mut values = Value::Map(Vec::new());
         for field in rule_reads.fields.iter().copied() {
-            let value = match field {
-                OWNER_ID => Some(Value::Identifier(removal.document_owner_id.to_buffer())),
-                ID => Some(Value::Identifier(document_id.to_buffer())),
-                field if is_path_listed(kept_paths, field) => {
-                    let kept_values = match &mut kept_values {
-                        Some(kept_values) => kept_values,
-                        None => kept_values.insert(removal.kept_values(referenced_document_type)?),
-                    };
-                    kept_value_at(kept_paths, kept_values, field).flatten()
-                }
-                _ => {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "a rule reads through a moderatedDocument reference only what every \
-                         removal record keeps, which registration enforces",
-                    )))
-                }
+            let Some(value) = record.value(field)? else {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "a rule reads through a moderatedDocument reference only what every \
+                     removal record keeps, which registration enforces",
+                )));
             };
             if let Some(value) = value {
                 values
