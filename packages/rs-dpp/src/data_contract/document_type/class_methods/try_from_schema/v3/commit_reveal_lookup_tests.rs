@@ -748,20 +748,12 @@ fn should_refuse_params_the_referring_type_cannot_supply() {
         .expect("a fixed-length param followed by a variable one splits one way");
 }
 
+/// A string or byte array property carries a document reference found by
+/// `findBy` alone: its value is no id. One read as is, `"."`, is
+/// `string_find_by_key_tests`'
 #[test]
-fn should_refuse_a_revealed_reference_without_a_function_pair() {
+fn should_refuse_a_revealed_reference_that_is_no_document_found_by_find_by() {
     for (refers_to, fragment) in [
-        // A plain key would compare the salt with the index property as is
-        (
-            json!({
-                "type": "deletableDocument",
-                "documentType": "preorder",
-                "findBy": {
-                    "saltedDomainHash": "."
-                }
-            }),
-            "found by a findBy function reading the value",
-        ),
         // Without a lookup there is nothing to reveal the value into
         (
             json!({ "type": "identity" }),

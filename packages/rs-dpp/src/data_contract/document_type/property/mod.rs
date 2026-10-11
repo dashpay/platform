@@ -94,10 +94,12 @@ pub struct DocumentProperty {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_from: Option<GeneratedFrom>,
     /// The `refersTo` of a string or byte array property, whose value is not
-    /// an id but is revealed into a computed key, a `findBy` function naming
-    /// the property by its path among its `params`, such as a
-    /// salt a commitment hashed. An identifier property's
-    /// `refersTo` is folded into its type instead
+    /// an id but is read into its `findBy` key: as `"."`, filling an index
+    /// property holding the same kind of value (a name a document is unique
+    /// by), or revealed into a computed key, a `findBy` function naming the
+    /// property by its path among its `params`, such as a salt a commitment
+    /// hashed. An identifier property's `refersTo` is folded into its type
+    /// instead
     /// ([`DocumentPropertyType::IdentifierWithReference`]). Only ever `Some` on
     /// contracts parsed from protocol version 14 on.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1288,10 +1290,11 @@ pub enum PropertyReference<'a> {
     /// A key id property carrying an `identityPublicKey` declaration that
     /// names whose key it is ([`DocumentPropertyType::KeyIdWithReference`]).
     KeyId(&'a KeyIdReference),
-    /// A string or byte array property whose value is revealed into the
-    /// computed key of its `refersTo` ([`DocumentProperty::revealed_reference`]):
-    /// not an id, so read only as a param of that key's `findBy` function,
-    /// which names the property by its path, on a create.
+    /// A string or byte array property whose value its `refersTo` `findBy`
+    /// reads ([`DocumentProperty::revealed_reference`]): not an id, so read as
+    /// `"."`, re-validated on a replace as an identifier's reference is, or as
+    /// a param of a function computing the key, which names the property by
+    /// its path, on a create only.
     Revealed(&'a DocumentPropertyReferenceTarget),
 }
 

@@ -567,9 +567,11 @@ fn validate_reference_target_declaration_v0(
                     .into(),
                 ));
             }
-            if let Some(reason) =
-                lookup.referenced_side_error(document_type, referenced_document_type)
-            {
+            if let Some(reason) = lookup.referenced_side_error(
+                document_type,
+                reference_property,
+                referenced_document_type,
+            ) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentLookupInvalidError::new(
                         declaration_path,
