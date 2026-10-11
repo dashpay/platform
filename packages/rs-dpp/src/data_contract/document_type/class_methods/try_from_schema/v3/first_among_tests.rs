@@ -322,7 +322,7 @@ fn should_refuse_first_among_beside_a_find_by_other_than_the_writer_and_its_func
 }
 
 /// A `where` beside `firstAmong` compares nothing but the writer with the
-/// commitment's owner.
+/// commitment's owner, and holds no condition.
 #[test]
 fn should_refuse_a_where_entry_beside_first_among_other_than_the_writer() {
     let reveal_where = |entries: serde_json::Value| {
@@ -337,6 +337,14 @@ fn should_refuse_a_where_entry_beside_first_among_other_than_the_writer() {
     assert_refused_by_the_parser_on_every_parse(
         contract_revealing(reveal_where(json!({ "note": "label" }))),
         "where \"note\": \"label\" beside firstAmong",
+    );
+    // A condition the found commitment meets, which a competitor is never asked to
+    assert_refused_by_the_parser_on_every_parse(
+        contract_revealing(reveal_where(json!({
+            "$ownerId": "$ownerId",
+            "note": { "const": "first" }
+        }))),
+        "where \"note\" holds a condition beside firstAmong",
     );
 }
 

@@ -2938,7 +2938,7 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included) and key id property, for every leaf of every reference expression, the
+/// included), `firstAmong` function param and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2960,61 +2960,35 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             continue;
         };
         for leaf in target.leaves() {
-            let agreement = match leaf {
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    property_agreement, ..
-                }
-                | DocumentPropertyReferenceTarget::DeletableDocument {
-                    property_agreement, ..
-                }
-                | DocumentPropertyReferenceTarget::ModeratedDocument {
-                    property_agreement, ..
-                } => Some(property_agreement),
-                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                }
-                | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                } => {
-                    read.extend(lookup.referring_properties().map(top_level_property));
-                    // A computed key's params: the key is judged on the create only, so a
-                    // change would leave the document no longer hashing to what it revealed
-                    if let Some((_, key)) = lookup.hash_key() {
-                        read.extend(key.properties_read().map(top_level_property));
-                    }
-                    // The `firstAmong` function's params, for the same reason
-                    if let Some(first_among) = &lookup.first_among {
-                        read.extend(first_among.key.properties_read().map(top_level_property));
-                    }
-                    Some(property_agreement)
-                }
-                DocumentPropertyReferenceTarget::ListElement(list_element) => {
-                    Some(&list_element.property_agreement)
-                }
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property, ..
-                } => {
-                    read.insert(top_level_property(key_id_property));
-                    None
-                }
-                DocumentPropertyReferenceTarget::Identity
-                | DocumentPropertyReferenceTarget::Contract { .. }
-                | DocumentPropertyReferenceTarget::Token
-                | DocumentPropertyReferenceTarget::AnyOf(_)
-                | DocumentPropertyReferenceTarget::AllOf(_) => None,
-            };
-            if let Some(agreement) = agreement {
-                read.extend(
-                    agreement
-                        .keys()
-                        .filter(|property| !property.starts_with('$'))
-                        .map(|property| top_level_property(property)),
-                );
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property, ..
+            } = leaf
+            {
+                read.insert(top_level_property(key_id_property));
             }
+            let Some(declaration) = leaf.as_any_document_reference() else {
+                continue;
+            };
+            if let Some(lookup) = declaration.lookup {
+                read.extend(lookup.referring_properties().map(top_level_property));
+                // A computed key's params: the key is judged on the create only, so a
+                // change would leave the document no longer hashing to what it revealed
+                if let Some((_, key)) = lookup.hash_key() {
+                    read.extend(key.properties_read().map(top_level_property));
+                }
+                // The `firstAmong` function's params, for the same reason
+                if let Some(first_among) = &lookup.first_among {
+                    read.extend(first_among.key.properties_read().map(top_level_property));
+                }
+            }
+            // The `where` of a list element names the property holding its
+            // document's `$id` too
+            read.extend(
+                declaration
+                    .where_referring_properties()
+                    .filter(|property| !property.starts_with('$'))
+                    .map(top_level_property),
+            );
         }
     }
     read
@@ -3598,6 +3572,7 @@ fn parse_replace_condition(
         subject,
         &condition,
         true,
+        false,
         &condition_error,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;

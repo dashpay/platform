@@ -1598,6 +1598,7 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         updated_at_core_block_height: changed.updated_at_core_block_height(),
         transferred_at_core_block_height: changed.transferred_at_core_block_height(),
         aggregates: Some(aggregates),
+        referenced_documents: false,
     };
     // Each check runs only on a document the previous ones passed, as a replace's do: the later
     // two read values the schema check makes well formed.

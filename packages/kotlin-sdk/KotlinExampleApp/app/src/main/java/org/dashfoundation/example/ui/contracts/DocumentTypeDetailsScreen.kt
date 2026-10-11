@@ -404,8 +404,8 @@ private fun PropertyConstraintsFormSection(section: PropertyConstraintsSection) 
 
 /**
  * One `propertyConstraints` rule: its name, the rule as declared, what it
- * reads, the system times and heights and the totals it reads, and whether an owner change
- * is judged against it too
+ * reads, the system times and heights, the totals and the values of referenced documents it
+ * reads, and whether an owner change is judged against it too
  * (← `PropertyConstraintRowView` in DocumentTypeDetailsView.swift).
  */
 @Composable
@@ -414,6 +414,7 @@ private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
     val reads = remember(rule) { propertyConstraintReadsText(rule) }
     val systemReads = remember(rule) { propertyConstraintSystemReadsText(rule) }
     val totals = remember(rule) { propertyConstraintTotalsText(rule) }
+    val referenced = remember(rule) { propertyConstraintReferencedReadsText(rule) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -471,6 +472,19 @@ private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
             )
             Text(
                 PROPERTY_CONSTRAINT_TOTALS_NOTE,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        if (referenced != null) {
+            Text(
+                referenced,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.testTag("documentType.propertyConstraint.${rule.name}.readsReferenced"),
+            )
+            Text(
+                PROPERTY_CONSTRAINT_REFERENCED_NOTE,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.tertiary,
             )

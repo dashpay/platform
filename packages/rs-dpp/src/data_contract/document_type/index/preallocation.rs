@@ -290,6 +290,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
                     document_type_name: target_type.to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: agreement
                         .iter()
                         .map(|(referring, referenced)| {
@@ -494,6 +495,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -519,6 +521,7 @@ mod tests {
         let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: document_type_name.to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
         };
         let index = index_on(&["postId"]);
@@ -555,6 +558,7 @@ mod tests {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                ..
             },
         ) = property.property_type
         else {
@@ -564,6 +568,7 @@ mod tests {
             DocumentPropertyReferenceTarget::ModeratedDocument {
                 contract_id,
                 document_type_name,
+                where_conditions: Default::default(),
                 property_agreement,
             },
         );
@@ -603,6 +608,7 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
             },
         );

@@ -179,6 +179,7 @@ mod tests {
         DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
             document_type_name: "addedModerator".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
             lookup: DocumentReferenceLookup {
                 keys: [("moderatorId".to_string(), LookupKeySource::ReferenceValue)].into(),

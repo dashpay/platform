@@ -84,6 +84,7 @@ use crate::consensus::state::document::referenced_document_removed_error::Refere
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
+use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
@@ -735,6 +736,10 @@ pub enum StateError {
     #[error(transparent)]
     TokenNotTransferableError(TokenNotTransferableError),
 
+    // A `propertyConstraints` rule reads a field of another contract's document type, through a
+    // reference, that the type can not give it (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentRuleReadInvalidError(ReferencedDocumentRuleReadInvalidError),
     // The commitment a create's `refersTo` found is preceded by a valid one of another
     // identity, from an earlier block, holding the same value at the property the reference's
     // `firstAmong` names (protocol version 14).
@@ -789,18 +794,21 @@ mod tests {
         discriminant
     }
 
-    /// A reference error for an id reference encodes exactly as it did before
-    /// lookup references existed: the lookup form is an appended variant of
-    /// `DocumentPropertyReferenceTarget` (`PermanentDocumentLookup`), not a
-    /// field of `PermanentDocument`, so a client decoding with an earlier dpp
-    /// still reads every error an id reference produces. The bytes are pinned;
-    /// `PermanentDocument` keeps variant 3 of the target, the lookup form
-    /// takes 6.
+    /// A reference error for an id reference encodes as pinned here: the
+    /// lookup form is an appended variant of `DocumentPropertyReferenceTarget`
+    /// (`PermanentDocumentLookup`), not a field of `PermanentDocument`, so the
+    /// lookup changed nothing an id reference produces. The `where` entries
+    /// that are not equalities did: they are a field, `where_conditions`,
+    /// after `property_agreement` on every document variant, which protocol
+    /// version 14, unreleased, introduced, so an id reference's error carries
+    /// one more byte, its empty map. The bytes are pinned; `PermanentDocument`
+    /// keeps variant 3 of the target, the lookup form takes 6.
     #[test]
     fn should_keep_the_encoding_of_a_reference_error_for_an_id_reference() {
         let id_reference = DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
         };
         let error = StateError::ReferencedEntityNotFoundError(ReferencedEntityNotFoundError::new(
@@ -811,7 +819,8 @@ mod tests {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
         // StateError variant 93, the referenced id, target variant 3
-        // (PermanentDocument: no contract id, "note", no agreement), the path.
+        // (PermanentDocument: no contract id, "note", no agreement, no
+        // conditions), the path.
         assert_eq!(
             hex::encode(bytes),
             concat!(
@@ -820,6 +829,7 @@ mod tests {
                 "03",
                 "00",
                 "046e6f7465",
+                "00",
                 "00",
                 "066e6f74654964",
             )
@@ -834,6 +844,7 @@ mod tests {
             target_variant(&DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -851,6 +862,7 @@ mod tests {
                 ListElementReference {
                     contract_id: None,
                     document_type_name: "electedCharter".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: [("electedCharterId".to_string(), "$id".to_string())]
                         .into(),
                     in_list: "members".to_string(),
@@ -863,6 +875,7 @@ mod tests {
             target_variant(&DocumentPropertyReferenceTarget::DeletableDocumentLookup {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -1635,6 +1648,19 @@ mod tests {
             )),
             173
         );
+        // A rule reading through a reference a field another contract's type can not give it
+        // (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRuleReadInvalidError(
+                ReferencedDocumentRuleReadInvalidError::new(
+                    "vote".to_string(),
+                    "castBeforeTheEnd".to_string(),
+                    "pollId".to_string(),
+                    "endsAt is a string".to_string(),
+                )
+            )),
+            174
+        );
         // A create's commitment preceded by an older valid one of another identity
         // (`firstAmong`, protocol version 14).
         assert_eq!(
@@ -1646,7 +1672,7 @@ mod tests {
                     "$creatorId".to_string(),
                 )
             )),
-            174
+            175
         );
     }
 }

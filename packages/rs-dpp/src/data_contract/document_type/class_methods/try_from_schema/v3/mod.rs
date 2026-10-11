@@ -67,7 +67,7 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources,
+    validate_reference_lookup_sources, validate_referencing_rules,
 };
 
 mod ranked_prefix_overlap;
@@ -690,6 +690,12 @@ fn parse_generation_3(
     // would silently skip a declaration whose property finds no document
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+        // The declaring side of a rule reading a document a reference points at, once
+        // the references, `indexOnly`, the trade flags and the moderator fields are
+        // known; what it reads of the referenced type is checked where that type is in
+        // hand
+        validate_referencing_rules(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
@@ -1963,6 +1969,8 @@ mod reference_expression_tests;
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
+mod referenced_rule_tests;
 #[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]

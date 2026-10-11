@@ -189,6 +189,7 @@ fn expected_reference(pairs: &[(&str, &str)], in_list: &str) -> DocumentProperty
     DocumentPropertyReferenceTarget::ListElement(ListElementReference {
         contract_id: None,
         document_type_name: "electedCharter".to_string(),
+        where_conditions: Default::default(),
         property_agreement: pairs
             .iter()
             .map(|(referring, referenced)| (referring.to_string(), referenced.to_string()))
@@ -783,6 +784,7 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
     let reference = ListElementReference {
         contract_id: None,
         document_type_name: "electedCharter".to_string(),
+        where_conditions: Default::default(),
         property_agreement: BTreeMap::from([("meta.charterId".to_string(), "$id".to_string())]),
         in_list: "seats.members".to_string(),
     };

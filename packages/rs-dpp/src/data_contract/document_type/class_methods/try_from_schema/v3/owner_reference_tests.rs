@@ -221,6 +221,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "addedModerator".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: lookup.clone(),
             },
@@ -237,6 +238,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "addedModerator".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: agreement,
                 lookup,
             },
@@ -598,6 +600,7 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                     contract_id: None,
                     document_type_name: "addedModerator".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: BTreeMap::new(),
                     lookup: lookup.clone(),
                 },

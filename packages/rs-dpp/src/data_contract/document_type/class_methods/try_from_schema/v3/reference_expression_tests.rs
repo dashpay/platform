@@ -192,6 +192,7 @@ fn expected_join_request_lookup() -> DocumentPropertyReferenceTarget {
     DocumentPropertyReferenceTarget::PermanentDocumentLookup {
         contract_id: None,
         document_type_name: "joinRequest".to_string(),
+        where_conditions: Default::default(),
         property_agreement: BTreeMap::new(),
         lookup: DocumentReferenceLookup {
             keys: [
@@ -213,6 +214,7 @@ fn expected_added_moderator_lookup() -> DocumentPropertyReferenceTarget {
     DocumentPropertyReferenceTarget::PermanentDocumentLookup {
         contract_id: None,
         document_type_name: "addedModerator".to_string(),
+        where_conditions: Default::default(),
         property_agreement: BTreeMap::new(),
         lookup: DocumentReferenceLookup {
             keys: [
@@ -311,6 +313,7 @@ fn should_parse_a_deletable_document_lookup_operand_and_refuse_it_in_an_immutabl
         contract_id,
         document_type_name,
         property_agreement,
+        where_conditions,
         lookup,
     } = expected_added_moderator_lookup()
     else {
@@ -324,6 +327,7 @@ fn should_parse_a_deletable_document_lookup_operand_and_refuse_it_in_an_immutabl
                 contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 lookup,
             },
         ]))
@@ -361,6 +365,7 @@ fn should_parse_an_any_of_of_an_identity_and_a_document_with_its_own_agreement()
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "joinRequest".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: [("title".to_string(), "message".to_string())].into(),
             },
         ]))
