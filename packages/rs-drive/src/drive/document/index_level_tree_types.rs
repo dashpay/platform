@@ -442,11 +442,17 @@ where
 /// keying it (`derived_index_values`), null where the reference or the field
 /// it reads is absent, and that null is absent as a missing property is: it
 /// would be keyed under the same empty key.
+///
+/// An indexed typed array is in the skip set of every index naming it
+/// (protocol version 14), and an empty list is not carried: it has no element
+/// to key the document by. No other skip property holds a list (a byte array
+/// skip property is never empty, its `minItems` being at least 1).
 pub(crate) fn document_carries(document: &Document, property: &str) -> bool {
-    !matches!(
-        document.properties().get(property),
-        None | Some(Value::Null)
-    )
+    match document.properties().get(property) {
+        None | Some(Value::Null) => false,
+        Some(Value::Array(elements)) => !elements.is_empty(),
+        Some(_) => true,
+    }
 }
 
 /// Whether `document_info` carries `property` ([`document_carries`]). A

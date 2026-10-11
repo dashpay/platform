@@ -15,13 +15,14 @@ use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_count_query::drive_dispatcher as count_dispatcher;
+use crate::query::drive_document_count_query::DriveDocumentCountQuery;
 use crate::query::drive_document_sum_query::{
     DocumentSumMode, DocumentSumRequest, DocumentSumResponse, RangeSumOptions, RangeSumWalkMode,
     SumMode,
 };
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
-    OrderClause, WhereClause,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes, OrderClause, WhereClause,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -65,6 +66,18 @@ impl Drive {
         // shared step in [`crate::query::canonicalize`]), so callers can
         // pass either the bounded pair form (`[f > A, f < B]`) or the
         // pre-merged `between*` form and get equivalent mode detection.
+        // A typed array's elements are keyed first: per element only when the
+        // request groups by them (see [`key_array_element_clauses`]).
+        let groups_by_element = matches!(request.mode, SumMode::GroupByIn)
+            && !request
+                .where_clauses
+                .iter()
+                .any(|clause| DriveDocumentCountQuery::is_range_operator(clause.operator));
+        request.where_clauses = key_array_element_clauses(
+            std::mem::take(&mut request.where_clauses),
+            request.document_type,
+            groups_by_element,
+        )?;
         request.where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
         // Same provenance-vs-shape contract as the count and joint

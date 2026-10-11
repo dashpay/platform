@@ -9,8 +9,8 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use crate::query::conditions::WhereOperator::{
-    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
-    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
+    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Contains, ContainsAny,
+    Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 use dpp::platform_value::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -97,6 +97,8 @@ pub(super) fn group_where_clauses_v0(
             LessThan => true,
             LessThanOrEquals => true,
             StartsWith => false,
+            Contains => false,
+            ContainsAny => false,
             Between => false,
             BetweenExcludeBounds => false,
             BetweenExcludeRight => false,
@@ -114,6 +116,8 @@ pub(super) fn group_where_clauses_v0(
             LessThan => false,
             LessThanOrEquals => false,
             StartsWith => true,
+            Contains => false,
+            ContainsAny => false,
             Between => true,
             BetweenExcludeBounds => true,
             BetweenExcludeRight => true,

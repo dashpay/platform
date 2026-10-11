@@ -743,9 +743,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .serialize_value_for_key
         {
             0 => self.serialize_value_for_key_v0(key, value),
+            1 => self.serialize_value_for_key_v1(key, value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "serialize_value_for_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -764,9 +765,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .deserialize_value_for_key
         {
             0 => self.deserialize_value_for_key_v0(key, serialized_value),
+            1 => self.deserialize_value_for_key_v1(key, serialized_value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "deserialize_value_for_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

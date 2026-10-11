@@ -27,6 +27,8 @@ use crate::data_contract::document_type::index::{
     reads_through_reference, Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
 use crate::data_contract::document_type::index_level::IndexLevel;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::array::TypedArrayProperty;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
@@ -275,6 +277,11 @@ pub(super) struct ParserGeneration {
     /// `apply_derived_index_properties` then judges the reference and the index, and the
     /// contract's parse the referenced field.
     pub admit_derived_index_properties: bool,
+    /// Whether an index may name a typed array property, keying the document once by each
+    /// of its distinct elements. Admitted at generation 3; `validate_index_properties` and
+    /// `validate_indexed_arrays` judge the array and the index. Earlier generations refuse
+    /// the array as an index property type, as they always have.
+    pub admit_indexed_arrays: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -1004,6 +1011,33 @@ fn parse_indices(
                             .collect();
                     }
 
+                    // INDEXED ARRAYS: a typed array in an index keys the document once by
+                    // each of its distinct elements, so a document holding none writes nothing
+                    // into the index: the array is always in the index's skip set, in
+                    // index-property order with the declared skip properties. Resolved here, on
+                    // every parse (validating or not), because the write walkers read the skip
+                    // set. `skip_if_absent` keeps what the contract declared, so the keyword's
+                    // query rules do not apply: an indexed array is read through `contains`.
+                    if ctx.generation.admit_indexed_arrays
+                        && index.properties.iter().any(|property| {
+                            is_typed_array_property(flattened_document_properties, &property.name)
+                        })
+                    {
+                        let declared = std::mem::take(&mut index.skip_if_absent_properties);
+                        index.skip_if_absent_properties = index
+                            .properties
+                            .iter()
+                            .filter(|property| {
+                                declared.contains(&property.name)
+                                    || is_typed_array_property(
+                                        flattened_document_properties,
+                                        &property.name,
+                                    )
+                            })
+                            .map(|property| property.name.clone())
+                            .collect();
+                    }
+
                     #[cfg(feature = "validation")]
                     if ctx.full_validation {
                         // This check is load-bearing, not defense-in-depth:
@@ -1328,6 +1362,14 @@ fn parse_indices(
                             flags,
                             flattened_document_properties,
                         )?;
+
+                        if ctx.generation.admit_indexed_arrays {
+                            validate_indexed_array_index(
+                                ctx,
+                                &index,
+                                flattened_document_properties,
+                            )?;
+                        }
                     }
 
                     Ok((index.name.clone(), index))
@@ -1412,10 +1454,271 @@ fn parse_indices(
         }
     }
 
-    let index_structure =
+    // INDEXED ARRAYS: one document writes an entry per window and distinct element of each
+    // index, so a type with an indexed array is held to a total across its indexes.
+    #[cfg(feature = "validation")]
+    if ctx.full_validation && ctx.generation.admit_indexed_arrays {
+        validate_index_entries_per_document(ctx, &indices, flattened_document_properties)?;
+    }
+
+    let mut index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;
 
+    // INDEXED ARRAYS: the levels named after a typed array fan the document out over its
+    // elements in every walker. An array property is only ever a typed array, so its name
+    // marks its level wherever indexes reach it.
+    if ctx.generation.admit_indexed_arrays {
+        let indexed_arrays: BTreeMap<String, u16> = indices
+            .values()
+            .flat_map(|index| index.properties.iter())
+            .filter_map(|property| {
+                match flattened_document_properties
+                    .get(&property.name)
+                    .map(|definition| &definition.property_type)
+                {
+                    Some(DocumentPropertyType::TypedArray(typed_array)) => {
+                        Some((property.name.clone(), typed_array.max_items))
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+        if !indexed_arrays.is_empty() {
+            index_structure.stamp_indexed_arrays(&indexed_arrays);
+        }
+    }
+
     Ok((indices, index_structure))
+}
+
+/// Whether `property_name` names a typed array property of the document type.
+fn is_typed_array_property(
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+    property_name: &str,
+) -> bool {
+    flattened_document_properties
+        .get(property_name)
+        .is_some_and(|property| {
+            matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+        })
+}
+
+/// The rules an index naming a typed array must follow beyond its element's key limits
+/// (checked by `validate_index_properties`). Every document is entered once per distinct
+/// element, so:
+///
+/// - the array is a top-level property, and the index's only array;
+/// - the index is not unique or contested: an element shared by two documents is no
+///   conflict, and a contest is over one value;
+/// - it keeps `nullSearchable` at `true`: a document without elements is never entered, so
+///   `false` would say nothing;
+/// - no ranking sits at a level above the array, where a document would count once per
+///   element;
+/// - the type is not indexOnly: each of its indexes is a uniqueness rule over a document's
+///   values, which per-element entries are not;
+/// - the array holds at most `max_indexed_array_items` elements, or
+///   `max_windowed_indexed_array_items` when the index also groups by a window.
+#[cfg(feature = "validation")]
+fn validate_indexed_array_index(
+    ctx: &CoreParseContext<'_>,
+    index: &Index,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+) -> Result<(), ProtocolError> {
+    let arrays: Vec<(usize, &str, &TypedArrayProperty)> = index
+        .properties
+        .iter()
+        .enumerate()
+        .filter_map(|(position, property)| {
+            match flattened_document_properties
+                .get(&property.name)
+                .map(|definition| &definition.property_type)
+            {
+                Some(DocumentPropertyType::TypedArray(typed_array)) => {
+                    Some((position, property.name.as_str(), typed_array))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    let Some(&(position, array_name, typed_array)) = arrays.first() else {
+        return Ok(());
+    };
+    let refused = |reason: String| {
+        Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "index \"{}\" of document type \"{}\" names the typed array \"{}\": {}",
+                index.name, ctx.name, array_name, reason
+            )),
+        ))
+    };
+    if let Some((_, second, _)) = arrays.get(1) {
+        return refused(format!(
+            "an index keys by the elements of one typed array, and it also names \"{second}\""
+        ));
+    }
+    if array_name.contains('.') {
+        return refused(
+            "an indexed typed array must be a top-level property of the document type, not \
+             a property inside an object"
+                .to_string(),
+        );
+    }
+    if ctx.index_only {
+        return refused(
+            "an indexOnly type's indexes are uniqueness rules over each document's values, \
+             and an index of a typed array enters a document once per element"
+                .to_string(),
+        );
+    }
+    if index.contested_index.is_some() {
+        return refused(
+            "a contested index is over one value, and a typed array holds many".to_string(),
+        );
+    }
+    if index.unique {
+        return refused(
+            "a unique index can not key by the elements of a typed array: two documents \
+             sharing an element are no conflict"
+                .to_string(),
+        );
+    }
+    if !index.null_searchable {
+        return refused(
+            "nullSearchable must stay true: a document without elements is never entered in \
+             the index"
+                .to_string(),
+        );
+    }
+    let ranked_above = index
+        .ranked_countable_at
+        .iter()
+        .chain(index.ranked_summable_at.iter())
+        .chain(index.ranked_averageable_at.iter())
+        .find(|ranked| {
+            index
+                .properties
+                .iter()
+                .position(|property| &property.name == *ranked)
+                .is_some_and(|ranked_position| ranked_position < position)
+        });
+    if let Some(ranked) = ranked_above {
+        return refused(format!(
+            "a ranking at \"{ranked}\", above the array, would count a document once per \
+             element"
+        ));
+    }
+    let windowed = index.bucketing().is_some();
+    let limit = if windowed {
+        ctx.platform_version
+            .system_limits
+            .max_windowed_indexed_array_items
+    } else {
+        ctx.platform_version.system_limits.max_indexed_array_items
+    };
+    if let Some(limit) = limit {
+        if typed_array.max_items > limit {
+            let reason = if windowed {
+                format!(
+                    "should be less or equal {limit} on an index that also has a timeRange or \
+                     integerRange window: the document is entered once per window and element"
+                )
+            } else {
+                format!(
+                    "should be less or equal {limit} on an indexed typed array: the document is \
+                     entered once per element"
+                )
+            };
+            return Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    ctx.name.to_owned(),
+                    index.name.to_owned(),
+                    array_name.to_owned(),
+                    "maxItems".to_string(),
+                    reason,
+                )
+                .into(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The element rules of an indexed typed array, beyond the key limits of its element type:
+/// a byte array element declares `minItems` of at least 1, since an empty byte array is keyed
+/// like a missing value.
+#[cfg(feature = "validation")]
+fn validate_indexed_array_element(
+    document_type_name: &str,
+    index_name: &str,
+    array_name: &str,
+    typed_array: &TypedArrayProperty,
+) -> Result<(), ProtocolError> {
+    if let DocumentPropertyType::ByteArray(sizes) = typed_array.item_type.as_ref() {
+        if sizes.min_size.is_none_or(|min_size| min_size < 1) {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    format!("{array_name}.items"),
+                    "minItems".to_string(),
+                    "should be at least 1 on the byte array elements of an indexed typed \
+                     array: an empty byte array is keyed like a missing value"
+                        .to_string(),
+                )
+                .into(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The cap on the index entries one document of a type with an indexed typed array writes:
+/// each index counts 1, times its windows, times its array's `maxItems`.
+#[cfg(feature = "validation")]
+fn validate_index_entries_per_document(
+    ctx: &CoreParseContext<'_>,
+    indices: &BTreeMap<String, Index>,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = ctx
+        .platform_version
+        .system_limits
+        .max_index_entries_per_document
+    else {
+        return Ok(());
+    };
+    let mut has_indexed_array = false;
+    let mut entries: u64 = 0;
+    for index in indices.values() {
+        let windows = index
+            .bucketing()
+            .map_or(1, |bucketing| bucketing.overlap_factor().max(1));
+        let elements = index.properties.iter().find_map(|property| {
+            match flattened_document_properties
+                .get(&property.name)
+                .map(|definition| &definition.property_type)
+            {
+                Some(DocumentPropertyType::TypedArray(typed_array)) => {
+                    Some(u64::from(typed_array.max_items))
+                }
+                _ => None,
+            }
+        });
+        has_indexed_array |= elements.is_some();
+        entries = entries.saturating_add(windows.saturating_mul(elements.unwrap_or(1).max(1)));
+    }
+    if has_indexed_array && entries > u64::from(limit) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "a document of type \"{}\" can write {} index entries across its indexes \
+                 (each index once per window and per element of its typed array), over the \
+                 maximum of {}: lower an indexed array's maxItems, a window's overlap or the \
+                 number of indexes",
+                ctx.name, entries, limit
+            )),
+        ));
+    }
+    Ok(())
 }
 
 /// The per-property half of index validation: an already-indexed system
@@ -1480,6 +1783,34 @@ fn validate_index_properties(
                         .into(),
                     ))
                 })?;
+
+            // INDEXED ARRAYS: a typed array is keyed by each of its elements, so the key
+            // limits judge the element type
+            if ctx.generation.admit_indexed_arrays {
+                if let DocumentPropertyType::TypedArray(typed_array) =
+                    &property_definition.property_type
+                {
+                    (ctx.generation.ranked_index_key_length_check)(
+                        ctx.name,
+                        index,
+                        index_property.name.as_str(),
+                        &typed_array.item_type,
+                        ctx.platform_version,
+                    )?;
+                    check_indexable_property_shape(
+                        ctx.name,
+                        &index.name,
+                        &format!("{}.items", index_property.name),
+                        &typed_array.item_type,
+                    )?;
+                    return validate_indexed_array_element(
+                        ctx.name,
+                        &index.name,
+                        &index_property.name,
+                        typed_array,
+                    );
+                }
+            }
 
             // RANKED: a ranking axis tightens the generic key
             // limits below: the property's encoded value
@@ -3720,7 +4051,15 @@ fn skip_if_absent_index_error(
     required_fields: &BTreeSet<String>,
     flattened_properties: &IndexMap<String, DocumentProperty>,
 ) -> Option<String> {
-    if index.skip_if_absent_properties.is_empty() {
+    // The skip set the keyword declares: an indexed typed array is in every skip set of an
+    // index naming it whether the keyword is declared or not, and an empty list is absent
+    // whether the array is required or not, so these rules do not judge it.
+    let declared_skip_properties: Vec<&String> = index
+        .skip_if_absent_properties
+        .iter()
+        .filter(|property| !is_typed_array_property(flattened_properties, property))
+        .collect();
+    if declared_skip_properties.is_empty() {
         return Some(format!(
             "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but none of its \
              properties is optional: a required or system property can never be absent, so \
@@ -3730,7 +4069,7 @@ fn skip_if_absent_index_error(
             index_name, document_type_name,
         ));
     }
-    for skip_property in index.skip_if_absent_properties.iter() {
+    for skip_property in declared_skip_properties {
         if skip_property.starts_with('$') {
             return Some(format!(
                 "index \"{}\" on document type \"{}\" skips on system property \"{}\": a skip \

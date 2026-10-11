@@ -2324,6 +2324,42 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
 ///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
+/// 92. **Indexes on the elements of a typed array**: an index may name a
+///     top-level typed array property, at any position, one per index, and
+///     keys a document once by each distinct element, an element keyed as a
+///     property of the element type is. Parser generation 3 (in place) admits
+///     it and refuses, under full validation: an indexOnly type (10231), a
+///     unique or contested index, `nullSearchable: false`, a ranking above the
+///     array, a second array (10231); a `maxItems` above
+///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (32), or
+///     `max_windowed_indexed_array_items` (8) on an index with a `timeRange`
+///     or `integerRange`, and elements past the key limits of their type or
+///     byte array elements that may be empty (10205); and a type whose
+///     document can write more than `max_index_entries_per_document` (256)
+///     index entries (10231). On every parse it adds the array to the index's
+///     skip set (`skip_if_absent` keeps the declared keyword) and stamps its
+///     index level with the array's `maxItems`
+///     (`IndexLevel::stamp_indexed_arrays`). `serialize_value_for_key` and
+///     `deserialize_value_for_key` 1 (new, `CONTRACT_VERSIONS_V6`) key a
+///     typed array property's value as one element, and
+///     `get_raw_array_elements_for_document_type` 0 (new, `DOCUMENT_VERSIONS_V4`,
+///     `None` before) gives a document's sorted, distinct element keys. The
+///     v2 insert and delete walkers (in place) write and remove one value tree
+///     per element at a stamped level, a document with no element reaching
+///     none of its branches; the v1 update (in place) diffs the old and new
+///     entries of an index naming an array, or bucketing its first property,
+///     inserting and refreshing first and deleting last. The document cost,
+///     the document `ttl` cleanup weight and the TTL drain budget count an
+///     array's `maxItems`. Queries read the elements with `contains` (one
+///     element: an equality on its key, cursors allowed when the cursor
+///     document holds it) and `containsAny` (an `in` over several: a page
+///     drops a document's repeats, on the server and in verification, and
+///     takes no cursor); grouping v1 groups them, grouping v0 refuses them,
+///     an index naming an array is read only with its elements bound, and
+///     count, sum and average requests read several elements only grouped
+///     per element. Inert before this version: generations 0 to 2 refuse a
+///     typed array in an index and meta-schemas v0 to v2 have none.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

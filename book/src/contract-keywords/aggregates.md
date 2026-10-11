@@ -150,6 +150,7 @@ A range total costs more on each write than a per-value total, since every node 
 - **Type and index flags are independent.** `documentsCountable` gives the unfiltered total; a countable index gives filtered ones. A type may have both.
 - **Index-only types** take the index keywords but refuse the document type ones, since they have no primary tree. See [Index-Only Types](index-only.md).
 - **Queries must match.** A count or sum query that no index serves exactly is refused; there is no slow fallback. Pick the indexes for the queries the application will make.
+- **Typed arrays count per element.** On an index naming a [typed array](indexes.md#typed-arrays), a total is the documents holding one element: `count(*)` with `hashtags contains "dash"`, or one total per element with `containsAny` grouped by the array. A document holding several elements counts under each, so a total over several elements, which would count it more than once, is refused.
 
 ## Rules at registration
 

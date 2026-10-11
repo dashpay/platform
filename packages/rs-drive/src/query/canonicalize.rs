@@ -14,8 +14,59 @@
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_count_query::DriveDocumentCountQuery;
-use crate::query::WhereClause;
+use crate::query::{WhereClause, WhereOperator};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::version::PlatformVersion;
+
+/// Key the clauses of a count, sum, average, ranked or having request that read
+/// the elements of a typed array (protocol version 14) as the index levels of
+/// the array are keyed: `contains` as an equality on one element's key,
+/// `containsAny` as an `in` over several. The aggregate surfaces then serve
+/// them as any equality or `in`, each element a group of its own. Every other
+/// clause passes through unchanged.
+///
+/// A clause on a typed array must be one of the two, with a value of the
+/// element type, and a clause reading elements must name a typed array: the
+/// marker is gone once a clause is keyed, so this is where the field's type is
+/// judged. `several_elements_allowed` says whether the request answers per
+/// element when it reads several (`containsAny` grouped by the array, and no
+/// range folding the groups into one total): a total over several elements
+/// would count a document once per element it holds, so it is refused.
+pub fn key_array_element_clauses(
+    clauses: Vec<WhereClause>,
+    document_type: DocumentTypeRef,
+    several_elements_allowed: bool,
+) -> Result<Vec<WhereClause>, Error> {
+    clauses
+        .into_iter()
+        .map(|mut clause| {
+            let reads_typed_array = document_type
+                .flattened_properties()
+                .get(&clause.field)
+                .is_some_and(|property| {
+                    matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+                });
+            if !reads_typed_array && !clause.operator.reads_array_elements() {
+                return Ok(clause);
+            }
+            let validation = clause.validate_against_schema(document_type);
+            if let Some(error) = validation.errors.into_iter().next() {
+                return Err(Error::Query(error));
+            }
+            if clause.operator == WhereOperator::ContainsAny && !several_elements_allowed {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "containsAny on \"{}\" is only answered per element, grouped by \
+                     \"{}\": a total over several elements would count a document once per \
+                     element it holds",
+                    clause.field, clause.field
+                ))));
+            }
+            clause.operator = clause.operator.as_key_operator();
+            Ok(clause)
+        })
+        .collect()
+}
 
 /// Run the system-wide where-clause validator on a structured
 /// `Vec<WhereClause>` and canonicalize same-field range pairs into

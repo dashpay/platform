@@ -1356,7 +1356,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
 pub(crate) fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
     Ok(ProtoWhereClause {
         field: clause.field,
-        operator: where_operator_to_proto(clause.operator) as i32,
+        operator: where_operator_to_proto(clause.operator)? as i32,
         value: Some(value_to_proto(clause.value)?),
         // The typed IN_TIME_RANGE operand; never set on an ordinary value
         // clause (time-range selections are encoded by `encode_v1` itself,
@@ -1449,8 +1449,8 @@ fn having_operator_to_proto(op: HavingOperator) -> having_clause::Operator {
     }
 }
 
-fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
-    match op {
+fn where_operator_to_proto(op: WhereOperator) -> Result<ProtoWhereOperator, Error> {
+    Ok(match op {
         WhereOperator::Equal => ProtoWhereOperator::Equal,
         WhereOperator::GreaterThan => ProtoWhereOperator::GreaterThan,
         WhereOperator::GreaterThanOrEquals => ProtoWhereOperator::GreaterThanOrEquals,
@@ -1462,7 +1462,14 @@ fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
         WhereOperator::BetweenExcludeRight => ProtoWhereOperator::BetweenExcludeRight,
         WhereOperator::In => ProtoWhereOperator::In,
         WhereOperator::StartsWith => ProtoWhereOperator::StartsWith,
-    }
+        // The elements of a typed array are read through the v1 request once
+        // it carries the two operators.
+        WhereOperator::Contains | WhereOperator::ContainsAny => {
+            return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
+                "the {op} operator has no getDocuments wire encoding yet"
+            ))))
+        }
+    })
 }
 
 /// Map `dpp::platform_value::Value` onto the wire-shape

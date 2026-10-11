@@ -81,6 +81,7 @@ Rules at registration:
 - Every index holds `$ownerId`, as a property or in its terminal, except a [`summableOffCountIndex`](#summableoffcountindex) index, which keeps counters instead of entries.
 - The only system properties an index may list are `$ownerId` and `$createdAt`, and an indexed `$createdAt` must be in `required`.
 - No index declares [`integerRange`](integer-range.md): rows that differ only in the bucketed integer would claim the same entry in the windows they share.
+- No index names a [typed array](typed-arrays.md): every index is a uniqueness rule over a document's values, and an index on a typed array enters a document once per element (10231).
 - At least one index involves no `$createdAt`, does not set `skipIfAbsent` and keeps entries (it is no `summableOffCountIndex` index): the proof index.
 - Every property is in `required`, except a skip property of a `skipIfAbsent` index. An object holding an indexed property is required too.
 - Every required property appears in at least one index that does not skip and keeps entries, as a property or a terminal component, except the `entryPayload` properties and a property a `summableOffCountIndex` index's source fixes. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone, except, again, one such a source fixes.

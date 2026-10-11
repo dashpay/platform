@@ -1,0 +1,1081 @@
+//! End-to-end coverage for indexes on typed arrays (protocol version 14): a
+//! document is entered once per distinct element of the array an index names,
+//! at whatever position of the index the array sits, an empty or absent list
+//! enters nothing, an update moves exactly the entries whose element or other
+//! values changed, and a delete removes every entry.
+use crate::config::DriveConfig;
+use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+use crate::query::{
+    key_array_element_clauses, CountMode, DocumentCountRequest, DocumentCountResponse,
+    DocumentRankedRequest, DocumentRankedResponse, DriveDocumentCountQuery, DriveDocumentQuery,
+    DriveDocumentRankedQuery, OrderClause, RankedAxis, RankedEntry, RankedEntryValue,
+    SelectProjection, WhereClause, WhereOperator, RANKED_COUNT_ORDER_KEY,
+};
+use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentPropertyType;
+use dpp::data_contract::DataContractFactory;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
+use dpp::platform_value::{platform_value, Identifier, Value};
+use dpp::prelude::DataContract;
+use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
+
+const OWNER: [u8; 32] = [7; 32];
+const CREATED_AT: u64 = 1_750_000_000_000;
+
+/// A `post` type indexing its `hashtags` (strings) and `mentions`
+/// (identifiers) by element: the array first (`byHashtagTime`,
+/// `byMentionTime`), alone and counted (`byHashtag`), after another property
+/// (`byOwnerHashtag`), and followed by a mutable property (`byHashtagLanguage`).
+fn post_contract() -> DataContract {
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(
+            Identifier::from([1; 32]),
+            0,
+            platform_value!({"post": {
+                "type": "object",
+                "documentsMutable": true,
+                "properties": {
+                    "hashtags": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {"type": "string", "minLength": 0, "maxLength": 61},
+                        "position": 0
+                    },
+                    "mentions": {
+                        "type": "array",
+                        "maxItems": 8,
+                        "items": {
+                            "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier"
+                        },
+                        "position": 1
+                    },
+                    "language": {"type": "string", "maxLength": 2, "position": 2}
+                },
+                "required": ["$createdAt"],
+                "indices": [
+                    {"name": "byHashtagTime", "properties": [{"hashtags": "asc"}, {"$createdAt": "asc"}]},
+                    {"name": "byHashtag", "properties": [{"hashtags": "asc"}],
+                     "countable": "countable", "rangeCountable": true, "rankedCountable": true},
+                    {"name": "byOwnerHashtag", "properties": [{"$ownerId": "asc"}, {"hashtags": "asc"}]},
+                    {"name": "byHashtagLanguage", "properties": [{"hashtags": "asc"}, {"language": "asc"}]},
+                    {"name": "byMentionTime", "properties": [{"mentions": "asc"}, {"$createdAt": "asc"}]}
+                ],
+                "additionalProperties": false
+            }}),
+            None,
+            None,
+        )
+        .expect("contract")
+        .data_contract_owned()
+}
+
+fn post(id: u8, hashtags: Option<&[&str]>, mentions: Option<&[[u8; 32]]>) -> Document {
+    let mut properties = BTreeMap::new();
+    if let Some(hashtags) = hashtags {
+        properties.insert(
+            "hashtags".to_string(),
+            Value::Array(
+                hashtags
+                    .iter()
+                    .map(|tag| Value::Text(tag.to_string()))
+                    .collect(),
+            ),
+        );
+    }
+    if let Some(mentions) = mentions {
+        properties.insert(
+            "mentions".to_string(),
+            Value::Array(mentions.iter().map(|id| Value::Identifier(*id)).collect()),
+        );
+    }
+    properties.insert("language".to_string(), Value::Text("en".to_string()));
+    Document::V0(DocumentV0 {
+        id: Identifier::from([id; 32]),
+        owner_id: Identifier::from(OWNER),
+        properties,
+        created_at: Some(CREATED_AT),
+        revision: Some(1),
+        ..Default::default()
+    })
+}
+
+fn setup() -> (Drive, DataContract) {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = post_contract();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    (drive, contract)
+}
+
+fn insert(drive: &Drive, contract: &DataContract, document: &Document) {
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(OWNER),
+                },
+                contract,
+                document_type: contract.document_type_for_name("post").expect("post"),
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            PlatformVersion::latest(),
+            None,
+        )
+        .expect("add document");
+}
+
+fn update(drive: &Drive, contract: &DataContract, document: &Document) {
+    drive
+        .update_document_for_contract(
+            document,
+            contract,
+            contract.document_type_for_name("post").expect("post"),
+            Some(OWNER),
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            PlatformVersion::latest(),
+            None,
+        )
+        .expect("update document");
+}
+
+fn delete(drive: &Drive, contract: &DataContract, id: u8) {
+    drive
+        .delete_document_for_contract(
+            Identifier::from([id; 32]),
+            contract,
+            "post",
+            BlockInfo::default(),
+            true,
+            None,
+            PlatformVersion::latest(),
+            None,
+        )
+        .expect("delete document");
+}
+
+fn text(value: &str) -> Vec<u8> {
+    value.as_bytes().to_vec()
+}
+
+/// Whether the index path `segments` (below the document type) holds the
+/// non-unique entry of document `id`: `…/<segments>/0/<id>`.
+fn has_entry(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], id: u8) -> bool {
+    let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    path.extend(segments.iter().cloned());
+    path.push(vec![0]);
+    drive
+        .grove
+        .has_raw(
+            path.as_slice(),
+            &[id; 32],
+            None,
+            &PlatformVersion::latest().drive.grove_version,
+        )
+        .unwrap()
+        .unwrap_or(false)
+}
+
+/// Whether the tree at `segments` (below the document type) holds `key`.
+fn has_key(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], key: &[u8]) -> bool {
+    let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    path.extend(segments.iter().cloned());
+    drive
+        .grove
+        .has_raw(
+            path.as_slice(),
+            key,
+            None,
+            &PlatformVersion::latest().drive.grove_version,
+        )
+        .unwrap()
+        .unwrap_or(false)
+}
+
+fn created_at_key() -> Vec<u8> {
+    DocumentPropertyType::encode_date_timestamp(CREATED_AT)
+}
+
+/// Every entry `byHashtag`, `byHashtagTime`, `byOwnerHashtag` and
+/// `byHashtagLanguage` hold for document `id` under the element `tag`.
+fn hashtag_entries(drive: &Drive, contract: &DataContract, tag: &str, id: u8) -> [bool; 4] {
+    let hashtags = text("hashtags");
+    [
+        has_entry(drive, contract, &[hashtags.clone(), text(tag)], id),
+        has_entry(
+            drive,
+            contract,
+            &[
+                hashtags.clone(),
+                text(tag),
+                text("$createdAt"),
+                created_at_key(),
+            ],
+            id,
+        ),
+        has_entry(
+            drive,
+            contract,
+            &[
+                text("$ownerId"),
+                OWNER.to_vec(),
+                hashtags.clone(),
+                text(tag),
+            ],
+            id,
+        ),
+        has_entry(
+            drive,
+            contract,
+            &[hashtags, text(tag), text("language"), text("en")],
+            id,
+        ),
+    ]
+}
+
+#[test]
+fn should_enter_a_document_once_per_distinct_element_and_remove_every_entry_on_delete() {
+    let (drive, contract) = setup();
+    let mention_a = [11; 32];
+    let mention_b = [12; 32];
+    insert(
+        &drive,
+        &contract,
+        &post(
+            1,
+            Some(&["dash", "crypto", "dash"]),
+            Some(&[mention_a, mention_b]),
+        ),
+    );
+
+    for tag in ["dash", "crypto"] {
+        assert_eq!(
+            hashtag_entries(&drive, &contract, tag, 1),
+            [true; 4],
+            "the post is entered under {tag} in every index naming the array"
+        );
+    }
+    assert_eq!(
+        hashtag_entries(&drive, &contract, "blockchain", 1),
+        [false; 4],
+        "an element the post does not hold has no entry"
+    );
+    for mention in [mention_a, mention_b] {
+        assert!(has_entry(
+            &drive,
+            &contract,
+            &[
+                text("mentions"),
+                mention.to_vec(),
+                text("$createdAt"),
+                created_at_key()
+            ],
+            1
+        ));
+    }
+
+    delete(&drive, &contract, 1);
+    for tag in ["dash", "crypto"] {
+        assert_eq!(hashtag_entries(&drive, &contract, tag, 1), [false; 4]);
+        assert!(
+            !has_key(&drive, &contract, &[text("hashtags")], &text(tag)),
+            "the element's value tree is pruned with its last entry"
+        );
+    }
+    for mention in [mention_a, mention_b] {
+        assert!(!has_key(&drive, &contract, &[text("mentions")], &mention));
+    }
+}
+
+#[test]
+fn should_write_nothing_for_an_empty_or_absent_array() {
+    let (drive, contract) = setup();
+    insert(&drive, &contract, &post(1, Some(&[]), None));
+
+    // The empty list and the missing one enter nothing anywhere under the
+    // arrays, not even an empty or null key, nor a branch below another
+    // property of an index naming the array.
+    assert!(!has_key(&drive, &contract, &[text("hashtags")], &[]));
+    assert!(!has_key(&drive, &contract, &[text("mentions")], &[]));
+    assert!(!has_key(
+        &drive,
+        &contract,
+        &[text("$ownerId"), OWNER.to_vec()],
+        &text("hashtags")
+    ));
+
+    insert(&drive, &contract, &post(2, Some(&[""]), None));
+    // An empty string is an element, keyed apart from null.
+    assert!(has_entry(
+        &drive,
+        &contract,
+        &[text("hashtags"), vec![0]],
+        2
+    ));
+    assert!(!has_entry(
+        &drive,
+        &contract,
+        &[text("hashtags"), vec![0]],
+        1
+    ));
+
+    // Both delete cleanly: there is nothing to look for under the arrays.
+    delete(&drive, &contract, 1);
+    delete(&drive, &contract, 2);
+    assert!(!has_key(&drive, &contract, &[text("hashtags")], &[0]));
+}
+
+#[test]
+fn should_move_only_the_changed_entries_on_update() {
+    let (drive, contract) = setup();
+    let mut document = post(1, Some(&["a", "b"]), None);
+    insert(&drive, &contract, &document);
+
+    // Overlapping sets: "a" leaves, "b" stays, "c" arrives.
+    document.set("hashtags", platform_value!(["b", "c"]));
+    document.set_revision(Some(2));
+    update(&drive, &contract, &document);
+    assert_eq!(hashtag_entries(&drive, &contract, "a", 1), [false; 4]);
+    assert_eq!(hashtag_entries(&drive, &contract, "b", 1), [true; 4]);
+    assert_eq!(hashtag_entries(&drive, &contract, "c", 1), [true; 4]);
+    assert!(!has_key(&drive, &contract, &[text("hashtags")], &text("a")));
+
+    // Same elements, repeated and reordered: nothing moves.
+    document.set("hashtags", platform_value!(["c", "b", "c"]));
+    document.set_revision(Some(3));
+    update(&drive, &contract, &document);
+    assert_eq!(hashtag_entries(&drive, &contract, "b", 1), [true; 4]);
+    assert_eq!(hashtag_entries(&drive, &contract, "c", 1), [true; 4]);
+
+    // A value after the array changes: every element's entry in that index
+    // moves to the new value, the other indexes keep theirs.
+    document.set("language", Value::Text("fr".to_string()));
+    document.set_revision(Some(4));
+    update(&drive, &contract, &document);
+    for tag in ["b", "c"] {
+        assert!(!has_entry(
+            &drive,
+            &contract,
+            &[text("hashtags"), text(tag), text("language"), text("en")],
+            1
+        ));
+        assert!(has_entry(
+            &drive,
+            &contract,
+            &[text("hashtags"), text(tag), text("language"), text("fr")],
+            1
+        ));
+        assert!(has_entry(
+            &drive,
+            &contract,
+            &[text("hashtags"), text(tag)],
+            1
+        ));
+    }
+
+    // The list empties: the post leaves every index naming it.
+    document.set("hashtags", platform_value!([]));
+    document.set_revision(Some(5));
+    update(&drive, &contract, &document);
+    for tag in ["b", "c"] {
+        assert!(!has_key(&drive, &contract, &[text("hashtags")], &text(tag)));
+        assert!(!has_entry(
+            &drive,
+            &contract,
+            &[
+                text("$ownerId"),
+                OWNER.to_vec(),
+                text("hashtags"),
+                text(tag)
+            ],
+            1
+        ));
+    }
+
+    // And a fully new list brings it back.
+    document.set("hashtags", platform_value!(["x", "y"]));
+    document.set_revision(Some(6));
+    update(&drive, &contract, &document);
+    for tag in ["x", "y"] {
+        assert!(has_entry(
+            &drive,
+            &contract,
+            &[text("hashtags"), text(tag)],
+            1
+        ));
+        assert!(has_entry(
+            &drive,
+            &contract,
+            &[text("hashtags"), text(tag), text("language"), text("fr")],
+            1
+        ));
+    }
+
+    delete(&drive, &contract, 1);
+    for tag in ["x", "y"] {
+        assert!(!has_key(&drive, &contract, &[text("hashtags")], &text(tag)));
+    }
+}
+
+#[test]
+fn should_keep_shared_element_trees_when_another_post_holds_the_element() {
+    let (drive, contract) = setup();
+    let mut first = post(1, Some(&["dash", "news"]), None);
+    insert(&drive, &contract, &first);
+    insert(&drive, &contract, &post(2, Some(&["dash"]), None));
+
+    first.set("hashtags", platform_value!(["news"]));
+    first.set_revision(Some(2));
+    update(&drive, &contract, &first);
+    assert!(!has_entry(
+        &drive,
+        &contract,
+        &[text("hashtags"), text("dash")],
+        1
+    ));
+    assert!(has_entry(
+        &drive,
+        &contract,
+        &[text("hashtags"), text("dash")],
+        2
+    ));
+
+    delete(&drive, &contract, 2);
+    assert!(!has_key(
+        &drive,
+        &contract,
+        &[text("hashtags")],
+        &text("dash")
+    ));
+    assert!(has_entry(
+        &drive,
+        &contract,
+        &[text("hashtags"), text("news")],
+        1
+    ));
+}
+
+fn post_created(id: u8, created_at: u64, hashtags: &[&str]) -> Document {
+    let mut document = post(id, Some(hashtags), None);
+    document.set_created_at(Some(created_at));
+    document
+}
+
+fn documents_query<'a>(contract: &'a DataContract, query: Value) -> DriveDocumentQuery<'a> {
+    DriveDocumentQuery::from_value(
+        query,
+        contract,
+        contract.document_type_for_name("post").expect("post"),
+        &DriveConfig::default(),
+        PlatformVersion::latest(),
+    )
+    .expect("the query parses")
+}
+
+fn first_bytes(contract: &DataContract, serialized: &[Vec<u8>]) -> Vec<u8> {
+    let document_type = contract.document_type_for_name("post").expect("post");
+    serialized
+        .iter()
+        .map(|bytes| {
+            Document::from_bytes(bytes, document_type, PlatformVersion::latest())
+                .expect("a stored post")
+                .id()
+                .to_buffer()[0]
+        })
+        .collect()
+}
+
+/// The ids (first byte) a documents query returns, unproved and proved: the
+/// two must agree, and the proof must reach the live root hash.
+fn query_ids(drive: &Drive, contract: &DataContract, query: Value) -> Vec<u8> {
+    let platform_version = PlatformVersion::latest();
+    let query = documents_query(contract, query);
+    let (unproved, _, _) = query
+        .execute_raw_results_no_proof(drive, None, None, platform_version)
+        .expect("the query executes");
+    let unproved = first_bytes(contract, &unproved);
+    let (proof, _) = query
+        .clone()
+        .execute_with_proof(drive, None, None, platform_version)
+        .expect("the query proves");
+    let (root_hash, proved) = query
+        .verify_proof(&proof, platform_version)
+        .expect("the proof verifies");
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash"),
+        "the proof reaches the live root hash"
+    );
+    let proved: Vec<u8> = proved
+        .iter()
+        .map(|document| document.id().to_buffer()[0])
+        .collect();
+    assert_eq!(unproved, proved, "proved and unproved pages agree");
+    proved
+}
+
+fn query_error(drive: &Drive, contract: &DataContract, query: Value) -> String {
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let parsed = DriveDocumentQuery::from_value(
+        query,
+        contract,
+        document_type,
+        &DriveConfig::default(),
+        platform_version,
+    );
+    let error = match parsed {
+        Err(error) => error,
+        Ok(query) => query
+            .execute_raw_results_no_proof(drive, None, None, platform_version)
+            .expect_err("the query is refused"),
+    };
+    format!("{error:?}")
+}
+
+fn tagged_posts() -> (Drive, DataContract) {
+    let (drive, contract) = setup();
+    for (id, at, tags) in [
+        (1, CREATED_AT + 1, &["dash", "crypto"][..]),
+        (2, CREATED_AT + 2, &["crypto"][..]),
+        (3, CREATED_AT + 3, &["dash"][..]),
+        (4, CREATED_AT + 4, &["news", "dash", "crypto"][..]),
+        (5, CREATED_AT + 5, &["news"][..]),
+    ] {
+        insert(&drive, &contract, &post_created(id, at, tags));
+    }
+    (drive, contract)
+}
+
+#[test]
+fn should_return_the_posts_holding_an_element_newest_first() {
+    let (drive, contract) = tagged_posts();
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({
+                "where": [["hashtags", "contains", "dash"]],
+                "orderBy": [["$createdAt", "desc"]]
+            })
+        ),
+        vec![4, 3, 1]
+    );
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({
+                "where": [["hashtags", "contains", "crypto"], ["$createdAt", ">", CREATED_AT + 1]],
+                "orderBy": [["$createdAt", "asc"]]
+            })
+        ),
+        vec![2, 4]
+    );
+    // The array after another property of the index.
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({
+                "where": [["$ownerId", "==", Identifier::from(OWNER)], ["hashtags", "contains", "news"]]
+            })
+        ),
+        vec![4, 5]
+    );
+    assert!(query_ids(
+        &drive,
+        &contract,
+        platform_value!({"where": [["hashtags", "contains", "nothing"]]})
+    )
+    .is_empty());
+}
+
+#[test]
+fn should_page_through_one_element_with_a_cursor() {
+    let (drive, contract) = tagged_posts();
+    let page = |start_after: Option<u8>| {
+        let query = match start_after {
+            None => platform_value!({
+                "where": [["hashtags", "contains", "dash"]],
+                "orderBy": [["$createdAt", "desc"]],
+                "limit": 2
+            }),
+            Some(id) => platform_value!({
+                "where": [["hashtags", "contains", "dash"]],
+                "orderBy": [["$createdAt", "desc"]],
+                "limit": 2,
+                "startAfter": Identifier::from([id; 32])
+            }),
+        };
+        query_ids(&drive, &contract, query)
+    };
+    assert_eq!(page(None), vec![4, 3]);
+    assert_eq!(page(Some(3)), vec![1]);
+    assert!(page(Some(1)).is_empty());
+
+    // A cursor document that does not hold the element is not on the page.
+    let error = query_error(
+        &drive,
+        &contract,
+        platform_value!({
+            "where": [["hashtags", "contains", "dash"]],
+            "orderBy": [["$createdAt", "desc"]],
+            "startAfter": Identifier::from([2; 32])
+        }),
+    );
+    assert!(error.contains("does not hold the element"), "{error}");
+}
+
+#[test]
+fn should_return_each_post_once_for_several_elements() {
+    let (drive, contract) = tagged_posts();
+    // Walked element by element ("crypto", then "dash", then "news"), each
+    // post where it first appears.
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({
+                "where": [["hashtags", "containsAny", ["news", "dash", "crypto"]]],
+                "orderBy": [["hashtags", "asc"], ["$createdAt", "asc"]]
+            })
+        ),
+        vec![1, 2, 4, 3, 5]
+    );
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({
+                "where": [["hashtags", "containsAny", ["news", "dash"]]],
+                "orderBy": [["hashtags", "desc"], ["$createdAt", "desc"]]
+            })
+        ),
+        vec![5, 4, 3, 1]
+    );
+    // The limit counts entries: "crypto" fills it with 1, 2, 4 before "dash"
+    // repeats 1 and 4.
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({
+                "where": [["hashtags", "containsAny", ["dash", "crypto"]]],
+                "orderBy": [["hashtags", "asc"], ["$createdAt", "asc"]],
+                "limit": 5
+            })
+        ),
+        vec![1, 2, 4, 3]
+    );
+}
+
+#[test]
+fn should_refuse_shapes_that_could_repeat_or_misread_a_post() {
+    let (drive, contract) = tagged_posts();
+    for (query, expected) in [
+        // An array is read by its elements only.
+        (
+            platform_value!({"where": [["hashtags", "==", "dash"]]}),
+            "operator not allowed for field type",
+        ),
+        (
+            platform_value!({"where": [["hashtags", "in", ["dash"]]]}),
+            "operator not allowed for field type",
+        ),
+        (
+            platform_value!({"where": [["language", "contains", "en"]]}),
+            "operator not allowed for field type",
+        ),
+        (
+            platform_value!({"where": [["hashtags", "contains", 7]]}),
+            "invalid value type",
+        ),
+        // A cursor can not place a page reached under several elements.
+        (
+            platform_value!({
+                "where": [["hashtags", "containsAny", ["dash", "news"]]],
+                "orderBy": [["hashtags", "asc"]],
+                "startAfter": Identifier::from([1; 32])
+            }),
+            "not supported with containsAny",
+        ),
+        // A list has no single value to order documents by.
+        (
+            platform_value!({
+                "where": [["hashtags", "contains", "dash"]],
+                "orderBy": [["hashtags", "asc"]]
+            }),
+            "can only be ordered by with containsAny",
+        ),
+        // An index naming the array is not read without its elements: the
+        // owner's posts would come back once per hashtag.
+        (
+            platform_value!({"where": [["$ownerId", "==", Identifier::from(OWNER)]]}),
+            "query must be for valid indexes",
+        ),
+    ] {
+        let error = query_error(&drive, &contract, query.clone());
+        assert!(error.contains(expected), "{query:?}: {error}");
+    }
+}
+
+fn element_clause(operator: WhereOperator, value: Value) -> Vec<WhereClause> {
+    vec![WhereClause {
+        field: "hashtags".to_string(),
+        operator,
+        value,
+    }]
+}
+
+fn count(
+    drive: &Drive,
+    contract: &DataContract,
+    where_clauses: Vec<WhereClause>,
+    mode: CountMode,
+    prove: bool,
+) -> Result<DocumentCountResponse, Error> {
+    drive.execute_document_count_request(
+        DocumentCountRequest {
+            contract,
+            document_type: contract.document_type_for_name("post").expect("post"),
+            where_clauses,
+            resolved_time_ranges: vec![],
+            order_clauses: vec![],
+            mode,
+            limit: None,
+            prove,
+            drive_config: &DriveConfig::default(),
+        },
+        None,
+        PlatformVersion::latest(),
+    )
+}
+
+/// The verified per-element counts of a proved point-lookup count, keyed by
+/// element.
+fn proved_counts(
+    drive: &Drive,
+    contract: &DataContract,
+    where_clauses: Vec<WhereClause>,
+    mode: CountMode,
+) -> BTreeMap<String, u64> {
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let proof = match count(drive, contract, where_clauses.clone(), mode, true).expect("proves") {
+        DocumentCountResponse::Proof(proof) => proof,
+        other => panic!("expected a proof, got {other:?}"),
+    };
+    // The verifier keys the clauses as the prover did.
+    let keyed = key_array_element_clauses(where_clauses, document_type, true).expect("keyed");
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &keyed,
+        &[],
+    )
+    .expect("byHashtag counts the elements");
+    let (root_hash, entries) = DriveDocumentCountQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "post".to_string(),
+        index,
+        where_clauses: keyed,
+    }
+    .verify_point_lookup_count_proof(&proof, platform_version)
+    .expect("the count proof verifies");
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash")
+    );
+    entries
+        .into_iter()
+        .map(|entry| {
+            let key = entry.in_key.unwrap_or(entry.key);
+            (
+                String::from_utf8(key).expect("a hashtag"),
+                entry.count.unwrap_or(0),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn should_count_the_posts_holding_each_element() {
+    let (drive, contract) = tagged_posts();
+    let dash = element_clause(WhereOperator::Contains, Value::Text("dash".to_string()));
+    match count(&drive, &contract, dash.clone(), CountMode::Aggregate, false).expect("counts") {
+        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 3),
+        other => panic!("expected an aggregate, got {other:?}"),
+    }
+    assert_eq!(
+        proved_counts(&drive, &contract, dash, CountMode::Aggregate)
+            .values()
+            .sum::<u64>(),
+        3
+    );
+
+    // Several elements are counted per element, each post under every one it
+    // holds.
+    let several = element_clause(
+        WhereOperator::ContainsAny,
+        platform_value!(["dash", "crypto", "news"]),
+    );
+    assert_eq!(
+        proved_counts(&drive, &contract, several.clone(), CountMode::GroupByIn),
+        BTreeMap::from([
+            ("crypto".to_string(), 3),
+            ("dash".to_string(), 3),
+            ("news".to_string(), 2),
+        ])
+    );
+    // A total over several elements would count post 4 three times.
+    let error = count(&drive, &contract, several, CountMode::Aggregate, false)
+        .expect_err("a total over several elements is refused");
+    assert!(
+        format!("{error:?}").contains("only answered per element"),
+        "{error:?}"
+    );
+    // And a raw equality on the array is no element read.
+    let error = count(
+        &drive,
+        &contract,
+        element_clause(WhereOperator::Equal, Value::Text("dash".to_string())),
+        CountMode::Aggregate,
+        false,
+    )
+    .expect_err("an equality on a typed array is refused");
+    assert!(
+        format!("{error:?}").contains("operator not allowed"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn should_rank_elements_by_the_posts_holding_them() {
+    let (drive, contract) = tagged_posts();
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let group_by = vec!["hashtags".to_string()];
+    let order_by = vec![OrderClause {
+        field: RANKED_COUNT_ORDER_KEY.to_string(),
+        ascending: false,
+    }];
+    let ranked = |prove: bool| {
+        drive
+            .execute_document_ranked_request(
+                DocumentRankedRequest {
+                    contract: &contract,
+                    document_type,
+                    group_by: &group_by,
+                    select: SelectProjection::count_star(),
+                    having: &[],
+                    order_by: &order_by,
+                    where_clauses: &[],
+                    limit: Some(10),
+                    offset: Some(0),
+                    has_start_at: false,
+                    prove,
+                    resolved_time_ranges: &[],
+                },
+                None,
+                platform_version,
+            )
+            .expect("the ranking executes")
+    };
+    let counts = |entries: Vec<RankedEntry>| -> Vec<(String, u64)> {
+        entries
+            .into_iter()
+            .map(|entry| {
+                let RankedEntryValue::Count(count) = entry.value else {
+                    panic!("a count ranking");
+                };
+                (String::from_utf8(entry.key).expect("a hashtag"), count)
+            })
+            .collect()
+    };
+    let unproved = match ranked(false) {
+        DocumentRankedResponse::Entries(page) => counts(page.entries),
+        DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+    };
+    assert_eq!(
+        unproved,
+        vec![
+            ("dash".to_string(), 3),
+            ("crypto".to_string(), 3),
+            ("news".to_string(), 2)
+        ]
+    );
+    let proof = match ranked(true) {
+        DocumentRankedResponse::Proof(proof) => proof,
+        DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+    };
+    let (_, page) = DriveDocumentRankedQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "post".to_string(),
+        index: find_ranked_index_for_axis(
+            document_type.indexes(),
+            "hashtags",
+            &[],
+            RankedAxis::Count,
+            "",
+            &[],
+        )
+        .expect("byHashtag ranks the elements"),
+        axis: RankedAxis::Count,
+        prefix_branches: vec![Vec::new()],
+        descending: true,
+        k: 10,
+        offset: 0,
+    }
+    .verify_ranked_top_k_proof(&proof, platform_version)
+    .expect("the ranking proof verifies");
+    assert_eq!(counts(page.entries), unproved);
+}
+
+const DAY_MS: u64 = 86_400_000;
+
+/// A `post` type ranking each day's hashtags: `[$createdAt day window,
+/// hashtags]`, the array held to 8 elements under the window.
+fn trending_contract() -> DataContract {
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(
+            Identifier::from([2; 32]),
+            0,
+            platform_value!({"post": {
+                "type": "object",
+                "documentsMutable": true,
+                "properties": {
+                    "hashtags": {
+                        "type": "array",
+                        "maxItems": 8,
+                        "items": {"type": "string", "minLength": 1, "maxLength": 59},
+                        "position": 0
+                    }
+                },
+                "required": ["$createdAt"],
+                "indices": [{
+                    "name": "trendingToday",
+                    "properties": [{"$createdAt": "asc"}, {"hashtags": "asc"}],
+                    "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
+                    "rangeCountable": true,
+                    "rankedCountable": true
+                }],
+                "additionalProperties": false
+            }}),
+            None,
+            None,
+        )
+        .expect("contract")
+        .data_contract_owned()
+}
+
+#[test]
+fn should_enter_a_post_once_per_element_in_its_window() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = trending_contract();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let level_key = document_type
+        .indexes()
+        .get("trendingToday")
+        .and_then(|index| index.time_range.as_ref())
+        .expect("a window")
+        .storage_key("$createdAt");
+    let day = 20_000 * DAY_MS;
+    let window = DocumentPropertyType::encode_date_timestamp(day);
+    let entry = |tag: &str, id: u8| {
+        has_entry(
+            &drive,
+            &contract,
+            &[
+                level_key.as_bytes().to_vec(),
+                window.clone(),
+                text("hashtags"),
+                text(tag),
+            ],
+            id,
+        )
+    };
+
+    let bare_post = |id: u8, created_at: u64, hashtags: &[&str]| {
+        let mut document = post_created(id, created_at, hashtags);
+        document.properties_mut().remove("language");
+        document
+    };
+    let mut first = bare_post(1, day + 1_000, &["dash", "news"]);
+    insert(&drive, &contract, &first);
+    insert(&drive, &contract, &bare_post(2, day + 2_000, &["dash"]));
+    assert!(entry("dash", 1) && entry("news", 1) && entry("dash", 2));
+    assert!(!entry("news", 2));
+
+    first.set("hashtags", platform_value!(["news", "crypto"]));
+    first.set_revision(Some(2));
+    update(&drive, &contract, &first);
+    assert!(!entry("dash", 1) && entry("news", 1) && entry("crypto", 1));
+    assert!(entry("dash", 2), "the other post keeps the shared element");
+
+    delete(&drive, &contract, 1);
+    assert!(!entry("news", 1) && !entry("crypto", 1));
+    assert!(!has_key(
+        &drive,
+        &contract,
+        &[
+            level_key.as_bytes().to_vec(),
+            window.clone(),
+            text("hashtags")
+        ],
+        &text("news")
+    ));
+    assert!(entry("dash", 2));
+}

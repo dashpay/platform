@@ -855,6 +855,14 @@ impl DriveDocumentQuery<'_> {
                         .to_string(),
                 )));
             }
+            // An indexOnly type indexes no typed array.
+            WhereOperator::Contains | WhereOperator::ContainsAny => {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "contains and containsAny read a typed array, which an indexOnly type \
+                     does not index"
+                        .to_string(),
+                )));
+            }
         }
         Ok(query)
     }

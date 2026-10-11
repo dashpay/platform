@@ -115,8 +115,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             // for replay at protocol versions <= 13.
             index_for_types: 1,
             max_size: 0,
-            serialize_value_for_key: 0,
-            deserialize_value_for_key: 0,
+            serialize_value_for_key: 1, // changed: the key of a typed array property is one of its elements, keyed as a property of the element's type
+            deserialize_value_for_key: 1, // changed: the inverse, a typed array key decodes to one element
             validate_distinct_from: Some(0), // changed: `validate_distinct_from_properties` refuses a document whose `distinctFrom` property equals what it must differ from (DocumentPropertyNotDistinctError, 10419); None before this version, where no property can carry the keyword
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
             validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result

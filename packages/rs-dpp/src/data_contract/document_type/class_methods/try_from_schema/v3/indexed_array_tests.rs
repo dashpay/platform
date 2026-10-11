@@ -1,0 +1,356 @@
+//! Indexes on typed arrays (protocol version 14): an index naming a typed
+//! array keys a document once by each of its distinct elements. These tests
+//! cover what registration admits and refuses, and what the parse resolves on
+//! every parse: the array in the index's skip set and the element stamp on its
+//! index level.
+
+use super::typed_array_test_helpers::{expect_structure_error, parse_dispatched};
+use super::*;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use platform_value::platform_value;
+
+fn hashtags(max_items: u16) -> Value {
+    platform_value!({
+        "type": "array",
+        "maxItems": max_items,
+        "items": { "type": "string", "minLength": 1, "maxLength": 61 },
+        "position": 0
+    })
+}
+
+/// A `post` type holding `hashtags`, an optional `language` and an `author`
+/// identifier, with `indices`.
+fn post_schema(hashtags: Value, indices: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": hashtags,
+            "language": { "type": "string", "maxLength": 2, "position": 1 },
+            "author": {
+                "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 2
+            }
+        },
+        "required": ["$createdAt"],
+        "indices": indices,
+        "additionalProperties": false
+    })
+}
+
+fn parse(schema: Value) -> Result<DocumentType, ProtocolError> {
+    parse_dispatched(schema, PlatformVersion::latest(), true)
+}
+
+/// The constraint an `InvalidIndexedPropertyConstraintError` names, as
+/// `"<property>.<constraint>"`.
+fn expect_constraint_error(result: Result<DocumentType, ProtocolError>) -> String {
+    match result {
+        Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+            ConsensusError::BasicError(BasicError::InvalidIndexedPropertyConstraintError(
+                error,
+            )) => format!("{}.{}", error.property_name(), error.constraint_name()),
+            other => panic!("expected an indexed property constraint error, got {other:?}"),
+        },
+        other => panic!("expected an indexed property constraint error, got {other:?}"),
+    }
+}
+
+#[test]
+fn should_index_a_typed_array_at_any_position_and_skip_documents_without_elements() {
+    let document_type = parse(post_schema(
+        hashtags(10),
+        platform_value!([
+            { "name": "byHashtagTime", "properties": [{ "hashtags": "asc" }, { "$createdAt": "asc" }] },
+            { "name": "byAuthorHashtag", "properties": [{ "author": "asc" }, { "hashtags": "asc" }] },
+            {
+                "name": "byHashtagLanguage",
+                "properties": [{ "hashtags": "asc" }, { "language": "asc" }],
+                "skipIfAbsent": ["language"]
+            }
+        ]),
+    ))
+    .expect("an index may name a typed array at any position");
+
+    let indexes = document_type.indexes();
+    let skip_set = |name: &str| {
+        let index = indexes.get(name).expect("the index is parsed");
+        (
+            index.skip_if_absent,
+            index.skip_if_absent_properties.clone(),
+        )
+    };
+    // The array is in every skip set, in index-property order with the
+    // declared skip properties, without declaring the keyword.
+    assert_eq!(
+        skip_set("byHashtagTime"),
+        (false, vec!["hashtags".to_string()])
+    );
+    assert_eq!(
+        skip_set("byAuthorHashtag"),
+        (false, vec!["hashtags".to_string()])
+    );
+    assert_eq!(
+        skip_set("byHashtagLanguage"),
+        (true, vec!["hashtags".to_string(), "language".to_string()])
+    );
+
+    // The levels named after the array carry its maxItems, wherever an index
+    // reaches them; no other level does.
+    let structure = document_type.index_structure();
+    let top = structure
+        .sub_levels()
+        .get("hashtags")
+        .expect("a first level");
+    assert_eq!(top.indexed_array_max_items(), Some(10));
+    assert!(!top
+        .sub_levels()
+        .get("$createdAt")
+        .expect("a second level")
+        .indexes_array_elements());
+    let below_author = structure
+        .sub_levels()
+        .get("author")
+        .and_then(|level| level.sub_levels().get("hashtags"))
+        .expect("the array below the author");
+    assert_eq!(below_author.indexed_array_max_items(), Some(10));
+    assert!(!structure
+        .sub_levels()
+        .get("author")
+        .expect("the author level")
+        .indexes_array_elements());
+}
+
+#[test]
+fn should_resolve_the_same_indexes_without_full_validation() {
+    let schema = post_schema(
+        hashtags(10),
+        platform_value!([
+            { "name": "byHashtagTime", "properties": [{ "hashtags": "asc" }, { "$createdAt": "asc" }] }
+        ]),
+    );
+    let validated = parse_dispatched(schema.clone(), PlatformVersion::latest(), true)
+        .expect("parses with full validation");
+    let loaded = parse_dispatched(schema, PlatformVersion::latest(), false)
+        .expect("parses as a stored contract");
+    assert_eq!(validated.indexes(), loaded.indexes());
+    assert_eq!(validated.index_structure(), loaded.index_structure());
+}
+
+#[test]
+fn should_hold_an_indexed_array_to_32_elements_and_8_under_a_window() {
+    let plain = |max_items: u16| {
+        parse(post_schema(
+            hashtags(max_items),
+            platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]),
+        ))
+    };
+    plain(32).expect("32 elements may be indexed");
+    assert_eq!(expect_constraint_error(plain(33)), "hashtags.maxItems");
+
+    let windowed = |max_items: u16| {
+        parse(post_schema(
+            hashtags(max_items),
+            platform_value!([{
+                "name": "trending",
+                "properties": [{ "$createdAt": "asc" }, { "hashtags": "asc" }],
+                "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400 },
+                "rangeCountable": true,
+                "rankedCountable": true
+            }]),
+        ))
+    };
+    windowed(8).expect("8 elements may be indexed under a window");
+    assert_eq!(expect_constraint_error(windowed(9)), "hashtags.maxItems");
+}
+
+#[test]
+fn should_hold_a_document_to_256_entries_across_the_indexes_of_its_type() {
+    // `count` indexes of a 32-element array, each after a property of its own.
+    let schema = |count: usize| {
+        let mut properties = vec![(Value::Text("hashtags".to_string()), hashtags(32))];
+        let mut indices = Vec::new();
+        for n in 0..count {
+            let name = format!("p{n}");
+            properties.push((
+                Value::Text(name.clone()),
+                platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "position": n + 1 }),
+            ));
+            indices.push(platform_value!({
+                "name": format!("byHashtag{n}"),
+                "properties": [
+                    Value::Map(vec![(Value::Text(name), Value::Text("asc".to_string()))]),
+                    { "hashtags": "asc" }
+                ]
+            }));
+        }
+        platform_value!({
+            "type": "object",
+            "properties": Value::Map(properties),
+            "indices": Value::Array(indices),
+            "additionalProperties": false
+        })
+    };
+    parse(schema(8)).expect("8 indexes of 32 elements write 256 entries");
+    expect_structure_error(parse(schema(9)), "can write 288 index entries");
+}
+
+#[test]
+fn should_hold_the_elements_to_the_key_limits_of_their_type() {
+    let unbounded = platform_value!({
+        "type": "array",
+        "maxItems": 10,
+        "items": { "type": "string", "minLength": 1 },
+        "position": 0
+    });
+    assert_eq!(
+        expect_constraint_error(parse(post_schema(
+            unbounded,
+            platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]),
+        ))),
+        "hashtags.items.maxLength"
+    );
+
+    // An empty byte array is keyed like a missing value.
+    let maybe_empty = platform_value!({
+        "type": "array",
+        "maxItems": 10,
+        "items": { "type": "array", "byteArray": true, "maxItems": 20 },
+        "position": 0
+    });
+    assert_eq!(
+        expect_constraint_error(parse(post_schema(
+            maybe_empty,
+            platform_value!([{ "name": "byKey", "properties": [{ "hashtags": "asc" }] }]),
+        ))),
+        "hashtags.items.minItems"
+    );
+
+    // A ranking leaves 61 characters for its group key.
+    let long = platform_value!({
+        "type": "array",
+        "maxItems": 10,
+        "items": { "type": "string", "maxLength": 63 },
+        "position": 0
+    });
+    assert_eq!(
+        expect_constraint_error(parse(post_schema(
+            long,
+            platform_value!([{
+                "name": "byHashtag",
+                "properties": [{ "hashtags": "asc" }],
+                "rangeCountable": true,
+                "rankedCountable": true
+            }]),
+        ))),
+        "hashtags.maxLength"
+    );
+}
+
+#[test]
+fn should_refuse_what_an_element_index_can_not_be() {
+    let refused = |indices: Value, needle: &str| {
+        expect_structure_error(parse(post_schema(hashtags(10), indices)), needle)
+    };
+    refused(
+        platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }], "unique": true }]),
+        "a unique index can not key by the elements",
+    );
+    refused(
+        platform_value!([{
+            "name": "byHashtag",
+            "properties": [{ "hashtags": "asc" }],
+            "nullSearchable": false
+        }]),
+        "nullSearchable must stay true",
+    );
+    refused(
+        platform_value!([{
+            "name": "byAuthorHashtag",
+            "properties": [{ "author": "asc" }, { "hashtags": "asc" }],
+            "countable": "countable",
+            "rangeCountable": true,
+            "rankedCountable": { "at": ["author"] }
+        }]),
+        "above the array, would count a document once per element",
+    );
+}
+
+#[test]
+fn should_refuse_two_arrays_in_one_index() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtags": hashtags(10),
+            "scores": {
+                "type": "array",
+                "maxItems": 4,
+                "items": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "position": 1
+            }
+        },
+        "indices": [{
+            "name": "byBoth",
+            "properties": [{ "hashtags": "asc" }, { "scores": "asc" }]
+        }],
+        "additionalProperties": false
+    });
+    expect_structure_error(parse(schema), "also names \"scores\"");
+}
+
+#[test]
+fn should_not_judge_a_required_array_by_the_declared_skip_rules() {
+    let mut schema = post_schema(
+        hashtags(10),
+        platform_value!([{
+            "name": "byHashtagLanguage",
+            "properties": [{ "hashtags": "asc" }, { "language": "asc" }],
+            "skipIfAbsent": ["language"]
+        }]),
+    );
+    schema
+        .set_value("required", platform_value!(["$createdAt", "hashtags"]))
+        .expect("required");
+    parse(schema).expect("a required array still skips a document with an empty list");
+}
+
+#[test]
+fn should_refuse_an_indexed_array_on_an_index_only_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": { "hashtags": hashtags(10) },
+        "required": ["hashtags"],
+        "indices": [{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse(schema),
+        "an indexOnly type's indexes are uniqueness rules",
+    );
+}
+
+/// A contract update may raise an indexed array's `maxItems` within the index
+/// limits: the index itself does not change. The updated type is parsed with
+/// full validation, so a raise past the limits is refused there.
+#[test]
+fn should_let_an_update_raise_an_indexed_array_within_the_limits() {
+    let indices =
+        || platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]);
+    let old = parse(post_schema(hashtags(10), indices())).expect("the registered type");
+    let raised = parse(post_schema(hashtags(32), indices())).expect("32 elements may be indexed");
+    let result = old
+        .as_ref()
+        .validate_update(raised.as_ref(), 2, PlatformVersion::latest())
+        .expect("validate_update runs");
+    assert!(result.is_valid(), "{:?}", result.errors);
+
+    assert_eq!(
+        expect_constraint_error(parse(post_schema(hashtags(33), indices()))),
+        "hashtags.maxItems"
+    );
+}

@@ -362,6 +362,37 @@ impl Context<'_> {
         )?)
     }
 
+    /// The keys `level`, a level of `property`, enters the document under: the
+    /// distinct elements of an indexed typed array, the containing windows of a
+    /// bucketed level, else the single value (empty for a missing one).
+    /// `None` when an indexOnly type's level skips the absent value.
+    fn level_keys(
+        &self,
+        property: &str,
+        level: &IndexLevel,
+    ) -> Result<Option<Vec<Vec<u8>>>, Error> {
+        if level.indexes_array_elements() {
+            return Ok(Some(
+                self.document.get_raw_array_elements_for_document_type(
+                    property,
+                    self.document_type,
+                    self.platform_version,
+                )?,
+            ));
+        }
+        let raw = match self.raw(property)? {
+            Some(raw) => raw,
+            None if index_only_level_skips_when_absent(self.document_type, property) => {
+                return Ok(None)
+            }
+            None => Vec::new(),
+        };
+        Ok(Some(match level.bucketing() {
+            Some(bucketing) => bucketing.entry_keys_for_raw(&raw),
+            None => vec![raw],
+        }))
+    }
+
     /// Whether the document takes part in an index whose skip set is
     /// `skip_set` (the walkers' `document_takes_part_in_index`).
     fn takes_part(&self, skip_set: &[String]) -> Result<bool, Error> {
@@ -541,18 +572,12 @@ impl Context<'_> {
             .bucketing()
             .map(|bucketing| bucketing.source().to_string())
             .unwrap_or_else(|| level_key.to_string());
-        let raw = match self.raw(&property)? {
-            Some(raw) => raw,
-            None if index_only_level_skips_when_absent(self.document_type, &property) => {
-                return Ok(())
-            }
-            None => Vec::new(),
+        let Some(keys) = self.level_keys(&property, level)? else {
+            return Ok(());
         };
-        let null = raw.is_empty();
-        let keys = match level.bucketing() {
-            Some(bucketing) => bucketing.entry_keys_for_raw(&raw),
-            None => vec![raw],
-        };
+        // A missing value keeps its single empty key; an element or a window
+        // start is never empty.
+        let null = keys.iter().all(|key| key.is_empty());
         // A time window with a ttl is ephemeral: no flags, priced as
         // processing.
         let ephemeral = level
@@ -688,11 +713,24 @@ impl Context<'_> {
                 expiration: false,
                 flagged: flags.is_some(),
             });
-            let raw = self.raw(sub_key)?.unwrap_or_default();
-            let null = raw.is_empty();
+            // An indexed typed array enters the document once per distinct
+            // element (`add_indices_for_index_level_for_contract_operations`
+            // v2); every other property keys it by its single value.
+            let keys = if sub_level.indexes_array_elements() {
+                self.document.get_raw_array_elements_for_document_type(
+                    sub_key,
+                    self.document_type,
+                    self.platform_version,
+                )?
+            } else {
+                vec![self.raw(sub_key)?.unwrap_or_default()]
+            };
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
             if sub_level.summable_off_count_index_info().is_some() {
+                // An indexOnly type indexes no typed array: the counter's group
+                // is one value.
+                let raw = keys.into_iter().next().unwrap_or_default();
                 let indexes = self.writing_indexes(&sub_names);
                 self.counter_write(
                     &property_path,
@@ -706,41 +744,45 @@ impl Context<'_> {
                 )?;
                 continue;
             }
-            self.push(Write {
-                path: property_path.clone(),
-                key: raw.clone(),
-                element: empty_tree(sub_tree_types.value_tree_type, false, flags),
-                parent: sub_tree_types.property_name_tree_type,
-                role: LayoutRole::IndexValue,
-                indexes: indexes.clone(),
-                if_absent: true,
-                ephemeral,
-                ranking: None,
-                referring_type: None,
-                expiration: false,
-                flagged: flags.is_some(),
-            });
-            let sum = self.sum_contribution(sub_level)?;
-            self.ranking_rows(
-                &property_path,
-                &raw,
-                &sub_tree_types.ranked_axes,
-                1,
-                sum,
-                &indexes,
-                ephemeral,
-            )?;
-            property_path.push(raw);
-            self.level(
-                &property_path,
-                &sub_names,
-                sub_level,
-                sub_tree_types.value_tree_type,
-                any_null || null,
-                all_null && null,
-                flags,
-                ephemeral,
-            )?;
+            for raw in keys {
+                let null = raw.is_empty();
+                self.push(Write {
+                    path: property_path.clone(),
+                    key: raw.clone(),
+                    element: empty_tree(sub_tree_types.value_tree_type, false, flags),
+                    parent: sub_tree_types.property_name_tree_type,
+                    role: LayoutRole::IndexValue,
+                    indexes: indexes.clone(),
+                    if_absent: true,
+                    ephemeral,
+                    ranking: None,
+                    referring_type: None,
+                    expiration: false,
+                    flagged: flags.is_some(),
+                });
+                let sum = self.sum_contribution(sub_level)?;
+                self.ranking_rows(
+                    &property_path,
+                    &raw,
+                    &sub_tree_types.ranked_axes,
+                    1,
+                    sum,
+                    &indexes,
+                    ephemeral,
+                )?;
+                let mut value_path = property_path.clone();
+                value_path.push(raw);
+                self.level(
+                    &value_path,
+                    &sub_names,
+                    sub_level,
+                    sub_tree_types.value_tree_type,
+                    any_null || null,
+                    all_null && null,
+                    flags,
+                    ephemeral,
+                )?;
+            }
         }
         Ok(())
     }

@@ -1,4 +1,4 @@
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::document_type::{
     IndexBucketing, IntegerRangeTransform, TimeRangeTransform,
@@ -129,7 +129,10 @@ use {
         dialect::MySqlDialect,
         parser::Parser,
     },
-    std::{collections::BTreeMap, ops::BitXor},
+    std::{
+        collections::{BTreeMap, HashSet},
+        ops::BitXor,
+    },
 };
 
 #[cfg(all(feature = "server", feature = "verify"))]
@@ -170,7 +173,7 @@ use dpp::version::FeatureVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub use canonicalize::validate_and_canonicalize_where_clauses;
+pub use canonicalize::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1295,6 +1298,10 @@ impl<'a> SkipIfAbsentBinding<'a> {
             WhereOperator::GreaterThan
             | WhereOperator::BetweenExcludeBounds
             | WhereOperator::BetweenExcludeLeft => true,
+            // An element is never missing: the index of a typed array holds
+            // only the elements documents have, an empty string's `[0]` key
+            // included, and no null key.
+            WhereOperator::Contains | WhereOperator::ContainsAny => true,
             WhereOperator::Between | WhereOperator::BetweenExcludeRight => {
                 lower_bound_excludes_missing(&clause.value)
             }
@@ -1365,7 +1372,17 @@ pub fn index_admissible_for_skip_if_absent(
     bindings: &[SkipIfAbsentBinding<'_>],
 ) -> bool {
     if !index.skip_if_absent {
-        return true;
+        // An index naming a typed array (protocol version 14) has it in its
+        // skip set without declaring the keyword: it holds a document once
+        // per element, so a query reads it only with the elements bound. A
+        // typed array admits no clause but `contains` and `containsAny`, so
+        // a binding of the field is one of them. Before protocol version 14
+        // the set is empty whenever the keyword is not declared.
+        return index.skip_if_absent_properties.iter().all(|array| {
+            bindings
+                .iter()
+                .any(|binding| binding.field == array.as_str() && binding.excludes_missing)
+        });
     }
     // Every protocol version reaches this; `is_index_only`'s counter term is
     // inert before protocol version 14, the only one whose grammar admits the
@@ -2523,7 +2540,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         "startAt/startAfter is not supported with multiple in clauses".to_string(),
                     )));
                 }
-                Ok(())
+                self.validate_array_element_shape()
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentQuery::validate_in_clause_shape".to_string(),
@@ -2531,6 +2548,124 @@ impl<'a> DriveDocumentQuery<'a> {
                 received: version,
             })),
         }
+    }
+
+    /// Whether the query reads several elements of a typed array
+    /// (`containsAny`): a document holding more than one of them is under each,
+    /// so its page drops the repeats
+    /// ([`Self::drop_repeated_element_matches`]).
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn matches_several_elements(&self) -> bool {
+        self.internal_clauses
+            .in_clauses
+            .iter()
+            .any(|clause| clause.operator == WhereOperator::ContainsAny)
+    }
+
+    /// The shapes a documents query reading the elements of a typed array may
+    /// take (protocol version 14):
+    ///
+    /// - A clause on a typed array is `contains` or `containsAny`, and either
+    ///   reads a typed array, with a value (or values) of its element type.
+    ///   The documents query takes clause values as the caller gives them, so
+    ///   these are checked against the schema here.
+    /// - `containsAny` reads no composite or chained page, whose merged proof
+    ///   is read without the repeats dropped.
+    /// - `containsAny` takes no startAt or startAfter cursor. A document is
+    ///   under each element it holds, and a cursor names a document, not the
+    ///   element it was reached under, so it could not place the next page.
+    /// - A typed array is ordered by only with `containsAny` on it, where the
+    ///   order is the order its elements are walked in; a list has no single
+    ///   value to order documents by.
+    ///
+    /// `contains` takes a cursor: the cursor document must hold the element
+    /// (see [`Self::cursor_with_contained_elements`]).
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn validate_array_element_shape(&self) -> Result<(), Error> {
+        let is_typed_array = |field: &str| {
+            self.document_type
+                .flattened_properties()
+                .get(field)
+                .is_some_and(|property| {
+                    matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+                })
+        };
+        // A typed array is read by its elements and nothing else, and an
+        // element operator reads a typed array, with values of its element
+        // type: an equality on the array would otherwise key its value as an
+        // element and answer as `contains` does.
+        for clause in self
+            .internal_clauses
+            .equal_clauses
+            .values()
+            .chain(self.internal_clauses.in_clauses.iter())
+            .chain(self.internal_clauses.range_clause.iter())
+        {
+            if !is_typed_array(&clause.field) && !clause.operator.reads_array_elements() {
+                continue;
+            }
+            if let Some(error) = clause
+                .validate_against_schema(self.document_type)
+                .errors
+                .into_iter()
+                .next()
+            {
+                return Err(Error::Query(error));
+            }
+        }
+        // A composite or chained query proves its page with its sub-queries
+        // in one merged proof, read without the repeats being dropped.
+        if self.matches_several_elements() && !self.sub_queries.is_empty() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "containsAny is not supported in a composite or chained query's page: use \
+                 contains, or one page per element"
+                    .to_string(),
+            )));
+        }
+        if self.matches_several_elements() && self.start_at.is_some() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "startAt/startAfter is not supported with containsAny: a document holding \
+                 several of the elements is under each of them, so a cursor can not place the \
+                 next page; query each element with contains to page through it"
+                    .to_string(),
+            )));
+        }
+        for field in self.order_by.keys() {
+            let walked_by_elements = self.internal_clauses.in_clauses.iter().any(|clause| {
+                clause.field == *field && clause.operator == WhereOperator::ContainsAny
+            });
+            if is_typed_array(field) && !walked_by_elements {
+                return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                    "a typed array can only be ordered by with containsAny on it, which walks \
+                     its elements in that order",
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// A page reading several elements of a typed array (`containsAny`) without
+    /// the repeats of a document it reached under more than one of them: the
+    /// path query walks one element after the other, and a document holding
+    /// several is under each, its references resolving to the same stored
+    /// document. The first occurrence stays. The proof carries every
+    /// occurrence, so the server and the verifier drop the same ones, and the
+    /// page may hold fewer documents than the limit, which counts occurrences.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn drop_repeated_element_matches<T, F>(&self, rows: Vec<T>, stored_document: F) -> Vec<T>
+    where
+        F: Fn(&T) -> Option<Vec<u8>>,
+    {
+        if !self.matches_several_elements() {
+            return rows;
+        }
+        let mut seen = HashSet::new();
+        rows.into_iter()
+            .filter(|row| match stored_document(row) {
+                Some(bytes) => seen.insert(bytes),
+                None => true,
+            })
+            .collect()
     }
 
     #[cfg(feature = "server")]
@@ -2893,7 +3028,9 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
-    /// Drops the cursor document from a page produced by a padded
+    /// Drops the repeats of a page reading several elements of a typed array
+    /// ([`Self::drop_repeated_element_matches`]), then the cursor document
+    /// from a page produced by a padded
     /// `startAfter` query (see [`Self::pads_cursor_page`]), applies the
     /// query's offset, and trims the page back to the query's limit,
     /// returning the page with the number of rows the offset skipped.
@@ -2903,11 +3040,13 @@ impl<'a> DriveDocumentQuery<'a> {
     /// restores the limit.
     pub(crate) fn strip_cursor_from_page(
         &self,
-        mut serialized_documents: Vec<Vec<u8>>,
+        serialized_documents: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::document::DocumentV0Getters;
+        let mut serialized_documents = self
+            .drop_repeated_element_matches(serialized_documents, |document| Some(document.clone()));
         if !self.pads_cursor_page(platform_version) {
             return Ok((serialized_documents, 0));
         }
@@ -2937,6 +3076,17 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<(QueryResultElements, u16), Error> {
         use dpp::document::DocumentV0Getters;
         use grovedb::query_result_type::QueryResultElement;
+        elements.elements = self.drop_repeated_element_matches(elements.elements, |row| {
+            let element = match row {
+                QueryResultElement::ElementResultItem(element)
+                | QueryResultElement::KeyElementPairResultItem((_, element))
+                | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => element,
+            };
+            match element {
+                Element::Item(bytes, _) => Some(bytes.clone()),
+                _ => None,
+            }
+        });
         if !self.pads_cursor_page(platform_version) {
             return Ok((elements, 0));
         }
@@ -3381,7 +3531,10 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         let starts_at_document = match starts_at_document {
             Some((document, included)) => Some((
-                self.cursor_with_derived_values(document, platform_version)?,
+                self.cursor_with_contained_elements(
+                    self.cursor_with_derived_values(document, platform_version)?,
+                    platform_version,
+                )?,
                 included,
             )),
             None => None,
@@ -3446,6 +3599,50 @@ impl<'a> DriveDocumentQuery<'a> {
             document
                 .properties_mut()
                 .insert(property.name.clone(), clause.value.clone());
+        }
+        Ok(document)
+    }
+
+    /// A startAt or startAfter cursor of a query reading one element of a typed
+    /// array (`contains`, protocol version 14): the page sits under that
+    /// element's key, and the cursor document holds a list, not one value to
+    /// place it by. The cursor is given the element in place of its list, as
+    /// the page holds it, so it is placed by the element and its other values.
+    /// A cursor document that does not hold the element is not on the page and
+    /// is refused. A query without `contains` passes the cursor through
+    /// unchanged, which is every query before protocol version 14.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn cursor_with_contained_elements(
+        &self,
+        mut document: Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, Error> {
+        for clause in self.internal_clauses.equal_clauses.values() {
+            if clause.operator != WhereOperator::Contains {
+                continue;
+            }
+            let element_key = self.document_type.serialize_value_for_key(
+                &clause.field,
+                &clause.value,
+                platform_version,
+            )?;
+            let holds_element = document
+                .get_raw_array_elements_for_document_type(
+                    &clause.field,
+                    self.document_type,
+                    platform_version,
+                )?
+                .contains(&element_key);
+            if !holds_element {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "the startAt or startAfter document does not hold the element the query \
+                     reads \"{}\" by, so it is not on the page it would place",
+                    clause.field
+                ))));
+            }
+            document
+                .properties_mut()
+                .insert(clause.field.clone(), clause.value.clone());
         }
         Ok(document)
     }

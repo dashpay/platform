@@ -16,9 +16,10 @@ use std::collections::BTreeSet;
 /// skipping below their first property on indexOnly and stored types, and
 /// sibling indexes where one side misses a value beside a unique or a
 /// `nullSearchable: false` index (their null flags follow each index's own
-/// path), and `summableOffCountIndex` counters ranked by sum and average at
-/// an earlier level.
-pub(crate) const CONTRACTS: [&str; 23] = [
+/// path), `summableOffCountIndex` counters ranked by sum and average at
+/// an earlier level, and indexes on the elements of typed arrays of every
+/// element type, at the first and a later position and under a window.
+pub(crate) const CONTRACTS: [&str; 25] = [
     "tests/supporting_files/contract/family/family-contract.json",
     "tests/supporting_files/contract/family/family-contract-fields-optional.json",
     "tests/supporting_files/contract/family/family-contract-countable.json",
@@ -42,6 +43,8 @@ pub(crate) const CONTRACTS: [&str; 23] = [
     "tests/supporting_files/contract/skip-if-absent/skip-posts-contract.json",
     "tests/supporting_files/contract/sibling-nulls/sibling-nulls-contract.json",
     "tests/supporting_files/contract/yappr-likes/yappr-likes-summable-off-count-index-contract.json",
+    "tests/supporting_files/contract/array-index/array-index-contract.json",
+    "tests/supporting_files/contract/array-index/array-index-with-types-contract.json",
 ];
 
 /// Leaves out the optional properties of the type's unique indexes, so a

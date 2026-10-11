@@ -1013,8 +1013,12 @@ pub struct Index {
     pub skip_if_absent: bool,
     /// The skip set of a `skipIfAbsent` index, in index-property order: a
     /// document takes part in the index exactly when it carries every one of
-    /// these properties. On a parsed document type this is empty exactly when
-    /// `skip_if_absent` is `false`. The index parser alone cannot resolve
+    /// these properties. An indexed typed array (protocol version 14) is in
+    /// the skip set of every index naming it, declared or not: a document
+    /// whose list is empty or absent has no element to be keyed by. On a
+    /// parsed document type the set is therefore empty exactly when
+    /// `skip_if_absent` is `false` and the index names no typed array. The
+    /// index parser alone cannot resolve
     /// `skipIfAbsent: true` (the set is the index's optional properties, and
     /// optionality is a document-type fact), so it leaves the set empty for
     /// that spelling and the document type parser fills it in before the

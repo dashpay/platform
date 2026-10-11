@@ -511,6 +511,9 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
+            // INDEXED ARRAYS: an index keyed by the elements of a typed array
+            // (`validate_indexed_arrays`).
+            admit_indexed_arrays: true,
         },
         platform_version,
     )?;
@@ -1920,6 +1923,8 @@ mod expiring_summed_value_bounds_tests;
 mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
+#[cfg(all(test, feature = "validation"))]
+mod indexed_array_tests;
 #[cfg(all(test, feature = "validation"))]
 mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]

@@ -59,6 +59,17 @@ pub trait DocumentInfoV0Methods {
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<DriveKeyInfo<'_>>, Error>;
+    /// The keys an index naming the typed array at `key_path` enters the document under at
+    /// `size_info_with_base_event`'s level: one per distinct element, sorted, none for an
+    /// absent or empty list. A worst-case size holds `maxItems` distinct elements of the
+    /// element type's typical size, each a key of its own.
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveKeyInfo<'_>>, Error>;
     /// Gets the borrowed document
     fn get_borrowed_document_and_storage_flags(&self)
         -> Option<(&Document, Option<&StorageFlags>)>;
@@ -69,14 +80,18 @@ pub trait DocumentInfoV0Methods {
 }
 
 /// The type of the value an index keys `key_path` by: the document type's property at that
-/// path, or the field a derived index property reads on the referenced document (protocol
-/// version 14), which no property of the type carries.
+/// path, the element type of a typed array, which an index keys by each element (protocol
+/// version 14), or the field a derived index property reads on the referenced document
+/// (protocol version 14), which no property of the type carries.
 fn indexed_property_type<'a>(
     document_type: &'a DocumentTypeRef<'a>,
     key_path: &str,
 ) -> Option<&'a DocumentPropertyType> {
     match document_type.flattened_properties().get(key_path) {
-        Some(property) => Some(&property.property_type),
+        Some(property) => match &property.property_type {
+            DocumentPropertyType::TypedArray(typed_array) => Some(typed_array.item_type.as_ref()),
+            property_type => Some(property_type),
+        },
         None => document_type.derived_index_property_type(key_path),
     }
 }
@@ -282,6 +297,77 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                         })))
                     }
                 }
+            }
+        }
+    }
+
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveKeyInfo<'_>>, Error> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => Ok(document
+                .get_raw_array_elements_for_document_type(
+                    key_path,
+                    document_type,
+                    platform_version,
+                )?
+                .into_iter()
+                .map(Key)
+                .collect()),
+            DocumentInfo::DocumentOwnedInfo((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => Ok(document
+                .get_raw_array_elements_for_document_type(
+                    key_path,
+                    document_type,
+                    platform_version,
+                )?
+                .into_iter()
+                .map(Key)
+                .collect()),
+            DocumentInfo::DocumentEstimatedAverageSize(_) => {
+                let (index_level, base_event) = size_info_with_base_event.ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
+                ))?;
+                let Some(DocumentPropertyType::TypedArray(typed_array)) = document_type
+                    .flattened_properties()
+                    .get(key_path)
+                    .map(|property| &property.property_type)
+                else {
+                    return Err(Error::Fee(
+                        FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
+                            "key path [{}] is not a typed array of the document type",
+                            key_path
+                        )),
+                    ));
+                };
+                let estimated_middle_size = typed_array
+                    .item_type
+                    .middle_byte_size_ceil(platform_version)?
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "an indexed typed array element must have a max size",
+                    )))?;
+                let estimated_middle_size = u8::try_from(estimated_middle_size).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "estimated middle size is too big for a key",
+                    ))
+                })?;
+                let unique_id = document_type.unique_id_for_document_field(index_level, base_event);
+                // Each element is a key of its own: the ordinal keeps their estimates apart.
+                Ok((0..typed_array.max_items)
+                    .map(|ordinal| {
+                        let mut element_unique_id = unique_id.to_vec();
+                        element_unique_id.extend_from_slice(&ordinal.to_be_bytes());
+                        KeySize(KeyInfo::MaxKeySize {
+                            unique_id: element_unique_id,
+                            max_size: estimated_middle_size,
+                        })
+                    })
+                    .collect())
             }
         }
     }

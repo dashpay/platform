@@ -832,6 +832,55 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         }
     }
 
+    /// `serialize_value_for_key` generation 1 (protocol version 14): generation 0, except
+    /// that the key of a typed array property is one of its elements, encoded exactly as a
+    /// property of the element's type is. An index naming a typed array keys the document by
+    /// each of its elements, and a `contains` query keys the element it looks for. Generation
+    /// 0 refuses an array key, which no index or query before protocol version 14 can name.
+    fn serialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &Value,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let Some(DocumentPropertyType::TypedArray(typed_array)) = self
+            .flattened_properties()
+            .get(key)
+            .map(|property| &property.property_type)
+        else {
+            return self.serialize_value_for_key_v0(key, value);
+        };
+        let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
+        if bytes.len() > MAX_INDEX_SIZE {
+            Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet(
+                    "value must be less than 256 bytes long".to_string(),
+                ),
+            ))
+        } else {
+            Ok(bytes)
+        }
+    }
+
+    /// `deserialize_value_for_key` generation 1 (protocol version 14): generation 0, except
+    /// that the key of a typed array property decodes to one element, the inverse of
+    /// [`Self::serialize_value_for_key_v1`].
+    fn deserialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &[u8],
+    ) -> Result<Value, ProtocolError> {
+        match self
+            .flattened_properties()
+            .get(key)
+            .map(|property| &property.property_type)
+        {
+            Some(DocumentPropertyType::TypedArray(typed_array)) => {
+                typed_array.item_type.decode_value_for_tree_keys(value)
+            }
+            _ => self.deserialize_value_for_key_v0(key, value),
+        }
+    }
+
     /// `validate_distinct_from_properties` version 0: every property of the document type
     /// that declares `distinctFrom` and has a value in `data` is compared with what it
     /// must differ from, the document's `owner_id` or the named property, and the first

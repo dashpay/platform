@@ -11,8 +11,8 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use crate::query::conditions::WhereOperator::{
-    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
-    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
+    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Contains, ContainsAny,
+    Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 use dpp::platform_value::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,7 +35,9 @@ pub(super) fn group_where_clauses_v1(
         where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                Equal => match where_clause.is_identifier() {
+                // An element of a typed array is an equality on the key the
+                // array's index enters the document under.
+                Equal | Contains => match where_clause.is_identifier() {
                     true => None,
                     false => Some(where_clause.clone()),
                 },
@@ -61,7 +63,8 @@ pub(super) fn group_where_clauses_v1(
     let in_clauses_array = where_clauses
         .iter()
         .filter_map(|where_clause| match where_clause.operator {
-            In => match where_clause.is_identifier() {
+            // Several elements of a typed array are an `In` on its keys.
+            In | ContainsAny => match where_clause.is_identifier() {
                 true => None,
                 false => Some(where_clause.clone()),
             },
@@ -96,6 +99,8 @@ pub(super) fn group_where_clauses_v1(
             LessThan => true,
             LessThanOrEquals => true,
             StartsWith => false,
+            Contains => false,
+            ContainsAny => false,
             Between => false,
             BetweenExcludeBounds => false,
             BetweenExcludeRight => false,
@@ -113,6 +118,8 @@ pub(super) fn group_where_clauses_v1(
             LessThan => false,
             LessThanOrEquals => false,
             StartsWith => true,
+            Contains => false,
+            ContainsAny => false,
             Between => true,
             BetweenExcludeBounds => true,
             BetweenExcludeRight => true,

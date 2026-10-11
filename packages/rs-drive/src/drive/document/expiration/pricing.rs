@@ -7,7 +7,7 @@ use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::EphemeralPricing;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::fee::Credits;
 use dpp::prelude::TimestampMillis;
 use platform_version::version::fee::FeeVersion;
@@ -107,8 +107,9 @@ pub fn document_remaining_lifetime_ms(
 }
 
 /// The index levels a document of this type writes and its deletion removes: every index
-/// counts its properties, and an index bucketing time or integers into overlapping windows
-/// counts them once per window holding the document.
+/// counts its properties, an index bucketing time or integers into overlapping windows
+/// counts them once per window holding the document, and an index naming a typed array
+/// (protocol version 14) once per element it can hold, its `maxItems`.
 pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u64 {
     document_type
         .indexes()
@@ -123,7 +124,25 @@ pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u6
                     .as_ref()
                     .map(|transform| transform.overlap_factor()))
                 .map_or(1, |windows| windows.max(1));
-            (index.properties.len() as u64).saturating_mul(windows)
+            let elements = index
+                .properties
+                .iter()
+                .find_map(|property| {
+                    match document_type
+                        .flattened_properties()
+                        .get(&property.name)
+                        .map(|definition| &definition.property_type)
+                    {
+                        Some(DocumentPropertyType::TypedArray(typed_array)) => {
+                            Some(u64::from(typed_array.max_items))
+                        }
+                        _ => None,
+                    }
+                })
+                .map_or(1, |elements| elements.max(1));
+            (index.properties.len() as u64)
+                .saturating_mul(windows)
+                .saturating_mul(elements)
         })
         .fold(0u64, u64::saturating_add)
 }
