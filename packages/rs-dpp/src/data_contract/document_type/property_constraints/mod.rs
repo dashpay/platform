@@ -116,6 +116,7 @@ use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
+use std::ops::ControlFlow;
 
 /// The operand key naming a property together with the value it takes when
 /// the document leaves it out: `{ "ifAbsent": ["quantity", 1] }`.
@@ -666,6 +667,19 @@ impl AggregateRead {
             .any(|binding| *binding == AggregateBinding::Owner)
             || (self.of_own_type && self.filter.contains_key(OWNER_ID))
     }
+
+    /// The filter's keys when the total is over the type declaring the rule:
+    /// a write changing one of them on a document decides whether that
+    /// document counts, moving the total without the rule reading the property
+    /// itself. None for another type's documents, which a write of this type
+    /// leaves alone. The property a `sumOf` adds up moves the total too, but
+    /// a summable index makes it required, so it is written with the document.
+    pub fn own_type_keys(&self) -> impl Iterator<Item = &str> + '_ {
+        self.of_own_type
+            .then(|| self.filter.keys().map(String::as_str))
+            .into_iter()
+            .flatten()
+    }
 }
 
 /// An integer expression, one side of a rule or an operand inside one.
@@ -903,12 +917,15 @@ impl ConstraintExpression {
         }
     }
 
-    /// Appends the properties the expression reads, each by its value or its
-    /// size, to `reads`, in the order it reads them.
-    fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
+    /// Hands `visit` the properties the expression reads, each by its value or
+    /// its size, in the order it reads them, stopping at the first `Break`.
+    fn visit_property_reads<'a>(
+        &'a self,
+        visit: &mut dyn FnMut(&'a str, PropertyRead) -> ControlFlow<()>,
+    ) -> ControlFlow<()> {
         match self {
             ConstraintExpression::Value(_) | ConstraintExpression::System(_) => {}
-            ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
+            ConstraintExpression::Property { path, .. } => visit(path, PropertyRead::Value)?,
             // The properties of the document being written its filter reads
             ConstraintExpression::Aggregate(read) => {
                 for binding in read.filter.values() {
@@ -920,40 +937,41 @@ impl ConstraintExpression {
                             Some(EqualityKind::Text) => PropertyRead::Text,
                             Some(EqualityKind::Identifier) => PropertyRead::Identifier,
                         };
-                        reads.push((path, read));
+                        visit(path, read)?;
                     }
                 }
             }
-            ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
-            ConstraintExpression::CountPresent(paths) => reads.extend(
-                paths
-                    .iter()
-                    .map(|path| (path.as_str(), PropertyRead::Presence)),
-            ),
+            ConstraintExpression::Size { measure, path } => visit(path, measure.read())?,
+            ConstraintExpression::CountPresent(paths) => {
+                for path in paths {
+                    visit(path, PropertyRead::Presence)?;
+                }
+            }
             // Byte `index` is there only in an array of `index + 1` bytes or more
-            ConstraintExpression::ByteAt { path, index } => reads.push((
+            ConstraintExpression::ByteAt { path, index } => visit(
                 path,
                 PropertyRead::Bytes {
                     extent: usize::from(*index) + 1,
                 },
-            )),
+            )?,
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
             | ConstraintExpression::Max(operands) => {
                 for operand in operands {
-                    operand.collect_property_reads(reads);
+                    operand.visit_property_reads(visit)?;
                 }
             }
-            ConstraintExpression::Abs(operand) => operand.collect_property_reads(reads),
+            ConstraintExpression::Abs(operand) => operand.visit_property_reads(visit)?,
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
             | ConstraintExpression::Power(left, right) => {
-                left.collect_property_reads(reads);
-                right.collect_property_reads(reads);
+                left.visit_property_reads(visit)?;
+                right.visit_property_reads(visit)?;
             }
         }
+        ControlFlow::Continue(())
     }
 
     /// Appends the system properties the expression reads to `reads`, in the
@@ -1636,7 +1654,10 @@ impl PropertyConstraint {
     /// order, a property read twice listed twice.
     pub fn property_reads(&self) -> Vec<(&str, PropertyRead)> {
         let mut reads = Vec::new();
-        self.collect_property_reads(&mut reads);
+        let _ = self.visit_property_reads(&mut |path, read| {
+            reads.push((path, read));
+            ControlFlow::Continue(())
+        });
         reads
     }
 
@@ -1653,11 +1674,17 @@ impl PropertyConstraint {
     }
 
     /// Whether the rule reads a value of a document one of the type's
-    /// references points at (`{ "referenced": [...] }`).
+    /// references points at (`{ "referenced": [...] }`), the walk stopping at
+    /// the first such read rather than collecting every one.
     pub fn reads_referenced(&self) -> bool {
-        self.property_reads()
-            .into_iter()
-            .any(|(path, _)| path.starts_with(REFERENCED_DOCUMENT_PREFIX))
+        self.visit_property_reads(&mut |path, _| {
+            if path.starts_with(REFERENCED_DOCUMENT_PREFIX) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })
+        .is_break()
     }
 
     /// Whether the rule compares the document's owner, `$ownerId`, or reads an
@@ -2152,39 +2179,44 @@ impl PropertyConstraint {
         None
     }
 
-    fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
+    /// Hands `visit` the properties the rule reads, each with how it reads
+    /// it, in declared order, stopping at the first `Break`.
+    fn visit_property_reads<'a>(
+        &'a self,
+        visit: &mut dyn FnMut(&'a str, PropertyRead) -> ControlFlow<()>,
+    ) -> ControlFlow<()> {
         match self {
             PropertyConstraint::Compare { left, right, .. } => {
-                left.collect_property_reads(reads);
-                right.collect_property_reads(reads);
+                left.visit_property_reads(visit)?;
+                right.visit_property_reads(visit)?;
             }
-            PropertyConstraint::In { operand, .. } => operand.collect_property_reads(reads),
+            PropertyConstraint::In { operand, .. } => operand.visit_property_reads(visit)?,
             PropertyConstraint::TextCompare { property, .. }
             | PropertyConstraint::TextIn { property, .. } => {
-                reads.push((&property.path, PropertyRead::Text))
+                visit(&property.path, PropertyRead::Text)?
             }
             PropertyConstraint::TextCompareProperties { left, right, .. } => {
-                reads.push((&left.path, PropertyRead::Text));
-                reads.push((&right.path, PropertyRead::Text));
+                visit(&left.path, PropertyRead::Text)?;
+                visit(&right.path, PropertyRead::Text)?;
             }
             // `$ownerId` is the document's owner, no property of it
             PropertyConstraint::IdentifierCompare { path, .. }
             | PropertyConstraint::IdentifierIn { path, .. } => {
                 if path != OWNER_ID {
-                    reads.push((path, PropertyRead::Identifier))
+                    visit(path, PropertyRead::Identifier)?
                 }
             }
             PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
                 for path in [left, right] {
                     if path != OWNER_ID {
-                        reads.push((path, PropertyRead::Identifier));
+                        visit(path, PropertyRead::Identifier)?;
                     }
                 }
             }
             PropertyConstraint::TextAffix { text, affix, .. } => {
                 for side in [text, affix] {
                     if let TextOperand::Property(property) = side {
-                        reads.push((&property.path, PropertyRead::Text));
+                        visit(&property.path, PropertyRead::Text)?;
                     }
                 }
             }
@@ -2196,45 +2228,45 @@ impl PropertyConstraint {
                         BytesOperand::Constant(constant) => constant.len(),
                         BytesOperand::Property(_) => 0,
                     };
-                    reads.push((path, PropertyRead::Bytes { extent }));
+                    visit(path, PropertyRead::Bytes { extent })?;
                 }
                 if let BytesOperand::Property(path) = affix {
-                    reads.push((path, PropertyRead::Bytes { extent: 0 }));
+                    visit(path, PropertyRead::Bytes { extent: 0 })?;
                 }
             }
             PropertyConstraint::Contains { array, needle } => match needle {
                 ContainsNeedle::Integer(expression) => {
-                    reads.push((array, PropertyRead::Elements(ElementKind::Integer)));
-                    expression.collect_property_reads(reads);
+                    visit(array, PropertyRead::Elements(ElementKind::Integer))?;
+                    expression.visit_property_reads(visit)?;
                 }
                 ContainsNeedle::TextConstant(_) => {
-                    reads.push((array, PropertyRead::Elements(ElementKind::Text)))
+                    visit(array, PropertyRead::Elements(ElementKind::Text))?
                 }
                 ContainsNeedle::TextProperty(property) => {
-                    reads.push((array, PropertyRead::Elements(ElementKind::Text)));
-                    reads.push((&property.path, PropertyRead::Text));
+                    visit(array, PropertyRead::Elements(ElementKind::Text))?;
+                    visit(&property.path, PropertyRead::Text)?;
                 }
                 ContainsNeedle::IdentifierConstant(_) => {
-                    reads.push((array, PropertyRead::Elements(ElementKind::Identifier)))
+                    visit(array, PropertyRead::Elements(ElementKind::Identifier))?
                 }
                 ContainsNeedle::IdentifierProperty(path) => {
-                    reads.push((array, PropertyRead::Elements(ElementKind::Identifier)));
+                    visit(array, PropertyRead::Elements(ElementKind::Identifier))?;
                     // `$ownerId` is the document's owner, no property of it
                     if path != OWNER_ID {
-                        reads.push((path, PropertyRead::Identifier));
+                        visit(path, PropertyRead::Identifier)?;
                     }
                 }
             },
             PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
-                reads.push((path, PropertyRead::Presence))
+                visit(path, PropertyRead::Presence)?
             }
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 for condition in conditions {
-                    condition.collect_property_reads(reads);
+                    condition.visit_property_reads(visit)?;
                 }
             }
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
-                condition.collect_property_reads(reads)
+                condition.visit_property_reads(visit)?
             }
             PropertyConstraint::IfThen {
                 condition,
@@ -2245,10 +2277,11 @@ impl PropertyConstraint {
                     .into_iter()
                     .flatten()
                 {
-                    part.collect_property_reads(reads);
+                    part.visit_property_reads(visit)?;
                 }
             }
         }
+        ControlFlow::Continue(())
     }
 }
 

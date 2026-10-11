@@ -10,9 +10,9 @@ use crate::data_contract::document_type::property::reference_where::{
 };
 use crate::data_contract::document_type::property_constraints::{
     parse_delete_constraints, parse_property_constraints, referenced_read, AffixPosition,
-    AggregateBinding, AggregateKind, ElementKind, EqualityKind, PropertyConstraint, PropertyRead,
-    SystemChange, SystemProperty, REFERENCED_DOCUMENT_PREFIX, REFERENCED_IDENTIFIER_FIELDS,
-    STORED_DOCUMENT_PREFIX,
+    AggregateBinding, AggregateKind, AggregateRead, ElementKind, EqualityKind, PropertyConstraint,
+    PropertyRead, SystemChange, SystemProperty, REFERENCED_DOCUMENT_PREFIX,
+    REFERENCED_IDENTIFIER_FIELDS, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, owner_can_change,
@@ -3572,8 +3572,10 @@ pub(super) fn validate_property_constraint_reads(
 ///   read what a transfer or a purchase changes, nor, on a type whose prices
 ///   can be set, what a price update changes: those writes check no reference,
 ///   so they could not judge it;
-/// * it reads no field the type keeps for its moderators to change, which
-///   their change judges without the references either.
+/// * it depends on no field the type keeps for its moderators to change,
+///   neither reading it nor totalling the type's own documents by it (a key
+///   of a `countOf` or `sumOf`), which their change judges without the
+///   references either.
 ///
 /// What it reads of the referenced type is checked once that type is in hand
 /// ([`referenced_reads_error`]). Registration only, like the rest of a rule's
@@ -3625,14 +3627,25 @@ pub(super) fn validate_referencing_rules(
                     .to_string(),
             ));
         }
-        if let Some(field) = constraint.property_paths().into_iter().find(|path| {
-            !path.starts_with(REFERENCED_DOCUMENT_PREFIX)
-                && is_path_listed(document_type.moderator_changeable_fields(), path)
-        }) {
+        // A moderator's change of a key of a total over the type's own
+        // documents moves the total, the rule reading the key itself or not
+        let moderated_field = constraint
+            .property_paths()
+            .into_iter()
+            .filter(|path| !path.starts_with(REFERENCED_DOCUMENT_PREFIX))
+            .chain(
+                constraint
+                    .aggregate_reads()
+                    .into_iter()
+                    .flat_map(AggregateRead::own_type_keys),
+            )
+            .find(|path| is_path_listed(document_type.moderator_changeable_fields(), path));
+        if let Some(field) = moderated_field {
             return Err(error(format!(
-                "reads a document a reference points at and \"{field}\", which the type keeps \
-                 for its moderators to change: their change checks no reference, so it could \
-                 not judge the rule"
+                "reads a document a reference points at and depends on \"{field}\" (a property \
+                 it reads, or a key of a total over the type's own documents), which the type \
+                 keeps for its moderators to change: their change checks no reference, so it \
+                 could not judge the rule"
             )));
         }
     }

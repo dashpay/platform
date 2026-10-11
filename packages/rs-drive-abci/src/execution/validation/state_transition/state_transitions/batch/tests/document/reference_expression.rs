@@ -211,6 +211,7 @@ mod reference_expression_tests {
                 &self.founder.key,
                 nonce,
                 &self.founder.signer,
+                &BlockInfo::default(),
                 platform_version,
             )
             .await

@@ -5842,8 +5842,13 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators,
+        };
+        use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
         use dpp::data_contract::errors::DataContractError;
         use dpp::platform_value::string_encoding::Encoding;
+        use dpp::tests::json_document::json_document_to_json_value;
         use drive::util::test_helpers::setup_contract;
 
         const FOREIGN_CONTRACT_PATH: &str =
@@ -5861,6 +5866,21 @@ mod tests {
         async fn run_contract_create_with_foreign(
             fixture_path: &str,
             foreign_contract_path: &str,
+        ) -> StateTransitionExecutionResult {
+            run_contract_create_with_foreign_and_config(
+                fixture_path,
+                foreign_contract_path,
+                DataContractConfig::default_for_version(PlatformVersion::latest()).unwrap(),
+            )
+            .await
+        }
+
+        /// [`run_contract_create_with_foreign`] with the contract created under
+        /// `config`.
+        async fn run_contract_create_with_foreign_and_config(
+            fixture_path: &str,
+            foreign_contract_path: &str,
+            config: DataContractConfig,
         ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -5881,17 +5901,18 @@ mod tests {
                 None,
             );
 
-            let mut data_contract = json_document_to_contract_with_ids(
-                fixture_path,
-                None,
-                None,
+            // The config goes in before the parse, since a type may use what it
+            // declares (moderation)
+            let mut contract_json = json_document_to_json_value(fixture_path)
+                .expect("expected to read the fixture contract");
+            contract_json["config"] =
+                serde_json::to_value(&config).expect("expected the config to serialize");
+            let data_contract = DataContract::from_json(
+                contract_json,
                 false, //no need to validate the data contracts in tests for drive
                 platform_version,
             )
             .expect("expected to get json based contract");
-
-            data_contract
-                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
 
             let data_contract_create_transition =
                 DataContractCreateTransition::new_from_data_contract(
@@ -6959,6 +6980,40 @@ mod tests {
                     ),
                     ..
                 } if e.reason().contains("not one of its enum values")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_reading_a_referenced_document_beside_a_total_moderators_move()
+        {
+            // Moderators approve an entry, which moves the count of a poll's
+            // approved entries the rule bounds by the poll's capacity; their
+            // change judges no rule reading a referenced document, so the
+            // contract is refused
+            let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }));
+            let result = run_contract_create_with_foreign_and_config(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-moderated-total.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+                config,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("rule \"cap\"")
+                    && message.contains("depends on \"status\"")
             );
         }
 

@@ -6,7 +6,7 @@
 //! again on every replace, so the rule sees the document as it is then. A
 //! `where` entry with a literal, `notEqual` or an ordering is checked against
 //! the document found as an equality is. Every transition here is processed in
-//! a block whose time and heights are 0.
+//! a block whose time and heights are 0, unless a test names a later time.
 
 use super::*;
 
@@ -260,6 +260,43 @@ mod referenced_rules_tests {
             .create("deadlineVote", &[("pollId", id_value(&multiple))])
             .await;
         assert_where_refused(&result, "{ \"notEqual\": { \"const\": true } }");
+    }
+
+    fn block_at(time_ms: u64) -> BlockInfo {
+        BlockInfo {
+            time_ms,
+            ..Default::default()
+        }
+    }
+
+    /// An ordering bounded by `$updatedAt` is checked again on every replace,
+    /// against the time of the replace's block, though the reference is a
+    /// permanentDocument one no rule reads through and the replace leaves it as
+    /// it was: an entry made before its ballot ends may be edited until then,
+    /// and no longer once it has ended.
+    #[tokio::test]
+    async fn should_check_an_ordering_by_the_time_of_each_replace() {
+        let mut setup = ReferenceTestSetup::new(CONTRACT_PATH, 6105);
+        let (ballot, result) = setup
+            .create("ballot", &[("endsAt", Value::U64(5_000))])
+            .await;
+        assert_successful(&result, "the ballot must be created");
+        let (mut entry, result) = setup
+            .create("ballotEntry", &[("ballotId", id_value(&ballot))])
+            .await;
+        assert_successful(&result, "an entry made before the ballot ends holds");
+
+        entry.set("note", Value::Text("before the end".to_string()));
+        let result = setup
+            .replace_at("ballotEntry", &mut entry, &block_at(4_999))
+            .await;
+        assert_successful(&result, "the ballot ends after this replace");
+
+        entry.set("note", Value::Text("at the end".to_string()));
+        let result = setup
+            .replace_at("ballotEntry", &mut entry, &block_at(5_000))
+            .await;
+        assert_where_refused(&result, "{ \"greaterThan\": \"$updatedAt\" }");
     }
 
     /// A reference found by `findBy` reads the document the key finds, for the

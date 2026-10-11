@@ -595,6 +595,82 @@ fn should_refuse_a_referenced_read_beside_what_a_transfer_changes() {
     parse(transferable).expect("the rule reads nothing a transfer changes");
 }
 
+/// An entry on a poll whose moderators approve it (`status`), the poll's
+/// entries counted in all and by approval, with `rules`.
+fn moderated_entry(rules: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "moderatorAbilities": { "changeFields": ["status"] },
+        "properties": {
+            "pollId": identifier(0, Some(poll_reference())),
+            "status": { "type": "string", "enum": ["approved"], "maxLength": 10, "position": 1 },
+        },
+        "required": ["pollId", "$createdAt"],
+        "indices": [
+            {
+                "name": "byPollStatus",
+                "properties": [{ "pollId": "asc" }, { "status": "asc" }],
+                "countable": "countable"
+            },
+            {
+                "name": "byPoll",
+                "properties": [{ "pollId": "asc" }],
+                "countable": "countable"
+            }
+        ],
+        "propertyConstraints": rules,
+        "additionalProperties": false,
+    })
+}
+
+fn parse_entry(rules: Value) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    parse_types(
+        vec![("poll", poll()), ("entry", moderated_entry(rules))],
+        true,
+    )
+}
+
+/// A moderator's change judges no rule reading a referenced document, so such
+/// a rule may not depend on a field moderators change: neither read it nor
+/// total the type's own documents by it. Approving an entry moves the count of
+/// the poll's approved entries, though the rule does not read `status` itself.
+#[test]
+fn should_refuse_a_referenced_read_beside_a_total_moderators_move() {
+    let approved_cap = platform_value!({
+        "cap": {
+            "lessThanOrEqual": [
+                { "countOf": ["entry", { "pollId": "pollId", "status": { "const": "approved" } }] },
+                { "referenced": ["pollId", "endsAt"] }
+            ]
+        }
+    });
+    let reads_status = platform_value!({
+        "cap": {
+            "anyOf": [
+                { "absent": "status" },
+                { "lessThan": ["$createdAt", { "referenced": ["pollId", "endsAt"] }] }
+            ]
+        }
+    });
+    for rules in [approved_cap, reads_status] {
+        expect_structure_error(parse_entry(rules), "depends on \"status\"");
+    }
+
+    // A moderator's approval leaves the count of all the poll's entries as it
+    // was, so a rule reading it stands
+    parse_entry(platform_value!({
+        "cap": {
+            "lessThanOrEqual": [
+                { "countOf": ["entry", { "pollId": "pollId" }] },
+                { "referenced": ["pollId", "endsAt"] }
+            ]
+        }
+    }))
+    .expect("no total the rule reads moves with a moderator's change");
+}
+
 #[test]
 fn should_refuse_a_referenced_read_through_a_find_by_function() {
     let commitment = platform_value!({
