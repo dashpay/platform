@@ -135,7 +135,7 @@ fn should_union_full_and_partial_pages_preserving_existing_items_and_note_state(
         .expect("frontier anchor");
     let batches = Cell::new(0);
     drive
-        .backfill_credit_nullifiers_with_io_v0(
+        .backfill_credit_nullifiers_with_io(
             |start, limit| {
                 if start == 2048 {
                     assert!(drive
@@ -212,7 +212,7 @@ fn should_union_full_and_partial_pages_preserving_existing_items_and_note_state(
     );
     let migrated_root = root(&drive, Some(&tx), pv);
     drive
-        .backfill_credit_nullifiers_with_io_v0(
+        .backfill_credit_nullifiers_with_io(
             |start, limit| page(&drive, start, limit, &tx, pv),
             |_| panic!("all-present union must apply no batch"),
             &tx,
@@ -229,7 +229,7 @@ fn should_not_apply_empty_batches_and_should_validate_empty_pool_shape() {
     let tx = drive.grove.start_transaction();
     let before = root(&drive, Some(&tx), pv);
     drive
-        .backfill_credit_nullifiers_with_io_v0(
+        .backfill_credit_nullifiers_with_io(
             |start, limit| page(&drive, start, limit, &tx, pv),
             |_| panic!("empty pool must apply no batch"),
             &tx,
@@ -348,7 +348,7 @@ fn should_drop_partial_writes_on_failure_and_retry_to_the_same_root() {
     for inject_failure in [true, false, false] {
         let tx = drive.grove.start_transaction();
         let mut batches = 0;
-        let result = drive.backfill_credit_nullifiers_with_io_v0(
+        let result = drive.backfill_credit_nullifiers_with_io(
             |start, limit| page(&drive, start, limit, &tx, &pv),
             |batch| {
                 assert!(!batch.is_empty());
@@ -406,7 +406,7 @@ fn should_abort_a_corrupt_later_page_after_a_nonempty_batch() {
     for count_drift in [false, true] {
         let tx = drive.grove.start_transaction();
         let batches = Cell::new(0);
-        let result = drive.backfill_credit_nullifiers_with_io_v0(
+        let result = drive.backfill_credit_nullifiers_with_io(
             |start, limit| {
                 let mut result = page(&drive, start, limit, &tx, pv)?;
                 if start > 0 {
@@ -439,14 +439,11 @@ fn should_abort_a_corrupt_later_page_after_a_nonempty_batch() {
 }
 
 #[test]
-fn should_reject_inactive_versions_and_keep_committed_union_after_reopen() {
+fn should_keep_committed_union_after_reopen() {
     let pv = PlatformVersion::latest();
     let mut drive = setup_drive_with_initial_state_structure(None);
     insert_notes(&drive, &[1, 1, 2], pv);
     let tx = drive.grove.start_transaction();
-    assert!(drive
-        .backfill_historical_credit_pool_nullifiers(&tx, PlatformVersion::get(13).expect("PV13"))
-        .is_err());
     drive
         .backfill_historical_credit_pool_nullifiers(&tx, pv)
         .expect("migration");
@@ -466,4 +463,38 @@ fn should_reject_inactive_versions_and_keep_committed_union_after_reopen() {
         .commit_transaction(tx, &pv.drive)
         .expect("commit no-op repeat");
     assert_eq!(root(&reopened, None, pv), expected);
+}
+
+#[test]
+fn should_reject_zero_limits_before_writing_candidate_state() {
+    let pv = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    insert_notes(&drive, &[1, 2], pv);
+    let original = root(&drive, None, pv);
+    for zero_page_limit in [true, false] {
+        let mut invalid = pv.clone();
+        if zero_page_limit {
+            invalid
+                .system_limits
+                .credit_pool_nullifier_backfill_page_size = 0;
+        } else {
+            invalid
+                .system_limits
+                .credit_pool_nullifier_backfill_batch_size = 0;
+        }
+        let tx = drive.grove.start_transaction();
+        let error = drive
+            .backfill_historical_credit_pool_nullifiers(&tx, &invalid)
+            .expect_err("zero migration limit must fail before writing");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::CorruptedCodeExecution(
+                "CREDIT backfill limits must be nonzero"
+            ))
+        ));
+        assert_eq!(root(&drive, Some(&tx), pv), original);
+        assert_eq!(root(&drive, None, pv), original);
+        drop(tx);
+        assert_eq!(root(&drive, None, pv), original);
+    }
 }

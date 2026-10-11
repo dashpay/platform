@@ -60,13 +60,28 @@ fn validated_page(
 }
 
 impl Drive {
-    #[inline(always)]
-    pub(super) fn backfill_historical_credit_pool_nullifiers_v0(
+    /// Adds every stored CREDIT note's rho to the permanent nullifier set.
+    ///
+    /// Called by the protocol upgrade ladder when crossing into protocol version 14,
+    /// before the candidate's state transitions. Existing Items, including their bytes
+    /// and flags, are preserved. All reads and writes belong to the caller's candidate
+    /// transaction; this method never commits it.
+    ///
+    /// # Parameters
+    ///
+    /// * `transaction`: The mandatory candidate transaction.
+    /// * `platform_version`: The activation version supplying storage rules and limits.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after the complete union, or an error on invalid limits, malformed state,
+    /// an incomplete scan, or a failed write.
+    pub fn backfill_historical_credit_pool_nullifiers(
         &self,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        self.backfill_credit_nullifiers_with_io_v0(
+        self.backfill_credit_nullifiers_with_io(
             |start, limit| {
                 self.grove
                     .commitment_tree_get_range(
@@ -95,7 +110,7 @@ impl Drive {
 
     // The I/O callbacks permit deterministic storage faults in tests without any
     // global failpoint or process state on the candidate execution path.
-    fn backfill_credit_nullifiers_with_io_v0(
+    fn backfill_credit_nullifiers_with_io(
         &self,
         mut read_page: impl FnMut(u64, u16) -> Result<RangePage, Error>,
         mut apply_batch: impl FnMut(Vec<QualifiedGroveDbOp>) -> Result<(), Error>,

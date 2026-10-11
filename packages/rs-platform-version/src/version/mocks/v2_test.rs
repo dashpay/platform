@@ -152,7 +152,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
             address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
             shielded: DriveShieldedMethodVersions {
-            backfill_historical_credit_pool_nullifiers: None,
                 insert_note: 0,
                 insert_nullifiers: 0,
                 update_total_balance: 0,
