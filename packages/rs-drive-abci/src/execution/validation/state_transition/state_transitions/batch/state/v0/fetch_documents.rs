@@ -4,9 +4,13 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef, LookupHashKey};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::{
+    DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef, LookupHashKey,
+};
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
@@ -448,10 +452,16 @@ pub(crate) fn hash_lookup_key(
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
 /// `reference_value` (the identifier property's value, one array element, the
-/// writer or the creator), the writer `owner_id` and the sources in
+/// writer or the creator, or the value of a string or byte array property
+/// carrying the reference), the writer `owner_id` and the sources in
 /// `document_data`, a document of `declaring_document_type`. `None` when no
-/// document matches, and when the key cannot be assembled or the index is
-/// missing or not unique. Contract registration and update refuse the last
+/// document matches (the document the index finds must hold each string or
+/// byte array part of the key exactly, see [`holds_key_part`]), when a key part
+/// is one no index entry can hold, found without a read (a string or byte
+/// array read as is, longer than an index key may be: the referring property
+/// need not share the referenced one's bounds), and when the key cannot be
+/// assembled or the index is missing or not unique. Contract registration and
+/// update refuse the last
 /// three (an optional source, a missing or non-unique index), and a referenced
 /// type's indexes cannot change on update, so for a validated contract they
 /// cannot happen; if one did, the write is refused rather than judged against
@@ -471,7 +481,7 @@ pub(crate) fn fetch_document_through_lookup(
     document_type: DocumentTypeRef,
     declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
-    reference_value: Identifier,
+    reference_value: &Value,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     billed_key: Option<BilledLookupKey>,
@@ -486,12 +496,18 @@ pub(crate) fn fetch_document_through_lookup(
     if lookup.resolve_index(document_type).is_err() {
         return Ok(None);
     }
+    // A function's `"."` param reads an identifier (an element, the writer or
+    // the creator); a property carrying the reference is named by its path
+    let reference_id = match reference_value {
+        Value::Identifier(id) => Some(Identifier::from(*id)),
+        _ => None,
+    };
     let billed_key = billed_key.or_else(|| {
         lookup.hash_key().and_then(|(_, key)| {
             hash_lookup_key(
                 key,
                 declaring_document_type,
-                Some(reference_value),
+                reference_id,
                 document_data,
                 execution_context,
             )
@@ -506,15 +522,24 @@ pub(crate) fn fetch_document_through_lookup(
     ) else {
         return Ok(None);
     };
+    // A key part no index entry can hold finds no document. Serializing it is
+    // what the query does first, and its failure is the value's, not the state's
+    if key_values.iter().any(|(index_property, value)| {
+        document_type
+            .serialize_value_for_key(index_property, value, platform_version)
+            .is_err()
+    }) {
+        return Ok(None);
+    }
     let equal_clauses = key_values
-        .into_iter()
+        .iter()
         .map(|(field, value)| {
             (
                 field.clone(),
                 WhereClause {
-                    field,
+                    field: field.clone(),
                     operator: WhereOperator::Equal,
-                    value,
+                    value: value.clone(),
                 },
             )
         })
@@ -557,7 +582,46 @@ pub(crate) fn fetch_document_through_lookup(
         lifetime_storage_fees: Default::default(),
     }));
 
-    Ok(documents_outcome.documents_owned().into_iter().next())
+    Ok(documents_outcome
+        .documents_owned()
+        .into_iter()
+        .next()
+        .filter(|document| {
+            key_values.iter().all(|(index_property, value)| {
+                holds_key_part(document_type, document, index_property, value)
+            })
+        }))
+}
+
+/// Whether `document`, found through an index of `document_type` under a key
+/// whose part for `index_property` is `value`, holds that value. The index
+/// finds a document by the key's encoding, which reads two values one way for
+/// a string and a byte array: the empty string as `"\0"`, and an empty byte
+/// array as no value at all. So for those the document must hold exactly the
+/// same text or bytes, whichever binary form either side carries; every other
+/// kind encodes one value one way only, and holds by being found.
+fn holds_key_part(
+    document_type: DocumentTypeRef,
+    document: &Document,
+    index_property: &str,
+    value: &Value,
+) -> bool {
+    let held = document.get(index_property);
+    match document_type
+        .flattened_properties()
+        .get(index_property)
+        .map(|property| &property.property_type)
+    {
+        Some(DocumentPropertyType::String(_)) => matches!(
+            (held.and_then(Value::as_text), value.as_text()),
+            (Some(held), Some(value)) if held == value
+        ),
+        Some(DocumentPropertyType::ByteArray(_)) => matches!(
+            (held.map(Value::as_bytes_slice), value.as_bytes_slice()),
+            (Some(Ok(held)), Ok(value)) if held == value
+        ),
+        _ => true,
+    }
 }
 
 // ============================================================================

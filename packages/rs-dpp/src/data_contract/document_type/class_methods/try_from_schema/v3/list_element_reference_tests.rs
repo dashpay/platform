@@ -386,11 +386,12 @@ fn should_refuse_a_list_element_reference_on_a_non_identifier_property() {
     schema["documentSchemas"]["resignation"]["properties"]["note"]["refersTo"] =
         members_of_the_charter();
     contract(schema.clone()).expect_err("the meta-schema should refuse it");
-    // A string's value is no id: findBy on it must be a function reading it
+    // A string's value is no id, and a list holds ids: findBy on it must read
+    // the value into a key
     assert_refused(
         contract_on(schema, false, PlatformVersion::latest()),
         "refersTo on a string or byte array property must be a permanentDocument or \
-         deletableDocument reference found by a findBy function",
+         deletableDocument reference found by a findBy reading the value",
     );
 }
 

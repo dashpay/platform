@@ -1761,7 +1761,8 @@ fn validate_no_immutable_contract_owner_requirements(
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
 /// object, or one found by `findBy`, alone or as an operand of an
-/// expression, anywhere, unless a `findBy` function computes its key: that
+/// expression, anywhere (on a string or byte array property too), unless a
+/// `findBy` function computes its key: that
 /// reference is judged when the document is created only. Every
 /// replace re-validates such a reference, so once a target is deleted the
 /// property would have to change, which an immutable
@@ -1789,7 +1790,14 @@ fn validate_no_immutable_deletable_element_references(
     name: &str,
 ) -> Result<(), ProtocolError> {
     for (path, property) in document_type.flattened_properties() {
-        let Some(reference) = property.property_type.reference() else {
+        // On an identifier, or on a string or byte array property whose value
+        // its `findBy` reads
+        let Some(reference) = property.property_type.reference().or_else(|| {
+            property
+                .revealed_reference
+                .as_ref()
+                .map(PropertyReference::Revealed)
+        }) else {
             continue;
         };
         let Some(target) = reference.target() else {
@@ -1955,6 +1963,8 @@ mod reference_test_helpers;
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
+#[cfg(all(test, feature = "validation"))]
+mod string_find_by_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod transient_tests;
 #[cfg(all(test, feature = "validation"))]

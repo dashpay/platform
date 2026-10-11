@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Where** | Inside a `permanentDocument` or `deletableDocument` [`refersTo`](refers-to.md) declaration: on an identifier property, on the `items` of a typed array of identifiers, as an operand of an [expression](refers-to-expressions.md), or in [`ownerRefersTo` and `creatorRefersTo`](owner-refers-to.md). With a [function](#commit-and-reveal), also on a string or byte array property. |
+| **Where** | Inside a `permanentDocument` or `deletableDocument` [`refersTo`](refers-to.md) declaration: on an identifier property, on the `items` of a typed array of identifiers, as an operand of an [expression](refers-to-expressions.md), or in [`ownerRefersTo` and `creatorRefersTo`](owner-refers-to.md). Also on a string or byte array property, whose value `findBy` reads as is (see [A string or byte array key](#a-string-or-byte-array-key)) or through a [function](#commit-and-reveal). |
 | **Value** | An object of 1 to 10 entries `{ "<referenced property>": <source> }`. Each key is a property of `documentType`, by its name there (system ones such as `$ownerId` included). Each source is `"."` (the reference's own value), `"$ownerId"` (the writer), a property path of the referring document type, or at most one [function](#commit-and-reveal). The keys must be exactly the properties of one unique index of `documentType`, in any order. Beside a function the `refersTo` may also declare `minimumAgeBlocks` and `consume`. With [`inList`](refers-to-list-element.md), `findBy` is `{ "$id": <property> }` instead. |
 | **Since** | protocol version 14 |
 | **On update** | Fixed, like the rest of `refersTo`: adding, removing or changing `findBy` is refused (`IncompatibleDocumentTypeSchemaError`, 10246). |
@@ -76,7 +76,7 @@ index "byOwner" of "joinRequest" over ($ownerId) is not unique: findBy must find
 
 When the referring document is created or replaced, a key is assembled for each value (each element of a typed array), one part per entry of `findBy`:
 
-- `"."`: the value being checked, the property's value or the element.
+- `"."`: the value being checked, the property's value (a [string or byte array](#a-string-or-byte-array-key) one included) or the element.
 - `"$ownerId"`: the referring document's owner, the writer.
 - a property path (`"submittedCharterId"`, `"meta.charterId"`): the referring document's value at that path.
 - a [function](#commit-and-reveal): the hash of the params it reads.
@@ -112,6 +112,25 @@ A `deletableDocument` found by `findBy` promises less. Once the document a key f
 ```
 
 DashPay's `profile` type has a unique index on `$ownerId` alone, which finds the profile, and profiles can be deleted, so the reference is a `deletableDocument` one.
+
+### A string or byte array key
+
+The value carrying the reference need not be an identifier. A string or byte array property may carry a `refersTo` found by `findBy` too, its value read as is: `"."` fills an index property holding the same kind of value, a string a string and a byte array a byte array. A `post` naming its author by handle, where `handle` is unique on its `name`:
+
+```json
+"authorHandle": {
+  "type": "string",
+  "maxLength": 63,
+  "refersTo": {
+    "type": "permanentDocument",
+    "documentType": "handle",
+    "findBy": { "name": "." }
+  },
+  "position": 0
+}
+```
+
+The property keeps its type, and the reference is judged as an identifier's is: on a create, and on a replace by the rules above (when the value changes, when a property `findBy` reads changes, and on every replace for a `deletableDocument`). The key is the value byte for byte, so `"Alice"` does not find the handle `alice`: store a normalized value where the referenced index holds one. The document found must hold exactly that value: the index stores the empty string under the key of `"\0"` and an empty byte array under the key of no value, and neither stands in for the other. A value longer than an index key may be (255 bytes) finds nothing, without a read: the referring property may allow longer values than the referenced one, and no document of the referenced type holds one. The value is no id, so a refusal (`ReferencedEntityNotFoundError`, 40120) names it by its path, with an all-zero entity id. A [function](#commit-and-reveal) may read such a property instead, by its path among its params.
 
 ### What findBy cannot do
 
@@ -153,7 +172,7 @@ WHERE saltedDomainHash =                                     -- findBy
 
 - **Params.** A property path reads the document being created, the property carrying the reference included; `{ "const": text }` is fixed text of 1 to 64 bytes; `"."` is the value carrying the reference where it has no path (each element of a typed array, the writer, the creator); 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
 - **One function.** `findBy` holds at most one function, and the property it fills must be a byte array of exactly 32 bytes.
-- **Carrier.** A string or byte array property may carry a `refersTo` only this way, and keeps its type. The value carrying the reference fills the key exactly once, as a `"."` entry or a param; a param names a property by its path, never as `"."`. In `ownerRefersTo` and `creatorRefersTo` the value may be left out beside a function.
+- **Carrier.** A string or byte array property may carry a `refersTo` this way, or with its value read as is (see [A string or byte array key](#a-string-or-byte-array-key)), and keeps its type. The value carrying the reference fills the key exactly once, as a `"."` entry or a param; a param names a property by its path, never as `"."`. In `ownerRefersTo` and `creatorRefersTo` the value may be left out beside a function.
 - **Judged once.** A function's key is checked when the document is created, never on a replace, so every stored value it reads must be fixed once written, the carrier included (listed under `immutable` on a mutable type, and required when it is a `deletableDocument` reference by id, which a replace may otherwise clear once its document is deleted). The `where` entries are judged with it, so each referring property they name must be fixed once written too, or transient. On a type whose documents can be replaced it may not be an operand of an `anyOf`, which would then hold on every replace. Params may be transient: they are read from the create. The hash is billed as the double SHA-256 it is, by the blocks it hashes, beside the document fetch.
 
 `minimumAgeBlocks` and `consume` sit on the `refersTo`, beside `findBy`: they describe the document `findBy` finds, and need a function in it.
@@ -172,13 +191,13 @@ A create missing a param, or with a value holding its separator, is refused befo
 - Every other source is `"$ownerId"`, a property path or a function. No other `$` name is accepted, and a path may not name the reference property itself: write `"."` for that.
 - A property an entry reads must exist on the referring type, be required (and so must every object around it), not be `transient` or inside a transient object, and hold a single value, not an object or an array. `findBy` never runs with a missing key part, and a reader can assemble the same key from the stored document. A function's params follow [their own rules](#commit-and-reveal): they may be transient or optional, since they are read from the create alone.
 - A `"$ownerId"` source needs a referring type whose documents can be neither transferred nor traded: a transfer or a purchase would move the writer part of the key without a write.
-- A `deletableDocument` found by `findBy` may not sit under an `immutable` property, alone or as an operand of an expression: every replace checks it again, so once its document is deleted the property would have to change. One whose key a [function](#commit-and-reveal) computes is the exception: it is checked on the create alone, and its carrier must be fixed once written.
+- A `deletableDocument` found by `findBy` may not sit under an `immutable` property (a string or byte array one included), alone or as an operand of an expression: every replace checks it again, so once its document is deleted the property would have to change. One whose key a [function](#commit-and-reveal) computes is the exception: it is checked on the create alone, and its carrier must be fixed once written.
 - `{ "$id": ... }` is allowed only with [`inList`](refers-to-list-element.md), as the only entry.
 
 **On the referenced side**, refused with `InvalidContractStructure` (10231) for a document type of the declaring contract and with `ReferencedDocumentLookupInvalidError` (40137) for one of another contract:
 
 - The keys are exactly the properties of one unique index of the type, by their names on the referenced side (system properties such as `$ownerId` included), in any order, and nothing else (see [Which index finds the document](#which-index-finds-the-document)). That index does not bucket its first property by a `timeRange` or an `integerRange`, the referenced type is not `indexOnly`, and no index property is `transient`.
-- Each source holds the same type of value as the property it fills. `"."` and `"$ownerId"` are identifiers.
+- Each source holds the same type of value as the property it fills. `"$ownerId"` is an identifier, and so is `"."`, but on a string or byte array property, where it is that property's value.
 - The key stays with the document it found. Every schema property of the index must be fixed once written: the referenced type is immutable (`documentsMutable: false`), or the property's top-level property is listed under `immutable` and is no optional `deletableDocument` reference by id, which a replace may clear once its document is deleted. `$ownerId` may be a key part only where the referenced documents can be neither transferred nor traded. `$updatedAt` and its block height forms may be one only where they can be neither replaced, transferred nor traded, and `$transferredAt` and its forms only where they can be neither transferred nor traded. `$id`, `$creatorId`, `$createdAt` and its forms never change.
 
 **The referenced type** must exist (`ReferencedDocumentTypeNotFoundError`, 40121). A `permanentDocument` found by `findBy` in a type whose documents can disappear is refused with `ReferencedDocumentTypeDeletableError` (40122), and a `deletableDocument` found by `findBy` in one whose documents cannot with `ReferencedDocumentTypeNotDeletableError` (40131).
