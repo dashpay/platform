@@ -587,10 +587,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
       };
     };
 
-    const firstAmongContract = (schemas: Record<string, unknown>) => new wasm.DataContract({
+    const firstAmongContract = (documentSchemas: Record<string, unknown>) => new wasm.DataContract({
       ownerId,
       identityNonce: BigInt(2),
-      schemas,
+      schemas: documentSchemas,
       definitions: null,
       fullValidation: true,
       platformVersion: new PlatformVersion(14),
