@@ -59,11 +59,16 @@ const schemas = {
       paidWith: identifierProperty(2, { type: 'token' }),
       // `contractId` omitted: targets the declaring contract itself.
       // `where` binds the referenced document's property to the
-      // referring document's (write-time equality, PV14 #4505).
+      // referring document's (write-time equality, PV14 #4505), and holds
+      // the parent's recipient key id to at most this note's signer key id
+      // (a condition, an ordering by a referring property)
       parentNoteId: identifierProperty(3, {
         type: 'permanentDocument',
         documentType: 'note',
-        where: { signerKeyId: 'signerKeyId' },
+        where: {
+          signerKeyId: 'signerKeyId',
+          recipientKeyId: { lessThanOrEqual: 'signerKeyId' },
+        },
       }),
       otherDoc: identifierProperty(4, {
         type: 'permanentDocument',
@@ -152,7 +157,7 @@ type Reference = {
     string,
     string | { function: string; params: Array<string | { const: string }> }
   >;
-  where?: Record<string, string>;
+  where?: Record<string, string | Record<string, unknown>>;
   minimumAgeBlocks?: number;
   consume?: boolean;
   inList?: string;
@@ -280,7 +285,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const references = contract.documentTypeReferences('note') as Reference[];
       const parent = references.find((reference) => reference.path === 'parentNoteId')!;
 
-      expect(parent.where).to.deep.equal({ signerKeyId: 'signerKeyId' });
+      expect(parent.where).to.deep.equal({
+        signerKeyId: 'signerKeyId',
+        recipientKeyId: { lessThanOrEqual: 'signerKeyId' },
+      });
     });
 
     /**
@@ -1031,6 +1039,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeIndexOnly).to.equal(40146);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRuleReadInvalid).to.equal(40148);
     });
 
     it('should resolve a code back to its name', () => {

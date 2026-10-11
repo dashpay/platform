@@ -249,6 +249,7 @@ fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: None,
             document_type_name: "preorder".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
             lookup: dpns_lookup(Some(1), true),
         }
@@ -715,6 +716,7 @@ fn should_consume_a_commitment_only_a_consume_deletes() {
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: None,
             document_type_name: "preorder".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
             lookup: dpns_lookup(Some(1), true),
         }

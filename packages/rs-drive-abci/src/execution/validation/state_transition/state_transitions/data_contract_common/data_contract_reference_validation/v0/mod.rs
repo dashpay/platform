@@ -1,17 +1,22 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::class_methods::referenced_reads_error;
 use dpp::data_contract::document_type::{
-    is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
-    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentReferenceDeclaration, DocumentTypeRef, KeyReferenceIdentityProperty,
-    PreallocatedKeySource, PropertyReference, ReferenceHolder, MAX_INDEX_SIZE,
+    is_path_listed, is_referenced_system_agreement_property,
+    is_referring_system_agreement_property, is_transient, DocumentProperty,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentReferenceKind, DocumentTypeRef, KeyReferenceIdentityProperty, PreallocatedKeySource,
+    PropertyReference, ReferenceHolder, WhereBound, WhereCondition, WhereLiteral, WhereLiteralKind,
+    MAX_INDEX_SIZE,
 };
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
 use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
+use dpp::errors::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -434,6 +439,7 @@ fn validate_reference_target_declaration_v0(
         contract_id,
         document_type_name,
         property_agreement,
+        where_conditions,
         kind,
         lookup,
         in_list,
@@ -580,6 +586,47 @@ fn validate_reference_target_declaration_v0(
                     )
                     .into(),
                 ));
+            }
+        }
+    }
+
+    // What the declaring type's `propertyConstraints` rules read through this
+    // reference of a document type of another contract (protocol version 14):
+    // the contract parse checks a rule reading a type of the declaring contract,
+    // and only here is another contract's in hand. The parse let a rule read
+    // only through a property holding a single reference to one document, so a
+    // leaf of an expression or the elements of a typed array carry no reads
+    if effective_contract_id != contract.id() {
+        if let Some(reference_property) = reference_property {
+            let records_creator_id = referenced_document_type
+                .should_use_creator_id(
+                    referenced_contract.system_version_type(),
+                    referenced_contract.config().version(),
+                    platform_version,
+                )
+                .map_err(Error::Protocol)?;
+            for (rule, constraint) in document_type.property_constraints() {
+                let reason = referenced_reads_error(
+                    constraint,
+                    &format!("rule \"{rule}\""),
+                    reference_property,
+                    kind,
+                    referenced_document_type,
+                    referenced_contract.schema_defs(),
+                    records_creator_id,
+                )
+                .map_err(|error| Error::Protocol(error.into()))?;
+                if let Some(reason) = reason {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentRuleReadInvalidError::new(
+                            document_type.name().clone(),
+                            rule.clone(),
+                            reference_property.to_string(),
+                            reason,
+                        )
+                        .into(),
+                    ));
+                }
             }
         }
     }
@@ -765,6 +812,173 @@ fn validate_reference_target_declaration_v0(
                      the referenced property can hold values of up to {} bytes",
                     max_width.unwrap_or(u16::MAX)
                 )));
+            }
+        }
+    }
+
+    // The other `where` entries (protocol version 14): a literal the referenced
+    // side must equal or be one of, or a bound it must differ from or compare
+    // with. Each must be able to hold: the referenced side exists, is stored and
+    // holds a single value; a literal reads as its kind (a base58 identifier for
+    // an identifier, hex for a byte array); a `notEqual` compares two values of
+    // one kind, the writer an identifier; an ordering compares two integers, its
+    // bound an integer property of the declaring type, an integer or a time or
+    // height that type records. Through a `moderatedDocument` reference, an entry
+    // asked about on every replace compares only what every removal record
+    // holds, as a writer gate does: a time or height bound changes without a
+    // write, and once a moderator removes the document only its record is left
+    for (referenced_property, condition) in where_conditions {
+        let invalid = |reason: &str| {
+            SimpleConsensusValidationResult::new_with_error(
+                ReferencedDocumentPropertyAgreementInvalidError::new(
+                    declaration_path.clone(),
+                    condition.to_string(),
+                    referenced_property.clone(),
+                    reason.to_string(),
+                )
+                .into(),
+            )
+        };
+        let referenced_type = if is_referenced_system_agreement_property(referenced_property) {
+            if referenced_property == CREATOR_ID
+                && !referenced_document_type
+                    .should_use_creator_id(
+                        referenced_contract.system_version_type(),
+                        referenced_contract.config().version(),
+                        platform_version,
+                    )
+                    .map_err(Error::Protocol)?
+            {
+                return Ok(invalid(
+                    "the referenced document type does not record $creatorId: only \
+                     transferable or tradeable document types of a format-1 contract do",
+                ));
+            }
+            None
+        } else {
+            let Some(referenced) = referenced_document_type
+                .flattened_properties()
+                .get(referenced_property)
+            else {
+                return Ok(invalid(
+                    "the referenced document type does not define the referenced property",
+                ));
+            };
+            if is_transient(referenced_document_type, referenced_property) {
+                return Ok(invalid(
+                    "the referenced property is transient or inside a transient object: no \
+                     stored document carries its value",
+                ));
+            }
+            Some(&referenced.property_type)
+        };
+        let Some(literal_kind) =
+            WhereLiteralKind::of_referenced(referenced_document_type, referenced_property)
+        else {
+            return Ok(invalid(
+                "the referenced property holds no single value a where entry compares: a \
+                 float, an object or an array",
+            ));
+        };
+        let literal_fits = |literal: &WhereLiteral| literal.value_for(literal_kind).is_some();
+        match condition {
+            WhereCondition::Constant(literal)
+            | WhereCondition::NotEqual(WhereBound::Constant(literal)) => {
+                if !literal_fits(literal) {
+                    return Ok(invalid(&format!(
+                        "the literal {literal} is not {}, as the referenced property holds",
+                        literal_kind.describe()
+                    )));
+                }
+            }
+            WhereCondition::In(literals) => {
+                if let Some(literal) = literals.iter().find(|literal| !literal_fits(literal)) {
+                    return Ok(invalid(&format!(
+                        "the literal {literal} is not {}, as the referenced property holds",
+                        literal_kind.describe()
+                    )));
+                }
+            }
+            WhereCondition::NotEqual(WhereBound::Writer) => {
+                if literal_kind != WhereLiteralKind::Identifier {
+                    return Ok(invalid(
+                        "$ownerId, the writer, is an identifier, so the referenced side must be \
+                         one",
+                    ));
+                }
+            }
+            WhereCondition::NotEqual(WhereBound::Property(referring_property)) => {
+                let Some(referring) = document_type.flattened_properties().get(referring_property)
+                else {
+                    return Ok(invalid(
+                        "the declaring document type does not define the referring property",
+                    ));
+                };
+                let same_kind = match referenced_type {
+                    Some(referenced_type) => {
+                        same_value_kind(&referring.property_type, referenced_type)
+                    }
+                    None => matches!(
+                        referring.property_type,
+                        DocumentPropertyType::Identifier
+                            | DocumentPropertyType::IdentifierWithReference(_)
+                    ),
+                };
+                if !same_kind {
+                    return Ok(invalid(
+                        "the two properties must share one value kind: a cross-kind comparison \
+                         would always differ",
+                    ));
+                }
+            }
+            WhereCondition::NotEqual(WhereBound::System(_)) => {
+                return Ok(invalid("notEqual takes no time or height"));
+            }
+            WhereCondition::Ordering { bound, .. } => {
+                if literal_kind != WhereLiteralKind::Integer {
+                    return Ok(invalid(
+                        "an ordering compares integers, and the referenced property is no \
+                         integer",
+                    ));
+                }
+                match bound {
+                    WhereBound::Property(referring_property) => {
+                        let is_integer = document_type
+                            .flattened_properties()
+                            .get(referring_property)
+                            .and_then(|referring| WhereLiteralKind::of(&referring.property_type))
+                            == Some(WhereLiteralKind::Integer);
+                        if !is_integer {
+                            return Ok(invalid(
+                                "an ordering is bounded by an integer property of the declaring \
+                                 document type",
+                            ));
+                        }
+                    }
+                    WhereBound::System(system) => {
+                        if !document_type.required_fields().contains(system.name()) {
+                            return Ok(invalid(&format!(
+                                "the declaring document type does not record {}: list it in \
+                                 required",
+                                system.name()
+                            )));
+                        }
+                    }
+                    WhereBound::Constant(_) | WhereBound::Writer => {}
+                }
+                if kind == DocumentReferenceKind::Moderated
+                    && condition.is_rechecked_on_every_replace()
+                    && !is_path_listed(
+                        referenced_document_type.moderator_deletion_kept_fields(),
+                        referenced_property,
+                    )
+                {
+                    return Ok(invalid(
+                        "the entry is checked on every replace, and once a moderator removes \
+                         the document only its record is left, which keeps the fields its type \
+                         lists under deleteKeepsFields: compare one of those",
+                    ));
+                }
             }
         }
     }

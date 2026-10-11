@@ -2,9 +2,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, STORED_DOCUMENT_KEY,
+    data_with_referenced_documents, DocumentSystemValues, PropertyConstraint, STORED_DOCUMENT_KEY,
 };
+use std::collections::BTreeMap;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -140,10 +142,17 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             }
         }
 
+        // The document the replace writes keeps its creation and last transfer and is
+        // updated in this block, for every time and height a `where` entry reads; the values
+        // the type's rules read of the documents its references point at are collected from
+        // those documents, every such reference being checked on every replace
+        let system = self.condition_system_values(owner_id);
+        let mut referenced_documents = BTreeMap::new();
         let reference_result = self.base().validate_document_references(
             self.data(),
             owner_id,
             self.creator_id(),
+            &system,
             Some(self.changed_data_fields()),
             Some(self.stored_changed_values()),
             platform,
@@ -151,12 +160,37 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             // A replace consumes nothing: a lookup that could is judged on a create only
             &mut Vec::new(),
             None,
+            &mut referenced_documents,
             transaction,
             execution_context,
             platform_version,
         )?;
         if !reference_result.is_valid() {
             return Ok(reference_result);
+        }
+
+        // The rules reading a document a reference points at (protocol version 14), judged
+        // once the references hold, with the values their checks read, as on a create: every
+        // replace judges every rule, and the structure validation judged the others
+        if document_type
+            .property_constraints()
+            .values()
+            .any(PropertyConstraint::reads_referenced)
+        {
+            let result = document_type
+                .validate_referencing_property_constraints(
+                    &data_with_referenced_documents(self.data(), referenced_documents),
+                    &DocumentSystemValues {
+                        aggregates: Some(self.property_constraint_aggregates().clone()),
+                        referenced_documents: true,
+                        ..system
+                    },
+                    platform_version,
+                )
+                .map_err(Error::Protocol)?;
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         Ok(SimpleConsensusValidationResult::new())
@@ -224,6 +258,7 @@ impl ReplaceConditionInputs for DocumentReplaceTransitionAction {
             updated_at_core_block_height: self.updated_at_core_block_height(),
             transferred_at_core_block_height: self.transferred_at_core_block_height(),
             aggregates: None,
+            referenced_documents: false,
         }
     }
 }

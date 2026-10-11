@@ -904,6 +904,39 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         Ok(SimpleConsensusValidationResult::default())
     }
 
+    /// `validate_referencing_property_constraints` version 0: every rule of the document
+    /// type's `propertyConstraints` reading a document one of its references points at is
+    /// evaluated against `data`, which holds those values under `$referenced`, in name
+    /// order, and the first one broken is reported. The type's other rules are not judged
+    /// again. A rule reading a total consensus did not read is an error.
+    fn validate_referencing_property_constraints_v0(
+        &self,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (name, constraint) in self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_referenced())
+        {
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
     /// `validate_delete_constraints` version 0: every rule of the document type's
     /// `deleteConstraints` is evaluated against the stored document's `data` with `system`,
     /// in name order, and the first one broken is reported. A rule reading a total consensus

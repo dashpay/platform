@@ -101,14 +101,18 @@ use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, ID as DOCUMENT_ID, OWNER_ID,
-    TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
-    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID,
+    ID as DOCUMENT_ID, OWNER_ID, TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT,
+    TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT,
+    UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
+use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
@@ -149,8 +153,8 @@ const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
-                            ifAbsent, length, byteLength, count, countPresent, byteAt, countOf or \
-                            sumOf";
+                            ifAbsent, length, byteLength, count, countPresent, byteAt, countOf, \
+                            sumOf or referenced";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -176,6 +180,117 @@ pub const STORED_DOCUMENT_PREFIX: &str = "$old.";
 /// condition of an `immutable` entry is judged against, so that a path through
 /// [`STORED_DOCUMENT_PREFIX`] reads them.
 pub const STORED_DOCUMENT_KEY: &str = "$old";
+
+/// The operand key of a value of the document a reference of the type points
+/// at: `{ "referenced": ["pollId", "endsAt"] }` is the `endsAt` of the
+/// document the top-level property `pollId` refers to. It stands wherever a
+/// property path does, and is read as the path
+/// `$referenced.pollId.endsAt` ([`REFERENCED_DOCUMENT_PREFIX`]).
+pub const REFERENCED: &str = "referenced";
+
+/// The key the values of the documents the type's references point at sit
+/// under in the data a `propertyConstraints` rule reading one is judged
+/// against, by the reference property, so that a path through
+/// [`REFERENCED_DOCUMENT_PREFIX`] reads them. Consensus puts them there once
+/// the references are checked, from the documents that check read; a rule
+/// reading one is not judged without them
+/// ([`DocumentSystemValues::referenced_documents`]).
+pub const REFERENCED_DOCUMENT_KEY: &str = "$referenced";
+
+/// The prefix of the path a `referenced` operand is read through:
+/// `$referenced.<reference property>.<field>`.
+pub const REFERENCED_DOCUMENT_PREFIX: &str = "$referenced.";
+
+/// The fields of a referenced document a `referenced` operand may read beside
+/// its schema properties and the nine times and heights: its identifiers,
+/// which compare as identifiers.
+pub const REFERENCED_IDENTIFIER_FIELDS: [&str; 3] = [DOCUMENT_ID, OWNER_ID, CREATOR_ID];
+
+/// The reference property and the field of the document it points at that the
+/// path a `referenced` operand is read through names: `("pollId", "endsAt")`
+/// for `$referenced.pollId.endsAt`. `None` for any other path.
+pub fn referenced_read(path: &str) -> Option<(&str, &str)> {
+    path.strip_prefix(REFERENCED_DOCUMENT_PREFIX)?
+        .split_once('.')
+}
+
+/// The path a `referenced` operand reading `field` through `reference` is read
+/// through ([`REFERENCED_DOCUMENT_PREFIX`]).
+pub fn referenced_path(reference: &str, field: &str) -> String {
+    format!("{REFERENCED_DOCUMENT_PREFIX}{reference}.{field}")
+}
+
+/// What `rules` read of the documents the type's references point at: by
+/// reference property, the fields read of the document it points at. Empty when
+/// no rule reads one. A reference listed here is checked again on every replace,
+/// since every replace judges the rules.
+pub fn referenced_fields(
+    rules: &BTreeMap<String, PropertyConstraint>,
+) -> BTreeMap<&str, BTreeSet<&str>> {
+    let mut fields: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for rule in rules.values() {
+        for (reference, field, _) in rule.referenced_reads() {
+            fields.entry(reference).or_default().insert(field);
+        }
+    }
+    fields
+}
+
+/// The values `fields` names of `document`, a document a reference points at,
+/// as a map a rule reads through [`REFERENCED_DOCUMENT_PREFIX`] once it is put
+/// under the reference property ([`data_with_referenced_documents`]): a schema
+/// property at its dotted path, `$id`, `$ownerId` and `$creatorId` as
+/// identifiers, a time or height as an integer. A field the document does not
+/// hold is left out, so a rule reads it as absent.
+pub fn referenced_document_values<'a>(
+    document: &Document,
+    fields: impl IntoIterator<Item = &'a str>,
+) -> Result<Value, platform_value::Error> {
+    let system = DocumentSystemValues::of_document(document);
+    let mut values = Value::Map(Vec::new());
+    for field in fields {
+        let value = match field {
+            DOCUMENT_ID => Some(Value::Identifier(document.id().to_buffer())),
+            OWNER_ID => Some(Value::Identifier(document.owner_id().to_buffer())),
+            CREATOR_ID => document
+                .creator_id()
+                .map(|creator_id| Value::Identifier(creator_id.to_buffer())),
+            field => match SystemProperty::from_name(field) {
+                Some(property) => system.value(property).map(Value::I128),
+                None => document.properties().get_optional_at_path(field)?.cloned(),
+            },
+        };
+        if let Some(value) = value {
+            values.set_value_at_full_path(field, value)?;
+        }
+    }
+    Ok(values)
+}
+
+/// The data a rule reading a referenced document is judged against: the
+/// document's properties, `data`, with `referenced`, each reference property and
+/// the values its rules read of the document it points at
+/// ([`referenced_document_values`]), under [`REFERENCED_DOCUMENT_KEY`]. A
+/// reference the document leaves out has no entry, and reads as absent.
+pub fn data_with_referenced_documents(
+    data: &BTreeMap<String, Value>,
+    referenced: BTreeMap<String, Value>,
+) -> Value {
+    let mut entries: Vec<(Value, Value)> = data
+        .iter()
+        .map(|(property, value)| (Value::Text(property.clone()), value.clone()))
+        .collect();
+    entries.push((
+        Value::Text(REFERENCED_DOCUMENT_KEY.to_string()),
+        Value::Map(
+            referenced
+                .into_iter()
+                .map(|(reference, values)| (Value::Text(reference), values))
+                .collect(),
+        ),
+    ));
+    Value::Map(entries)
+}
 
 /// How the two sides of a comparison must compare.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,8 +351,13 @@ impl ConstraintComparison {
 /// its last update (a create, a replace or a price update) or of its last
 /// transfer (a create, a transfer or a purchase). A rule may read one only on a
 /// document type that records it, by listing it in `required`, so every stored
-/// document of the type holds it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// document of the type holds it. A `where` entry of a `refersTo` may bound an
+/// ordering by one too (`WhereBound::System`), which embeds it in the reference
+/// errors, so it encodes.
+// @append_only
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode, DecodeUntrusted,
+)]
 pub enum SystemProperty {
     /// `$createdAt`
     CreatedAt,
@@ -314,6 +434,13 @@ impl SystemProperty {
     }
 }
 
+/// Serialized as a rule writes it, `"$createdAt"`.
+impl Serialize for SystemProperty {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
 /// A write that changes a stored document's system values and none of its
 /// properties, so only the rules reading what it changes can break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,6 +478,12 @@ pub struct DocumentSystemValues {
     /// `validate_property_constraints` reports as an error rather than skip the
     /// rule ([`PropertyConstraint::unread_aggregate`]).
     pub aggregates: Option<BTreeMap<AggregateRead, i128>>,
+    /// Whether the data the rules are judged against holds, under
+    /// [`REFERENCED_DOCUMENT_KEY`], the values they read of the documents the
+    /// type's references point at. Consensus sets it once the references are
+    /// checked, and judges then the rules reading one; anywhere else a rule
+    /// reading one is not judged ([`PropertyConstraint::violation`]).
+    pub referenced_documents: bool,
 }
 
 impl DocumentSystemValues {
@@ -378,6 +511,7 @@ impl DocumentSystemValues {
             updated_at_core_block_height: Some(block_info.core_height),
             transferred_at_core_block_height: Some(block_info.core_height),
             aggregates: None,
+            referenced_documents: false,
         }
     }
 
@@ -395,6 +529,7 @@ impl DocumentSystemValues {
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
             aggregates: None,
+            referenced_documents: false,
         }
     }
 
@@ -1403,16 +1538,19 @@ impl PropertyConstraint {
     /// document type records, the only ones a rule may read, so only a client
     /// that does not know one skips the rule. So is a rule reading an aggregate
     /// `system` does not give: consensus reads every one before judging the
-    /// write, and a client, which cannot read state here, gives none.
+    /// write, and a client, which cannot read state here, gives none. And so
+    /// is a rule reading a referenced document unless `system` says `data`
+    /// holds the values it reads ([`DocumentSystemValues::referenced_documents`]).
     pub fn violation(
         &self,
         data: &Value,
         system: &DocumentSystemValues,
     ) -> Option<PropertyConstraintViolation> {
-        if self
-            .system_reads()
-            .into_iter()
-            .any(|property| system.value(property).is_none())
+        if (!system.referenced_documents && self.reads_referenced())
+            || self
+                .system_reads()
+                .into_iter()
+                .any(|property| system.value(property).is_none())
             || self
                 .find_aggregate(&|read| {
                     !system
@@ -1500,6 +1638,26 @@ impl PropertyConstraint {
         let mut reads = Vec::new();
         self.collect_property_reads(&mut reads);
         reads
+    }
+
+    /// What the rule reads of the documents the type's references point at,
+    /// each as the reference property, the field of the referenced document
+    /// and how it is read, in declared order, a read made twice listed twice.
+    pub fn referenced_reads(&self) -> Vec<(&str, &str, PropertyRead)> {
+        self.property_reads()
+            .into_iter()
+            .filter_map(|(path, read)| {
+                referenced_read(path).map(|(reference, field)| (reference, field, read))
+            })
+            .collect()
+    }
+
+    /// Whether the rule reads a value of a document one of the type's
+    /// references points at (`{ "referenced": [...] }`).
+    pub fn reads_referenced(&self) -> bool {
+        self.property_reads()
+            .into_iter()
+            .any(|(path, _)| path.starts_with(REFERENCED_DOCUMENT_PREFIX))
     }
 
     /// Whether the rule compares the document's owner, `$ownerId`, or reads an
@@ -2246,6 +2404,117 @@ pub fn parse_property_constraint_condition(
     parse_condition(condition, &mut String::new(), 0, &context)
 }
 
+/// The path `value` names where a property path stands: a bare string, or a
+/// `referenced` operand, `{ "referenced": [reference, field] }`, read through
+/// [`REFERENCED_DOCUMENT_PREFIX`]. `None` for anything else, `Some(Err)` for a
+/// `referenced` operand that is malformed, the error placing it at `at`. A
+/// bare string naming the path a `referenced` operand is read through is
+/// refused: there is one way to write the operand.
+fn named_path(value: &Value, at: &str) -> Option<Result<String, String>> {
+    if let Some(path) = value.as_text() {
+        return Some(bare_path(path, at));
+    }
+    let (REFERENCED, operands) = single_entry(value)? else {
+        return None;
+    };
+    Some(referenced_operand(operands, at))
+}
+
+/// A path written as a bare string at `at`, refused when it names the path a
+/// `referenced` operand is read through, which has one spelling.
+fn bare_path(path: &str, at: &str) -> Result<String, String> {
+    if path.starts_with(REFERENCED_DOCUMENT_KEY) {
+        return Err(format!(
+            "{}names \"{path}\": a value of the document a reference points at is written \
+             {{ \"{REFERENCED}\": [reference, field] }}",
+            located(at)
+        ));
+    }
+    Ok(path.to_string())
+}
+
+/// The path a `referenced` operand at `at` listing `operands` is read through:
+/// exactly two strings, the name of a top-level property of the type (the
+/// reference, whose declaration is checked against the parsed document type),
+/// then a field of the document it points at: a dotted property path, its
+/// `$id`, `$ownerId` or `$creatorId`, or one of the nine times and heights.
+fn referenced_operand(operands: &Value, at: &str) -> Result<String, String> {
+    let at = if at.is_empty() {
+        REFERENCED.to_string()
+    } else {
+        format!("{at}.{REFERENCED}")
+    };
+    let Some([Value::Text(reference), Value::Text(field)]) = operands.as_array().map(Vec::as_slice)
+    else {
+        return Err(format!(
+            "at {at} must list a reference property of the document type, then a field of the \
+             document it refers to"
+        ));
+    };
+    if !is_rule_name(reference) {
+        return Err(format!(
+            "at {at}[0] names \"{reference}\", but a reference property is a top-level \
+             property, named with 1 to 64 letters, digits or underscores"
+        ));
+    }
+    let is_field = REFERENCED_IDENTIFIER_FIELDS.contains(&field.as_str())
+        || SystemProperty::from_name(field).is_some()
+        || (!field.is_empty() && field.split('.').all(is_rule_name));
+    if !is_field {
+        return Err(format!(
+            "at {at}[1] names \"{field}\", but a field of the referenced document is a \
+             property path of its type, its $id, $ownerId or $creatorId, or a time or height \
+             it records"
+        ));
+    }
+    Ok(referenced_path(reference, field))
+}
+
+/// How a condition compares the value at `path`: `$ownerId` and the
+/// identifiers of a referenced document as identifiers, a property of the
+/// document type as `property_kind` says, and any other value of a referenced
+/// document not at all ([`has_open_kind`]).
+fn path_kind(context: &ParseContext, path: &str) -> Option<EqualityKind> {
+    if path == OWNER_ID {
+        return Some(EqualityKind::Identifier);
+    }
+    if let Some((_, field)) = referenced_read(path) {
+        return REFERENCED_IDENTIFIER_FIELDS
+            .contains(&field)
+            .then_some(EqualityKind::Identifier);
+    }
+    (context.property_kind)(path)
+}
+
+/// Whether the value at `path` is a schema property of a referenced document,
+/// whose type the parse of the declaring type does not know (it may be another
+/// contract's): a comparison then reads it as what it is compared with says, a
+/// string or an identifier beside a property of that kind, a string beside a
+/// `const` or in an `in` listing strings, an integer otherwise, and the read is
+/// checked against the referenced type at registration.
+fn has_open_kind(path: &str) -> bool {
+    referenced_read(path).is_some_and(|(_, field)| !field.starts_with('$'))
+}
+
+/// The kinds the two sides of a comparison, `left` and `right`, compare as
+/// ([`path_kind`]), a side of an open kind ([`has_open_kind`]) taking the
+/// other side's.
+fn side_kinds(
+    context: &ParseContext,
+    left: &Value,
+    right: &Value,
+) -> (Option<EqualityKind>, Option<EqualityKind>) {
+    let path = |value: &Value| named_path(value, "").and_then(Result::ok);
+    let (left_path, right_path) = (path(left), path(right));
+    let kind = |path: &Option<String>| path.as_deref().and_then(|path| path_kind(context, path));
+    let open = |path: &Option<String>| path.as_deref().is_some_and(has_open_kind);
+    let (left_kind, right_kind) = (kind(&left_path), kind(&right_path));
+    (
+        left_kind.or(if open(&left_path) { right_kind } else { None }),
+        right_kind.or(if open(&right_path) { left_kind } else { None }),
+    )
+}
+
 /// Whether `name` can name a rule: 1 to 64 letters, digits or underscores, as
 /// a property name.
 fn is_rule_name(name: &str) -> bool {
@@ -2325,14 +2594,9 @@ fn parse_condition(
         ));
     };
     let parent = enter(at, key);
-    // `$ownerId`, the document's owner, compares as an identifier property
-    let kind_of = |path: &str| {
-        if path == OWNER_ID {
-            Some(EqualityKind::Identifier)
-        } else {
-            (context.property_kind)(path)
-        }
-    };
+    // `$ownerId`, the document's owner, compares as an identifier property, and
+    // so do the identifiers of a referenced document
+    let kind_of = |path: &str| path_kind(context, path);
     let condition = match key {
         ANY_OF => PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1, context)?),
         ALL_OF => PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1, context)?),
@@ -2400,17 +2664,20 @@ fn parse_condition(
                 .and_then(|values| values.first())
                 .is_some_and(|first| first.as_text().is_some());
             // Strings listed for an identifier property are its identifiers, base58
-            let identifier_path = operand
-                .as_text()
-                .filter(|path| over_strings && kind_of(path) == Some(EqualityKind::Identifier));
+            let identifier_path = match named_path(operand, &format!("{at}[0]")) {
+                Some(Err(error)) => return Err(error),
+                Some(Ok(path))
+                    if over_strings && kind_of(&path) == Some(EqualityKind::Identifier) =>
+                {
+                    Some(path)
+                }
+                _ => None,
+            };
             let listed = if let Some(path) = identifier_path {
                 at.push_str("[1]");
                 let values = in_identifier_values(values, at)?;
                 at.truncate(base);
-                PropertyConstraint::IdentifierIn {
-                    path: path.to_string(),
-                    values,
-                }
+                PropertyConstraint::IdentifierIn { path, values }
             } else if over_strings {
                 let Ok(TextSide::Property(property)) = text_side(operand, &format!("{at}[0]"))
                 else {
@@ -2460,8 +2727,7 @@ fn parse_condition(
             };
             // A bare path naming a byte array property on either side tests byte
             // arrays, and a const beside it is written in hex
-            let bare_kind = |value: &Value| value.as_text().and_then(kind_of);
-            match (bare_kind(text), bare_kind(affix)) {
+            match side_kinds(context, text, affix) {
                 (Some(EqualityKind::Bytes), None | Some(EqualityKind::Bytes))
                 | (None, Some(EqualityKind::Bytes)) => {
                     let bytes = bytes_operand(text, &format!("{at}[0]"))?;
@@ -2526,14 +2792,33 @@ fn parse_condition(
                 ));
             };
             // `$ownerId` and the system times are values, never arrays
-            let Some(array) = array.as_text().filter(|path| !path.starts_with('$')) else {
-                return Err(format!("at {at}[0] must name an array property path"));
+            let array = match named_path(array, &format!("{at}[0]")) {
+                Some(Err(error)) => return Err(error),
+                Some(Ok(path))
+                    if !path.starts_with('$') || path.starts_with(REFERENCED_DOCUMENT_PREFIX) =>
+                {
+                    path
+                }
+                _ => return Err(format!("at {at}[0] must name an array property path")),
             };
             let base = at.len();
             at.push_str("[1]");
             // The kind of the array's elements decides what a const spells, and
-            // what is checked against the parsed document type
-            let needle = match (context.property_kind)(array) {
+            // what is checked against the parsed document type. An array of a
+            // referenced document is of the kind of what is looked for in it: a
+            // string for a const or a string default, the kind of a path
+            let array_kind = (context.property_kind)(&array).or_else(|| {
+                if !has_open_kind(&array) {
+                    return None;
+                }
+                if is_const(needle) || is_text_if_absent(needle) {
+                    return Some(EqualityKind::Text);
+                }
+                named_path(needle, "")
+                    .and_then(Result::ok)
+                    .and_then(|path| path_kind(context, &path))
+            });
+            let needle = match array_kind {
                 Some(EqualityKind::Text) => match text_side(needle, at)? {
                     TextSide::Constant(value) => ContainsNeedle::TextConstant(value),
                     TextSide::Property(property) => ContainsNeedle::TextProperty(property),
@@ -2555,20 +2840,18 @@ fn parse_condition(
                 }
             };
             at.truncate(base);
-            PropertyConstraint::Contains {
-                array: array.to_string(),
-                needle,
-            }
+            PropertyConstraint::Contains { array, needle }
         }
         // What the path names is checked against the parsed document type
         PRESENT | ABSENT => {
-            let Some(path) = body.as_text() else {
-                return Err(format!("at {at} must name a property path"));
+            let path = match named_path(body, at) {
+                Some(path) => path?,
+                None => return Err(format!("at {at} must name a property path")),
             };
             if key == PRESENT {
-                PropertyConstraint::Present(path.to_string())
+                PropertyConstraint::Present(path)
             } else {
-                PropertyConstraint::Absent(path.to_string())
+                PropertyConstraint::Absent(path)
             }
         }
         _ => {
@@ -2587,14 +2870,14 @@ fn parse_condition(
                 // A const or an ifAbsent with a string default on either side, or
                 // two bare paths naming string or identifier properties, compare
                 // strings or identifiers, as the properties named decide
-                let bare_kind = |value: &Value| value.as_text().and_then(kind_of);
+                let (left_kind, right_kind) = side_kinds(context, left, right);
                 if is_const(left)
                     || is_const(right)
                     || is_text_if_absent(left)
                     || is_text_if_absent(right)
-                    || (bare_kind(left).is_some() && bare_kind(right).is_some())
+                    || (left_kind.is_some() && right_kind.is_some())
                 {
-                    let compare = match (bare_kind(left), bare_kind(right)) {
+                    let compare = match (left_kind, right_kind) {
                         (Some(EqualityKind::Bytes), _) | (_, Some(EqualityKind::Bytes)) => {
                             return Err(format!(
                                 "at {at} compares a byte array property, which only startsWith \
@@ -2784,8 +3067,8 @@ fn identifier_side(value: &Value, at: &str) -> Result<IdentifierSide, String> {
         return identifier_constant(constant, &format!("{at}.{CONST}"))
             .map(IdentifierSide::Constant);
     }
-    if let Some(path) = value.as_text() {
-        return Ok(IdentifierSide::Property(path.to_string()));
+    if let Some(path) = named_path(value, at) {
+        return path.map(IdentifierSide::Property);
     }
     if is_text_if_absent(value) {
         return Err(format!(
@@ -2876,26 +3159,23 @@ fn text_side(value: &Value, at: &str) -> Result<TextSide, String> {
                 format!("at {at}.{CONST} must be a string: an integer is written as itself")
             });
     }
-    if let Some(path) = value.as_text() {
+    if let Some(path) = named_path(value, at) {
         return Ok(TextSide::Property(TextProperty {
-            path: path.to_string(),
+            path: path?,
             if_absent: None,
         }));
     }
     if let Some((IF_ABSENT, operands)) = single_entry(value) {
-        match operands.as_array().map(Vec::as_slice) {
-            Some([Value::Text(path), Value::Text(default)]) => {
-                return Ok(TextSide::Property(TextProperty {
-                    path: path.clone(),
-                    if_absent: Some(default.clone()),
-                }));
-            }
-            Some([_, Value::Text(_)]) => {
+        if let Some([path, Value::Text(default)]) = operands.as_array().map(Vec::as_slice) {
+            let Some(path) = named_path(path, &format!("{at}.{IF_ABSENT}[0]")) else {
                 return Err(format!(
                     "at {at}.{IF_ABSENT} must name a property path first"
                 ));
-            }
-            _ => {}
+            };
+            return Ok(TextSide::Property(TextProperty {
+                path: path?,
+                if_absent: Some(default.clone()),
+            }));
         }
     }
     Err(format!(
@@ -2933,8 +3213,8 @@ fn bytes_operand(value: &Value, at: &str) -> Result<BytesOperand, String> {
             )
         });
     }
-    if let Some(path) = value.as_text() {
-        return Ok(BytesOperand::Property(path.to_string()));
+    if let Some(path) = named_path(value, at) {
+        return path.map(BytesOperand::Property);
     }
     if single_entry(value).is_some_and(|(key, _)| key == IF_ABSENT) {
         return Err(format!(
@@ -3009,13 +3289,11 @@ fn parse_expression(
         ));
     }
     if let Some(path) = value.as_text() {
-        if let Some(property) = SystemProperty::from_name(path) {
+        let path = bare_path(path, at)?;
+        if let Some(property) = SystemProperty::from_name(&path) {
             return Ok(ConstraintExpression::System(property));
         }
-        return Ok(ConstraintExpression::Property {
-            path: path.to_string(),
-            if_absent: 0,
-        });
+        return Ok(ConstraintExpression::Property { path, if_absent: 0 });
     }
     if is_number(value) {
         return integer_value(value, at).map(ConstraintExpression::Value);
@@ -3037,10 +3315,11 @@ fn parse_expression(
                      the document leaves it out"
                 ));
             };
-            let Some(path) = path.as_text() else {
-                return Err(format!("at {at} must name a property path first"));
+            let path = match named_path(path, &format!("{at}[0]")) {
+                Some(path) => path?,
+                None => return Err(format!("at {at} must name a property path first")),
             };
-            if SystemProperty::from_name(path).is_some() {
+            if SystemProperty::from_name(&path).is_some() {
                 return Err(format!(
                     "at {at} gives {path} a default, but a system property a rule reads is \
                      always set: name it on its own"
@@ -3057,7 +3336,7 @@ fn parse_expression(
             }
             at.push_str("[1]");
             ConstraintExpression::Property {
-                path: path.to_string(),
+                path,
                 if_absent: integer_value(if_absent, at)?,
             }
         }
@@ -3107,18 +3386,16 @@ fn parse_expression(
         }
         // What the path names is checked against the parsed document type
         LENGTH | BYTE_LENGTH | COUNT => {
-            let Some(path) = operands.as_text() else {
-                return Err(format!("at {at} must name a property path"));
+            let path = match named_path(operands, at) {
+                Some(path) => path?,
+                None => return Err(format!("at {at} must name a property path")),
             };
             let measure = match key {
                 LENGTH => SizeMeasure::Length,
                 BYTE_LENGTH => SizeMeasure::ByteLength,
                 _ => SizeMeasure::Count,
             };
-            ConstraintExpression::Size {
-                measure,
-                path: path.to_string(),
-            }
+            ConstraintExpression::Size { measure, path }
         }
         // What the paths name is checked against the parsed document type
         COUNT_PRESENT => ConstraintExpression::CountPresent(count_present_paths(operands, at)?),
@@ -3131,10 +3408,11 @@ fn parse_expression(
                      it reads, counted from 0"
                 ));
             };
-            let Some(path) = path.as_text() else {
-                return Err(format!("at {at} must name a property path first"));
+            let path = match named_path(path, &format!("{at}[0]")) {
+                Some(path) => path?,
+                None => return Err(format!("at {at} must name a property path first")),
             };
-            if path == OWNER_ID || SystemProperty::from_name(path).is_some() {
+            if path == OWNER_ID || SystemProperty::from_name(&path).is_some() {
                 return Err(format!(
                     "at {at} names {path}, but byteAt reads a byte array property"
                 ));
@@ -3154,15 +3432,20 @@ fn parse_expression(
                     u16::MAX
                 ));
             };
-            ConstraintExpression::ByteAt {
-                path: path.to_string(),
-                index,
-            }
+            ConstraintExpression::ByteAt { path, index }
         }
         // Which document type it names, and what its keys name, is checked
         // once every document type of the contract is parsed
         COUNT_OF | SUM_OF => {
             ConstraintExpression::Aggregate(parse_aggregate(key == SUM_OF, operands, at, context)?)
+        }
+        // A value of the document a reference points at, read as a property is
+        REFERENCED => {
+            at.truncate(parent);
+            ConstraintExpression::Property {
+                path: referenced_operand(operands, at)?,
+                if_absent: 0,
+            }
         }
         CONST => {
             at.truncate(parent);
@@ -3196,16 +3479,17 @@ fn count_present_paths(paths: &Value, at: &mut String) -> Result<Vec<String>, St
     for (index, path) in paths.iter().enumerate() {
         // Writing to a `String` cannot fail
         let _ = write!(at, "[{index}]");
-        let Some(path) = path.as_text() else {
-            return Err(format!("at {at} must name a property path"));
+        let path = match named_path(path, at) {
+            Some(path) => path?,
+            None => return Err(format!("at {at} must name a property path")),
         };
-        if let Some(earlier) = seen.insert(path, index) {
+        if let Some(earlier) = seen.insert(path.clone(), index) {
             return Err(format!(
                 "at {at} repeats the path at {}[{earlier}]",
                 &at[..base]
             ));
         }
-        parsed.push(path.to_string());
+        parsed.push(path);
         at.truncate(base);
     }
     Ok(parsed)

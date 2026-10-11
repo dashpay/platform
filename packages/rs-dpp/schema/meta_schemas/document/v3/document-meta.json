@@ -280,7 +280,7 @@
       "uniqueItems": true
     },
     "propertyConstraintExpression": {
-      "description": "An expression of a propertyConstraints rule: an integer value; the dotted path of a property of the document type, whose value it takes: an integer or boolean one (1 for true, 0 for false), 0 when the document leaves it out, or a string one compared with a const or another string property; a system time or height the document type records ($createdAt, $updatedAtBlockHeight, ...); or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out, an integer, or a string for a string property compared with strings; add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out; byteAt, the byte (0 to 255) at an index of a byte array property, 0 when the array does not hold it; countPresent, how many of two or more properties the document holds, each as present tests it; countOf or sumOf, how many documents of a document type of this contract match a filter or the total of an integer property over them, as its count or sum trees keep it; const, a string constant compared with a string property, or a hex constant a byte array starts or ends with",
+      "description": "An expression of a propertyConstraints rule: an integer value; the dotted path of a property of the document type, whose value it takes: an integer or boolean one (1 for true, 0 for false), 0 when the document leaves it out, or a string one compared with a const or another string property; a system time or height the document type records ($createdAt, $updatedAtBlockHeight, ...); or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out, an integer, or a string for a string property compared with strings; add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out; byteAt, the byte (0 to 255) at an index of a byte array property, 0 when the array does not hold it; countPresent, how many of two or more properties the document holds, each as present tests it; countOf or sumOf, how many documents of a document type of this contract match a filter or the total of an integer property over them, as its count or sum trees keep it; referenced, a value of the document a reference of the type points at; const, a string constant compared with a string property, or a hex constant a byte array starts or ends with",
       "type": [
         "integer",
         "string",
@@ -298,6 +298,9 @@
         },
         "then": {
           "properties": {
+            "referenced": {
+              "$ref": "#/$defs/propertyConstraintReferenced"
+            },
             "ifAbsent": {
               "description": "A property path and the value it takes when the document leaves the property out: an integer for an integer or boolean property, read as an integer operand, or a string for a string property, read as one side of a comparison of strings",
               "type": "array",
@@ -470,9 +473,144 @@
       }
     },
     "propertyConstraintPath": {
-      "description": "The dotted path of a property of the document type, a nested one through the objects around it: an integer or boolean property when an operand reads its value, a string property when length or byteLength measures it, an array or byte array property when count counts its items, a byte array property when byteAt reads one of its bytes or startsWith or endsWith tests it, any property when present, absent or countPresent tests it. Or $ownerId, the document's owner, which only a comparison of identifiers reads, or a system time or height an integer operand reads ($createdAt, $updatedAt, $transferredAt, and each with BlockHeight or CoreBlockHeight appended), one the document type lists in required",
-      "type": "string",
-      "pattern": "^(\\$ownerId|\\$(created|updated|transferred)At(BlockHeight|CoreBlockHeight)?|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+      "description": "The dotted path of a property of the document type, a nested one through the objects around it: an integer or boolean property when an operand reads its value, a string property when length or byteLength measures it, an array or byte array property when count counts its items, a byte array property when byteAt reads one of its bytes or startsWith or endsWith tests it, any property when present, absent or countPresent tests it. Or $ownerId, the document's owner, which only a comparison of identifiers reads, or a system time or height an integer operand reads ($createdAt, $updatedAt, $transferredAt, and each with BlockHeight or CoreBlockHeight appended), one the document type lists in required. Or { \"referenced\": [reference, field] }, a value of the document a reference of the type points at, read as a property of that type is",
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(\\$ownerId|\\$(created|updated|transferred)At(BlockHeight|CoreBlockHeight)?|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "referenced": {
+              "$ref": "#/$defs/propertyConstraintReferenced"
+            }
+          },
+          "required": [
+            "referenced"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "propertyConstraintReferenced": {
+      "description": "A value of the document a reference of the document type points at, standing wherever a property path does in a propertyConstraints rule: the name of a top-level property of the type whose refersTo finds one document, by id or by a findBy without a function (a permanentDocument, moderatedDocument or deletableDocument reference, not on the elements of a typed array, nor an anyOf, allOf or inList), then a field of that document: a property path of its type, read as that property's type says, its $id, $ownerId or $creatorId, compared as identifiers, or a time or height its type lists in required. A rule reading one is judged once the references are checked, with the document their check read, so it costs no read; its reference is checked again on every replace. Through a moderatedDocument reference only $id, $ownerId and the fields the type keeps under deleteKeepsFields are read. Available from protocol version 14",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_]{1,64}$"
+        },
+        {
+          "type": "string",
+          "pattern": "^(\\$id|\\$ownerId|\\$creatorId|\\$(created|updated|transferred)At(BlockHeight|CoreBlockHeight)?|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+        }
+      ],
+      "items": false,
+      "minItems": 2
+    },
+    "referenceWhereCondition": {
+      "description": "A refersTo where entry that is not an equality with a referring value: an object with one key. const, a literal the referenced side must equal (an integer or true or false for such a property, a string for a string property, a base58 identifier for an identifier, $ownerId, $creatorId or $id, hex for a byte array); a referenced side the document leaves out equals none. notEqual, what it must differ from: a property of the referring document type, \"$ownerId\" (the writer, checked on every replace) or a { const }; the negation of an equality, so two absent sides are equal. in, two to thirty distinct literals of one kind, one of which it must equal; an absent side is in none. greaterThan, greaterThanOrEqual, lessThan or lessThanOrEqual, an integer property the referenced side must compare with this way: bounded by an integer property of the referring document type, an integer { const }, or a time or height the referring type lists in required ($createdAt as written by the create; $updatedAt and $transferredAt, and their heights, change without a write to the referring document, so an entry bounded by one is checked on every replace); it holds only when both sides have a value. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Available from protocol version 14",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "const": {
+          "type": [
+            "integer",
+            "boolean",
+            "string"
+          ]
+        },
+        "notEqual": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(\\$ownerId|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+            },
+            {
+              "$ref": "#/$defs/referenceWhereConst"
+            }
+          ]
+        },
+        "in": {
+          "type": "array",
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              }
+            },
+            {
+              "items": {
+                "type": "boolean"
+              }
+            },
+            {
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "greaterThan": {
+          "$ref": "#/$defs/referenceWhereOrderingBound"
+        },
+        "greaterThanOrEqual": {
+          "$ref": "#/$defs/referenceWhereOrderingBound"
+        },
+        "lessThan": {
+          "$ref": "#/$defs/referenceWhereOrderingBound"
+        },
+        "lessThanOrEqual": {
+          "$ref": "#/$defs/referenceWhereOrderingBound"
+        }
+      },
+      "additionalProperties": false
+    },
+    "referenceWhereConst": {
+      "type": "object",
+      "properties": {
+        "const": {
+          "type": [
+            "integer",
+            "boolean",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "const"
+      ],
+      "additionalProperties": false
+    },
+    "referenceWhereOrderingBound": {
+      "description": "The integer bound of a where ordering: the path of an integer property of the referring document type, one of its times or heights its type lists in required, or { \"const\": integer }",
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(\\$(created|updated|transferred)At(BlockHeight|CoreBlockHeight)?|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "const": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "const"
+          ],
+          "additionalProperties": false
+        }
+      ]
     },
     "propertyConstraintOperands": {
       "type": "array",
@@ -791,7 +929,7 @@
               }
             },
             "where": {
-              "description": "permanentDocument, moderatedDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutable with a condition). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
+              "description": "permanentDocument, moderatedDocument and deletableDocument references only: what the referenced document must hold once found, checked by consensus when the referring document is written. Each entry maps a property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, to the referring document's value it must equal: a schema property of the declaring document type, or \"$ownerId\", the writer, which turns the entry into a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may be compared once. $creatorId needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract), and $ownerId, $creatorId or $id an identifier on the referring side. Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A document found that fails an entry refuses the write with ReferencedDocumentPropertyMismatchError (40127). An entry may instead hold an object with one key (see referenceWhereCondition): const, a literal the referenced side must equal; notEqual, a referring property, \"$ownerId\" or a const it must differ from; in, two or more literals it must be one of; or greaterThan, greaterThanOrEqual, lessThan or lessThanOrEqual, an integer bound it must compare with. The one-comparison-per-referring-value rule holds for the equalities only. Beside a findBy function the declaration is judged when the document is created only, so its entries gate the create alone, and every referring value other than $ownerId must be transient or fixed once written (not listed under immutable with a condition). where never finds the document: \".\" and functions belong to findBy. Available from protocol version 14.",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -816,6 +954,9 @@
                   },
                   {
                     "const": "$ownerId"
+                  },
+                  {
+                    "$ref": "#/$defs/referenceWhereCondition"
                   }
                 ]
               }

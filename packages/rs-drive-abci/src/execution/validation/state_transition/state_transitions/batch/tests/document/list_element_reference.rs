@@ -21,6 +21,7 @@
 use super::*;
 
 mod list_element_reference_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::*;
     use crate::execution::types::state_transition_execution_context::{
         StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
@@ -841,6 +842,7 @@ mod list_element_reference_tests {
                     founder,
                     // The resignation type records no creator ids
                     None,
+                    &DocumentSystemValues::default(),
                     None,
                     // A create: there is no stored document
                     None,
@@ -848,6 +850,7 @@ mod list_element_reference_tests {
                     &BlockInfo::default(),
                     &mut Vec::new(),
                     None,
+                    &mut BTreeMap::new(),
                     None,
                     &mut execution_context,
                     platform_version,

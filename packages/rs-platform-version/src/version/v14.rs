@@ -1164,6 +1164,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
 ///     charter-specific check, whose error 11001 keeps its place in
 ///     `BasicError` but is never produced.
+///     A rule may also read a value of the document a reference of the type
+///     points at, `{ "referenced": [reference, field] }`, wherever a path
+///     stands: `field` is a property path of the referenced type, its `$id`,
+///     `$ownerId` or `$creatorId`, or a time or height it requires, read as
+///     that property is, compared by what the rule compares it with (a string
+///     beside a `const`, an identifier beside an identifier operand, an integer
+///     otherwise), one node. The parser (`parse_property_constraints` 0 and
+///     meta-schema v3, in place) reads it as the path
+///     `$referenced.<reference>.<field>`; generation 3 refuses it, under full
+///     validation, outside `propertyConstraints`, on an indexOnly type,
+///     through anything but a top-level stored property holding one reference
+///     to one document by id or by a `findBy` without a function, beside what
+///     a transfer, a purchase or a price update of a type that has them
+///     changes, and beside a field moderators change (10231); and
+///     `create_document_types_from_document_schemas` 1, in place, checks what
+///     it reads of a type of the same contract (10231: the field exists, is
+///     stored and of the kind read, a time or `$creatorId` the type records, a
+///     constant its `enum` lists, through a `moderatedDocument` only `$id`,
+///     `$ownerId` and kept fields). Such a rule is not judged with the others:
+///     `PropertyConstraint::violation` leaves it unjudged unless
+///     `DocumentSystemValues::referenced_documents`, so the structure
+///     validation, transfers, purchases, price updates, moderator restores and
+///     changes of fields and the SDK pre-checks pass over it; document create
+///     state validation 2 and replace state validation 1 (in place) judge it
+///     after the references hold (`validate_referencing_property_constraints`,
+///     versioned with `validate_property_constraints`, 0), on the values the
+///     reference check read (item 63).
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
@@ -1706,6 +1733,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
+///     A `where` entry may instead hold a condition (`WhereCondition`, parsed
+///     into `where_conditions` beside `property_agreement`, a field appended
+///     to every document reference variant and `ListElementReference`): `{
+///     "const": v }`, `{ "notEqual": b }` (a referring property, `"$ownerId"`
+///     or a `const`), `{ "in": [...] }` (two to thirty literals of one kind)
+///     or an ordering (`greaterThan`, `greaterThanOrEqual`, `lessThan`,
+///     `lessThanOrEqual`) of an integer by an integer property, an integer
+///     `const` or a time or height of the referring document; a literal reads
+///     as the referenced property's type says. Document reference validation
+///     0 (in place) checks them against the document found, or the removal
+///     record for one asked about again, refusing with 40127 whose referring
+///     property is the condition as written; one bounded by the writer or the
+///     last update or transfer is asked about on every replace. Contract
+///     create and update state validation (data contract reference validation
+///     0, in place) refuses one that cannot hold with 40126. The same
+///     validation checks every reference a `propertyConstraints` rule reads
+///     through (item 39) on every replace, the existence check's read, billed
+///     as before, and records for the rule the values it reads of the
+///     document found, or of a kept `moderatedDocument`'s removal record, so a
+///     rule adds no read; and registration refuses a rule reading a field
+///     another contract's type does not give it with
+///     `ReferencedDocumentRuleReadInvalidError` (40148, appended to
+///     `StateError`).
 /// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
 ///     between `permanentDocument` and `deletableDocument` and disjoint from
 ///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),

@@ -6897,6 +6897,111 @@ mod tests {
             );
         }
 
+        /// The contract whose `auction` type the referenced-rules registration
+        /// fixtures read from another contract.
+        const REFERENCED_RULES_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules.json";
+
+        #[tokio::test]
+        async fn should_register_a_rule_reading_another_contracts_document() {
+            // `foreignBid` reads the reserve price of an auction of another
+            // contract, and its `where` lists the auction's statuses and orders
+            // the reserve by the bid's amount
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-foreign-valid.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_reading_another_contracts_property_as_another_kind() {
+            // Only registration sees another contract's type: the auction's
+            // status is a string, which a rule can not read as a number
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-foreign-wrong-kind.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRuleReadInvalidError(e)
+                    ),
+                    ..
+                } if e.document_type_name() == "foreignBid"
+                    && e.rule() == "statusAsNumber"
+                    && e.reference() == "auctionId"
+                    && e.reason().contains("has type string, not integer")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_comparing_another_contracts_enum_with_a_value_it_lacks() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-foreign-enum.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRuleReadInvalidError(e)
+                    ),
+                    ..
+                } if e.reason().contains("not one of its enum values")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_where_literal_of_another_kind_than_the_referenced_property() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-where-literal-kind.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referenced_property() == "reservePrice"
+                    && e.referring_property() == "{ \"const\": \"high\" }"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_where_ordering_of_a_string() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-where-ordering-kind.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referenced_property() == "status"
+                    && e.reason().contains("an ordering compares integers")
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_find_by_naming_no_unique_index_another_contract_has() {
             // Only registration sees the other contract's indexes: the contract
