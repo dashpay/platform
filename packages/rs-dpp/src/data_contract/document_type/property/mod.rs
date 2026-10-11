@@ -46,6 +46,7 @@ pub mod list_element_reference;
 pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
+pub mod reference_where;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{
@@ -60,6 +61,10 @@ pub use reference_expression::{
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
 };
 pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
+pub use reference_where::{
+    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
+    WhereOrdering, WhereOrderingBound,
+};
 
 #[cfg(test)]
 mod byte_array_encoding_flip_tests;
@@ -94,10 +99,12 @@ pub struct DocumentProperty {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_from: Option<GeneratedFrom>,
     /// The `refersTo` of a string or byte array property, whose value is not
-    /// an id but is revealed into a computed key, a `findBy` function naming
-    /// the property by its path among its `params`, such as a
-    /// salt a commitment hashed. An identifier property's
-    /// `refersTo` is folded into its type instead
+    /// an id but is read into its `findBy` key: as `"."`, filling an index
+    /// property holding the same kind of value (a name a document is unique
+    /// by), or revealed into a computed key, a `findBy` function naming the
+    /// property by its path among its `params`, such as a salt a commitment
+    /// hashed. An identifier property's `refersTo` is folded into its type
+    /// instead
     /// ([`DocumentPropertyType::IdentifierWithReference`]). Only ever `Some` on
     /// contracts parsed from protocol version 14 on.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -802,6 +809,15 @@ pub enum DocumentPropertyReferenceTarget {
         /// document type that records creator ids at all.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
+        /// The other `where` entries, by referenced property: a literal the
+        /// referenced value must equal, a value it must differ from, literals
+        /// it must be one of, or a bound it must compare with
+        /// ([`WhereCondition`]), checked against the document found as the
+        /// equalities are. A field of the variant, appended to it while
+        /// protocol version 14, the only one producing a `where`, is
+        /// unreleased.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        where_conditions: BTreeMap<String, WhereCondition>,
     },
     /// A specific public key of an identity: the property value holds the
     /// identity id and the named sibling property of the same document type
@@ -855,6 +871,9 @@ pub enum DocumentPropertyReferenceTarget {
         /// See [`Self::PermanentDocument`]'s `property_agreement`.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
+        /// See [`Self::PermanentDocument`]'s `where_conditions`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        where_conditions: BTreeMap<String, WhereCondition>,
     },
     /// A `permanentDocument` reference found by `findBy`: the property's
     /// value (or each element of a typed array) is NOT the referenced
@@ -885,6 +904,9 @@ pub enum DocumentPropertyReferenceTarget {
         /// See [`Self::PermanentDocument`]'s `property_agreement`.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
+        /// See [`Self::PermanentDocument`]'s `where_conditions`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        where_conditions: BTreeMap<String, WhereCondition>,
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
@@ -961,6 +983,9 @@ pub enum DocumentPropertyReferenceTarget {
         /// See [`Self::PermanentDocument`]'s `property_agreement`.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
+        /// See [`Self::PermanentDocument`]'s `where_conditions`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        where_conditions: BTreeMap<String, WhereCondition>,
         /// How the referenced document is found.
         lookup: DocumentReferenceLookup,
     },
@@ -1002,6 +1027,9 @@ pub enum DocumentPropertyReferenceTarget {
         /// See [`Self::PermanentDocument`]'s `property_agreement`.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
+        /// See [`Self::PermanentDocument`]'s `where_conditions`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        where_conditions: BTreeMap<String, WhereCondition>,
     },
 }
 
@@ -1057,6 +1085,8 @@ pub struct DocumentReferenceDeclaration<'a> {
     pub document_type_name: &'a str,
     /// The `{referring property: referenced property}` equalities
     pub property_agreement: &'a BTreeMap<String, String>,
+    /// The other `where` entries, by referenced property
+    pub where_conditions: &'a BTreeMap<String, WhereCondition>,
     /// What the referenced document type must promise about its documents
     /// leaving state: never (`permanentDocument`, by id, by `findBy` or with
     /// `inList`), only through a moderator's recorded removal
@@ -1075,6 +1105,37 @@ pub struct DocumentReferenceDeclaration<'a> {
     /// [`DocumentPropertyReferenceTarget::as_any_document_reference`] ever
     /// returns a declaration carrying one.
     pub in_list: Option<&'a str>,
+}
+
+impl<'a> DocumentReferenceDeclaration<'a> {
+    /// The values of the referring document the `where` reads, in no
+    /// particular order: the referring side of every equality (a property
+    /// path, or `$ownerId`, the writer) and every property path a condition
+    /// is bounded by. A property listed twice is read twice.
+    pub fn where_referring_properties(&self) -> impl Iterator<Item = &'a str> + 'a {
+        let property_agreement = self.property_agreement;
+        let where_conditions = self.where_conditions;
+        property_agreement.keys().map(String::as_str).chain(
+            where_conditions
+                .values()
+                .filter_map(WhereCondition::referring_property),
+        )
+    }
+
+    /// Whether a replace of the referring document checks the `where` again
+    /// whatever it changed: an equality valued `"$ownerId"` (a writer gate) or
+    /// a condition bounded by the writer or by the time or heights of the last
+    /// update or transfer ([`WhereCondition::is_rechecked_on_every_replace`]),
+    /// all of which may differ without the referring document changing.
+    pub fn where_is_rechecked_on_every_replace(&self) -> bool {
+        self.property_agreement
+            .keys()
+            .any(|referring_property| is_referring_system_agreement_property(referring_property))
+            || self
+                .where_conditions
+                .values()
+                .any(WhereCondition::is_rechecked_on_every_replace)
+    }
 }
 
 impl DocumentPropertyReferenceTarget {
@@ -1100,10 +1161,12 @@ impl DocumentPropertyReferenceTarget {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
             } => Some(DocumentReferenceDeclaration {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 kind: DocumentReferenceKind::Permanent,
                 lookup: None,
                 in_list: None,
@@ -1112,11 +1175,13 @@ impl DocumentPropertyReferenceTarget {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 lookup,
             } => Some(DocumentReferenceDeclaration {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 kind: DocumentReferenceKind::Permanent,
                 lookup: Some(lookup),
                 in_list: None,
@@ -1125,10 +1190,12 @@ impl DocumentPropertyReferenceTarget {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
             } => Some(DocumentReferenceDeclaration {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 kind: DocumentReferenceKind::Deletable,
                 lookup: None,
                 in_list: None,
@@ -1137,11 +1204,13 @@ impl DocumentPropertyReferenceTarget {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 lookup,
             } => Some(DocumentReferenceDeclaration {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 kind: DocumentReferenceKind::Deletable,
                 lookup: Some(lookup),
                 in_list: None,
@@ -1150,10 +1219,12 @@ impl DocumentPropertyReferenceTarget {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
             } => Some(DocumentReferenceDeclaration {
                 contract_id: *contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 kind: DocumentReferenceKind::Moderated,
                 lookup: None,
                 in_list: None,
@@ -1163,6 +1234,7 @@ impl DocumentPropertyReferenceTarget {
                     contract_id: reference.contract_id,
                     document_type_name: &reference.document_type_name,
                     property_agreement: &reference.property_agreement,
+                    where_conditions: &reference.where_conditions,
                     kind: DocumentReferenceKind::Permanent,
                     lookup: None,
                     in_list: Some(&reference.in_list),
@@ -1279,10 +1351,11 @@ pub enum PropertyReference<'a> {
     /// A key id property carrying an `identityPublicKey` declaration that
     /// names whose key it is ([`DocumentPropertyType::KeyIdWithReference`]).
     KeyId(&'a KeyIdReference),
-    /// A string or byte array property whose value is revealed into the
-    /// computed key of its `refersTo` ([`DocumentProperty::revealed_reference`]):
-    /// not an id, so read only as a param of that key's `findBy` function,
-    /// which names the property by its path, on a create.
+    /// A string or byte array property whose value its `refersTo` `findBy`
+    /// reads ([`DocumentProperty::revealed_reference`]): not an id, so read as
+    /// `"."`, re-validated on a replace as an identifier's reference is, or as
+    /// a param of a function computing the key, which names the property by
+    /// its path, on a create only.
     Revealed(&'a DocumentPropertyReferenceTarget),
 }
 
@@ -10397,6 +10470,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             }
             .to_string(),
@@ -10406,6 +10480,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             }
             .to_string(),
@@ -10415,6 +10490,7 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: Some(contract_id),
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             }
             .to_string(),
@@ -10424,6 +10500,7 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             }
             .to_string(),
@@ -10433,6 +10510,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "joinRequest".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -10452,16 +10530,19 @@ mod tests {
         let permanent = DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
+            where_conditions: Default::default(),
             property_agreement: agreement.clone(),
         };
         let moderated = DocumentPropertyReferenceTarget::ModeratedDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
+            where_conditions: Default::default(),
             property_agreement: agreement.clone(),
         };
         let deletable = DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
+            where_conditions: Default::default(),
             property_agreement: agreement.clone(),
         };
 
@@ -10494,6 +10575,7 @@ mod tests {
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
             document_type_name: "joinRequest".to_string(),
+            where_conditions: Default::default(),
             property_agreement: Default::default(),
             lookup: lookup.clone(),
         };
@@ -10510,6 +10592,7 @@ mod tests {
         let id_reference = DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: "joinRequest".to_string(),
+            where_conditions: Default::default(),
             property_agreement: Default::default(),
         };
         assert_eq!(
@@ -10528,6 +10611,7 @@ mod tests {
         DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
+            where_conditions: Default::default(),
             property_agreement: Default::default(),
         }
     }
@@ -10804,6 +10888,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             },
             DocumentPropertyReferenceTarget::IdentityPublicKey {
@@ -10813,11 +10898,13 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             },
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -10830,6 +10917,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: None,
                     document_type_name: "note".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: Default::default(),
                 },
             ])),
@@ -10838,18 +10926,21 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: None,
                     document_type_name: "note".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: Default::default(),
                 },
             ])),
             DocumentPropertyReferenceTarget::ListElement(ListElementReference {
                 contract_id: None,
                 document_type_name: "electedCharter".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: [("electedCharterId".to_string(), "$id".to_string())].into(),
                 in_list: "members".to_string(),
             }),
             DocumentPropertyReferenceTarget::DeletableDocumentLookup {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -10860,6 +10951,7 @@ mod tests {
             DocumentPropertyReferenceTarget::ModeratedDocument {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: Default::default(),
             },
         ];

@@ -8,6 +8,7 @@ import kotlinx.serialization.json.putJsonObject
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.queries.DocumentPropertyConstraint
 import org.dashfoundation.dashsdk.queries.PropertyConstraintRead
+import org.dashfoundation.dashsdk.queries.PropertyConstraintReferencedRead
 import org.dashfoundation.dashsdk.queries.PropertyConstraintTotalRead
 import org.dashfoundation.dashsdk.queries.PropertyConstraintViolation
 import org.junit.Assert.assertArrayEquals
@@ -301,6 +302,39 @@ class PropertyConstraintsTest {
             "The platform reads these totals when the document is sent; the check before " +
                 "sending does not, so it cannot catch this rule.",
             PROPERTY_CONSTRAINT_TOTALS_NOTE,
+        )
+    }
+
+    /** A rule reading the status of the poll `pollId` refers to twice, and its owner. */
+    private val referencingRule = DocumentPropertyConstraint(
+        name = "openPollOfItsOwner",
+        ruleJson = "{}",
+        reads = listOf(PropertyConstraintRead("pollOwnerId", PropertyConstraintRead.Kind.Identifier)),
+        readsOwner = false,
+        readsReferenced = listOf(
+            PropertyConstraintReferencedRead("pollId", "status", PropertyConstraintRead.Kind.Text),
+            PropertyConstraintReferencedRead("pollId", "${'$'}ownerId", PropertyConstraintRead.Kind.Identifier),
+            PropertyConstraintReferencedRead("pollId", "status", PropertyConstraintRead.Kind.Text),
+        ),
+    )
+
+    /** Each referenced read once, as `reference.path (kind)`; the SwiftExampleApp builds the same text. */
+    @Test
+    fun `should list each value a rule reads of a referenced document once`() {
+        assertEquals(
+            "Reads referenced documents: pollId.status (text), pollId.${'$'}ownerId (identifier)",
+            propertyConstraintReferencedReadsText(referencingRule),
+        )
+        assertNull(propertyConstraintReferencedReadsText(totalledRule))
+    }
+
+    /** The note under a rule reading a referenced document; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say the check before sending cannot catch a rule reading a referenced document`() {
+        assertEquals(
+            "The platform reads the referenced documents when it checks the references; the " +
+                "check before sending does not, so it cannot catch this rule.",
+            PROPERTY_CONSTRAINT_REFERENCED_NOTE,
         )
     }
 

@@ -5,7 +5,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, PropertyConstraint, SystemChange,
+    data_with_referenced_documents, DocumentSystemValues, PropertyConstraint, SystemChange,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -888,9 +888,60 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     where
         Self: DocumentTypeV2Getters,
     {
-        for (name, constraint) in self.property_constraints() {
+        // A rule reading a referenced document waits for the values, and no
+        // total of it is read before
+        for (name, constraint) in self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.is_judged_with(system))
+        {
             self.expect_every_aggregate_read(name, constraint, system)?;
             if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// `validate_referencing_property_constraints` version 0: every rule of the document
+    /// type's `propertyConstraints` reading a document one of its references points at is
+    /// evaluated, in name order, against `data` with `referenced` under `$referenced`
+    /// ([`data_with_referenced_documents`]), and the first one broken is reported. The data
+    /// is copied only when such a rule exists. The type's other rules are not judged again.
+    /// A rule reading a total consensus did not read is an error.
+    fn validate_referencing_property_constraints_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        referenced: BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        let mut rules = self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_referenced())
+            .peekable();
+        if rules.peek().is_none() {
+            return Ok(SimpleConsensusValidationResult::default());
+        }
+        let data = data_with_referenced_documents(data, referenced)?;
+        // The values the rules read are now in the data
+        let system = DocumentSystemValues {
+            referenced_documents: true,
+            ..system.clone()
+        };
+        for (name, constraint) in rules {
+            self.expect_every_aggregate_read(name, constraint, &system)?;
+            if let Some(violation) = constraint.violation(&data, &system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
@@ -970,7 +1021,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut changed_rules = self
             .property_constraints()
             .iter()
-            .filter(|(_, constraint)| constraint.reads_change(change))
+            .filter(|(_, constraint)| {
+                constraint.reads_change(change) && constraint.is_judged_with(system)
+            })
             .peekable();
         if changed_rules.peek().is_none() {
             return Ok(SimpleConsensusValidationResult::default());

@@ -5,6 +5,10 @@ pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
+    /// Maximum ordered note page read by the CREDIT nullifier activation migration.
+    pub credit_pool_nullifier_backfill_page_size: u16,
+    /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
+    pub credit_pool_nullifier_backfill_batch_size: u16,
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,
     /// Maximum number of nested map/array containers in document properties.
