@@ -1631,8 +1631,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     on the create alone (`DocumentReferenceLookup::is_checked_on_create_only`:
 ///     beside a `findBy` function, or any `findBy` on a document type whose
 ///     documents are never replaced, `documentsMutable: false`, since a replace
-///     is the one write that judges a reference again) may declare
-///     `minimumAgeBlocks`, judged by
+///     is the one write that judges a reference again), and not beside
+///     `inList`, may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and `consume`, which deletes the found document with the create

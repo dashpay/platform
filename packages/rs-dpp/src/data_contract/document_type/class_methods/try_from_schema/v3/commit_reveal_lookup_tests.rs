@@ -1246,3 +1246,41 @@ fn should_list_the_types_a_create_may_consume() {
     assert_eq!(names("domain"), vec!["preorder".to_string()]);
     assert!(names("preorder").is_empty());
 }
+
+/// Beside a function a reference is judged on the create alone, so its `findBy` may read the
+/// writer on a type that can change owner, even one whose documents can be replaced: here a
+/// mutable, transferable domain whose reveal finds a preorder unique on its hash and its
+/// owner. Both on registration and on a stored contract's parse
+#[test]
+fn should_accept_a_find_by_function_reading_the_writer_on_a_type_that_can_change_owner() {
+    let schema = dpns_contract_with(
+        reveal_with(
+            dpns_function(),
+            json!({ "$ownerId": "$ownerId" }),
+            json!({}),
+            json!({}),
+        ),
+        json!({
+            "documentsMutable": true,
+            "immutable": ["label", "normalizedLabel", "parentDomainName"]
+        }),
+        json!({
+            "indices": [{
+                "name": "saltedHash",
+                "properties": [{ "saltedDomainHash": "asc" }, { "$ownerId": "asc" }],
+                "unique": true
+            }]
+        }),
+    );
+    for full_validation in [true, false] {
+        let parsed = contract_on(schema.clone(), full_validation, PlatformVersion::latest())
+            .expect("a findBy beside a function may read the writer on a transferable type");
+        let target = salt_reference(&parsed);
+        let lookup = target
+            .as_any_document_reference()
+            .and_then(|declaration| declaration.lookup)
+            .expect("the salt's lookup");
+        assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
+        assert!(lookup.is_checked_on_create_only(true));
+    }
+}

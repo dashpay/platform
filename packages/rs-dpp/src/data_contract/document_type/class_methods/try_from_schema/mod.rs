@@ -1512,6 +1512,9 @@ fn parse_where(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
+/// `minimumAgeBlocks` and `consume` are refused on every parse: they describe
+/// a document `findBy` finds by a key, which a list element reference has no
+/// field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
     find_by_value: &Value,
@@ -1519,6 +1522,16 @@ fn parse_list_element_reference(
     document_type_name: String,
     mut property_agreement: BTreeMap<String, String>,
 ) -> Result<ListElementReference, DataContractError> {
+    if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
+        || refers_to_map.contains_key(property_names::CONSUME)
+    {
+        return Err(DataContractError::InvalidContractStructure(
+            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume: they \
+             describe a document findBy finds by a key, and inList checks that a list holds the \
+             value"
+                .to_string(),
+        ));
+    }
     let find_by_map = find_by_value.to_btree_ref_string_map()?;
     let document_id_property = match find_by_map.get(ID) {
         Some(value) if find_by_map.len() == 1 => value.as_text(),
