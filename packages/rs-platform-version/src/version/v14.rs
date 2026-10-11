@@ -2378,7 +2378,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `max_rekey_batch_moves` moves (`SYSTEM_LIMITS_V4`), twins that trade
 ///     keys in one batch. A moved subtree keeps its stored bytes, so its hashes,
 ///     aggregates and Merk shapes are unchanged; only the tree holding the moved
-///     keys takes another shape. The features of this version that key
+///     keys takes another shape. Contract validation refuses an `integerRange`
+///     on a property that keeps the earlier keys, whose grid reads value order.
+///     The features of this version that key
 ///     integers themselves (an `integerRange` window start, an indexOnly member
 ///     key, its row commitment and synthesized id) use the new keys from the
 ///     start. Earlier versions replay through generation 0.

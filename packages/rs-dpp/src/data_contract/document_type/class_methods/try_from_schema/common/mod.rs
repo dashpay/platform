@@ -1412,6 +1412,41 @@ fn parse_indices(
         }
     }
 
+    // INTEGER RANGE over a property keyed the earlier way: an unsigned
+    // property that ends an index `rangeSummable` over values that can be
+    // negative keeps generation 0's keys at every protocol version
+    // (`Index::ends_with_range_sum_of_signed_values`), while an `integerRange`
+    // grid reads and writes its source's keys as generation 1 keys unsigned
+    // values (`IntegerRangeKeyType`), so the two can't share a property. Only
+    // the generation 3 grammar (protocol version 14) admits `integerRange`, so
+    // every earlier generation, and every contract stored before it, passes
+    // unchanged.
+    #[cfg(feature = "validation")]
+    if ctx.full_validation {
+        for (name, index) in indices.iter() {
+            let Some(transform) = &index.integer_range else {
+                continue;
+            };
+            if let Some((summing, _)) = indices.iter().find(|(_, other)| {
+                other.ends_with_range_sum_of_signed_values(
+                    transform.source.as_str(),
+                    flattened_document_properties,
+                )
+            }) {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "integerRange.on (\"{}\") of index \"{}\" names a property that index \
+                         \"{}\" ends with and range-sums values that can be negative by: such a \
+                         property keeps its earlier key encoding, which an integerRange grid \
+                         does not read; bucket another property, or range-sum values that are \
+                         never negative",
+                        transform.source, name, summing
+                    )),
+                ));
+            }
+        }
+    }
+
     let index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;
 

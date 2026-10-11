@@ -8427,6 +8427,53 @@ mod tests {
         );
     }
 
+    /// A `score` type whose u8 `amount` ends a `rangeSummable` index over
+    /// `weight` and is bucketed by a unique `integerRange` index.
+    fn range_summed_and_bucketed_schema(weight: serde_json::Value) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "amount": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "weight": weight,
+                "author": { "type": "string", "maxLength": 63, "position": 2 }
+            },
+            "indices": [
+                {
+                    "name": "byAmount",
+                    "properties": [{ "amount": "asc" }],
+                    "summable": "weight",
+                    "rangeSummable": true
+                },
+                {
+                    "name": "byAmountBand",
+                    "properties": [{ "amount": "asc" }, { "author": "asc" }],
+                    "unique": true,
+                    "integerRange": { "on": "amount", "range": 100u64, "step": 100u64 }
+                }
+            ],
+            "required": ["amount", "weight", "author"],
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_refuse_an_integer_range_on_a_property_range_summing_signed_values() {
+        let error =
+            try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
+                json!({ "type": "integer", "minimum": -10, "maximum": 10, "position": 1 }),
+            ))
+            .expect_err("the amount keeps its earlier keys, which the grid does not read");
+        assert!(
+            error.to_string().contains("keeps its earlier key encoding"),
+            "unexpected error: {error}"
+        );
+
+        try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
+            json!({ "type": "integer", "minimum": 0, "maximum": 10, "position": 1 }),
+        ))
+        .expect("range-summed values that are never negative leave the amount in value order");
+    }
+
     /// A `listing` type with a required integer `price` (inferred from its
     /// bounds) and a `category`, bucketed by `integerRange` on `price`.
     fn price_band_schema(

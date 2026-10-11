@@ -14,7 +14,9 @@ pub enum OrderBy {
     Desc,
 }
 
+use crate::data_contract::document_type::DocumentProperty;
 use crate::data_contract::errors::DataContractError;
+use indexmap::IndexMap;
 
 use crate::ProtocolError;
 use anyhow::anyhow;
@@ -1506,6 +1508,31 @@ impl Index {
     /// group, no entry per document.
     pub fn is_summable_off_count_index(&self) -> bool {
         self.summable_off_count_index.is_some()
+    }
+
+    /// Whether this index ends with `property` and is `rangeSummable` over a
+    /// property whose values can be negative (or that `properties` does not
+    /// describe). The tree holding `property`'s values then keeps a signed
+    /// sum in every node, so `serialize_value_for_key` 1 keys such a
+    /// property, when unsigned, as generation 0 at every protocol version:
+    /// values of both signs whose sums fit every node in the earlier key
+    /// order can leave the signed 64-bit range in every balanced tree of
+    /// value order.
+    pub fn ends_with_range_sum_of_signed_values(
+        &self,
+        property: &str,
+        properties: &IndexMap<String, DocumentProperty>,
+    ) -> bool {
+        self.range_summable
+            && self
+                .properties
+                .last()
+                .is_some_and(|last| last.name == property)
+            && self.summable.as_deref().is_some_and(|summed| {
+                properties
+                    .get(summed)
+                    .is_none_or(|summed| !summed.property_type.has_unsigned_integer_tree_key())
+            })
     }
 
     /// The position of the shallowest level of this index's count chain: the

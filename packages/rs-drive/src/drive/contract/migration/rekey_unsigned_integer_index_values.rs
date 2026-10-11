@@ -106,6 +106,13 @@ impl Drive {
     /// Moves the keys that change below the tree at `path`, an instance of
     /// `node`: those deeper down first, under the keys as they are stored,
     /// then those of the tree's own children.
+    ///
+    /// The children are read in slices: up to a page of keys whose top bit is
+    /// clear, and up to a page of keys whose top bit is set, from where the
+    /// last slice ended. A slice ends where the first full page ends, its end
+    /// mapped onto the other half by the flip, so every key in it has its
+    /// twin (the key with the top bit flipped) in the same slice, and no key
+    /// is read twice: moved keys land in ranges the slices already passed.
     fn rekey_below(
         &self,
         path: &[Vec<u8>],
@@ -129,10 +136,86 @@ impl Drive {
                     "the protocol version that rewrites unsigned index value keys sets \
                  max_rekey_batch_moves",
                 )))? as usize;
+        let page_size = u16::try_from(max_batch_moves).unwrap_or(u16::MAX).max(1);
 
-        let children =
-            self.stored_child_keys(path, max_batch_moves, transaction, platform_version)?;
-        for (key, is_tree) in &children {
+        let mut moves = GroveDbOpBatch::new();
+        // Every key up to here (top bit clear) and its twin are done
+        let mut done_through: Option<Vec<u8>> = None;
+        loop {
+            let low_item = match &done_through {
+                Some(key) => QueryItem::RangeAfterTo(key.clone()..TOP_BIT_SET.to_vec()),
+                None => QueryItem::RangeTo(..TOP_BIT_SET.to_vec()),
+            };
+            let high_item = match done_through.as_deref() {
+                Some(key) if !key.is_empty() => QueryItem::RangeAfter(flipped(key)..),
+                _ => QueryItem::RangeFrom(TOP_BIT_SET.to_vec()..),
+            };
+            let low = self.child_keys(path, low_item, page_size, transaction, platform_version)?;
+            let high =
+                self.child_keys(path, high_item, page_size, transaction, platform_version)?;
+            let full = |page: &[(Vec<u8>, bool)]| page.len() == usize::from(page_size);
+            let low_end = full(&low)
+                .then(|| low.last().map(|(key, _)| key.clone()))
+                .flatten();
+            let high_end = full(&high)
+                .then(|| high.last().map(|(key, _)| flipped(key)))
+                .flatten();
+            let end = match (low_end, high_end) {
+                (Some(low_end), Some(high_end)) => Some(low_end.min(high_end)),
+                (low_end, high_end) => low_end.or(high_end),
+            };
+            let in_slice = |key: &Vec<u8>, top_bit_set: bool| {
+                end.as_ref().is_none_or(|end| {
+                    if top_bit_set {
+                        flipped(key) <= *end
+                    } else {
+                        key <= end
+                    }
+                })
+            };
+            let slice: Vec<(Vec<u8>, bool)> = low
+                .into_iter()
+                .filter(|(key, _)| in_slice(key, false))
+                .chain(high.into_iter().filter(|(key, _)| in_slice(key, true)))
+                .collect();
+            self.rekey_slice(
+                path,
+                node,
+                &slice,
+                &mut moves,
+                max_batch_moves,
+                document_type,
+                transaction,
+                platform_version,
+            )?;
+            match end {
+                Some(end) => done_through = Some(end),
+                None => break,
+            }
+        }
+        if !moves.is_empty() {
+            self.grove_apply_batch(moves, false, Some(transaction), &platform_version.drive)?;
+        }
+        Ok(())
+    }
+
+    /// Rewrites the keys below each child in `slice` (children of the tree at
+    /// `path`, an instance of `node`), then adds the moves of the children's
+    /// own keys to `moves`, applying them whenever `max_batch_moves` gather.
+    /// A key and its twin trade keys in one batch.
+    #[allow(clippy::too_many_arguments)]
+    fn rekey_slice(
+        &self,
+        path: &[Vec<u8>],
+        node: &LayoutNode,
+        slice: &[(Vec<u8>, bool)],
+        moves: &mut GroveDbOpBatch,
+        max_batch_moves: usize,
+        document_type: DocumentTypeRef,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for (key, is_tree) in slice {
             let Some(child_node) = child_node(node, key) else {
                 continue;
             };
@@ -154,9 +237,8 @@ impl Drive {
             }
         }
 
-        let present: BTreeSet<&[u8]> = children.iter().map(|(key, _)| key.as_slice()).collect();
-        let mut moves = GroveDbOpBatch::new();
-        for (key, _) in &children {
+        let present: BTreeSet<&[u8]> = slice.iter().map(|(key, _)| key.as_slice()).collect();
+        for (key, _) in slice {
             let Some(child_node) = child_node(node, key) else {
                 continue;
             };
@@ -183,57 +265,58 @@ impl Drive {
             ));
             if moves.len() >= max_batch_moves {
                 self.grove_apply_batch(
-                    std::mem::take(&mut moves),
+                    std::mem::take(moves),
                     false,
                     Some(transaction),
                     &platform_version.drive,
                 )?;
             }
         }
-        if !moves.is_empty() {
-            self.grove_apply_batch(moves, false, Some(transaction), &platform_version.drive)?;
-        }
         Ok(())
     }
 
-    /// The key of every child of the tree at `path`, and whether it is a
-    /// tree, read `page_size` at a time.
-    fn stored_child_keys(
+    /// The keys of up to `limit` children of the tree at `path` in `item`,
+    /// in key order, and whether each is a tree.
+    fn child_keys(
         &self,
         path: &[Vec<u8>],
-        page_size: usize,
+        item: QueryItem,
+        limit: u16,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Vec<u8>, bool)>, Error> {
-        let limit = u16::try_from(page_size).unwrap_or(u16::MAX).max(1);
-        let mut keys: Vec<(Vec<u8>, bool)> = Vec::new();
-        loop {
-            let item = match keys.last() {
-                Some((last, _)) => QueryItem::RangeAfter(last.clone()..),
-                None => QueryItem::RangeFull(..),
-            };
-            let path_query = PathQuery::new(
-                path.to_vec(),
-                SizedQuery::new(Query::new_single_query_item(item), Some(limit), None),
-            );
-            let (page, _) = self.grove_get_raw_path_query(
-                &path_query,
-                Some(transaction),
-                QueryResultType::QueryKeyElementPairResultType,
-                &mut vec![],
-                &platform_version.drive,
-            )?;
-            let page = page.to_key_elements();
-            let full = page.len() == usize::from(limit);
-            keys.extend(
-                page.into_iter()
-                    .map(|(key, element)| (key, element.is_any_tree())),
-            );
-            if !full {
-                return Ok(keys);
-            }
-        }
+        let path_query = PathQuery::new(
+            path.to_vec(),
+            SizedQuery::new(Query::new_single_query_item(item), Some(limit), None),
+        );
+        let (page, _) = self.grove_get_raw_path_query(
+            &path_query,
+            Some(transaction),
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        Ok(page
+            .to_key_elements()
+            .into_iter()
+            .map(|(key, element)| (key, element.is_any_tree()))
+            .collect())
     }
+}
+
+/// The smallest key whose top bit is set: every key below it has the top
+/// bit clear (the empty key included), every key from it on has it set.
+const TOP_BIT_SET: [u8; 1] = [0b1000_0000];
+
+/// `key` with the top bit of its first byte flipped: the key its value takes
+/// in the other generation, when it is an unsigned value's key. Empty for the
+/// empty key.
+fn flipped(key: &[u8]) -> Vec<u8> {
+    let mut key = key.to_vec();
+    if let Some(top) = key.first_mut() {
+        *top ^= 0b1000_0000;
+    }
+    key
 }
 
 /// The layout node a child of an instance of `node` keyed `key` is an
