@@ -17,7 +17,7 @@ use dpp::data_contract::document_type::{
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceKind,
     DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
-    LookupFirstAmong, PropertyReference, property_names,
+    LookupFirstAmong, PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
@@ -1694,7 +1694,7 @@ fn validate_first_among_v0(
         return Ok(SimpleConsensusValidationResult::new_with_error(
             ReferencedDocumentRequirementNotMetError::new(
                 found.id(),
-                property_names::FIRST_AMONG.to_string(),
+                "firstAmong".to_string(),
                 property.to_string(),
                 path.to_string(),
             )

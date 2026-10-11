@@ -2071,6 +2071,36 @@ mod commit_reveal_lookup_tests {
         assert!(!fixture.document_exists("namePreorder", alice.id()));
     }
 
+    /// The fees of a reveal judged first among the preorders of its name, refused and
+    /// accepted: the `firstAmong` hash, the competitors query and a competitor's `findBy`
+    /// hash are processing, on top of what a reveal without `firstAmong` costs.
+    #[tokio::test]
+    async fn should_pin_the_fees_of_a_reveal_judged_first_among_its_preorders() {
+        let mut fixture = first_among_fixture(true);
+        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
+        let PaidConsensusError { actual_fees, .. } = result else {
+            panic!("expected a paid refusal, got {result:?}");
+        };
+        assert_eq!(
+            (actual_fees.processing_fee, actual_fees.storage_fee),
+            (637_900, 0),
+            "the refused reveal pays the reads and hashes it made"
+        );
+
+        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the first committer's reveal to be accepted, got {result:?}");
+        };
+        assert_eq!(
+            (fee_result.processing_fee, fee_result.storage_fee),
+            (3_205_860, 25_299_000),
+            "the accepted reveal"
+        );
+    }
+
     /// Only an older competitor counts: Alice reveals while Mallory's later preorder of the
     /// same name waits.
     #[tokio::test]
@@ -2266,16 +2296,21 @@ mod commit_reveal_lookup_tests {
         );
         // The writer's id and the name (42 bytes) and the name alone (10 bytes) each pad to
         // one block, plus the second pass over the digest
-        assert_matches!(
-            execution_context.operations_slice(),
-            [
-                ValidationOperation::DoubleSha256(2),
-                ValidationOperation::PrecalculatedOperation(lookup),
-                ValidationOperation::DoubleSha256(2),
-                ValidationOperation::PrecalculatedOperation(competitors),
-                ValidationOperation::DoubleSha256(2),
-            ] if lookup.processing_fee > 0 && competitors.processing_fee > 0,
-            "the hashes, the lookup and the competitors query are the billed operations"
+        let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(lookup), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(competitors), ValidationOperation::DoubleSha256(2)] =
+            execution_context.operations_slice()
+        else {
+            panic!(
+                "the hashes, the lookup and the competitors query are the billed operations, got \
+                 {:?}",
+                execution_context.operations_slice()
+            );
+        };
+        // The lookup reads the found preorder; the competitors query reads the three
+        // preorders of other blocks holding the name's hash
+        assert_eq!(
+            (lookup.processing_fee, competitors.processing_fee),
+            (47_800, 139_920),
+            "the lookup and the competitors query bill what they read"
         );
         assert!(consumed.is_empty(), "a refused reveal consumes nothing");
     }
