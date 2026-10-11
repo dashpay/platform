@@ -80,14 +80,26 @@ use tempfile::TempDir;
 use tokio_stream::StreamExt;
 use tower::ServiceExt;
 
+#[path = "query_request_errors/composite_caps.rs"]
+mod composite_caps;
+#[path = "query_request_errors/offset_controls.rs"]
+mod offset_controls;
+#[path = "query_request_errors/offsets.rs"]
+mod offsets;
+
 #[derive(Debug)]
 struct QueryFixture {
     platform: Arc<Platform<DefaultCoreRPC>>,
     _directory: TempDir,
+    version: &'static PlatformVersion,
 }
 
 impl QueryFixture {
     fn new() -> Self {
+        Self::new_with_version(PlatformVersion::latest())
+    }
+
+    fn new_with_version(version: &'static PlatformVersion) -> Self {
         let mut config = PlatformConfig::default_for_network(Network::Testnet);
         config.core.consensus_rpc.host = "http://127.0.0.1".to_owned();
         config.core.consensus_rpc.port = 1;
@@ -95,16 +107,17 @@ impl QueryFixture {
             .with_config(config)
             .build_with_default_rpc();
         let mut state = temporary.platform.state.load_full().as_ref().clone();
-        state.current_protocol_version_in_consensus = PlatformVersion::latest().protocol_version;
+        state.current_protocol_version_in_consensus = version.protocol_version;
         temporary.platform.state.store(Arc::new(state));
         temporary
             .platform
             .drive
-            .create_initial_state_structure(None, PlatformVersion::latest())
+            .create_initial_state_structure(None, version)
             .expect("initialize deterministic query state");
         Self {
             platform: Arc::new(temporary.platform),
             _directory: temporary.tempdir,
+            version,
         }
     }
 
@@ -113,7 +126,7 @@ impl QueryFixture {
     }
 
     fn store_contract(&self) -> (Identifier, String) {
-        let version = PlatformVersion::latest();
+        let version = self.version;
         let mut contract =
             get_data_contract_fixture(Some(Identifier::new([7; 32])), 0, version.protocol_version)
                 .data_contract_owned();
