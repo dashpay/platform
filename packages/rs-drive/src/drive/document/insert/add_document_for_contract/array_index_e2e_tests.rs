@@ -1085,7 +1085,11 @@ fn should_enter_a_post_once_per_element_in_its_window() {
 fn should_read_an_identifier_element_given_as_bytes_or_base58_text() {
     let (drive, contract) = setup();
     let mentioned = [11; 32];
-    insert(&drive, &contract, &post(1, None, Some(&[mentioned, [12; 32]])));
+    insert(
+        &drive,
+        &contract,
+        &post(1, None, Some(&[mentioned, [12; 32]])),
+    );
     insert(&drive, &contract, &post(2, None, Some(&[[12; 32]])));
     let as_identifier = query_ids(
         &drive,
