@@ -1191,9 +1191,13 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks` and `consume` describe the document a `findBy`
-    // function finds, a commitment: they sit beside `findBy` and need it (its
-    // parse checks for the function computing the key)
+    // `minimumAgeBlocks` and `consume` describe the document `findBy` finds
+    // when the referring document is created: they sit beside `findBy` and need
+    // it. That the reference is judged on the create alone (a function in
+    // `findBy`, or a declaring type whose documents are never replaced) needs
+    // the declaring type, and is checked once it is parsed
+    // (`validate_reference_lookup_sources`); `inList` refuses both
+    // (`parse_list_element_reference`)
     if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
         .into_iter()
         .find(|keyword| refers_to_map.contains_key(*keyword))
@@ -1201,7 +1205,7 @@ fn validate_reference_target_keys(
         if !refers_to_map.contains_key(property_names::FIND_BY) {
             return Err(DataContractError::InvalidContractStructure(format!(
                 "{reference_type} refersTo does not take {keyword} without findBy: it describes \
-                 the document a findBy function finds"
+                 the document findBy finds when the referring document is created"
             )));
         }
     }
