@@ -516,6 +516,47 @@ mod list_element_reference_tests {
         );
     }
 
+    /// A `where` condition holds on a list element's reference as on any
+    /// other, against the charter its `findBy` names: `alphaMemberId` must be
+    /// a member of a charter titled "alpha".
+    #[tokio::test]
+    async fn should_check_a_where_condition_against_the_charter() {
+        let mut fixture = ListElementFixture::new();
+        let member = fixture.id(Who::Member);
+        let alpha = fixture
+            .seat_charter(submitted_charter_id(1), "alpha", &[member])
+            .await;
+        let beta = fixture
+            .seat_charter(submitted_charter_id(2), "beta", &[member])
+            .await;
+
+        let (_, held) = fixture
+            .resign(&[
+                ("electedCharterId", id_value(alpha)),
+                ("alphaMemberId", id_value(member)),
+            ])
+            .await;
+        assert_succeeded(held);
+
+        let (_, refused) = fixture
+            .resign(&[
+                ("electedCharterId", id_value(beta)),
+                ("alphaMemberId", id_value(member)),
+            ])
+            .await;
+        assert_matches!(
+            refused,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.path() == "alphaMemberId"
+                && e.referring_property() == "{ \"const\": \"alpha\" }"
+                && e.referenced_property() == "title"
+        );
+    }
+
     /// `$id` on the referenced side of an ordinary reference's agreement:
     /// `echoCharterId` must repeat the id of the charter `echoedCharterId`
     /// refers to.
