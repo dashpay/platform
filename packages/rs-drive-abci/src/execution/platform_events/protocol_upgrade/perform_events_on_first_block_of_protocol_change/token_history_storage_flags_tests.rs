@@ -273,6 +273,22 @@ fn document_elements(
     output
 }
 
+/// The document and index entries the protocol version 14 upgrade leaves: those stored now with
+/// the unsigned integer index value keys moved (`rekey_unsigned_integer_index_values`, which the
+/// upgrade runs first), read in a transaction that is then dropped.
+fn rekeyed_document_elements(
+    platform: &TempPlatform<MockCoreRPCLike>,
+) -> BTreeMap<Vec<Vec<u8>>, Vec<u8>> {
+    let tx = platform.drive.grove.start_transaction();
+    platform
+        .drive
+        .rekey_unsigned_integer_index_values(&tx, PlatformVersion::latest())
+        .expect("expected the unsigned index value keys to move");
+    let rekeyed = document_elements(platform, documents_path(), Some(&tx));
+    drop(tx);
+    rekeyed
+}
+
 fn documents_path() -> Vec<Vec<u8>> {
     let id = SystemDataContract::TokenHistory.id().to_buffer();
     let mut path = contract_root_path(&id)
@@ -345,7 +361,7 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
     ] {
         let platform = historical_platform();
         insert_claim(&platform);
-        let documents = document_elements(&platform, documents_path(), None);
+        let documents = rekeyed_document_elements(&platform);
         assert!(!documents.is_empty());
         let Element::Item(bytes, _) = contract_element(&platform, None) else {
             panic!("contract Item")
@@ -494,7 +510,7 @@ fn should_drop_retry_commit_and_reopen_historical_token_history_upgrade() {
     insert_claim(&platform);
     let pv = PlatformVersion::latest();
     let old_element = contract_element(&platform, None);
-    let documents = document_elements(&platform, documents_path(), None);
+    let documents = rekeyed_document_elements(&platform);
     let old_root = platform
         .drive
         .grove
