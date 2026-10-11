@@ -3,7 +3,9 @@
 //! post a reply names, the reply's rules read the post's removal record, which
 //! keeps its owner, its id and the fields its type lists under
 //! `deleteKeepsFields`, the only ones such a rule may read. A moderator's
-//! restore checks no reference, and judges no rule reading one.
+//! restore checks no reference, and judges no rule reading one. The `where`
+//! entries that are not an equality are checked against a removal record as
+//! the equalities are.
 
 use super::*;
 use dpp::consensus::basic::document::PropertyConstraintViolation;
@@ -12,6 +14,8 @@ use dpp::consensus::basic::BasicError;
 const REPLY: &str = "reply";
 const TOPIC: &str = "topic";
 const THREAD_POST: &str = "threadPost";
+const LISTING: &str = "listing";
+const OFFER: &str = "offer";
 
 fn identifier_property(position: u64, refers_to: Value) -> Value {
     platform_value!({
@@ -98,6 +102,53 @@ fn thread_post_schema() -> Value {
     })
 }
 
+/// A listing moderators take down, each removal keeping its price and its
+/// end, not its stock
+fn listing_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["price", "endsAt"] },
+        "properties": {
+            "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 0 },
+            "stock": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 1 },
+            "endsAt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991u64, "position": 2 },
+        },
+        "required": ["price", "stock", "endsAt"],
+        "additionalProperties": false,
+    })
+}
+
+/// An offer on a listing: a bid at least its price, for no more than its
+/// stock, while it has not ended
+fn offer_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": false,
+        "properties": {
+            "listingId": identifier_property(
+                0,
+                platform_value!({
+                    "type": "moderatedDocument",
+                    "documentType": LISTING,
+                    "where": {
+                        "price": { "lessThanOrEqual": "bid" },
+                        "stock": { "greaterThanOrEqual": "quantity" },
+                        "endsAt": { "greaterThan": "$updatedAt" },
+                    },
+                }),
+            ),
+            "bid": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 1 },
+            "quantity": { "type": "integer", "minimum": 1, "maximum": 1000, "position": 2 },
+            "note": { "type": "string", "maxLength": 50, "position": 3 },
+        },
+        "required": ["listingId", "bid", "quantity", "$updatedAt"],
+        "additionalProperties": false,
+    })
+}
+
 async fn setup() -> Setup {
     Setup::new_at_with(
         Some(moderators_without_lists()),
@@ -107,6 +158,8 @@ async fn setup() -> Setup {
             add_document_type(contract, REPLY, reply_schema());
             add_document_type(contract, TOPIC, topic_schema());
             add_document_type(contract, THREAD_POST, thread_post_schema());
+            add_document_type(contract, LISTING, listing_schema());
+            add_document_type(contract, OFFER, offer_schema());
         },
     )
     .await
@@ -293,4 +346,102 @@ async fn should_restore_a_document_without_judging_a_rule_reading_a_reference() 
     assert!(setup
         .stored_document(THREAD_POST, thread_post.id(), Some(&transaction))
         .is_some());
+}
+
+fn assert_where_refused(execution: &StateTransitionExecutionResult, condition: &str) {
+    assert!(
+        matches!(
+            execution,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.referring_property() == condition
+        ),
+        "expected the where entry {condition} to refuse the write, got {execution:?}"
+    );
+}
+
+/// Once a moderator removes the listing an offer names, a replace of the
+/// offer checks the `where` entries it asks about against the listing's
+/// removal record: one bounded by a property the replace changes, against a
+/// field the record keeps (the price) or refused for one it does not (the
+/// stock), and one bounded by `$updatedAt` on every replace, at the time of
+/// the replace. An entry bounded by a property the replace leaves alone is
+/// not checked, though the record no longer holds what it reads.
+#[tokio::test]
+async fn should_check_where_conditions_against_a_removal_record() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let ends_at = 2 * BLOCK_TIME_MS;
+    let (listing, create_listing) = create_with(
+        &setup,
+        &setup.user,
+        LISTING,
+        vec![
+            ("price", Value::U32(100)),
+            ("stock", Value::U16(5)),
+            ("endsAt", Value::U64(ends_at)),
+        ],
+    )
+    .await;
+    assert_success(&setup.process(&create_listing, &transaction));
+    let (mut offer, create_offer) = create_with(
+        &setup,
+        &setup.stranger,
+        OFFER,
+        vec![
+            ("listingId", id_value(listing.id())),
+            ("bid", Value::U32(150)),
+            ("quantity", Value::U16(3)),
+        ],
+    )
+    .await;
+    assert_success(&setup.process(&create_offer, &transaction));
+
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(LISTING, listing.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+
+    // Only the end is asked about, kept and still ahead: the stock, which the
+    // record does not keep, is not read
+    offer.set("note", "still keen".into());
+    let edit = replacement(&setup.stranger, &setup.contract, OFFER, &mut offer).await;
+    assert_success(&setup.process(&edit, &transaction));
+
+    // A changed bid asks about the kept price again, the quantity left alone
+    let mut low_bid = offer.clone();
+    low_bid.set("bid", Value::U32(50));
+    let refused = replacement(&setup.stranger, &setup.contract, OFFER, &mut low_bid).await;
+    assert_where_refused(
+        &setup.process(&refused, &transaction),
+        "{ \"lessThanOrEqual\": \"bid\" }",
+    );
+
+    // A changed quantity asks about the stock, which no record keeps
+    let mut more = offer.clone();
+    more.set("quantity", Value::U16(4));
+    let refused = replacement(&setup.stranger, &setup.contract, OFFER, &mut more).await;
+    let execution = setup.process(&refused, &transaction);
+    assert!(
+        matches!(
+            &execution,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedDocumentRemovedError(e)),
+                ..
+            } if e.referenced_property() == "stock"
+        ),
+        "expected the unkept stock to refuse the replace, got {execution:?}"
+    );
+
+    // The end is asked about on every replace, at the replace's own time
+    let mut late = offer.clone();
+    late.set("note", "too late".into());
+    let refused = replacement(&setup.stranger, &setup.contract, OFFER, &mut late).await;
+    assert_where_refused(
+        &setup.process_at(&refused, ends_at, &transaction),
+        "{ \"greaterThan\": \"$updatedAt\" }",
+    );
 }

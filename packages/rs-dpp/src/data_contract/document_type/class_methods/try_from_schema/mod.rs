@@ -3575,7 +3575,11 @@ pub(super) fn validate_property_constraint_reads(
 /// * it depends on no field the type keeps for its moderators to change,
 ///   neither reading it nor totalling the type's own documents by it (a key
 ///   of a `countOf` or `sumOf`), which their change judges without the
-///   references either.
+///   references either;
+/// * on a type whose moderators' deletions keep records, it reads no total
+///   over the type's own documents: a moderator's restore brings a document
+///   back into those totals and checks no reference, so it could not judge
+///   the rule.
 ///
 /// What it reads of the referenced type is checked once that type is in hand
 /// ([`referenced_reads_error`]). Registration only, like the rest of a rule's
@@ -3586,6 +3590,7 @@ pub(super) fn validate_referencing_rules(
 ) -> Result<(), DataContractError> {
     let can_change_owner = owner_can_change(document_type);
     let can_change_price = document_type.trade_mode() != TradeMode::None;
+    let can_restore = document_type.moderator_deletions_keep_records();
     for (rule, constraint) in document_type.property_constraints() {
         let reads = constraint.referenced_reads();
         if reads.is_empty() {
@@ -3646,6 +3651,18 @@ pub(super) fn validate_referencing_rules(
                  it reads, or a key of a total over the type's own documents), which the type \
                  keeps for its moderators to change: their change checks no reference, so it \
                  could not judge the rule"
+            )));
+        }
+        if let Some(total) = constraint
+            .aggregate_reads()
+            .into_iter()
+            .find(|read| can_restore && read.of_own_type)
+        {
+            return Err(error(format!(
+                "reads a document a reference points at and a {} of the type's own documents, \
+                 which a moderator's restore brings a document back into: a restore checks no \
+                 reference, so it could not judge the rule",
+                total.wire_name()
             )));
         }
     }

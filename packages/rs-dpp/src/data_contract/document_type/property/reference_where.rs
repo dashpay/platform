@@ -178,6 +178,20 @@ impl WhereLiteral {
             _ => None,
         }
     }
+
+    /// Whether `value`, a referenced property of `kind`, equals this literal
+    /// as `Value::same_scalar_data` compares it with [`Self::value_for`]'s
+    /// value, a string compared in place rather than copied.
+    pub fn equals(&self, value: &Value, kind: WhereLiteralKind) -> bool {
+        match (self, kind) {
+            (WhereLiteral::Text(text), WhereLiteralKind::Text) => {
+                matches!(value, Value::Text(held) if held == text)
+            }
+            _ => self
+                .value_for(kind)
+                .is_some_and(|literal| value.same_scalar_data(&literal)),
+        }
+    }
 }
 
 impl fmt::Display for WhereLiteral {
@@ -369,10 +383,11 @@ impl WhereCondition {
         kind: Option<WhereLiteralKind>,
         bound: Option<&Value>,
     ) -> bool {
+        // An absent value equals no literal, which is then not read at all
         let equals_literal = |literal: &WhereLiteral| {
             matches!(
-                (referenced, kind.and_then(|kind| literal.value_for(kind))),
-                (Some(referenced), Some(literal)) if referenced.same_scalar_data(&literal)
+                (referenced, kind),
+                (Some(referenced), Some(kind)) if literal.equals(referenced, kind)
             )
         };
         match self {

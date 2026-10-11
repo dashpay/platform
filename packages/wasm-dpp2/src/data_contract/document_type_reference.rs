@@ -14,6 +14,7 @@
 use crate::data_contract::document_type_property_constraints::integer_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
@@ -449,6 +450,17 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
     Ok(())
 }
 
+/// [`set_field`] for a key the schema names, a property of the referenced
+/// type: an own property even when the name is `__proto__`, whose assignment
+/// would call the setter every object inherits instead.
+fn set_schema_field(target: &Object, key: &str, value: JsValue, path: &str) -> WasmDppResult<()> {
+    define_own_property(target, key, value).map_err(|_| {
+        WasmDppError::generic(format!(
+            "unable to serialize the `{key}` field of the reference declared at '{path}'"
+        ))
+    })
+}
+
 /// A `findBy` function as the schema spells it: `{ function, params }`.
 fn find_by_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsValue> {
     let computed = Object::new();
@@ -552,18 +564,18 @@ fn set_where_field(
     }
     let where_object = Object::new();
     for (referring, referenced) in entries {
-        set_field(
+        set_schema_field(
             &where_object,
             referenced,
-            &JsValue::from_str(referring),
+            JsValue::from_str(referring),
             path,
         )?;
     }
     for (referenced, condition) in where_conditions {
-        set_field(
+        set_schema_field(
             &where_object,
             referenced,
-            &where_condition_to_js(condition, path)?,
+            where_condition_to_js(condition, path)?,
             path,
         )?;
     }
@@ -633,7 +645,7 @@ fn set_find_by_fields(
             LookupKeySource::Hash(key) => find_by_function_to_js(key, path)?,
             source => JsValue::from_str(source.as_str()),
         };
-        set_field(&find_by, index_property, &value, path)?;
+        set_schema_field(&find_by, index_property, value, path)?;
     }
     set_field(object, "findBy", &find_by, path)?;
     if let Some(blocks) = lookup.minimum_age_blocks {

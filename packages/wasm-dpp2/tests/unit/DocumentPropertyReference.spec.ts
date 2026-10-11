@@ -855,6 +855,51 @@ describe('DataContract — refersTo declarations (v14)', () => {
       }
     });
 
+    /**
+     * A property of the referenced type may be named `__proto__`: the `where`
+     * entry naming it is an own key of the listing, not its prototype. The
+     * schemas come from JSON, where `__proto__` is an ordinary key.
+     */
+    it('should keep a where entry named __proto__ as an own key', () => {
+      const schemas = JSON.parse(`{
+        "post": {
+          "type": "object",
+          "canBeDeleted": false,
+          "properties": {
+            "__proto__": { "type": "string", "maxLength": 10, "position": 0 }
+          },
+          "additionalProperties": false
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "postId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "position": 0,
+              "refersTo": {
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "where": { "__proto__": { "const": "open" } }
+              }
+            }
+          },
+          "required": ["postId"],
+          "additionalProperties": false
+        }
+      }`);
+      const [postId] = buildModeratedContract(schemas).documentTypeReferences(
+        'reply',
+      ) as Reference[];
+
+      expect(Object.keys(postId.where!)).to.deep.equal(['__proto__']);
+      expect(Object.getPrototypeOf(postId.where)).to.equal(Object.prototype);
+      expect(JSON.stringify(postId.where)).to.equal('{"__proto__":{"const":"open"}}');
+    });
+
     it('should refuse a writer gate a removal record can not answer', () => {
       const refersTo = {
         type: 'moderatedDocument',

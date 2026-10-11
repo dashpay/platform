@@ -7018,6 +7018,40 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_reject_a_rule_reading_a_referenced_document_beside_a_total_a_restore_moves()
+        {
+            // A moderator's restore brings an entry back into the count of its
+            // room's entries the rule bounds by the room's capacity, and judges
+            // no rule reading a referenced document, so the contract is refused
+            // before any restore could pass the capacity
+            let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }));
+            let result = run_contract_create_with_foreign_and_config(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-restored-total.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+                config,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("rule \"cap\"")
+                    && message.contains("a moderator's restore brings a document back into")
+            );
+        }
+
+        #[tokio::test]
         async fn should_reject_a_where_literal_of_another_kind_than_the_referenced_property() {
             let result = run_contract_create_with_foreign(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-where-literal-kind.json",

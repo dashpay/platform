@@ -671,6 +671,63 @@ fn should_refuse_a_referenced_read_beside_a_total_moderators_move() {
     .expect("no total the rule reads moves with a moderator's change");
 }
 
+/// An entry on a poll moderators take down, its removal keeping a record a
+/// restore brings it back from when `keeps_record`, the poll's entries
+/// counted, with `rules`.
+fn removable_entry(keeps_record: bool, rules: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "moderatorAbilities": { "delete": true, "deleteKeepsRecord": keeps_record },
+        "properties": {
+            "pollId": identifier(0, Some(poll_reference())),
+        },
+        "required": ["pollId", "$createdAt"],
+        "indices": [
+            {
+                "name": "byPoll",
+                "properties": [{ "pollId": "asc" }],
+                "countable": "countable"
+            }
+        ],
+        "propertyConstraints": rules,
+        "additionalProperties": false,
+    })
+}
+
+/// A moderator's restore judges no rule reading a referenced document, yet
+/// brings the document back into every total over its type: a rule capping
+/// the poll's entries by a value of the poll would let a restore past the cap.
+#[test]
+fn should_refuse_a_referenced_read_beside_a_total_a_restore_moves() {
+    let cap = platform_value!({
+        "cap": {
+            "lessThanOrEqual": [
+                { "countOf": ["entry", { "pollId": "pollId" }] },
+                { "referenced": ["pollId", "endsAt"] }
+            ]
+        }
+    });
+    expect_structure_error(
+        parse_types(
+            vec![
+                ("poll", poll()),
+                ("entry", removable_entry(true, cap.clone())),
+            ],
+            true,
+        ),
+        "a moderator's restore brings a document back into",
+    );
+
+    // Deletions keeping no record are final, so no restore moves the count
+    parse_types(
+        vec![("poll", poll()), ("entry", removable_entry(false, cap))],
+        true,
+    )
+    .expect("no restore moves a total the rule reads");
+}
+
 #[test]
 fn should_refuse_a_referenced_read_through_a_find_by_function() {
     let commitment = platform_value!({

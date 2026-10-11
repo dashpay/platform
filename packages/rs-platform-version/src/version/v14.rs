@@ -1177,8 +1177,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through anything but a top-level stored property holding one reference
 ///     to one document by id or by a `findBy` without a function, beside what
 ///     a transfer, a purchase or a price update of a type that has them
-///     changes, and beside a field moderators change, read or deciding a
-///     total over the type's own documents (10231); and
+///     changes, beside a field moderators change, read or deciding a total
+///     over the type's own documents, and beside any total over the type's
+///     own documents where a moderator's restore can bring one back (10231);
+///     and
 ///     `create_document_types_from_document_schemas` 1, in place, checks what
 ///     it reads of a type of the same contract (10231: the field exists, is
 ///     stored and of the kind read, a time or `$creatorId` the type records, a
