@@ -364,6 +364,30 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
+            // The batch, now built, names who pays. A signer who relied on a sponsor the
+            // document types do not offer, or who is their own contract's owner, pays
+            // themselves, and is held to the floor the pre-check holds an unsponsored batch to
+            // before any of its state is validated
+            if let (true, Some(identity), Some(action)) = (
+                relies_on_gas_sponsor_to_pay,
+                maybe_identity.as_ref(),
+                action.as_ref(),
+            ) {
+                let result = state_transition
+                    .validate_identity_minimum_balance_once_gas_payer_is_known(
+                        identity,
+                        action,
+                        platform_version,
+                    )?;
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
             let action = if state_transition.validates_full_state_on_check_tx()
                 || relies_on_gas_sponsor_to_pay
             {
@@ -575,6 +599,25 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
                 let action = state_transition_action_result.into_data()?;
+
+                // As on the first check: a batch naming no sponsor is the signer's to pay
+                if let (true, Some(identity)) =
+                    (relies_on_gas_sponsor_to_pay, maybe_identity.as_ref())
+                {
+                    let result = state_transition
+                        .validate_identity_minimum_balance_once_gas_payer_is_known(
+                            identity,
+                            &action,
+                            platform_version,
+                        )?;
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                }
 
                 let action = if relies_on_gas_sponsor_to_pay {
                     let result = state_transition.validate_state(

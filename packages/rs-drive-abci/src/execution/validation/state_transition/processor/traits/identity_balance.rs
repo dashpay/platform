@@ -4,6 +4,7 @@ use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionIdentityEstimatedFeeValidation};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
@@ -45,6 +46,21 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error>;
+
+    /// The minimum balance pre-check of a signer who relies on a gas sponsor
+    /// ([`Self::relies_on_gas_sponsor_to_pay`]), judged again once `action` names who pays.
+    /// A batch whose action resolved no sponsor (its document types offer none, so a
+    /// `PreferContractOwner` request resolves to the signer, or the contract owner is the
+    /// signer) is the signer's to pay, and is held to the floor an unsponsored batch meets,
+    /// before its state is validated: otherwise a signer who can pay nothing would have the
+    /// state validation run for free in check tx, only for fee validation to refuse the batch
+    /// afterwards. Valid for every other transition and action.
+    fn validate_identity_minimum_balance_once_gas_payer_is_known(
+        &self,
+        identity: &PartialIdentity,
+        action: &StateTransitionAction,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
@@ -181,6 +197,30 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             .validate_estimated_fee_with_shielded_compute(balance, platform_version)
             .map_err(Error::Protocol)?
             .is_valid())
+    }
+
+    fn validate_identity_minimum_balance_once_gas_payer_is_known(
+        &self,
+        identity: &PartialIdentity,
+        action: &StateTransitionAction,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        let (StateTransition::Batch(st), StateTransitionAction::BatchAction(batch_action)) =
+            (self, action)
+        else {
+            return Ok(SimpleConsensusValidationResult::new());
+        };
+        if batch_action.gas_sponsor().is_some() {
+            return Ok(SimpleConsensusValidationResult::new());
+        }
+        let balance =
+            identity
+                .balance
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expected to have a balance on identity for the gas payer check",
+                )))?;
+        st.validate_estimated_fee_with_shielded_compute(balance, platform_version)
+            .map_err(Error::Protocol)
     }
 
     fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {

@@ -242,7 +242,12 @@ check tx validates the batch of a signer under the fee minimum against the
 state in full, on the first check and on every recheck, as it does a
 masternode vote: what nobody could be charged for is refused there, or leaves
 the mempool once the tokens it counted on are spent, instead of being executed
-for free by a proposer.
+for free by a proposer. Before that state validation, once the batch is built
+and names who pays, a batch that resolved no sponsor (its document types offer
+none, so a `PreferContractOwner` request falls to the signer, or the signer owns
+the contract) is held to the fee minimum an unsponsored batch meets, and a
+signer under it is refused with the pre-check's own error: the state of a batch
+only its signer can pay for is never validated for free.
 
 ### Optional token costs
 

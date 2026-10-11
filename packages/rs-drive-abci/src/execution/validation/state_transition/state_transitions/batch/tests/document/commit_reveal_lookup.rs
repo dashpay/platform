@@ -49,6 +49,11 @@ mod commit_reveal_lookup_tests {
     use dpp::tests::json_document::json_document_to_json_value;
     use dpp::state_transition::StateTransition;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
+    use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
+    use crate::platform_types::platform::PlatformRef;
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::util::hash::hash_double;
     use dpp::version::DefaultForPlatformVersion;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
@@ -235,6 +240,24 @@ mod commit_reveal_lookup_tests {
             absent: &[&str],
             height: u64,
         ) -> (Document, StateTransitionExecutionResult) {
+            let (document, transition) = self
+                .creation_transition(contract, who, type_name, values, absent, None)
+                .await;
+            let result = self.process(&transition, height);
+            (document, result)
+        }
+
+        /// `who`'s create of a `type_name` of `contract` with `values`, `absent` removed,
+        /// carrying `token_payment_info`, signed and not processed.
+        async fn creation_transition(
+            &mut self,
+            contract: &DataContract,
+            who: Who,
+            type_name: &str,
+            values: &[(&str, Value)],
+            absent: &[&str],
+            token_payment_info: Option<TokenPaymentInfo>,
+        ) -> (Document, StateTransition) {
             let platform_version = PlatformVersion::latest();
             let owner_id = self.id(who);
             let document_type = contract
@@ -270,15 +293,37 @@ mod commit_reveal_lookup_tests {
                 &writer.key,
                 nonce,
                 0,
-                None,
+                token_payment_info,
                 &writer.signer,
                 platform_version,
                 None,
             )
             .await
             .expect("expected the create transition");
-            let result = self.process(&transition, height);
-            (document, result)
+            (document, transition)
+        }
+
+        /// The codes of the errors check tx refuses `transition` with on its first check,
+        /// judged at the block after the platform's last one.
+        fn check_tx(&self, transition: &StateTransition) -> Vec<u32> {
+            let platform_version = PlatformVersion::latest();
+            let state = self.platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &self.platform.drive,
+                state: &state,
+                config: &self.platform.config,
+                core_rpc: &self.platform.core_rpc,
+            };
+            let raw = transition
+                .serialize_to_bytes()
+                .expect("expected the transition to serialize");
+            self.platform
+                .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
+                .expect("expected to check the transaction")
+                .errors
+                .iter()
+                .map(|error| error.code())
+                .collect()
         }
 
         /// A preorder by `who` in block `height` committing to `salt ++ name`.
@@ -2541,6 +2586,94 @@ mod commit_reveal_lookup_tests {
             (fee_result.processing_fee, fee_result.storage_fee),
             (3_574_820, 25_299_000),
             "the accepted reveal"
+        );
+    }
+
+    /// A signer who cannot pay the fee floor gets past the minimum balance pre-check only by
+    /// asking the contract owner to pay their gas, and check tx then validates such a batch
+    /// against the state in full, since nobody else could be charged for its failure. The
+    /// `name` type offers no sponsorship (registration refuses `firstAmong` beside an offer), so
+    /// the request resolves to the signer, and check tx refuses the reveal for the signer's
+    /// balance before any of its state is validated: the competitors are never read for free.
+    #[tokio::test]
+    async fn should_refuse_an_unfunded_signers_sponsorship_request_before_reading_competitors() {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let mut fixture = first_among_fixture(true);
+        let platform_version = PlatformVersion::latest();
+        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+        // Check tx judges the block after the platform's last one, where Mallory's preorder is
+        // old enough and Alice's precedes it
+        let last = block(COMMIT_HEIGHT + 1);
+        fast_forward_to_block(&fixture.platform, last.time_ms, last.height, 0, 0, false);
+        let contract = fixture.contract.clone();
+        let prefer_contract_owner = || {
+            Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                payment_token_contract_id: None,
+                token_contract_position: 0,
+                minimum_token_cost: None,
+                maximum_token_cost: None,
+                gas_fees_paid_by: GasFeesPaidBy::PreferContractOwner,
+            }))
+        };
+
+        // Funded, Mallory's reveal is admitted and left to the block, as any other
+        let (_, funded) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "name",
+                &name_values(),
+                &[],
+                prefer_contract_owner(),
+            )
+            .await;
+        assert_eq!(fixture.check_tx(&funded), Vec::<u32>::new());
+
+        let mallory = fixture.id(Who::Mallory).to_buffer();
+        let balance = fixture
+            .platform
+            .drive
+            .fetch_identity_balance(mallory, None, platform_version)
+            .expect("expected to fetch the balance")
+            .expect("expected Mallory to have a balance");
+        fixture
+            .platform
+            .drive
+            .remove_from_identity_balance(
+                mallory,
+                balance,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to empty Mallory's balance");
+
+        // Unfunded, refused for the balance, not by Alice's preorder (40149), which only the
+        // competitors read would find
+        let (_, unfunded) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "name",
+                &name_values(),
+                &[],
+                prefer_contract_owner(),
+            )
+            .await;
+        assert_eq!(
+            fixture.check_tx(&unfunded),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        // As the same reveal asking nobody to pay is, by the pre-check, before any read
+        let (_, unrequested) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        assert_eq!(
+            fixture.check_tx(&unrequested),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
         );
     }
 
