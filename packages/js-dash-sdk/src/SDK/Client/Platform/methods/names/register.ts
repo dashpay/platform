@@ -112,19 +112,34 @@ export async function register(
       ])),
     };
 
-  // 1. Create preorder document
-  const preorderDocument = await this.documents.create(
-    'dpns.preorder',
-    identity,
-    preorderProperties,
-  );
+  // 1. Create preorder document. From DPNS v3 an identity holds one pending
+  // preorder of a name: one an earlier registration left behind, whose domain
+  // create failed, is revealed again rather than preordered anew, which the
+  // platform would refuse as a duplicate. A failed query is an error.
+  const [pendingPreorder] = Array.isArray(hashParams)
+    ? await this.documents.get('dpns.preorder', {
+      where: [
+        ['$ownerId', '==', identity.getId()],
+        [hashProperty as string, '==', preorderProperties[hashProperty as string]],
+      ],
+      limit: 1,
+    })
+    : [];
 
-  await this.documents.broadcast(
-    {
-      create: [preorderDocument],
-    },
-    identity,
-  );
+  if (!pendingPreorder) {
+    const preorderDocument = await this.documents.create(
+      'dpns.preorder',
+      identity,
+      preorderProperties,
+    );
+
+    await this.documents.broadcast(
+      {
+        create: [preorderDocument],
+      },
+      identity,
+    );
+  }
 
   // 3. Create domain document
   const domainDocument = await this.documents.create(

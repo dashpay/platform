@@ -7,11 +7,13 @@ pub use dash_platform_queries::dpns_usernames::{
 };
 pub use queries::DpnsUsername;
 
+use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{DataContract, Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
+use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -27,7 +29,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
-use dpp::system_data_contracts::dpns_contract::v3::document_types::preorder::properties as preorder_properties;
+use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -54,6 +56,14 @@ fn extract_dpns_label(name: &str) -> &str {
 fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
 }
+
+/// The property a DPNS v3 preorder holds the hash of its owner and the name under, as the
+/// contract names it. Spelled here rather than read from the bundled DPNS contract, which the
+/// SDK builds only with that contract's feature.
+const OWNER_NAME_HASH: &str = "ownerNameHash";
+
+/// The property a DPNS v3 preorder holds the hash of the name alone under.
+const NAME_HASH: &str = "nameHash";
 
 /// Hash a buffer twice using SHA256 (double SHA256)
 fn hash_double(data: Vec<u8>) -> [u8; 32] {
@@ -124,8 +134,43 @@ fn preorder_hash_properties(
     };
     Ok(BTreeMap::from([
         (owner_name_hash_property.to_string(), hash(key)?),
-        (preorder_properties::NAME_HASH.to_string(), hash(&name_key)?),
+        (NAME_HASH.to_string(), hash(&name_key)?),
     ]))
+}
+
+/// The query for the preorder `owner_id` holds with `owner_name_hash`, through the DPNS v3
+/// `ownerAndNameHash` index: at most one exists.
+fn pending_preorder_query(
+    dpns_contract: Arc<DataContract>,
+    owner_id: Identifier,
+    owner_name_hash: Value,
+) -> DocumentQuery {
+    DocumentQuery {
+        select: SelectProjection::documents(),
+        data_contract: dpns_contract,
+        document_type_name: "preorder".to_string(),
+        where_clauses: vec![
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner_id.to_buffer()),
+            },
+            WhereClause {
+                field: OWNER_NAME_HASH.to_string(),
+                operator: WhereOperator::Equal,
+                value: owner_name_hash,
+            },
+        ],
+        time_range_clauses: vec![],
+        integer_range_clauses: vec![],
+        sub_queries: vec![],
+        group_by: vec![],
+        having: vec![],
+        order_by_clauses: vec![],
+        limit: 1,
+        offset: None,
+        start: None,
+    }
 }
 
 /// Callback type for preorder document
@@ -269,6 +314,14 @@ impl Sdk {
         identity_id: Identifier,
     ) -> Result<DpnsRegistrationDocuments, Error> {
         let dpns_contract = self.fetch_current_dpns_contract().await?;
+
+        // The confirmations of both documents are proofs the SDK decodes under the DPNS
+        // contract its context provider resolves, which may be an older one cached for the
+        // id (a known-contracts cache warmed before the upgrade): give it the contract the
+        // documents are built against, so they decode under it
+        if let Some(provider) = self.context_provider() {
+            provider.register_data_contract(Arc::new(dpns_contract.clone()));
+        }
 
         // Get document types
         let preorder_document_type = dpns_contract
@@ -486,49 +539,18 @@ impl Sdk {
     /// The preorder `owner_id` already holds of the name `preorder_document` commits to,
     /// found by its owner and its `ownerNameHash` (the `ownerAndNameHash` index), when
     /// `dpns_contract` is DPNS v3 or later; `None` when there is none, and before v3,
-    /// whose preorders hash a fresh salt and so never repeat.
+    /// whose preorders hash a fresh salt and so never repeat. A failed query is an error.
     async fn pending_dpns_preorder(
         &self,
         dpns_contract: DataContract,
         owner_id: Identifier,
         preorder_document: &Document,
     ) -> Result<Option<Document>, Error> {
-        use crate::platform::documents::document_query::DocumentQuery;
-        use drive::query::{WhereClause, WhereOperator};
-
-        let Some(owner_name_hash) = preorder_document
-            .properties()
-            .get(preorder_properties::OWNER_NAME_HASH)
-            .cloned()
+        let Some(owner_name_hash) = preorder_document.properties().get(OWNER_NAME_HASH).cloned()
         else {
             return Ok(None);
         };
-        let query = DocumentQuery {
-            select: drive::query::SelectProjection::documents(),
-            data_contract: Arc::new(dpns_contract),
-            document_type_name: "preorder".to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "$ownerId".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Identifier(owner_id.to_buffer()),
-                },
-                WhereClause {
-                    field: preorder_properties::OWNER_NAME_HASH.to_string(),
-                    operator: WhereOperator::Equal,
-                    value: owner_name_hash,
-                },
-            ],
-            time_range_clauses: vec![],
-            integer_range_clauses: vec![],
-            sub_queries: vec![],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: 1,
-            offset: None,
-            start: None,
-        };
+        let query = pending_preorder_query(Arc::new(dpns_contract), owner_id, owner_name_hash);
         // A proven absence comes back as entries holding `None`
         Ok(Document::fetch_many(self, query)
             .await?
@@ -695,6 +717,7 @@ fn identity_from_domain_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query_types::Documents;
     use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
     use dash_context_provider::{ContextProvider, ContextProviderError};
@@ -882,8 +905,13 @@ mod tests {
     }
 
     /// A context provider seeded before the upgrade to DPNS v3: it holds DPNS v2 whatever
-    /// protocol version it is asked for, as a provider's known contracts do.
-    struct DpnsV2ContextProvider;
+    /// protocol version it is asked for, as a provider's known contracts do, until a contract
+    /// is registered with it, which then takes its place (a writable known-contracts cache).
+    /// Its clones share what was registered.
+    #[derive(Clone, Default)]
+    struct DpnsV2ContextProvider {
+        registered: Arc<std::sync::Mutex<Option<Arc<DataContract>>>>,
+    }
 
     impl ContextProvider for DpnsV2ContextProvider {
         fn get_data_contract(
@@ -891,6 +919,9 @@ mod tests {
             _id: &Identifier,
             _platform_version: &PlatformVersion,
         ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            if let Some(contract) = self.registered.lock().expect("the lock").clone() {
+                return Ok(Some(contract));
+            }
             let platform_version = PlatformVersion::get(13).expect("protocol version 13");
             load_system_data_contract(SystemDataContract::DPNS, platform_version)
                 .map(|contract| Some(Arc::new(contract)))
@@ -918,15 +949,20 @@ mod tests {
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
         }
+
+        fn register_data_contract(&self, contract: Arc<DataContract>) {
+            *self.registered.lock().expect("the lock") = Some(contract);
+        }
     }
 
     #[tokio::test]
     async fn should_build_the_registration_against_the_dpns_contract_the_network_stores() {
         // An SDK seeded at protocol version 13, whose context provider holds DPNS v2, on a
         // network that runs the latest version and stores DPNS v3
+        let provider = DpnsV2ContextProvider::default();
         let mut sdk = SdkBuilder::new_mock()
             .with_initial_version(PlatformVersion::get(13).expect("protocol version 13"))
-            .with_context_provider(DpnsV2ContextProvider)
+            .with_context_provider(provider.clone())
             .build()
             .expect("the mock SDK builds");
         expect_epoch_refresh(&mut sdk).await;
@@ -965,6 +1001,174 @@ mod tests {
                     Value::Bytes32(sha256d(&[b"b0b", b".", b"dash"])),
                 ),
             ]),
+        );
+        // The documents' confirmations decode under the contract the provider resolves,
+        // which now is the one they were built against
+        let resolved = provider
+            .get_data_contract(&stored.id(), PlatformVersion::latest())
+            .expect("the provider answers")
+            .expect("the provider holds DPNS");
+        assert!(declares_the_preorder_hash(&resolved));
+    }
+
+    /// A DPNS v3 preorder of `owner` for `Bob.dash`, with the hashes the contract declares.
+    fn bob_v3_preorder(owner: Identifier) -> Document {
+        let properties =
+            preorder_hashes(PlatformVersion::latest(), owner, &bob_domain_properties())
+                .expect("DPNS v3 hashes the declared params");
+        Document::V0(DocumentV0 {
+            contract_version: None,
+            id: Identifier::new([7u8; 32]),
+            owner_id: owner,
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: Some(10),
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+        })
+    }
+
+    fn dpns_v3() -> DataContract {
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("the DPNS contract loads")
+    }
+
+    /// A mock SDK at the latest version; a request without an expectation fails.
+    fn mock_sdk() -> Sdk {
+        SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(DpnsV2ContextProvider::default())
+            .build()
+            .expect("the mock SDK builds")
+    }
+
+    /// The pending preorder is looked up through `ownerAndNameHash`: the owner and the
+    /// preorder's own `ownerNameHash`, at most one
+    #[test]
+    fn should_query_a_pending_preorder_by_its_owner_and_owner_name_hash() {
+        let owner = Identifier::new([1u8; 32]);
+        let hash = Value::Bytes32([4u8; 32]);
+        let query = pending_preorder_query(Arc::new(dpns_v3()), owner, hash.clone());
+        assert_eq!(query.document_type_name, "preorder");
+        assert_eq!(
+            query.where_clauses,
+            vec![
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(owner.to_buffer()),
+                },
+                WhereClause {
+                    field: "ownerNameHash".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: hash,
+                },
+            ]
+        );
+        assert_eq!(query.limit, 1);
+    }
+
+    #[tokio::test]
+    async fn should_return_the_pending_preorder_the_network_holds() {
+        let owner = Identifier::new([1u8; 32]);
+        let pending = bob_v3_preorder(owner);
+        let mut sdk = mock_sdk();
+        let query = pending_preorder_query(
+            Arc::new(dpns_v3()),
+            owner,
+            pending.properties()["ownerNameHash"].clone(),
+        );
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                query,
+                Some(
+                    [(pending.id(), Some(pending.clone()))]
+                        .into_iter()
+                        .collect(),
+                ),
+            )
+            .await
+            .expect("the expectation is set");
+
+        let found = sdk
+            .pending_dpns_preorder(dpns_v3(), owner, &bob_v3_preorder(owner))
+            .await
+            .expect("the query answers")
+            .expect("the pending preorder is found");
+        // The response is decoded as a proof is, so compare what identifies the preorder
+        assert_eq!(found.id(), pending.id());
+        assert_eq!(found.owner_id(), owner);
+        assert_eq!(
+            found
+                .properties()
+                .get("ownerNameHash")
+                .and_then(|hash| hash.as_bytes_slice().ok()),
+            pending.properties()["ownerNameHash"].as_bytes_slice().ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn should_find_no_pending_preorder_in_a_proven_absence() {
+        let owner = Identifier::new([1u8; 32]);
+        let preorder = bob_v3_preorder(owner);
+        let mut sdk = mock_sdk();
+        let query = pending_preorder_query(
+            Arc::new(dpns_v3()),
+            owner,
+            preorder.properties()["ownerNameHash"].clone(),
+        );
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                query,
+                Some([(preorder.id(), None)].into_iter().collect()),
+            )
+            .await
+            .expect("the expectation is set");
+
+        assert_eq!(
+            sdk.pending_dpns_preorder(dpns_v3(), owner, &preorder)
+                .await
+                .expect("the query answers"),
+            None
+        );
+    }
+
+    /// A query that fails is an error, never taken for no pending preorder
+    #[tokio::test]
+    async fn should_propagate_a_failed_pending_preorder_query() {
+        let owner = Identifier::new([1u8; 32]);
+        // No expectation: the mock fails the request
+        let sdk = mock_sdk();
+        assert!(sdk
+            .pending_dpns_preorder(dpns_v3(), owner, &bob_v3_preorder(owner))
+            .await
+            .is_err());
+    }
+
+    /// Before DPNS v3 a preorder hashes a fresh salt, so none repeats: nothing is queried
+    #[tokio::test]
+    async fn should_not_look_for_a_pending_salted_preorder() {
+        let owner = Identifier::new([1u8; 32]);
+        let mut salted = bob_v3_preorder(owner);
+        let Document::V0(ref mut v0) = salted;
+        v0.properties =
+            BTreeMap::from([("saltedDomainHash".to_string(), Value::Bytes32([5u8; 32]))]);
+        // No expectation: a query would fail the call
+        let sdk = mock_sdk();
+        assert_eq!(
+            sdk.pending_dpns_preorder(dpns_v3(), owner, &salted)
+                .await
+                .expect("nothing is queried"),
+            None
         );
     }
 

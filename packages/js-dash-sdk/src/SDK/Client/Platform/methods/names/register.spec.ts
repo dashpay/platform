@@ -78,6 +78,8 @@ describe('Platform', () => {
           documents: {
             create: this.sinon.stub(),
             broadcast: this.sinon.stub(),
+            // No pending preorder of the name
+            get: this.sinon.stub().resolves([]),
           },
           // A DPNS contract declaring no preorder hash: the hash of the salt and the name
           contracts: {
@@ -271,6 +273,81 @@ describe('Platform', () => {
         expect(error.message).to.equal('records.identity must be the identity registering the name.');
         expect(platformMock.documents.create.called).to.equal(false);
         expect(platformMock.documents.broadcast.called).to.equal(false);
+      });
+
+      it('should look for a pending preorder by its owner and owner name hash under DPNS v3', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves({
+          getDocumentSchema: dpnsV3DomainSchema,
+        });
+
+        await register.call(platformMock, 'User.dash', {
+          identity: identityId,
+        }, identityMock);
+
+        expect(platformMock.documents.get.getCall(0).args).to.deep.equal([
+          'dpns.preorder',
+          {
+            where: [
+              ['$ownerId', '==', identityId],
+              ['ownerNameHash', '==', dpnsV3Preorder(identityId).ownerNameHash],
+            ],
+            limit: 1,
+          },
+        ]);
+      });
+
+      it('should reveal a pending preorder instead of preordering the name again', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves({
+          getDocumentSchema: dpnsV3DomainSchema,
+        });
+        platformMock.documents.get.resolves([{ pending: 'preorder' }]);
+
+        await register.call(platformMock, 'User.dash', {
+          identity: identityId,
+        }, identityMock);
+
+        // Only the domain is created and broadcast
+        expect(platformMock.documents.create.callCount).to.equal(1);
+        expect(platformMock.documents.create.getCall(0).args[0]).to.equal('dpns.domain');
+        expect(platformMock.documents.broadcast.callCount).to.equal(1);
+      });
+
+      it('should fail when the pending preorder query fails', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves({
+          getDocumentSchema: dpnsV3DomainSchema,
+        });
+        platformMock.documents.get.rejects(new Error('query failed'));
+
+        let error;
+        try {
+          await register.call(platformMock, 'User.dash', {
+            identity: identityId,
+          }, identityMock);
+        } catch (e: any) {
+          error = e;
+        }
+
+        expect(error.message).to.equal('query failed');
+        expect(platformMock.documents.create.called).to.equal(false);
+        expect(platformMock.documents.broadcast.called).to.equal(false);
+      });
+
+      it('should not look for a pending preorder under DPNS v2', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+
+        await register.call(platformMock, 'User.dash', {
+          identity: identityId,
+        }, identityMock);
+
+        expect(platformMock.documents.get.called).to.equal(false);
+        expect(platformMock.documents.create.getCall(0).args[0]).to.equal('dpns.preorder');
       });
 
       it('should fail if DPNS app is not set up', async () => {
