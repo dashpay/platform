@@ -116,6 +116,13 @@ impl ContextProvider for WasmTrustedContext {
         self.inner.get_data_contract(id, platform_version)
     }
 
+    /// Forwarded to the inner known-contracts cache, so a contract the SDK registers (the
+    /// DPNS contract a name registration was built against, whose confirmations decode under
+    /// it) replaces the one the cache held.
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        self.inner.register_data_contract(contract)
+    }
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
@@ -398,6 +405,8 @@ impl WasmTrustedContext {
 mod tests {
     use super::*;
     use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
@@ -559,6 +568,31 @@ mod tests {
         )
         .expect("write quorum response");
         stream.flush().expect("flush quorum response");
+    }
+
+    /// A contract the SDK registers replaces the one the known-contracts cache held: a DPNS
+    /// name registration built against DPNS v3 decodes its confirmations under v3, even when
+    /// the cache was seeded with v2
+    #[test]
+    fn should_forward_a_registered_contract_to_the_known_contracts_cache() {
+        let context = WasmTrustedContext::for_testing(vec![]);
+        let dpns_v2 = load_system_data_contract(
+            SystemDataContract::DPNS,
+            PlatformVersion::get(13).expect("protocol version 13"),
+        )
+        .expect("DPNS v2 loads");
+        let dpns_v3 =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS v3 loads");
+        context.add_known_contract(dpns_v2);
+
+        ContextProvider::register_data_contract(&context, Arc::new(dpns_v3.clone()));
+
+        let resolved = context
+            .get_data_contract(&dpns_v3.id(), PlatformVersion::latest())
+            .expect("the context answers")
+            .expect("the context holds DPNS");
+        assert_eq!(*resolved, dpns_v3);
     }
 
     #[tokio::test]
