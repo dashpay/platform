@@ -19,6 +19,7 @@
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
+use crate::documents::array_element_clauses::key_element_clauses;
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -31,9 +32,7 @@ use dpp::{
 };
 use drive::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
 use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
-use drive::query::{
-    key_array_element_clauses, DocumentRankedMode, RankedPage, RankedPaginationInputs,
-};
+use drive::query::{DocumentRankedMode, RankedPage, RankedPaginationInputs};
 use drive_proof_verifier::verify_ranked_top_k_proof;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
@@ -78,24 +77,13 @@ pub(super) fn assert_ranked_shape(
 
     // Key the elements of a typed array as the server does: one pinned
     // element (`contains`) at most.
-    let document_type = request
-        .data_contract
-        .document_type_for_name(&request.document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!(
-                "document type {} not found in contract: {}",
-                request.document_type_name, e
-            ),
-        })?;
-    let where_clauses = key_array_element_clauses(
+    let where_clauses = key_element_clauses(
+        &request.data_contract,
+        &request.document_type_name,
         request.where_clauses.clone(),
-        document_type,
         false,
         platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("this DocumentQuery is not a well-formed ranked query: {e}"),
-    })?;
+    )?;
     detect_ranked_mode(
         &request.select,
         &request.group_by,

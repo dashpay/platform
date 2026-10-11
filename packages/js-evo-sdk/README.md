@@ -198,7 +198,7 @@ const either = await sdk.documents.query({
 - `containsAny` takes 1 to 100 values and needs an `orderBy` on the array, which sets the order the elements are walked in. A post holding several of them comes back once, where it first appears; the limit counts every entry walked, so a page can be short, and there is no `startAt` or `startAfter`.
 - No other operator may name a typed array, and an index naming one is read only with its elements bound.
 
-Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags. A count over several elements at once is refused, since it would count a document once per element it holds.
+Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags. A count over several elements at once is refused, since it would count a document once per element it holds, and so is `containsAny` beside a range clause; the SDK refuses to verify such a count too.
 
 ## Contracts the app already holds
 

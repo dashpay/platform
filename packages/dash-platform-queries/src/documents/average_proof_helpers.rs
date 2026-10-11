@@ -19,6 +19,7 @@
 //! [`DocumentAverage`]: drive_proof_verifier::DocumentAverage
 //! [`DocumentSplitAverages`]: drive_proof_verifier::DocumentSplitAverages
 
+use crate::documents::array_element_clauses::{aggregate_answers_per_element, key_element_clauses};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -35,7 +36,7 @@ use drive::query::drive_document_sum_query::index_picker::{
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
-use drive::query::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
+use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
@@ -139,19 +140,19 @@ pub(super) fn verify_average_query(
             ),
         })?;
 
-    // Key the elements of a typed array first, as the server does (the
-    // shared step in `drive::query::canonicalize`). The server refuses a
-    // total over several elements before proving anything, so a proof is
-    // only ever for a shape it accepted, and keying here refuses nothing.
-    let keyed_where_clauses = key_array_element_clauses(
+    // Key the elements of a typed array first, by the server's own rule (the
+    // shared step in `drive::query::canonicalize`): several elements only
+    // when the request answers per element. A proof of a total over several
+    // elements, which the server refuses to give, is refused here too.
+    let several_elements_allowed =
+        aggregate_answers_per_element(&request.group_by, &request.where_clauses);
+    let keyed_where_clauses = key_element_clauses(
+        &request.data_contract,
+        &request.document_type_name,
         std::mem::take(&mut request.where_clauses),
-        document_type,
-        true,
+        several_elements_allowed,
         platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("where-clause keying failed: {e}"),
-    })?;
+    )?;
     request.where_clauses =
         validate_and_canonicalize_where_clauses(keyed_where_clauses, platform_version).map_err(
             |e| drive_proof_verifier::Error::RequestError {

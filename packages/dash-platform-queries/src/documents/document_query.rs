@@ -1695,7 +1695,7 @@ mod encode_version_gate_tests {
     }
 
     #[test]
-    fn an_element_query_refuses_to_encode_for_protocol_version_13() {
+    fn should_refuse_to_encode_an_element_query_for_protocol_version_13() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let error =
             GetDocumentsRequest::try_from_platform_versioned(contains_query(), platform_version)
@@ -1711,7 +1711,7 @@ mod encode_version_gate_tests {
     }
 
     #[test]
-    fn an_element_query_encodes_its_operator_for_protocol_version_14() {
+    fn should_encode_the_element_operators_for_protocol_version_14() {
         let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
         for (operator, expected) in [
             (WhereOperator::Contains, ProtoWhereOperator::Contains),

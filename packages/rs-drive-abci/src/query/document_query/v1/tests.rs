@@ -7308,10 +7308,14 @@ mod composite_trust_boundary {
 /// read an index naming the array, through documents and count selects.
 mod array_element_wire_tests {
     use super::*;
+    use crate::platform_types::platform_state::PlatformState;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
     use dpp::data_contract::{DataContract, DataContractFactory};
     use dpp::document::{Document, DocumentV0};
     use dpp::platform_value::Identifier;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     fn post_contract(platform_version: &PlatformVersion) -> DataContract {
         DataContractFactory::new(platform_version.protocol_version)
@@ -7346,8 +7350,8 @@ mod array_element_wire_tests {
     }
 
     fn setup_posts() -> (
-        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        std::sync::Arc<crate::platform_types::platform_state::PlatformState>,
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
         &'static PlatformVersion,
         DataContract,
     ) {
@@ -7416,7 +7420,7 @@ mod array_element_wire_tests {
     }
 
     #[test]
-    fn contains_and_contains_any_read_the_elements_through_the_wire() {
+    fn should_read_the_elements_through_the_wire_with_contains_and_contains_any() {
         let (platform, state, version, contract) = setup_posts();
         let query = |request: GetDocumentsRequestV1| {
             let result = platform
@@ -7503,7 +7507,7 @@ mod array_element_wire_tests {
     }
 
     #[test]
-    fn an_equality_on_a_typed_array_is_refused_on_the_wire() {
+    fn should_refuse_an_equality_on_a_typed_array_on_the_wire() {
         let (platform, state, version, contract) = setup_posts();
         let result = platform
             .query_documents_v1(
