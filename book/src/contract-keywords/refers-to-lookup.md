@@ -130,7 +130,7 @@ The value carrying the reference need not be an identifier. A string or byte arr
 }
 ```
 
-The property keeps its type, and the reference is judged as an identifier's is: on a create, and on a replace by the rules above (when the value changes, when a property `findBy` reads changes, and on every replace for a `deletableDocument`). The key is the value byte for byte, so `"Alice"` does not find the handle `alice`: store a normalized value where the referenced index holds one. The value is no id, so a refusal (`ReferencedEntityNotFoundError`, 40120) names it by its path, with an all-zero entity id. A [function](#commit-and-reveal) may read such a property instead, by its path among its params.
+The property keeps its type, and the reference is judged as an identifier's is: on a create, and on a replace by the rules above (when the value changes, when a property `findBy` reads changes, and on every replace for a `deletableDocument`). The key is the value byte for byte, so `"Alice"` does not find the handle `alice`: store a normalized value where the referenced index holds one. The document found must hold exactly that value: the index stores the empty string under the key of `"\0"` and an empty byte array under the key of no value, and neither stands in for the other. A value longer than an index key may be (255 bytes) finds nothing, without a read: the referring property may allow longer values than the referenced one, and no document of the referenced type holds one. The value is no id, so a refusal (`ReferencedEntityNotFoundError`, 40120) names it by its path, with an all-zero entity id. A [function](#commit-and-reveal) may read such a property instead, by its path among its params.
 
 ### What findBy cannot do
 

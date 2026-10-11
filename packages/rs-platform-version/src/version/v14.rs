@@ -1614,7 +1614,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     identifier's value is, on a create and on the replaces that re-validate
 ///     it (`key_values` and the write-time fetch read `"."` as a `Value`; a
 ///     refusal carries an all-zero entity id, the value being no id, and a
-///     `deletableDocument` one may not sit under an `immutable` property); the
+///     `deletableDocument` one may not sit under an `immutable` property). The
+///     document an index finds must hold each string or byte array part of the
+///     key exactly, since the key encoding reads the empty string as `"\0"` and
+///     an empty byte array as no value, and a key part no index entry can hold
+///     (longer than 255 bytes) finds nothing without a read, for a property
+///     source of those kinds too (`fetch_document_through_lookup`); the
 ///     property keeps its type. The document a function's key finds is a
 ///     commitment made earlier, so the reference is judged when the document is
 ///     created only: its params may be transient or optional, every stored value

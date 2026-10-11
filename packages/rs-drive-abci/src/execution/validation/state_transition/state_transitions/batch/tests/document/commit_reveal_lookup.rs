@@ -1230,9 +1230,16 @@ mod commit_reveal_lookup_tests {
     /// can), and a mutable `post` whose `authorHandle` string refers to it by that
     /// name, read as is: `findBy: { "name": "." }`, no function.
     fn handle_fixture(kind: &'static str) -> CommitRevealFixture {
+        handle_fixture_with(kind, |_, _| {})
+    }
+
+    /// [`handle_fixture`] with `change` applied to the `handle` and the `post` schemas.
+    fn handle_fixture_with(
+        kind: &'static str,
+        change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> CommitRevealFixture {
         CommitRevealFixture::new_with(|contract| {
-            let schemas = &mut contract["documentSchemas"];
-            schemas["handle"] = serde_json::json!({
+            let mut handle = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": kind == "deletableDocument",
@@ -1245,7 +1252,7 @@ mod commit_reveal_lookup_tests {
                 "required": ["name"],
                 "additionalProperties": false
             });
-            schemas["post"] = serde_json::json!({
+            let mut post = serde_json::json!({
                 "type": "object",
                 "documentsMutable": true,
                 "canBeDeleted": true,
@@ -1265,6 +1272,10 @@ mod commit_reveal_lookup_tests {
                 "required": ["authorHandle", "body"],
                 "additionalProperties": false
             });
+            change(&mut handle, &mut post);
+            let schemas = &mut contract["documentSchemas"];
+            schemas["handle"] = handle;
+            schemas["post"] = post;
         })
     }
 
@@ -1308,22 +1319,35 @@ mod commit_reveal_lookup_tests {
     }
 
     /// A paid refusal of the post's `authorHandle` with
-    /// `ReferencedEntityNotFoundError` (40120): no handle has the name. The value
-    /// is no id and no hash stands for it, so the error's id is all zeros.
+    /// `ReferencedEntityNotFoundError` (40120): no handle has the name.
     fn assert_no_handle(result: StateTransitionExecutionResult) {
+        assert_not_found(result, "authorHandle");
+    }
+
+    /// A paid refusal of the property at `path` with `ReferencedEntityNotFoundError`
+    /// (40120): no document holds its value. The value is no id and no hash stands for
+    /// it, so the error's id is all zeros.
+    fn assert_not_found(result: StateTransitionExecutionResult, path: &str) {
         assert_matches!(
             result,
             PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
                 ..
-            } if e.path() == "authorHandle"
+            } if e.path() == path
                 && *e.entity_id() == Identifier::default()
                 && matches!(
                     e.entity_type(),
                     DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
                         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
                 ),
-            "expected 40120 at authorHandle"
+            "expected 40120 at {path}"
+        );
+    }
+
+    fn assert_written(result: StateTransitionExecutionResult) {
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
 
@@ -1435,5 +1459,260 @@ mod commit_reveal_lookup_tests {
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
+    }
+
+    /// The index finds a document by its value's key, which reads the empty string as
+    /// `"\0"`: a name sharing its key with a handle's, but not its value, finds nothing
+    #[tokio::test]
+    async fn should_refuse_a_string_value_that_only_shares_its_index_key_with_a_handle() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "", COMMIT_HEIGHT).await;
+
+        let (_, result) = post(&mut fixture, Who::Alice, "\0", REVEAL_HEIGHT).await;
+        assert_no_handle(result);
+
+        let (_, result) = post(&mut fixture, Who::Alice, "", REVEAL_HEIGHT).await;
+        assert_written(result);
+    }
+
+    /// A value longer than an index key may be (255 bytes, here 130 two-byte
+    /// characters) is held by no document: it finds nothing, on a create and on a
+    /// replace, as any other value no handle has, rather than failing the transition
+    #[tokio::test]
+    async fn should_refuse_a_string_value_too_long_for_the_index_as_finding_no_document() {
+        let mut fixture = handle_fixture_with("permanentDocument", |_, post| {
+            post["properties"]["authorHandle"]["maxLength"] = serde_json::json!(300);
+        });
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+        let too_long = "é".repeat(130);
+
+        let (_, result) = post(&mut fixture, Who::Alice, &too_long, REVEAL_HEIGHT).await;
+        assert_no_handle(result);
+
+        let (post, result) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+        assert_written(result);
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text(&too_long)),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+    }
+
+    /// A handle unique by its name within a scope: a replace changing only the
+    /// post's `scope`, another part of the key, judges the name again
+    #[tokio::test]
+    async fn should_re_validate_a_string_value_when_another_key_part_changes() {
+        let mut fixture = handle_fixture_with("permanentDocument", |handle, post| {
+            handle["properties"]["scope"] =
+                serde_json::json!({ "type": "string", "maxLength": 63, "position": 1 });
+            handle["indices"] = serde_json::json!([{
+                "name": "nameInScope",
+                "properties": [{ "name": "asc" }, { "scope": "asc" }],
+                "unique": true
+            }]);
+            handle["required"] = serde_json::json!(["name", "scope"]);
+            post["properties"]["scope"] =
+                serde_json::json!({ "type": "string", "maxLength": 63, "position": 2 });
+            post["properties"]["authorHandle"]["refersTo"]["findBy"] =
+                serde_json::json!({ "name": ".", "scope": "scope" });
+            post["required"] = serde_json::json!(["authorHandle", "body", "scope"]);
+        });
+        for scope in ["art", "music"] {
+            let (_, result) = fixture
+                .create(
+                    Who::Alice,
+                    "handle",
+                    &[("name", text("alice")), ("scope", text(scope))],
+                    &[],
+                    COMMIT_HEIGHT,
+                )
+                .await;
+            assert_written(result);
+        }
+        let (post, result) = fixture
+            .create(
+                Who::Alice,
+                "post",
+                &[
+                    ("authorHandle", text("alice")),
+                    ("scope", text("art")),
+                    ("body", text("gm")),
+                ],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_written(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("scope", text("sports")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("scope", text("music")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_written(result);
+    }
+
+    /// The fixture with a `handle`, never changed, unique by an optional `tag` of up
+    /// to 20 bytes, and a mutable `post` whose `authorTag` byte array, of up to 300
+    /// bytes, refers to it by that tag, read as is: `findBy: { "tag": "." }`.
+    fn tag_fixture() -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let schemas = &mut contract["documentSchemas"];
+            schemas["handle"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": false,
+                "properties": {
+                    "tag": {
+                        "type": "array", "byteArray": true, "maxItems": 20, "position": 0
+                    }
+                },
+                "indices": [
+                    { "name": "tag", "properties": [{ "tag": "asc" }], "unique": true }
+                ],
+                "additionalProperties": false
+            });
+            schemas["post"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": true,
+                "canBeDeleted": true,
+                "properties": {
+                    "authorTag": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 300,
+                        "position": 0,
+                        "refersTo": {
+                            "type": "permanentDocument",
+                            "documentType": "handle",
+                            "findBy": { "tag": "." }
+                        }
+                    }
+                },
+                "required": ["authorTag"],
+                "additionalProperties": false
+            });
+        })
+    }
+
+    /// A handle of Alice's with `tag`, or with none, made in [`COMMIT_HEIGHT`].
+    async fn make_tagged_handle(fixture: &mut CommitRevealFixture, tag: Option<Value>) {
+        let values = tag.map(|tag| vec![("tag", tag)]).unwrap_or_default();
+        let (_, result) = fixture
+            .create(Who::Alice, "handle", &values, &[], COMMIT_HEIGHT)
+            .await;
+        assert_written(result);
+    }
+
+    /// A post of Alice's by the handle with `tag`, in [`REVEAL_HEIGHT`].
+    async fn tagged_post(
+        fixture: &mut CommitRevealFixture,
+        tag: Value,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                Who::Alice,
+                "post",
+                &[("authorTag", tag)],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await
+    }
+
+    /// A byte array value finds the document holding the same bytes, whichever binary
+    /// form the transition carries it in, is refused when no handle has it, and is
+    /// judged again when a replace changes it
+    #[tokio::test]
+    async fn should_find_a_document_by_a_byte_array_value_through_the_write_pipeline() {
+        let mut fixture = tag_fixture();
+        make_tagged_handle(&mut fixture, Some(Value::Bytes(vec![0x5a; 20]))).await;
+        make_tagged_handle(&mut fixture, Some(Value::Bytes(vec![0x5c; 7]))).await;
+
+        let (post, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5a; 20])).await;
+        assert_written(result);
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes20([0x5a; 20])).await;
+        assert_written(result);
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5c; 7])).await;
+        assert_written(result);
+
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5b; 20])).await;
+        assert_not_found(result, "authorTag");
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorTag", Value::Bytes(vec![0x5b; 20])),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_not_found(result, "authorTag");
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorTag", Value::Bytes(vec![0x5c; 7])),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_written(result);
+    }
+
+    /// An empty byte array has the key of no value at all: it does not find a handle
+    /// without a tag
+    #[tokio::test]
+    async fn should_refuse_an_empty_byte_array_value_as_finding_no_document() {
+        let mut fixture = tag_fixture();
+        make_tagged_handle(&mut fixture, None).await;
+
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![])).await;
+        assert_not_found(result, "authorTag");
+    }
+
+    /// A byte array longer than an index key may be finds nothing, on a create and on
+    /// a replace, rather than failing the transition
+    #[tokio::test]
+    async fn should_refuse_a_byte_array_value_too_long_for_the_index_as_finding_no_document() {
+        let mut fixture = tag_fixture();
+        make_tagged_handle(&mut fixture, Some(Value::Bytes(vec![0x5a; 20]))).await;
+
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5a; 256])).await;
+        assert_not_found(result, "authorTag");
+
+        let (post, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5a; 20])).await;
+        assert_written(result);
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorTag", Value::Bytes(vec![0x5a; 256])),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_not_found(result, "authorTag");
     }
 }
