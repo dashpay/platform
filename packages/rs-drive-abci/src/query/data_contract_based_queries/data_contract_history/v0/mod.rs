@@ -64,7 +64,7 @@ impl<C> Platform<C> {
         if prove && offset.is_some_and(|offset| offset > 0) {
             return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                 QuerySyntaxError::RequestingProofWithOffset(
-                    "proof requests do not support positive offsets".to_string(),
+                    "proof requests do not support offsets".to_string(),
                 ),
             )));
         }

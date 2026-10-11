@@ -95,8 +95,17 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
                     .get_identity_keys(key_request(kind, Some(offset), prove))
                     .await
                     .expect_err("unsupported offset must be refused");
-                if status.code() != Code::InvalidArgument || !status.message().contains(if prove { "requesting proof with offset error: proof requests do not support positive offsets" } else { "search key requests without a proof do not support positive offsets" }) {
-                    failures.push(format!("PV{} {name} offset={offset}: {status}", version.protocol_version));
+                if status.code() != Code::InvalidArgument
+                    || !status.message().contains(if prove {
+                        "requesting proof with offset error: proof requests do not support offsets"
+                    } else {
+                        "search key requests without a proof do not support offsets"
+                    })
+                {
+                    failures.push(format!(
+                        "PV{} {name} offset={offset}: {status}",
+                        version.protocol_version
+                    ));
                 }
             }
             let status = client
@@ -111,7 +120,16 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
                 ))
                 .await
                 .expect_err("contract-history proof cannot page by offset");
-            if status.code() != Code::InvalidArgument || !status.message().contains("requesting proof with offset error: proof requests do not support positive offsets") { failures.push(format!("PV{} contract history offset={offset}: {status}", version.protocol_version)); }
+            if status.code() != Code::InvalidArgument
+                || !status.message().contains(
+                    "requesting proof with offset error: proof requests do not support offsets",
+                )
+            {
+                failures.push(format!(
+                    "PV{} contract history offset={offset}: {status}",
+                    version.protocol_version
+                ));
+            }
             let status = client
                 .get_document_history(wire::GetDocumentHistoryRequest::from(
                     wire::get_document_history_request::GetDocumentHistoryRequestV0 {
@@ -126,7 +144,16 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
                 ))
                 .await
                 .expect_err("document-history proof cannot page by offset");
-            if status.code() != Code::InvalidArgument || !status.message().contains("requesting proof with offset error: proof requests do not support positive offsets") { failures.push(format!("PV{} document history offset={offset}: {status}", version.protocol_version)); }
+            if status.code() != Code::InvalidArgument
+                || !status.message().contains(
+                    "requesting proof with offset error: proof requests do not support offsets",
+                )
+            {
+                failures.push(format!(
+                    "PV{} document history offset={offset}: {status}",
+                    version.protocol_version
+                ));
+            }
             let status = client
                 .get_contested_resource_identity_votes(
                     wire::GetContestedResourceIdentityVotesRequest::from(
@@ -142,7 +169,16 @@ async fn should_refuse_unsupported_positive_offsets_over_tonic() {
                 )
                 .await
                 .expect_err("identity-votes proof cannot page by offset");
-            if status.code() != Code::InvalidArgument || !status.message().contains("requesting proof with offset error: proof requests do not support positive offsets") { failures.push(format!("PV{} identity votes offset={offset}: {status}", version.protocol_version)); }
+            if status.code() != Code::InvalidArgument
+                || !status.message().contains(
+                    "requesting proof with offset error: proof requests do not support offsets",
+                )
+            {
+                failures.push(format!(
+                    "PV{} identity votes offset={offset}: {status}",
+                    version.protocol_version
+                ));
+            }
         }
         server.abort();
     }
@@ -439,7 +475,7 @@ async fn should_validate_proof_offsets_before_missing_history_lookups() {
                     }
                 );
                 if prove {
-                    assert!(status.message().contains("requesting proof with offset error: proof requests do not support positive offsets"),"{status}");
+                    assert!(status.message().contains("requesting proof with offset error: proof requests do not support offsets"),"{status}");
                 }
             }
         }

@@ -308,6 +308,30 @@ fn merge_error_to_shape_error(error: grovedb::Error) -> Error {
     }
 }
 
+/// An unserved cap is a property of the read-only query, not a storage fault.
+/// This execution check does not affect block execution or proof construction.
+#[cfg(feature = "server")]
+fn check_composite_instance_limits(
+    path_query: &PathQuery,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if platform_version
+        .drive
+        .grove_version
+        .grovedb_versions
+        .path_query_methods
+        .per_instance_query_limits
+        == 0
+        && path_query.has_instance_limits()
+    {
+        return Err(unsupported(
+            "composite query limits require a protocol version that supports per-instance limits"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// The bound identifier a document carries for `field`, or `None` when
 /// the property is absent.
 fn document_bound_value(document: &Document, field: &str) -> Result<Option<Identifier>, Error> {
@@ -2151,6 +2175,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?;
+                check_composite_instance_limits(&path_query, platform_version)?;
                 let documents = Self::materialize_component(
                     &query,
                     &path_query,
@@ -2168,6 +2193,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     self.sub_query_count_query(sub_query, values, platform_version)?;
                 let path_query = count_query.point_lookup_count_path_query(platform_version)?;
                 let base_path_len = path_query.path.len();
+                check_composite_instance_limits(&path_query, platform_version)?;
                 let (results, _skipped) = match drive.grove_get_path_query(
                     &path_query,
                     transaction,
@@ -2228,6 +2254,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 .refuse_an_uncovered_index_only_projection(platform_version)?;
             }
         }
+        check_composite_instance_limits(&page_path_query, platform_version)?;
         let page_documents = Self::materialize_component(
             self,
             &page_path_query,
@@ -2320,6 +2347,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
 
+            check_composite_instance_limits(&page_path_query, platform_version)?;
             let page_documents = Self::materialize_component(
                 self,
                 &page_path_query,
@@ -2363,6 +2391,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 &removal_path_queries,
                 platform_version,
             )?;
+            check_composite_instance_limits(&merged_query, platform_version)?;
             let proof = drive
                 .grove
                 .prove_query(&merged_query, None, &platform_version.drive.grove_version)

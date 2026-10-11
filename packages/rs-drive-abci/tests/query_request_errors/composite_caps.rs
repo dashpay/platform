@@ -21,6 +21,8 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Value;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_json_value};
+use drive::error::query::QuerySyntaxError;
+use drive::error::Error as DriveError;
 use drive::query::{
     BindingSource, DriveSubQuery, InternalClauses, SubQueryBinding, SubQueryKind, WhereClause,
     WhereOperator,
@@ -376,6 +378,86 @@ fn wire_request(request: GetDocumentsRequestV1) -> wire::GetDocumentsRequest {
         version: Some(RequestVersion::V1(request)),
     }
 }
+
+#[test]
+fn should_classify_unserved_composite_limits_as_query_errors_in_drive() {
+    let expected =
+        "composite query limits require a protocol version that supports per-instance limits";
+    let mut failures = Vec::new();
+    for version in [
+        PlatformVersion::get(12).unwrap(),
+        PlatformVersion::get(13).unwrap(),
+    ] {
+        let fixture = QueryFixture::new_with_version(version);
+        let (feed, dashpay, _) = setup_feed(&fixture);
+        let mut query = client_query(&feed, &dashpay, version);
+        query.sub_queries.remove(1);
+        for prove in [false, true] {
+            let error = if prove {
+                fixture
+                    .platform
+                    .drive
+                    .query_composite_documents_with_proof(&query, version)
+                    .expect_err("historical capped page is unsupported")
+            } else {
+                fixture
+                    .platform
+                    .drive
+                    .query_composite_documents(&query, None, None, version)
+                    .expect_err("historical capped page is unsupported")
+            };
+            if !matches!(&error, DriveError::Query(QuerySyntaxError::Unsupported(message)) if message == expected)
+            {
+                failures.push(format!(
+                    "PV{} capped page prove={prove}: {error:?}",
+                    version.protocol_version
+                ));
+            }
+        }
+
+        query.internal_clauses = InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$id".to_owned(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::Identifier(POST_B), Value::Identifier(POST_A)]),
+            }],
+            version,
+        )
+        .expect("selected page IDs");
+        query.limit = Some(2);
+        query.sub_queries = vec![DriveSubQuery {
+            contract: &feed,
+            document_type: feed.document_type_for_name("like").expect("like"),
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: Some(2),
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: "$id".to_owned(),
+                field: "postId".to_owned(),
+            }),
+        }];
+        let error = fixture
+            .platform
+            .drive
+            .query_composite_documents(&query, None, None, version)
+            .expect_err("historical populated capped child is unsupported");
+        if !matches!(&error, DriveError::Query(QuerySyntaxError::Unsupported(message)) if message == expected)
+        {
+            failures.push(format!(
+                "PV{} capped child: {error:?}",
+                version.protocol_version
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "unsupported composite limits must be typed caller errors in Drive:\n{}",
+        failures.join("\n")
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn should_refuse_composite_caps_unavailable_on_historical_nodes_over_tonic() {
     let mut failures = Vec::new();
