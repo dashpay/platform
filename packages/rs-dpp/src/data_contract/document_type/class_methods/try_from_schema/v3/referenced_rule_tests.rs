@@ -22,6 +22,7 @@ use crate::data_contract::document_type::{
     WhereCondition, WhereLiteral, WhereOrdering,
 };
 use crate::ProtocolError;
+use platform_value::string_encoding::Encoding;
 use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -73,6 +74,7 @@ fn poll() -> Value {
                 },
                 "position": 8
             },
+            "curatorId": identifier(9, None),
         },
         "transient": ["note"],
         "required": ["question", "option0", "option1", "$createdAt"],
@@ -485,6 +487,31 @@ fn should_refuse_a_read_the_referenced_type_can_not_answer() {
     ] {
         expect_structure_error(parse_rules(platform_value!({ "rule": rule })), needle);
     }
+}
+
+/// How a referenced value compares follows the rule, since the referenced type
+/// may be another contract's: beside a `const` it reads as a string. So a
+/// referenced identifier schema property is compared with an identifier
+/// operand of the type, while the referenced document's own identifiers
+/// (`$id`, `$ownerId`, `$creatorId`), always identifiers, take a base58 `const`
+/// too.
+#[test]
+fn should_compare_a_referenced_identifier_as_the_rule_says() {
+    let base58 = Identifier::new([4; 32]).to_string(Encoding::Base58);
+    parse_rules(platform_value!({
+        "rule": { "equal": [{ "referenced": ["pollId", "curatorId"] }, "pollOwnerId"] }
+    }))
+    .expect("an identifier property of the type compares with it");
+    parse_rules(platform_value!({
+        "rule": { "notEqual": [{ "referenced": ["pollId", "$ownerId"] }, { "const": base58.clone() }] }
+    }))
+    .expect("the referenced document's owner takes a base58 const");
+    expect_structure_error(
+        parse_rules(platform_value!({
+            "rule": { "equal": [{ "referenced": ["pollId", "curatorId"] }, { "const": base58 }] }
+        })),
+        "compares \"pollId.curatorId\" with a string",
+    );
 }
 
 #[test]
