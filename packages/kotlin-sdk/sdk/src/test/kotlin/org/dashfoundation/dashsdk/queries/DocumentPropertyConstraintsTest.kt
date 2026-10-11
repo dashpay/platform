@@ -610,6 +610,191 @@ class DocumentPropertyConstraintsTest {
         }
     }
 
+    /**
+     * Rules reading values of the document a reference points at, as the FFI
+     * reports them: a `vote` type whose `pollId` refers to a `poll`, reading
+     * which options the poll has, its owner and its status, and a rule,
+     * `smallChoice`, reading only the vote's choice.
+     */
+    private val referencedRulesJson = """
+        [
+          {
+            "name": "choiceIsAnOption",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "choice" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "option0", "kind": "presence" },
+              { "reference": "pollId", "path": "option1", "kind": "presence" },
+              { "reference": "pollId", "path": "option2", "kind": "presence" }
+            ],
+            "rule": {
+              "lessThan": [
+                "choice",
+                {
+                  "countPresent": [
+                    { "referenced": ["pollId", "option0"] },
+                    { "referenced": ["pollId", "option1"] },
+                    { "referenced": ["pollId", "option2"] }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "ownerIsTheDenormalizedOne",
+            "readsOwner": false,
+            "reads": [{ "kind": "identifier", "path": "pollOwnerId" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "${'$'}ownerId", "kind": "identifier" }
+            ],
+            "rule": { "equal": [{ "referenced": ["pollId", "${'$'}ownerId"] }, "pollOwnerId"] }
+          },
+          {
+            "name": "pollIsOpen",
+            "readsOwner": false,
+            "reads": [],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [{ "reference": "pollId", "path": "status", "kind": "text" }],
+            "rule": { "notEqual": [{ "referenced": ["pollId", "status"] }, { "const": "closed" }] }
+          },
+          {
+            "name": "smallChoice",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "choice" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [],
+            "rule": { "lessThan": ["choice", 10] }
+          }
+        ]
+    """.trimIndent()
+
+    // Referenced reads
+
+    @Test
+    fun `should decode the values each rule reads of referenced documents`() {
+        val rules = DocumentPropertyConstraint.listFromJson(referencedRulesJson)
+
+        assertEquals(
+            listOf("choiceIsAnOption", "ownerIsTheDenormalizedOne", "pollIsOpen", "smallChoice"),
+            rules.map { it.name },
+        )
+        assertEquals(
+            listOf(
+                listOf("option0", "option1", "option2").map {
+                    PropertyConstraintReferencedRead("pollId", it, PropertyConstraintRead.Kind.Presence)
+                },
+                listOf(
+                    PropertyConstraintReferencedRead(
+                        "pollId",
+                        "${'$'}ownerId",
+                        PropertyConstraintRead.Kind.Identifier,
+                    ),
+                ),
+                listOf(PropertyConstraintReferencedRead("pollId", "status", PropertyConstraintRead.Kind.Text)),
+                emptyList(),
+            ),
+            rules.map { it.readsReferenced },
+        )
+        // A value of the referenced document is no property of this one; the
+        // properties the rule compares it with are
+        assertEquals(
+            listOf(
+                listOf(PropertyConstraintRead("choice", PropertyConstraintRead.Kind.Value)),
+                listOf(PropertyConstraintRead("pollOwnerId", PropertyConstraintRead.Kind.Identifier)),
+                emptyList(),
+                listOf(PropertyConstraintRead("choice", PropertyConstraintRead.Kind.Value)),
+            ),
+            rules.map { it.reads },
+        )
+        // The poll's owner is not the vote's
+        assertEquals(listOf(false, false, false, false), rules.map { it.readsOwner })
+        assertEquals(List(4) { emptyList<PropertyConstraintTotalRead>() }, rules.map { it.readsTotals })
+        assertEquals(
+            """{"equal":[{"referenced":["pollId","${'$'}ownerId"]},"pollOwnerId"]}""",
+            rules[1].ruleJson,
+        )
+    }
+
+    /** A native library built before `readsReferenced` leaves the key out. */
+    @Test
+    fun `should read a rule without readsReferenced as reading no referenced document`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":[],"rule":{"present":"a"}}]""",
+        )
+
+        assertEquals(emptyList<PropertyConstraintReferencedRead>(), rules.single().readsReferenced)
+        assertEquals(
+            DocumentPropertyConstraint("r", """{"present":"a"}""", emptyList(), readsOwner = false),
+            rules.single(),
+        )
+    }
+
+    /**
+     * Referenced reads are kept in declared order, one read twice listed
+     * twice, and a kind added by a later protocol version is kept by name
+     * rather than failing the whole list.
+     */
+    @Test
+    fun `should keep repeated referenced reads and an unknown kind`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """
+            [{ "name": "r", "readsOwner": false, "reads": [], "readsSystem": [], "readsTotals": [],
+               "readsReferenced": [
+                 { "reference": "pollId", "path": "endsAt", "kind": "value" },
+                 { "reference": "postId", "path": "meta.tags", "kind": "somethingNew" },
+                 { "reference": "pollId", "path": "endsAt", "kind": "value" }
+               ],
+               "rule": { "lessThan": [{ "referenced": ["pollId", "endsAt"] }, 10] } }]
+            """.trimIndent(),
+        )
+
+        val endsAt = PropertyConstraintReferencedRead("pollId", "endsAt", PropertyConstraintRead.Kind.Value)
+        assertEquals(
+            listOf(
+                endsAt,
+                PropertyConstraintReferencedRead(
+                    "postId",
+                    "meta.tags",
+                    PropertyConstraintRead.Kind.Other("somethingNew"),
+                ),
+                endsAt,
+            ),
+            rules.single().readsReferenced,
+        )
+    }
+
+    @Test
+    fun `should refuse a malformed readsReferenced`() {
+        val malformed = listOf(
+            "null",
+            "{}",
+            "\"pollId\"",
+            "[1]",
+            "[null]",
+            """[["pollId", "status", "text"]]""",
+            // Every read names its reference, path and kind, each a string
+            """[{"path":"status","kind":"text"}]""",
+            """[{"reference":"pollId","kind":"text"}]""",
+            """[{"reference":"pollId","path":"status"}]""",
+            """[{"reference":7,"path":"status","kind":"text"}]""",
+            """[{"reference":"pollId","path":["status"],"kind":"text"}]""",
+            """[{"reference":"pollId","path":"status","kind":null}]""",
+        )
+        for (readsReferenced in malformed) {
+            val json =
+                """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":[],"readsReferenced":$readsReferenced,"rule":{"present":"a"}}]"""
+            assertThrows(json, DashSdkError.SerializationError::class.java) {
+                DocumentPropertyConstraint.listFromJson(json)
+            }
+        }
+    }
+
     // Violations
 
     @Test

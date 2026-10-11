@@ -67,7 +67,7 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources,
+    validate_reference_lookup_sources, validate_referencing_rules,
 };
 
 mod ranked_prefix_overlap;
@@ -525,6 +525,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::OWNER_REFERS_TO,
         "the writer",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -532,6 +533,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::CREATOR_REFERS_TO,
         "the creator",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -688,6 +690,12 @@ fn parse_generation_3(
     // would silently skip a declaration whose property finds no document
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+        // The declaring side of a rule reading a document a reference points at, once
+        // the references, `indexOnly`, the trade flags and the moderator fields are
+        // known; what it reads of the referenced type is checked where that type is in
+        // hand
+        validate_referencing_rules(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
@@ -1761,7 +1769,8 @@ fn validate_no_immutable_contract_owner_requirements(
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
 /// object, or one found by `findBy`, alone or as an operand of an
-/// expression, anywhere, unless a `findBy` function computes its key: that
+/// expression, anywhere (on a string or byte array property too), unless a
+/// `findBy` function computes its key: that
 /// reference is judged when the document is created only. Every
 /// replace re-validates such a reference, so once a target is deleted the
 /// property would have to change, which an immutable
@@ -1789,7 +1798,14 @@ fn validate_no_immutable_deletable_element_references(
     name: &str,
 ) -> Result<(), ProtocolError> {
     for (path, property) in document_type.flattened_properties() {
-        let Some(reference) = property.property_type.reference() else {
+        // On an identifier, or on a string or byte array property whose value
+        // its `findBy` reads
+        let Some(reference) = property.property_type.reference().or_else(|| {
+            property
+                .revealed_reference
+                .as_ref()
+                .map(PropertyReference::Revealed)
+        }) else {
             continue;
         };
         let Some(target) = reference.target() else {
@@ -1805,7 +1821,7 @@ fn validate_no_immutable_deletable_element_references(
             matches!(
                 leaf,
                 DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
-                    if !lookup.is_checked_on_create_only()
+                    if !lookup.is_checked_on_create_only(document_type.documents_mutable)
             )
         });
         if !deletable_lookup
@@ -1952,9 +1968,13 @@ mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
+mod referenced_rule_tests;
+#[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
+#[cfg(all(test, feature = "validation"))]
+mod string_find_by_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod transient_tests;
 #[cfg(all(test, feature = "validation"))]
