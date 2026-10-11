@@ -664,6 +664,21 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
             "index \"nameHashAndNote\" of \"preorder\" is unique over \"nameHash\" without \
              $ownerId",
         ),
+        // So would a copy of its owner-bound hash, which the copier can not compute
+        (
+            Box::new(|preorder| {
+                preorder["indices"]
+                    .as_array_mut()
+                    .expect("an array")
+                    .push(json!({
+                        "name": "ownerNameHashAlone",
+                        "properties": [{ "ownerNameHash": "asc" }],
+                        "unique": true
+                    }))
+            }),
+            "index \"ownerNameHashAlone\" of \"preorder\" is unique over \"ownerNameHash\" \
+             without $ownerId",
+        ),
         // One identity could hold many commitments to one value
         (
             Box::new(|preorder| {

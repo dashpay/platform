@@ -1728,8 +1728,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     stored 32-byte byte array fixed once written; the referenced type to
 ///     expire (`ttl`), to hold the index, a unique index over exactly
 ///     `$ownerId` and the property (so each competitor read is another
-///     identity's) and no unique index holding the property without
-///     `$ownerId`, and to require `$createdAtBlockHeight`; at most one
+///     identity's) and no unique index holding the property, or the
+///     `findBy` function's, without `$ownerId`, and to require
+///     `$createdAtBlockHeight`; at most one
 ///     `firstAmong` per type, not on typed array elements or expression
 ///     operands, a `where` holding nothing but `"$ownerId": "$ownerId"` (no
 ///     condition), and no gas sponsorship of the declaring type's creates (a

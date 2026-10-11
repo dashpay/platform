@@ -53,6 +53,7 @@ use platform_value::{Identifier, Value};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
+use std::iter;
 use std::mem::Discriminant;
 
 /// The wire name of [`LookupKeySource::ReferenceValue`].
@@ -841,12 +842,13 @@ impl DocumentReferenceLookup {
     /// * an index over exactly (that property, `$createdAtBlockHeight`), in that order,
     ///   through which the competitors from earlier blocks are read oldest first, that is
     ///   not unique;
-    /// * every unique index holding the property holds `$ownerId` too, or a copy of a
-    ///   pending commitment's value landing first would keep the commitment out of state;
-    ///   and one is over exactly `$ownerId` and the property, so an identity holds at most
-    ///   one commitment to a value: filling the competitors a create reads, which stand
-    ///   before an older valid one, takes as many identities as are read, and the writer
-    ///   holds none of them but the one found.
+    /// * every unique index holding the property, or the property the `findBy` function
+    ///   fills, holds `$ownerId` too, or a copy of a pending commitment's value landing
+    ///   first would keep the commitment out of state, without its copier knowing the
+    ///   values; and one is over exactly `$ownerId` and the property, so an identity holds
+    ///   at most one commitment to a value: filling the competitors a create reads, which
+    ///   stand before an older valid one, takes as many identities as are read, and the
+    ///   writer holds none of them but the one found.
     ///
     /// Every flag read here is immutable on contract update, and a type's indexes never
     /// change, so the answer holds for good.
@@ -912,16 +914,18 @@ impl DocumentReferenceLookup {
             }
             Some(_) => {}
         }
-        if let Some((index_name, _)) = referenced
-            .indexes()
-            .iter()
-            .find(|(_, index)| index.unique && holds(index, property) && !holds(index, OWNER_ID))
-        {
-            return Some(format!(
-                "index \"{index_name}\" of \"{name}\" is unique over \"{property}\" without \
-                 {OWNER_ID}: a copy of a pending commitment's value landing first would keep the \
-                 commitment out"
-            ));
+        // Both hashes a commitment holds can be copied from its pending transition
+        let copyable = iter::once(property).chain(self.hash_key().map(|(fills, _)| fills));
+        for copyable_property in copyable {
+            if let Some((index_name, _)) = referenced.indexes().iter().find(|(_, index)| {
+                index.unique && holds(index, copyable_property) && !holds(index, OWNER_ID)
+            }) {
+                return Some(format!(
+                    "index \"{index_name}\" of \"{name}\" is unique over \"{copyable_property}\" \
+                     without {OWNER_ID}: a copy of a pending commitment's value landing first \
+                     would keep the commitment out"
+                ));
+            }
         }
         if !referenced.indexes().values().any(|index| {
             index.unique

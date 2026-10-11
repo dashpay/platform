@@ -7261,6 +7261,34 @@ mod tests {
             );
         }
 
+        /// A type of another contract whose owner-bound hash, the one the `findBy` function
+        /// fills, is unique without `$ownerId`: a copy of a pending commitment's hash landing
+        /// first under another identity would keep the commitment out, without its copier
+        /// knowing the values.
+        #[tokio::test]
+        async fn should_reject_first_among_into_a_type_of_another_contract_unique_over_the_owner_hash(
+        ) {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-first-among-registration-foreign-copyable-owner-hash.json",
+                FIRST_AMONG_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "name.$creatorId"
+                    && e.reason().contains(
+                        "index \"ownerNameHashAlone\" of \"copyablePreorder\" is unique over \
+                         \"ownerNameHash\" without $ownerId"
+                    )
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_a_lookup_into_a_non_unique_index_of_the_same_contract() {
             // The contract parse sees the referenced type of the same contract,

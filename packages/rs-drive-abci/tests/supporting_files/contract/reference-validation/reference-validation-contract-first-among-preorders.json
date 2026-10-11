@@ -124,6 +124,81 @@
         "nameHash"
       ],
       "additionalProperties": false
+    },
+    "copyablePreorder": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "ttl": 3600,
+      "properties": {
+        "ownerNameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "nameHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "indices": [
+        {
+          "name": "ownerAndNameHash",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "ownerAndName",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "nameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "nameHashByHeight",
+          "properties": [
+            {
+              "nameHash": "asc"
+            },
+            {
+              "$createdAtBlockHeight": "asc"
+            }
+          ]
+        },
+        {
+          "name": "ownerNameHashAlone",
+          "properties": [
+            {
+              "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "$createdAt",
+        "$createdAtBlockHeight",
+        "ownerNameHash",
+        "nameHash"
+      ],
+      "additionalProperties": false
     }
   }
 }
