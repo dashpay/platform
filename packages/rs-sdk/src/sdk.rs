@@ -80,9 +80,11 @@ pub(crate) fn verifier_version(
     // The quorum signature binds metadata.protocol_version as StateId.app_version.
     // Selecting interpretation rules before authentication cannot accept a false
     // version claim: its signature must still verify before metadata is learned.
-    match PlatformVersion::get(signed) {
-        Ok(version) => version,
-        Err(_) => {
+    match (signed <= PlatformVersion::latest().protocol_version)
+        .then(|| PlatformVersion::get(signed))
+    {
+        Some(Ok(version)) => version,
+        _ => {
             let newest = PlatformVersion::latest();
             tracing::debug!(
                 signed_protocol_version = signed,

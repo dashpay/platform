@@ -1,4 +1,4 @@
-use super::{Sdk, SdkBuilder};
+use super::{verifier_version, Sdk, SdkBuilder};
 use crate::mock::{MockDashPlatformSdk, MockResponse};
 use crate::platform::trunk_branch_sync::{
     run_full_tree_scan, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
@@ -14,9 +14,9 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-use dpp::version::PlatformVersion;
 use drive::grovedb::{GroveBranchQueryResult, GroveTrunkQueryResult, LeafInfo, MerkProofNode};
 use drive_proof_verifier::{Error as ProofError, FromProof};
+use platform_version::version::PlatformVersion;
 use rs_dapi_client::{AddressList, DumpData, RequestSettings};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -184,6 +184,16 @@ async fn should_verify_with_the_signed_newer_version_not_the_stored_one() {
         observed_table(13, 14, VersionPolicy::Track, ProofPath::Network).await,
         (14, 14)
     );
+}
+
+#[test_case::test_case(0x10000000; "mock_version_zero")]
+#[test_case::test_case(0x10000001; "mock_version_one")]
+fn should_use_newest_known_table_for_unauthenticated_mock_versions(signed: u32) {
+    let stored = PlatformVersion::get(13).expect("known stored table");
+    assert!(std::ptr::eq(
+        verifier_version(stored, signed),
+        PlatformVersion::latest()
+    ));
 }
 
 #[tokio::test]
