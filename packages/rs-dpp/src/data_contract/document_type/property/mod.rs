@@ -3403,6 +3403,14 @@ impl DocumentPropertyType {
         }
     }
 
+    /// Whether `key` is a key of this type's exact width and this type is
+    /// keyed as an unsigned integer: the keys whose top bit generations 0 and
+    /// 1 write differently.
+    fn is_unsigned_integer_tree_key_of_full_width(&self, key: &[u8]) -> bool {
+        self.has_unsigned_integer_tree_key()
+            && self.fixed_tree_key_width().map(usize::from) == Some(key.len())
+    }
+
     /// Whether a value of this type is keyed as an unsigned integer: the
     /// types whose tree key changes between [`Self::encode_value_for_tree_keys`]
     /// and [`Self::encode_value_for_tree_keys_v1`]. Every other type is keyed
@@ -3431,9 +3439,7 @@ impl DocumentPropertyType {
     pub fn encode_value_for_tree_keys_v1(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
         let mut key = self.encode_value_for_tree_keys(value)?;
         // Flipped in the key generation 0 wrote; a null value's empty key stays as it is
-        if self.has_unsigned_integer_tree_key()
-            && self.fixed_tree_key_width().map(usize::from) == Some(key.len())
-        {
+        if self.is_unsigned_integer_tree_key_of_full_width(&key) {
             if let Some(top) = key.first_mut() {
                 *top ^= 0b1000_0000;
             }
@@ -3466,9 +3472,7 @@ impl DocumentPropertyType {
     /// [`Self::encode_value_for_tree_keys_v1`] (each the other's inverse).
     /// `None` for every other key, which both generations write the same.
     pub fn unsigned_tree_key_in_other_generation(&self, key: &[u8]) -> Option<Vec<u8>> {
-        if !self.has_unsigned_integer_tree_key()
-            || self.fixed_tree_key_width().map(usize::from) != Some(key.len())
-        {
+        if !self.is_unsigned_integer_tree_key_of_full_width(key) {
             return None;
         }
         let mut key = key.to_vec();

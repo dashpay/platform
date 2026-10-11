@@ -1469,7 +1469,7 @@ mod tests {
     fn should_rekey_unsigned_index_values_on_transition_to_version_14() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::DataContractFactory;
-        use dpp::document::DocumentV0;
+        use dpp::document::{Document, DocumentV0};
         use dpp::platform_value::{platform_value, Value};
         use drive::config::DriveConfig;
         use drive::query::{
@@ -1529,7 +1529,7 @@ mod tests {
             .document_type_for_name("grade")
             .expect("expected the grade type");
         for (id, grade) in [5u8, 100, 127, 128, 150, 200, 255].into_iter().enumerate() {
-            let document: dpp::document::Document = DocumentV0 {
+            let document: Document = DocumentV0 {
                 id: Identifier::new([id as u8 + 1; 32]),
                 owner_id: Identifier::new([1; 32]),
                 properties: BTreeMap::from([("grade".to_string(), Value::U8(grade))]),

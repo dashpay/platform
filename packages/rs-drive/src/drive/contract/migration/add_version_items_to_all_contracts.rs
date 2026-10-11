@@ -27,8 +27,6 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let contract_count = self.for_each_contract_in_state(
-            transaction,
-            platform_version,
             |contract_id, fetch_info| {
                 self.add_version_item_to_contract(
                     contract_id,
@@ -37,6 +35,8 @@ impl Drive {
                     platform_version,
                 )
             },
+            transaction,
+            platform_version,
         )?;
 
         tracing::info!(

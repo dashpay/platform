@@ -15,9 +15,9 @@ impl Drive {
     /// block that walk every contract.
     fn for_each_contract_in_state(
         &self,
+        mut each: impl FnMut([u8; 32], &DataContractFetchInfo) -> Result<(), Error>,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        mut each: impl FnMut([u8; 32], &DataContractFetchInfo) -> Result<(), Error>,
     ) -> Result<usize, Error> {
         let mut start_at = None;
         let mut contract_count = 0usize;

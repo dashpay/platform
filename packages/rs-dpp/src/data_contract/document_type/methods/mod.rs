@@ -1740,6 +1740,68 @@ mod tests {
         assert!(grade_key(200, platform_version) < grade_key(100, platform_version));
     }
 
+    /// A schema whose `[grade]` index sums `weight` (of the given schema),
+    /// range-summably when `range_summable`, beside a `[grade, name]` index.
+    fn summed_grade_schema(weight: Value, range_summable: bool) -> Value {
+        platform_value!({
+            "type": "object",
+            "indices": [
+                {
+                    "name": "byGrade",
+                    "properties": [{"grade": "asc"}],
+                    "summable": "weight",
+                    "rangeSummable": range_summable,
+                },
+                {"name": "byGradeName", "properties": [{"grade": "asc"}, {"name": "asc"}]},
+            ],
+            "properties": {
+                "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                "weight": weight,
+                "name": {"type": "string", "maxLength": 20, "position": 2},
+            },
+            "required": ["grade", "weight", "name"],
+            "additionalProperties": false,
+        })
+    }
+
+    #[test]
+    fn should_keep_generation_0_keys_for_a_property_ending_an_index_range_summing_signed_values() {
+        let platform_version = PlatformVersion::latest();
+        let grade_200 = |weight: Value, range_summable: bool| {
+            let document_type = build_doc_type_at(
+                "score",
+                summed_grade_schema(weight, range_summable),
+                platform_version,
+            );
+            let document_type = document_type.as_ref();
+            (
+                document_type
+                    .serialize_value_for_key("grade", &Value::U8(200), platform_version)
+                    .expect("a u8 grade is keyed"),
+                document_type.has_unsigned_integer_tree_key("grade"),
+            )
+        };
+        let signed =
+            platform_value!({"type": "integer", "minimum": -10, "maximum": 10, "position": 1});
+        let unsigned =
+            platform_value!({"type": "integer", "minimum": 0, "maximum": 10, "position": 1});
+        assert_eq!(
+            grade_200(signed.clone(), true),
+            (vec![0x48], false),
+            "values of both signs range-summed: generation 0's key"
+        );
+        assert_eq!(
+            grade_200(signed, false),
+            (vec![0xC8], true),
+            "summed without range sums: generation 1's key"
+        );
+        assert_eq!(
+            grade_200(unsigned, true),
+            (vec![0xC8], true),
+            "range-summed values that are never negative: generation 1's key"
+        );
+    }
+
     #[test]
     fn should_key_an_unsigned_property_in_value_order() {
         let platform_version = PlatformVersion::latest();

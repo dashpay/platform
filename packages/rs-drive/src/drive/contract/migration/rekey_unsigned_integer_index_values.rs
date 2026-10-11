@@ -6,23 +6,19 @@ use crate::error::Error;
 use crate::query::QueryResultType;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
-use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
-use grovedb::{AggregateData, Element, PathQuery, Query, SizedQuery, Transaction};
-use grovedb_merk::element::reconstruct::ElementReconstructExtensions;
-use grovedb_merk::element::tree_type::ElementTreeTypeExtensions;
-use grovedb_merk::tree_type::TreeType;
-use std::collections::BTreeMap;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::{PathQuery, Query, QueryItem, SizedQuery, Transaction};
+use std::collections::BTreeSet;
 
 impl Drive {
-    /// Rewrites every index value key that generation 0 of
+    /// Moves every index value key that generation 0 of
     /// `serialize_value_for_key` wrote for a property of an unsigned integer
-    /// type into the key generation 1 writes for the same value.
+    /// type to the key generation 1 writes for the same value.
     ///
     /// Runs once, on the first block of protocol version 14: from that
     /// version an unsigned value is keyed by its plain big-endian bytes, which
@@ -32,17 +28,18 @@ impl Drive {
     /// calls it only on a chain it has not transitioned before.
     ///
     /// Every document type of every contract in state is walked through its
-    /// layout (`document_type_layout`). Each first-level index tree that holds
-    /// such a key is rebuilt: its children move, a few at a time, to their new
-    /// keys, each subtree written again with its elements, flags and tree
-    /// types as they are. A key keeps its width, so nothing changes size.
+    /// layout (`document_type_layout`) down to the trees whose children are
+    /// such keys, and each child is moved to its new key with GroveDB's
+    /// `move_op`: the subtree under it keeps its stored bytes, so its hashes,
+    /// aggregates and Merk shapes are those it had. A key and the same key
+    /// with its top bit flipped hold two values that trade keys, and the two
+    /// moves go in the same batch. Levels whose keys stay are not rewritten.
     ///
-    /// A rebuilt Merk tree takes another shape, and GroveDB refuses a node
-    /// whose subtree sum leaves the signed 64-bit range, even where the whole
-    /// tree's sum is in it. So an index tree is rebuilt only when every sum
-    /// tree in it keeps its sums in range in any shape; one that could not,
-    /// which only sums of values near the limits of the range make, keeps its
-    /// earlier keys.
+    /// Only the tree holding the moved keys takes another shape. A property
+    /// that ends an index range-summing a value that can be negative keeps
+    /// generation 0's keys (`serialize_value_for_key` 1), so that tree never
+    /// sums values of both signs, and no node sum can leave the signed
+    /// 64-bit range in any order.
     ///
     /// Only the layouts earlier protocol versions write exist when this runs:
     /// the value keys of ordinary index levels. Contest vote polls keep the
@@ -54,8 +51,6 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let contract_count = self.for_each_contract_in_state(
-            transaction,
-            platform_version,
             |contract_id, fetch_info| {
                 for document_type in fetch_info.contract.document_types().values() {
                     self.rekey_unsigned_integer_index_values_of_document_type(
@@ -67,6 +62,8 @@ impl Drive {
                 }
                 Ok(())
             },
+            transaction,
+            platform_version,
         )?;
 
         tracing::info!(
@@ -97,335 +94,152 @@ impl Drive {
         let layout = document_type_layout(document_type, platform_version)?;
         let document_type_path =
             contract_document_type_path_vec(&contract_id, document_type.name());
-        for index_tree in &layout.root.children {
-            let LayoutKey::Fixed { bytes, .. } = &index_tree.key else {
-                continue;
-            };
-            if rekeys_within(index_tree, document_type) {
-                self.rekey_index_tree(
-                    &document_type_path,
-                    bytes,
-                    index_tree,
-                    document_type,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Rebuilds the first-level index tree `index_tree_key` of the document
-    /// type at `document_type_path`, an instance of `node`, with every key
-    /// below it that changes rewritten.
-    ///
-    /// Its children are moved in groups: the old keys of a group are removed
-    /// in one batch, then the copies are inserted in another, and a group
-    /// closes once it holds `SystemLimits::max_rekey_batch_insertions`
-    /// elements. Under generation 0 a key and the same key with its top bit
-    /// flipped hold two values that trade keys, so the two always move in the
-    /// same group. The document type's tree sums nothing, so taking children
-    /// out of this tree and putting them back changes no aggregate above it.
-    fn rekey_index_tree(
-        &self,
-        document_type_path: &[Vec<u8>],
-        index_tree_key: &[u8],
-        node: &LayoutNode,
-        document_type: DocumentTypeRef,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        let Some(index_tree) = self.grove_get_raw_optional(
-            document_type_path.into(),
-            index_tree_key,
-            DirectQueryType::StatefulDirectQuery,
-            Some(transaction),
-            &mut vec![],
-            &platform_version.drive,
-        )?
-        else {
-            return Ok(());
-        };
-        let Some(tree_type) = index_tree.tree_type() else {
-            return Ok(());
-        };
-        let mut path = document_type_path.to_vec();
-        path.push(index_tree_key.to_vec());
-
-        if !self.sums_stay_in_range_in_any_shape(&path, tree_type, transaction, platform_version)? {
-            tracing::warn!(
-                path = %path.iter().map(hex::encode).collect::<Vec<_>>().join("/"),
-                "kept the earlier keys of an index tree whose sums could leave the signed \
-                 64-bit range when it is rebuilt"
-            );
-            return Ok(());
-        }
-
-        let max_batch_insertions = platform_version
-            .system_limits
-            .max_rekey_batch_insertions
-            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "the protocol version that rewrites unsigned index value keys sets \
-                 max_rekey_batch_insertions",
-            )))? as usize;
-
-        let children: BTreeMap<Vec<u8>, Element> = self
-            .stored_children(&path, transaction, platform_version)?
-            .into_iter()
-            .collect();
-        let mut removals = GroveDbOpBatch::new();
-        let mut insertions = GroveDbOpBatch::new();
-        for (key, element) in &children {
-            let Some(child_node) = child_node(node, key) else {
-                continue;
-            };
-            let moves: Vec<(&Vec<u8>, &Element, Vec<u8>)> =
-                match rekeyed_key(child_node, key, document_type, platform_version)? {
-                    Some(new_key) => match children.get_key_value(&new_key) {
-                        // The pair moves when the lower key of the two is reached
-                        Some((partner_key, _)) if partner_key < key => continue,
-                        Some((partner_key, partner)) => {
-                            let partner_new_key = rekeyed_key(
-                                child_node,
-                                partner_key,
-                                document_type,
-                                platform_version,
-                            )?
-                            .unwrap_or_else(|| partner_key.clone());
-                            vec![
-                                (key, element, new_key),
-                                (partner_key, partner, partner_new_key),
-                            ]
-                        }
-                        None => vec![(key, element, new_key)],
-                    },
-                    // The key stays and keys below it change: the subtree is
-                    // written again under it
-                    None if child_node
-                        .children
-                        .iter()
-                        .any(|below| rekeys_within(below, document_type)) =>
-                    {
-                        vec![(key, element, key.clone())]
-                    }
-                    None => continue,
-                };
-            for (key, element, new_key) in moves {
-                match element.tree_type() {
-                    Some(tree_type) => removals.push(
-                        QualifiedGroveDbOp::delete_tree_op(
-                            path.clone(),
-                            key.clone(),
-                            tree_type,
-                            SubelementsDeletionBehavior::DeleteChildren,
-                        )
-                        .dont_check_for_backwards_references(),
-                    ),
-                    None => removals.add_delete(path.clone(), key.clone()),
-                }
-                self.copy_rekeyed(
-                    &path,
-                    key,
-                    element.clone(),
-                    &path,
-                    new_key,
-                    Some(child_node),
-                    document_type,
-                    &mut insertions,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-            if insertions.len() >= max_batch_insertions {
-                self.apply_rekey_batches(
-                    &mut removals,
-                    &mut insertions,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-        }
-        self.apply_rekey_batches(
-            &mut removals,
-            &mut insertions,
+        self.rekey_below(
+            &document_type_path,
+            &layout.root,
+            document_type,
             transaction,
             platform_version,
         )
     }
 
-    /// Applies `removals`, then `insertions`, leaving both empty.
-    fn apply_rekey_batches(
-        &self,
-        removals: &mut GroveDbOpBatch,
-        insertions: &mut GroveDbOpBatch,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        if removals.is_empty() {
-            return Ok(());
-        }
-        self.grove_apply_batch(
-            std::mem::take(removals),
-            false,
-            Some(transaction),
-            &platform_version.drive,
-        )?;
-        self.grove_apply_batch(
-            std::mem::take(insertions),
-            false,
-            Some(transaction),
-            &platform_version.drive,
-        )
-    }
-
-    /// Whether every tree at or below `path` (a `tree_type` tree), itself
-    /// included, keeps its sums in the signed 64-bit range whatever shape it is
-    /// rebuilt in: the magnitudes of its children's sums add up to at most
-    /// `i64::MAX`, so no part of them, and no partial sum a Merk node computes
-    /// while rebuilding, can leave the range. Counts only grow up to the
-    /// stored total, so they always stay in range.
-    fn sums_stay_in_range_in_any_shape(
+    /// Moves the keys that change below the tree at `path`, an instance of
+    /// `node`: those deeper down first, under the keys as they are stored,
+    /// then those of the tree's own children.
+    fn rekey_below(
         &self,
         path: &[Vec<u8>],
-        tree_type: TreeType,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
-        let mut pending = vec![(path.to_vec(), tree_type)];
-        while let Some((path, tree_type)) = pending.pop() {
-            let children = self.stored_children(&path, transaction, platform_version)?;
-            if sums_in_i64(tree_type) {
-                let magnitude = children.iter().fold(0u128, |total, (_, child)| {
-                    total.saturating_add(u128::from(child.sum_value_or_default().unsigned_abs()))
-                });
-                if magnitude > i64::MAX as u128 {
-                    return Ok(false);
-                }
-            }
-            for (key, child) in children {
-                if let Some(child_tree_type) = child.tree_type() {
-                    let mut child_path = path.clone();
-                    child_path.push(key);
-                    pending.push((child_path, child_tree_type));
-                }
-            }
-        }
-        Ok(true)
-    }
-
-    /// Adds to `insertions` the element stored at `parent` / `key`, written
-    /// at `new_parent` / `new_key`, and everything below it, with the keys
-    /// below that change rewritten. A tree is written empty, of its own type
-    /// and with its flags (and wrapper), and its children are written under
-    /// it; the batch derives its root key and aggregates from them.
-    #[allow(clippy::too_many_arguments)]
-    fn copy_rekeyed(
-        &self,
-        parent: &[Vec<u8>],
-        key: &[u8],
-        element: Element,
-        new_parent: &[Vec<u8>],
-        new_key: Vec<u8>,
-        node: Option<&LayoutNode>,
+        node: &LayoutNode,
         document_type: DocumentTypeRef,
-        insertions: &mut GroveDbOpBatch,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if element.is_any_tree() {
-            let empty = empty_tree_like(&element).ok_or(Error::Drive(
-                DriveError::CorruptedCodeExecution(
-                    "a document type holds only Merk trees, which can be moved",
-                ),
-            ))?;
-            insertions.add_insert(new_parent.to_vec(), new_key.clone(), empty);
-            let mut path = parent.to_vec();
-            path.push(key.to_vec());
-            let mut new_path = new_parent.to_vec();
-            new_path.push(new_key);
-            for (child_key, child_element) in
-                self.stored_children(&path, transaction, platform_version)?
+        if !node
+            .children
+            .iter()
+            .any(|child| rekeys_within(child, document_type))
+        {
+            return Ok(());
+        }
+        let max_batch_moves =
+            platform_version
+                .system_limits
+                .max_rekey_batch_moves
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "the protocol version that rewrites unsigned index value keys sets \
+                 max_rekey_batch_moves",
+                )))? as usize;
+
+        let children =
+            self.stored_child_keys(path, max_batch_moves, transaction, platform_version)?;
+        for (key, is_tree) in &children {
+            let Some(child_node) = child_node(node, key) else {
+                continue;
+            };
+            if *is_tree
+                && child_node
+                    .children
+                    .iter()
+                    .any(|below| rekeys_within(below, document_type))
             {
-                let child_node = node.and_then(|node| child_node(node, &child_key));
-                let new_child_key = match child_node {
-                    Some(child_node) => {
-                        rekeyed_key(child_node, &child_key, document_type, platform_version)?
-                    }
-                    None => None,
-                }
-                .unwrap_or_else(|| child_key.clone());
-                self.copy_rekeyed(
-                    &path,
-                    &child_key,
-                    child_element,
-                    &new_path,
-                    new_child_key,
+                let mut child_path = path.to_vec();
+                child_path.push(key.clone());
+                self.rekey_below(
+                    &child_path,
                     child_node,
                     document_type,
-                    insertions,
                     transaction,
                     platform_version,
                 )?;
             }
-            return Ok(());
         }
-        let element = self.stored_leaf(parent, key, element, transaction, platform_version)?;
-        insertions.add_insert(new_parent.to_vec(), new_key, element);
+
+        let present: BTreeSet<&[u8]> = children.iter().map(|(key, _)| key.as_slice()).collect();
+        let mut moves = GroveDbOpBatch::new();
+        for (key, _) in &children {
+            let Some(child_node) = child_node(node, key) else {
+                continue;
+            };
+            let Some(new_key) = rekeyed_key(child_node, key, document_type, platform_version)?
+            else {
+                continue;
+            };
+            if present.contains(new_key.as_slice()) {
+                // The two values trade keys: both moves go in one batch, added
+                // when the lower key of the two is reached
+                if new_key < *key {
+                    continue;
+                }
+                moves.push(QualifiedGroveDbOp::move_op(
+                    path.to_vec(),
+                    new_key.clone(),
+                    key.clone(),
+                ));
+            }
+            moves.push(QualifiedGroveDbOp::move_op(
+                path.to_vec(),
+                key.clone(),
+                new_key,
+            ));
+            if moves.len() >= max_batch_moves {
+                self.grove_apply_batch(
+                    std::mem::take(&mut moves),
+                    false,
+                    Some(transaction),
+                    &platform_version.drive,
+                )?;
+            }
+        }
+        if !moves.is_empty() {
+            self.grove_apply_batch(moves, false, Some(transaction), &platform_version.drive)?;
+        }
         Ok(())
     }
 
-    /// Every child of the tree at `path`, with the element stored there.
-    fn stored_children(
+    /// The key of every child of the tree at `path`, and whether it is a
+    /// tree, read `page_size` at a time.
+    fn stored_child_keys(
         &self,
         path: &[Vec<u8>],
+        page_size: usize,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Vec<u8>, Element)>, Error> {
-        let path_query = PathQuery::new(
-            path.to_vec(),
-            SizedQuery::new(Query::new_range_full(), None, None),
-        );
-        let (children, _) = self.grove_get_raw_path_query(
-            &path_query,
-            Some(transaction),
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut vec![],
-            &platform_version.drive,
-        )?;
-        Ok(children.to_key_elements())
-    }
-
-    /// A leaf as it is stored. A query returns a reference with its path made
-    /// absolute, so a reference is read again on its own.
-    fn stored_leaf(
-        &self,
-        parent: &[Vec<u8>],
-        key: &[u8],
-        element: Element,
-        transaction: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Result<Element, Error> {
-        if !element.is_reference() {
-            return Ok(element);
+    ) -> Result<Vec<(Vec<u8>, bool)>, Error> {
+        let limit = u16::try_from(page_size).unwrap_or(u16::MAX).max(1);
+        let mut keys: Vec<(Vec<u8>, bool)> = Vec::new();
+        loop {
+            let item = match keys.last() {
+                Some((last, _)) => QueryItem::RangeAfter(last.clone()..),
+                None => QueryItem::RangeFull(..),
+            };
+            let path_query = PathQuery::new(
+                path.to_vec(),
+                SizedQuery::new(Query::new_single_query_item(item), Some(limit), None),
+            );
+            let (page, _) = self.grove_get_raw_path_query(
+                &path_query,
+                Some(transaction),
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+            let page = page.to_key_elements();
+            let full = page.len() == usize::from(limit);
+            keys.extend(
+                page.into_iter()
+                    .map(|(key, element)| (key, element.is_any_tree())),
+            );
+            if !full {
+                return Ok(keys);
+            }
         }
-        self.grove_get_raw(
-            parent.into(),
-            key,
-            DirectQueryType::StatefulDirectQuery,
-            Some(transaction),
-            &mut vec![],
-            &platform_version.drive,
-        )?
-        .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-            "a reference a query returned can not be read".to_string(),
-        )))
     }
 }
 
 /// The layout node a child of an instance of `node` keyed `key` is an
 /// instance of: the fixed child with that key, or else the family of keys
 /// the node holds. `None` for a key the layout does not describe, which
-/// is moved as it is.
+/// stays where it is.
 fn child_node<'a>(node: &'a LayoutNode, key: &[u8]) -> Option<&'a LayoutNode> {
     node.children
         .iter()
@@ -437,24 +251,17 @@ fn child_node<'a>(node: &'a LayoutNode, key: &[u8]) -> Option<&'a LayoutNode> {
         })
 }
 
-/// Whether the keys of `node`'s family change: the value keys of an
-/// unsigned integer property.
-fn rekeys(node: &LayoutNode, document_type: DocumentTypeRef) -> bool {
-    match &node.key {
-        LayoutKey::PropertyValue { property } => {
-            document_type.has_unsigned_integer_tree_key(property)
-        }
-        _ => false,
-    }
-}
-
-/// Whether any key of `node`'s family or below it changes.
+/// Whether any key of `node`'s family or below it changes: the value keys of
+/// a property generation 1 keys as an unsigned integer.
 fn rekeys_within(node: &LayoutNode, document_type: DocumentTypeRef) -> bool {
-    rekeys(node, document_type)
-        || node
-            .children
-            .iter()
-            .any(|child| rekeys_within(child, document_type))
+    matches!(
+        &node.key,
+        LayoutKey::PropertyValue { property }
+            if document_type.has_unsigned_integer_tree_key(property)
+    ) || node
+        .children
+        .iter()
+        .any(|child| rekeys_within(child, document_type))
 }
 
 /// The new key of a child keyed `key`, an instance of `node`, when it
@@ -472,42 +279,6 @@ fn rekeyed_key(
     Ok((new_key != key).then_some(new_key))
 }
 
-/// Whether a tree of this type sums its children in a signed 64-bit value.
-fn sums_in_i64(tree_type: TreeType) -> bool {
-    matches!(
-        tree_type,
-        TreeType::SumTree
-            | TreeType::CountSumTree
-            | TreeType::ProvableCountSumTree
-            | TreeType::ProvableSumTree
-            | TreeType::ProvableCountProvableSumTree
-            | TreeType::ProvableSumIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree
-    )
-}
-
-/// The empty tree of `element`'s type, with its flags and wrapper: what a
-/// batch writes before the children it derives the root key and aggregates
-/// from. `None` for an element that is no Merk tree.
-fn empty_tree_like(element: &Element) -> Option<Element> {
-    if element.uses_non_merk_data_storage() {
-        return None;
-    }
-    element
-        .reconstruct_with_root_key(None, AggregateData::NoAggregateData)
-        .or_else(|| {
-            element.reconstruct_with_two_root_keys(None, None, AggregateData::NoAggregateData)
-        })
-        .or_else(|| {
-            let axes = element
-                .axes()?
-                .iter()
-                .map(|(axis, _)| (*axis, None))
-                .collect();
-            element.reconstruct_with_axes(None, AggregateData::NoAggregateData, axes)
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,20 +290,24 @@ mod tests {
         setup_grades,
     };
     use crate::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
+    use crate::util::grove_operations::DirectQueryType;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DataContractOwnedResolvedInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::{DataContract, DataContractFactory};
-    use dpp::document::{Document, DocumentV0};
+    use dpp::document::{Document, DocumentV0, DocumentV0Setters};
     use dpp::identifier::Identifier;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{platform_value, Value};
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
     use dpp::voting::votes::resource_vote::ResourceVote;
+    use grovedb::{AggregateData, Element};
+    use grovedb_merk::element::reconstruct::ElementReconstructExtensions;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -543,6 +318,51 @@ mod tests {
         PlatformVersion::get(13).expect("expected protocol version 13")
     }
 
+    /// Every child of the tree at `path`, as it is stored. A query returns a
+    /// reference with its path made absolute, so a reference is read again on
+    /// its own.
+    fn stored_children(
+        drive: &Drive,
+        path: &[Vec<u8>],
+        transaction: &Transaction,
+    ) -> Vec<(Vec<u8>, Element)> {
+        let platform_version = PlatformVersion::latest();
+        let path_query = PathQuery::new(
+            path.to_vec(),
+            SizedQuery::new(Query::new_range_full(), None, None),
+        );
+        let (children, _) = drive
+            .grove_get_raw_path_query(
+                &path_query,
+                Some(transaction),
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the children");
+        children
+            .to_key_elements()
+            .into_iter()
+            .map(|(key, element)| {
+                if !element.is_reference() {
+                    return (key, element);
+                }
+                let stored = drive
+                    .grove_get_raw(
+                        path.into(),
+                        &key,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected the reference")
+                    .expect("a stored reference");
+                (key, stored)
+            })
+            .collect()
+    }
+
     /// Every element under `path`, keyed by its path below it, as it is
     /// stored: a tree as its type, flags and wrapper, with the aggregates of
     /// the tree inside any wrapper.
@@ -551,26 +371,18 @@ mod tests {
         path: &[Vec<u8>],
         transaction: &Transaction,
     ) -> BTreeMap<Vec<Vec<u8>>, (Element, u64, i64)> {
-        let platform_version = PlatformVersion::latest();
         let mut out = BTreeMap::new();
-        for (key, element) in drive
-            .stored_children(path, transaction, platform_version)
-            .expect("expected the children")
-        {
+        for (key, element) in stored_children(drive, path, transaction) {
             let summary = if element.is_any_tree() {
                 (
-                    empty_tree_like(&element).expect("a Merk tree"),
+                    element
+                        .reconstruct_with_root_key(None, AggregateData::NoAggregateData)
+                        .expect("a Merk tree"),
                     element.underlying().count_value_or_default(),
                     element.underlying().sum_value_or_default(),
                 )
             } else {
-                (
-                    drive
-                        .stored_leaf(path, &key, element, transaction, platform_version)
-                        .expect("expected the leaf"),
-                    0,
-                    0,
-                )
+                (element, 0, 0)
             };
             let is_tree = summary.0.is_any_tree();
             out.insert(vec![key.clone()], summary);
@@ -920,11 +732,11 @@ mod tests {
         );
     }
 
-    /// A `score` type summing a signed `weight` by a u8 `grade`, both on its
-    /// own (`byGrade`) and under a range-summable `[grade, tag]` continuation,
-    /// which a summing value tree holds behind a wrapper that keeps it out of
-    /// the sum.
-    fn score_contract(weight: Value) -> DataContract {
+    /// A `score` type summing `weight` by a u8 `grade`, both on its own
+    /// (`byGrade`, range-summable when `range_summable`) and under a
+    /// range-summable `[grade, tag]` continuation, which a summing value tree
+    /// holds behind a wrapper that keeps it out of the sum.
+    fn score_contract(weight: Value, range_summable: bool) -> DataContract {
         contract_at_13(
             9,
             "score",
@@ -941,7 +753,7 @@ mod tests {
                         "name": "byGrade",
                         "properties": [{"grade": "asc"}],
                         "summable": "weight",
-                        "rangeSummable": true,
+                        "rangeSummable": range_summable,
                     },
                     {
                         "name": "byGradeTag",
@@ -968,9 +780,10 @@ mod tests {
 
     #[test]
     fn should_rekey_sum_trees_and_the_wrapped_continuations_under_them() {
-        let contract = score_contract(platform_value!(
-            {"type": "integer", "minimum": -1000, "maximum": 1000, "position": 1}
-        ));
+        let contract = score_contract(
+            platform_value!({"type": "integer", "minimum": -1000, "maximum": 1000, "position": 1}),
+            false,
+        );
         let drive = setup_contract_at_13(&contract);
         for (id, grade, weight, tag) in [
             (1, 5, 10, "a"),
@@ -1013,12 +826,55 @@ mod tests {
         );
     }
 
-    /// The sums of these grades fit, but a tree rebuilt in the new key order
-    /// would hold grades 1 and 2 in one subtree summing past `i64::MAX`.
+    /// A range-summable index over values that are never negative is
+    /// rewritten: the tree holding its grades keeps a sum in every node, and
+    /// no order of those values can make a node sum leave the range.
     #[test]
-    fn should_keep_the_keys_of_an_index_whose_sums_could_leave_the_range_when_rebuilt() {
+    fn should_rekey_an_index_range_summing_values_that_are_never_negative() {
+        let contract = score_contract(
+            platform_value!({"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1}),
+            true,
+        );
+        let drive = setup_contract_at_13(&contract);
+        let large = i64::from(u32::MAX);
+        for (id, grade, weight) in [(1, 1, large), (2, 128, large), (3, 2, 7), (4, 129, 9)] {
+            insert_document(
+                &drive,
+                &contract,
+                "score",
+                &score(id, grade, weight, "a"),
+                protocol_version_13(),
+            );
+        }
+        let before = dump_document_type(&drive, &contract, "score");
+
+        rekey(&drive);
+
+        assert_eq!(
+            dump_document_type(&drive, &contract, "score"),
+            rekeyed_dump(before, &[("grade", 1)]),
+        );
+        assert_eq!(
+            query_values(
+                &drive,
+                &contract,
+                "score",
+                "select * from score where grade > 1 order by grade asc",
+                "grade",
+                PlatformVersion::latest(),
+            ),
+            vec![2, 128, 129]
+        );
+    }
+
+    /// An index range-summing values of both signs keeps its earlier keys:
+    /// these sums fit in the old order, but every balanced tree of the new
+    /// order holds a node summing past `i64::MAX`. Protocol version 14 keys
+    /// its grades as generation 0 too, so reads and writes find them.
+    #[test]
+    fn should_keep_and_use_the_keys_of_an_index_range_summing_signed_values() {
         const M: i64 = 1 << 62;
-        let contract = score_contract(platform_value!({"type": "integer", "position": 1}));
+        let contract = score_contract(platform_value!({"type": "integer", "position": 1}), true);
         let drive = setup_contract_at_13(&contract);
         for (id, grade, weight) in [(1, 1, M), (2, 128, -M), (3, 2, M), (4, 3, -M)] {
             insert_document(
@@ -1037,6 +893,154 @@ mod tests {
             dump_document_type(&drive, &contract, "score"),
             before,
             "the index keeps its earlier keys"
+        );
+
+        let platform_version = PlatformVersion::latest();
+        let grades =
+            |sql: &str| query_values(&drive, &contract, "score", sql, "grade", platform_version);
+        assert_eq!(grades("select * from score where grade == 128"), vec![128]);
+        assert_eq!(grades("select * from score where grade == 1"), vec![1]);
+
+        drive
+            .delete_document_for_contract(
+                Identifier::new([1; 32]),
+                &contract,
+                "score",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to delete a document written at protocol version 13");
+        insert_document(
+            &drive,
+            &contract,
+            "score",
+            &score(5, 129, 0, "a"),
+            platform_version,
+        );
+        assert_eq!(
+            grades("select * from score where grade == 1"),
+            Vec::<u64>::new()
+        );
+        assert_eq!(grades("select * from score where grade == 129"), vec![129]);
+    }
+
+    /// Moves applied one batch at a time still keep each pair of keys that
+    /// trade places in one batch, and end where one batch would.
+    #[test]
+    fn should_rekey_the_same_in_batches_of_one_move() {
+        let (drive, contract) = setup_grades(protocol_version_13());
+        let (reference, _) = setup_grades(protocol_version_13());
+        rekey(&reference);
+
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version.system_limits.max_rekey_batch_moves = Some(1);
+        let transaction = drive.grove.start_transaction();
+        drive
+            .rekey_unsigned_integer_index_values(&transaction, &platform_version)
+            .expect("expected the rekey to run one move at a time");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        assert_eq!(
+            dump_document_type(&drive, &contract, "grade"),
+            dump_document_type(&reference, &contract, "grade"),
+        );
+        assert_eq!(
+            count_grades(&drive, &contract, above_100(), PlatformVersion::latest())
+                .expect("expected the count"),
+            5
+        );
+    }
+
+    /// A token history shaped type: indexes led by an identifier, one of them
+    /// continuing with an unsigned `amount`. Only the amount keys move; the
+    /// sibling branches under each token stay as they are.
+    #[test]
+    fn should_move_only_the_levels_whose_keys_change() {
+        let contract = contract_at_13(
+            11,
+            "transfer",
+            platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "tokenId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "amount": {"type": "integer", "minimum": 0, "position": 1},
+                    "recipient": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 2,
+                    },
+                },
+                "required": ["tokenId", "amount", "recipient", "$createdAt"],
+                "indices": [
+                    {"name": "byDate", "properties": [{"tokenId": "asc"}, {"$createdAt": "asc"}]},
+                    {"name": "byAmount", "properties": [{"tokenId": "asc"}, {"amount": "asc"}]},
+                    {
+                        "name": "to",
+                        "properties": [{"tokenId": "asc"}, {"recipient": "asc"}, {"$createdAt": "asc"}],
+                    },
+                ],
+                "additionalProperties": false,
+            }),
+        );
+        let drive = setup_contract_at_13(&contract);
+        for (id, token, amount) in [(1, 1, 5u64), (2, 1, HIGH + 5), (3, 2, 70), (4, 2, 5)] {
+            let mut transfer = document(
+                id,
+                vec![
+                    ("tokenId", Value::Identifier([token; 32])),
+                    ("amount", Value::U64(amount)),
+                    ("recipient", Value::Identifier([id + 20; 32])),
+                ],
+            );
+            transfer.set_created_at(Some(1_000 + u64::from(id)));
+            insert_document(
+                &drive,
+                &contract,
+                "transfer",
+                &transfer,
+                protocol_version_13(),
+            );
+        }
+        let before = dump_document_type(&drive, &contract, "transfer");
+
+        rekey(&drive);
+
+        assert_eq!(
+            dump_document_type(&drive, &contract, "transfer"),
+            rekeyed_dump(before, &[("amount", 8)]),
+            "only the amount keys change"
+        );
+        assert_eq!(
+            query_values(
+                &drive,
+                &contract,
+                "transfer",
+                &format!(
+                    "select * from transfer where tokenId == '{}' and amount > 4 order by amount asc",
+                    Identifier::new([1; 32]).to_string(Encoding::Base58)
+                ),
+                "amount",
+                PlatformVersion::latest(),
+            ),
+            vec![5, HIGH + 5]
         );
     }
 
@@ -1131,6 +1135,35 @@ mod tests {
             )
             .expect("expected to record the vote");
 
+        // The contested values listing and its proof, edited in place to key
+        // the poll values with generation 0, read the same at protocol version 13
+        let listing_at_13 = VotePollsByDocumentTypeQuery {
+            contract_id: contract.id(),
+            document_type_name: "seat".to_string(),
+            index_name: "byNumber".to_string(),
+            start_index_values: vec![],
+            end_index_values: vec![],
+            start_at_value: None,
+            limit: None,
+            order_ascending: true,
+        };
+        assert_eq!(
+            listing_at_13
+                .execute_no_proof(&drive, None, &mut vec![], protocol_version_13())
+                .expect("expected the contested values at protocol version 13"),
+            vec![Value::U8(200)]
+        );
+        let proof_at_13 = listing_at_13
+            .clone()
+            .execute_with_proof(&drive, None, &mut vec![], protocol_version_13())
+            .expect("expected the contested values proof at protocol version 13");
+        let (_, proved_at_13) = listing_at_13
+            .resolve_with_provided_borrowed_contract(&contract)
+            .expect("expected to resolve the listing")
+            .verify_contests_proof(&proof_at_13, protocol_version_13())
+            .expect("expected the proof to verify at protocol version 13");
+        assert_eq!(proved_at_13, vec![Value::U8(200)]);
+
         rekey(&drive);
 
         let platform_version = PlatformVersion::latest();
@@ -1146,9 +1179,7 @@ mod tests {
             "the poll keeps its path"
         );
         let transaction = drive.grove.start_transaction();
-        let contenders: Vec<Vec<u8>> = drive
-            .stored_children(&contenders_path, &transaction, platform_version)
-            .expect("expected the contenders")
+        let contenders: Vec<Vec<u8>> = stored_children(&drive, &contenders_path, &transaction)
             .into_iter()
             .map(|(key, _)| key)
             .collect();
@@ -1157,9 +1188,7 @@ mod tests {
         let voting_path = vote_poll
             .contender_voting_path(&towards_first, platform_version)
             .expect("expected the voting path");
-        let voters: Vec<Vec<u8>> = drive
-            .stored_children(&voting_path, &transaction, platform_version)
-            .expect("expected the voters")
+        let voters: Vec<Vec<u8>> = stored_children(&drive, &voting_path, &transaction)
             .into_iter()
             .map(|(key, _)| key)
             .collect();

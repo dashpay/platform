@@ -405,15 +405,16 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
-    /// How many elements the rewrite of unsigned integer index value keys on the first block
+    /// How many key moves the rewrite of unsigned integer index value keys on the first block
     /// of protocol version 14 (`Drive::rekey_unsigned_integer_index_values`) gathers into one
-    /// pair of GroveDB batches (the old keys removed, then their copies inserted) before it
-    /// applies them: one batch per moved key would propagate to the root once per key, and
-    /// one batch per index would hold the whole index in memory. Part of what that block
-    /// writes, since the batch boundaries shape the rebuilt Merk trees.
+    /// GroveDB batch, and how many keys it reads in one page: one batch per moved key would
+    /// propagate to the root once per key, and one batch per tree would hold every key of a
+    /// tree with many values at once. Two values that trade keys always move in the same
+    /// batch, so a batch can hold one move more. Part of what that block writes, since the
+    /// batch boundaries shape the Merk tree holding the moved keys.
     ///
     /// `None` in the tables of protocol versions that never run the rewrite.
-    pub max_rekey_batch_insertions: Option<u32>,
+    pub max_rekey_batch_moves: Option<u32>,
 }
 
 #[cfg(test)]

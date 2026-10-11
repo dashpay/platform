@@ -1483,6 +1483,9 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<Vec<Document>, Error> {
         if query.document_type.index_only() {
             let index = query.index_only_query_index(platform_version)?;
+            // Edited in place to pass the platform version, which picks the
+            // key generation synthesis decodes with: only an indexOnly type
+            // reaches this line, and only protocol version 14 parses one.
             return trios
                 .into_iter()
                 .map(|(path, key, element)| {

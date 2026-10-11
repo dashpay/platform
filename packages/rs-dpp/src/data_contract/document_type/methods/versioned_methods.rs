@@ -790,7 +790,10 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// The type of the property an index key names, when it is one whose key
     /// generation 1 changes: a property, or a derived index property, keyed
     /// as an unsigned integer. `None` for the `$` system fields, which keep
-    /// their encoding, and for every other name.
+    /// their encoding, for a property that ends an index range-summing a
+    /// value that can be negative (see
+    /// [`Self::ends_an_index_range_summing_a_signed_value`]), and for every
+    /// other name.
     fn unsigned_integer_tree_key_property_type(&self, key: &str) -> Option<&DocumentPropertyType> {
         if key.starts_with('$') {
             return None;
@@ -800,6 +803,32 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             .map(|property| &property.property_type)
             .or_else(|| self.derived_index_property_type(key))
             .filter(|property_type| property_type.has_unsigned_integer_tree_key())
+            .filter(|_| !self.ends_an_index_range_summing_a_signed_value(key))
+    }
+
+    /// Whether an index ending with `key` is `rangeSummable` over a property
+    /// whose values can be negative. The property-name tree holding `key`'s
+    /// values then keeps a sum in every node, and GroveDB refuses a node sum
+    /// outside the signed 64-bit range. The keys stored before generation 1
+    /// can't always be put in value order there: values of both signs that
+    /// fit every node of the old order can leave the range in every balanced
+    /// tree of the new one. So such a property keeps generation 0's keys at
+    /// every version, and the upgrade to generation 1 leaves its index as it
+    /// is. Sums of values that can't be negative never leave the range in any
+    /// order, since every node sums part of the whole tree's sum.
+    fn ends_an_index_range_summing_a_signed_value(&self, key: &str) -> bool {
+        self.indexes().values().any(|index| {
+            index.range_summable
+                && index
+                    .properties
+                    .last()
+                    .is_some_and(|property| property.name == key)
+                && index.summable.as_deref().is_some_and(|summed| {
+                    self.flattened_properties()
+                        .get(summed)
+                        .is_none_or(|summed| !summed.property_type.has_unsigned_integer_tree_key())
+                })
+        })
     }
 
     /// Generation 1 keys a property or derived index property of an unsigned
