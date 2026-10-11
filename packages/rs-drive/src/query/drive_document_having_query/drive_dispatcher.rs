@@ -140,6 +140,7 @@ impl Drive {
             request.where_clauses.to_vec(),
             request.document_type,
             false,
+            platform_version,
         )?;
         let mode = detect_having_mode(
             &request.select,

@@ -77,6 +77,7 @@ impl Drive {
             std::mem::take(&mut request.where_clauses),
             request.document_type,
             groups_by_element,
+            platform_version,
         )?;
         request.where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;

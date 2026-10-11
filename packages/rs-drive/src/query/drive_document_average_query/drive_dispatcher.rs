@@ -105,6 +105,7 @@ impl Drive {
             std::mem::take(&mut request.where_clauses),
             request.document_type,
             groups_by_element,
+            platform_version,
         )?;
         if request.prove {
             // The no-prove path canonicalizes inside the joint dispatcher;

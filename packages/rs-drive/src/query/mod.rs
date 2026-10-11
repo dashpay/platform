@@ -2540,7 +2540,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         "startAt/startAfter is not supported with multiple in clauses".to_string(),
                     )));
                 }
-                self.validate_array_element_shape()
+                self.validate_array_element_shape(platform_version)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentQuery::validate_in_clause_shape".to_string(),
@@ -2566,9 +2566,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// take (protocol version 14):
     ///
     /// - A clause on a typed array is `contains` or `containsAny`, and either
-    ///   reads a typed array, with a value (or values) of its element type.
-    ///   The documents query takes clause values as the caller gives them, so
-    ///   these are checked against the schema here.
+    ///   reads a typed array, with a value (or values) that key as its
+    ///   elements ([`WhereClause::validate_array_element_clause`]). The
+    ///   documents query does not otherwise judge clauses against the schema.
     /// - `containsAny` reads no composite or chained page, whose merged proof
     ///   is read without the repeats dropped.
     /// - `containsAny` takes no startAt or startAfter cursor. A document is
@@ -2581,7 +2581,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// `contains` takes a cursor: the cursor document must hold the element
     /// (see [`Self::cursor_with_contained_elements`]).
     #[cfg(any(feature = "server", feature = "verify"))]
-    fn validate_array_element_shape(&self) -> Result<(), Error> {
+    fn validate_array_element_shape(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         let is_typed_array = |field: &str| {
             self.document_type
                 .flattened_properties()
@@ -2601,17 +2604,7 @@ impl<'a> DriveDocumentQuery<'a> {
             .chain(self.internal_clauses.in_clauses.iter())
             .chain(self.internal_clauses.range_clause.iter())
         {
-            if !is_typed_array(&clause.field) && !clause.operator.reads_array_elements() {
-                continue;
-            }
-            if let Some(error) = clause
-                .validate_against_schema(self.document_type)
-                .errors
-                .into_iter()
-                .next()
-            {
-                return Err(Error::Query(error));
-            }
+            clause.validate_array_element_clause(self.document_type, platform_version)?;
         }
         // A composite or chained query proves its page with its sub-queries
         // in one merged proof, read without the repeats being dropped.

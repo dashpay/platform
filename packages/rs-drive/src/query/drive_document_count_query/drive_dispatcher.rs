@@ -295,6 +295,7 @@ impl Drive {
             request.where_clauses,
             request.document_type,
             groups_by_element,
+            platform_version,
         )?;
         let where_clauses =
             validate_and_canonicalize_where_clauses(where_clauses, platform_version)?;

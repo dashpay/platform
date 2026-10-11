@@ -1252,6 +1252,64 @@ impl<'a> WhereClause {
         self.operator.eval(value, &self.value)
     }
 
+    /// Judge a clause that names a typed array or reads its elements (protocol
+    /// version 14): a typed array is read with `contains` or `containsAny` and
+    /// nothing else, those two read a typed array, and each value they name
+    /// must key as an element of the array's element type. A value is judged
+    /// the way a value of any other indexed property is, by whether it
+    /// serializes as an index key of the type, so an identifier element may
+    /// be given as its bytes or its base58 text. A clause on any other field
+    /// passes.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn validate_array_element_clause(
+        &self,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let names_typed_array = document_type
+            .flattened_properties()
+            .get(&self.field)
+            .is_some_and(|property| {
+                matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+            });
+        if names_typed_array != self.operator.reads_array_elements() {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(if names_typed_array {
+                    "a typed array is read with contains or containsAny, and no other operator"
+                } else {
+                    "contains and containsAny read the elements of a typed array"
+                }),
+            ));
+        }
+        if !names_typed_array {
+            return Ok(());
+        }
+        let values = match self.operator {
+            ContainsAny => {
+                let in_values = self.in_values();
+                if let Some(error) = in_values.errors.into_iter().next() {
+                    return Err(Error::Query(error));
+                }
+                in_values.data.unwrap_or_default().into_owned()
+            }
+            _ => vec![self.value.clone()],
+        };
+        for value in &values {
+            if value.is_null()
+                || document_type
+                    .serialize_value_for_key(&self.field, value, platform_version)
+                    .is_err()
+            {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "invalid value type for an element of the typed array",
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Validate this where clause against the document schema
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn validate_against_schema(

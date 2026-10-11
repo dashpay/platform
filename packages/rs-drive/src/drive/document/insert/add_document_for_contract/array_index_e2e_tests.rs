@@ -712,19 +712,19 @@ fn should_refuse_shapes_that_could_repeat_or_misread_a_post() {
         // An array is read by its elements only.
         (
             platform_value!({"where": [["hashtags", "==", "dash"]]}),
-            "operator not allowed for field type",
+            "read with contains or containsAny",
         ),
         (
             platform_value!({"where": [["hashtags", "in", ["dash"]]]}),
-            "operator not allowed for field type",
+            "read with contains or containsAny",
         ),
         (
             platform_value!({"where": [["language", "contains", "en"]]}),
-            "operator not allowed for field type",
+            "read the elements of a typed array",
         ),
         (
             platform_value!({"where": [["hashtags", "contains", 7]]}),
-            "invalid value type",
+            "invalid value type for an element",
         ),
         // A cursor can not place a page reached under several elements.
         (
@@ -802,7 +802,8 @@ fn proved_counts(
         other => panic!("expected a proof, got {other:?}"),
     };
     // The verifier keys the clauses as the prover did.
-    let keyed = key_array_element_clauses(where_clauses, document_type, true).expect("keyed");
+    let keyed = key_array_element_clauses(where_clauses, document_type, true, platform_version)
+        .expect("keyed");
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &keyed,
@@ -884,7 +885,7 @@ fn should_count_the_posts_holding_each_element() {
     )
     .expect_err("an equality on a typed array is refused");
     assert!(
-        format!("{error:?}").contains("operator not allowed"),
+        format!("{error:?}").contains("read with contains or containsAny"),
         "{error:?}"
     );
 }
@@ -1078,4 +1079,26 @@ fn should_enter_a_post_once_per_element_in_its_window() {
         &text("news")
     ));
     assert!(entry("dash", 2));
+}
+
+#[test]
+fn should_read_an_identifier_element_given_as_bytes_or_base58_text() {
+    let (drive, contract) = setup();
+    let mentioned = [11; 32];
+    insert(&drive, &contract, &post(1, None, Some(&[mentioned, [12; 32]])));
+    insert(&drive, &contract, &post(2, None, Some(&[[12; 32]])));
+    let as_identifier = query_ids(
+        &drive,
+        &contract,
+        platform_value!({"where": [["mentions", "contains", Identifier::from(mentioned)]]}),
+    );
+    let as_text = query_ids(
+        &drive,
+        &contract,
+        platform_value!({
+            "where": [["mentions", "contains", bs58::encode(mentioned).into_string()]]
+        }),
+    );
+    assert_eq!(as_identifier, vec![1]);
+    assert_eq!(as_text, as_identifier);
 }
