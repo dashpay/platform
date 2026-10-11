@@ -16,10 +16,13 @@
 //! secret`, `secret` transient too, and consumes it. `nestedClaim` reveals
 //! through a salt inside an object, `meta.salt`. `ticket` reveals, through its
 //! transient `secret`, an earlier ticket of its writer, and consumes it.
+//! A `post` added by some tests reads its `authorHandle` string into a `findBy`
+//! as is, no function, finding a `handle` by its unique `name`.
 
 use super::*;
 
 mod commit_reveal_lookup_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::*;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
@@ -1044,12 +1047,14 @@ mod commit_reveal_lookup_tests {
                     &data,
                     alice,
                     Some(alice),
+                    &DocumentSystemValues::default(),
                     changed_fields,
                     None,
                     &platform_ref,
                     &block(REVEAL_HEIGHT),
                     &mut consumed,
                     None,
+                    &mut BTreeMap::new(),
                     None,
                     &mut execution_context,
                     platform_version,
@@ -1198,6 +1203,142 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.preorder_exists(preorder.id()));
     }
 
+    /// The fixture with a `voucher`, a deletable document keyed by a unique `serial`, and a
+    /// `redemption` that finds one by its serial through a plain `findBy`, no function: the
+    /// writer's own (`where $ownerId`), from an earlier block, and consumes it. A redemption
+    /// is never replaced, so its lookup is judged on the create alone, as a commitment's is.
+    fn voucher_fixture() -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let schemas = &mut contract["documentSchemas"];
+            schemas["voucher"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": true,
+                "properties": {
+                    "serial": { "type": "identifier", "position": 0 }
+                },
+                "indices": [
+                    { "name": "serial", "properties": [{ "serial": "asc" }], "unique": true }
+                ],
+                "required": ["$createdAtBlockHeight", "serial"],
+                "additionalProperties": false
+            });
+            schemas["redemption"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": false,
+                "properties": {
+                    "voucherSerial": {
+                        "type": "identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "deletableDocument",
+                            "documentType": "voucher",
+                            "findBy": { "serial": "." },
+                            "where": { "$ownerId": "$ownerId" },
+                            "minimumAgeBlocks": 1,
+                            "consume": true
+                        }
+                    }
+                },
+                "required": ["voucherSerial"],
+                "additionalProperties": false
+            });
+        })
+    }
+
+    const VOUCHER_SERIAL: [u8; 32] = [0x5e; 32];
+
+    /// A voucher of `who` with [`VOUCHER_SERIAL`], made in `height`.
+    async fn make_voucher(fixture: &mut CommitRevealFixture, who: Who, height: u64) -> Document {
+        let (voucher, result) = fixture
+            .create(
+                who,
+                "voucher",
+                &[("serial", Value::Identifier(VOUCHER_SERIAL))],
+                &[],
+                height,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        voucher
+    }
+
+    /// The redemption of the voucher with [`VOUCHER_SERIAL`] by `who`, in `height`.
+    async fn redeem(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        height: u64,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                who,
+                "redemption",
+                &[("voucherSerial", Value::Identifier(VOUCHER_SERIAL))],
+                &[],
+                height,
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn should_consume_a_document_a_plain_lookup_finds_on_a_type_never_replaced() {
+        let mut fixture = voucher_fixture();
+        let voucher = make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (redemption, result) = redeem(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(!fixture.document_exists("voucher", voucher.id()));
+        assert!(fixture.document_exists("redemption", redemption.id()));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_plain_lookup_redemption_in_the_block_of_its_voucher() {
+        let mut fixture = voucher_fixture();
+        let voucher = make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (_, result) = redeem(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentRequirementNotMetError(e)
+                ),
+                ..
+            } if *e.document_id() == voucher.id()
+                && e.field() == "minimumAgeBlocks"
+                && e.required() == "1"
+                && e.path() == "voucherSerial"
+        );
+        assert!(fixture.document_exists("voucher", voucher.id()));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_redeeming_another_identitys_voucher_through_a_plain_lookup() {
+        let mut fixture = voucher_fixture();
+        let voucher = make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (_, result) = redeem(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.path() == "voucherSerial"
+                && e.referring_property() == "$ownerId"
+                && e.referenced_property() == "$ownerId"
+        );
+        assert!(fixture.document_exists("voucher", voucher.id()));
+    }
+
     /// The type in the fixture reads what [`DocumentTypeRef`] reports: the
     /// declaration is the salt's, revealed, and the key is computed.
     #[test]
@@ -1218,8 +1359,500 @@ mod commit_reveal_lookup_tests {
             .as_any_document_reference()
             .and_then(|declaration| declaration.lookup)
             .expect("expected the salt's lookup");
-        assert!(lookup.is_checked_on_create_only());
+        assert!(lookup.hash_key().is_some());
+        assert!(lookup.is_checked_on_create_only(true));
         assert_eq!(lookup.minimum_age_blocks, Some(1));
         assert!(lookup.consume);
+    }
+
+    /// The fixture with a `handle`, unique by its `name` and `kind` (a
+    /// `permanentDocument` handle can not be deleted, a `deletableDocument` one
+    /// can), and a mutable `post` whose `authorHandle` string refers to it by that
+    /// name, read as is: `findBy: { "name": "." }`, no function.
+    fn handle_fixture(kind: &'static str) -> CommitRevealFixture {
+        handle_fixture_with(kind, |_, _| {})
+    }
+
+    /// [`handle_fixture`] with `change` applied to the `handle` and the `post` schemas.
+    fn handle_fixture_with(
+        kind: &'static str,
+        change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let mut handle = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": kind == "deletableDocument",
+                "properties": {
+                    "name": { "type": "string", "maxLength": 63, "position": 0 }
+                },
+                "indices": [
+                    { "name": "name", "properties": [{ "name": "asc" }], "unique": true }
+                ],
+                "required": ["name"],
+                "additionalProperties": false
+            });
+            let mut post = serde_json::json!({
+                "type": "object",
+                "documentsMutable": true,
+                "canBeDeleted": true,
+                "properties": {
+                    "authorHandle": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 0,
+                        "refersTo": {
+                            "type": kind,
+                            "documentType": "handle",
+                            "findBy": { "name": "." }
+                        }
+                    },
+                    "body": { "type": "string", "maxLength": 100, "position": 1 }
+                },
+                "required": ["authorHandle", "body"],
+                "additionalProperties": false
+            });
+            change(&mut handle, &mut post);
+            let schemas = &mut contract["documentSchemas"];
+            schemas["handle"] = handle;
+            schemas["post"] = post;
+        })
+    }
+
+    fn text(value: &str) -> Value {
+        Value::Text(value.to_string())
+    }
+
+    /// The handle `name` of `who`, made in `height`.
+    async fn make_handle(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        name: &str,
+        height: u64,
+    ) -> Document {
+        let (handle, result) = fixture
+            .create(who, "handle", &[("name", text(name))], &[], height)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        handle
+    }
+
+    /// A post of `who` by `author`, in `height`.
+    async fn post(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        author: &str,
+        height: u64,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                who,
+                "post",
+                &[("authorHandle", text(author)), ("body", text("gm"))],
+                &[],
+                height,
+            )
+            .await
+    }
+
+    /// A paid refusal of the post's `authorHandle` with
+    /// `ReferencedEntityNotFoundError` (40120): no handle has the name.
+    fn assert_no_handle(result: StateTransitionExecutionResult) {
+        assert_not_found(result, "authorHandle");
+    }
+
+    /// A paid refusal of the property at `path` with `ReferencedEntityNotFoundError`
+    /// (40120): no document holds its value. The value is no id and no hash stands for
+    /// it, so the error's id is all zeros.
+    fn assert_not_found(result: StateTransitionExecutionResult, path: &str) {
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                ..
+            } if e.path() == path
+                && *e.entity_id() == Identifier::default()
+                && matches!(
+                    e.entity_type(),
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
+                        | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+                ),
+            "expected 40120 at {path}"
+        );
+    }
+
+    fn assert_written(result: StateTransitionExecutionResult) {
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_create_a_document_whose_string_property_finds_a_document_by_that_value() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+
+        let (_, result) = post(&mut fixture, Who::Mallory, "alice", REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_string_value_no_document_has() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+
+        // The key is the value as is: a name differing by case finds nothing
+        for author in ["bob", "Alice"] {
+            let (_, result) = post(&mut fixture, Who::Alice, author, REVEAL_HEIGHT).await;
+            assert_no_handle(result);
+        }
+    }
+
+    /// A value read as is is judged again when a replace changes it, as an
+    /// identifier's reference is, unlike a value revealed into a computed key
+    #[tokio::test]
+    async fn should_re_validate_a_string_value_a_replace_changes() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+        make_handle(&mut fixture, Who::Alice, "bob", COMMIT_HEIGHT).await;
+        let (post, result) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text("carol")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text("bob")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A `deletableDocument` found by a string value is asked for on every
+    /// replace, as one by id is: once its handle is deleted, a replace keeping
+    /// the value is refused, and one naming another handle goes through
+    #[tokio::test]
+    async fn should_re_validate_a_deletable_document_found_by_a_string_value_on_every_replace() {
+        let mut fixture = handle_fixture("deletableDocument");
+        let alice = make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+        make_handle(&mut fixture, Who::Alice, "bob", COMMIT_HEIGHT).await;
+        let (post, result) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture
+            .delete(Who::Alice, "handle", &alice, REVEAL_HEIGHT)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("body", text("still here")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text("bob")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// The index finds a document by its value's key, which reads the empty string as
+    /// `"\0"`: a name sharing its key with a handle's, but not its value, finds nothing
+    #[tokio::test]
+    async fn should_refuse_a_string_value_that_only_shares_its_index_key_with_a_handle() {
+        let mut fixture = handle_fixture("permanentDocument");
+        make_handle(&mut fixture, Who::Alice, "", COMMIT_HEIGHT).await;
+
+        let (_, result) = post(&mut fixture, Who::Alice, "\0", REVEAL_HEIGHT).await;
+        assert_no_handle(result);
+
+        let (_, result) = post(&mut fixture, Who::Alice, "", REVEAL_HEIGHT).await;
+        assert_written(result);
+    }
+
+    /// A value longer than an index key may be (255 bytes, here 130 two-byte
+    /// characters) is held by no document: it finds nothing, on a create and on a
+    /// replace, as any other value no handle has, rather than failing the transition
+    #[tokio::test]
+    async fn should_refuse_a_string_value_too_long_for_the_index_as_finding_no_document() {
+        let mut fixture = handle_fixture_with("permanentDocument", |_, post| {
+            post["properties"]["authorHandle"]["maxLength"] = serde_json::json!(300);
+        });
+        make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+        let too_long = "é".repeat(130);
+
+        let (_, result) = post(&mut fixture, Who::Alice, &too_long, REVEAL_HEIGHT).await;
+        assert_no_handle(result);
+
+        let (post, result) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+        assert_written(result);
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorHandle", text(&too_long)),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+    }
+
+    /// A handle unique by its name within a scope: a replace changing only the
+    /// post's `scope`, another part of the key, judges the name again
+    #[tokio::test]
+    async fn should_re_validate_a_string_value_when_another_key_part_changes() {
+        let mut fixture = handle_fixture_with("permanentDocument", |handle, post| {
+            handle["properties"]["scope"] =
+                serde_json::json!({ "type": "string", "maxLength": 63, "position": 1 });
+            handle["indices"] = serde_json::json!([{
+                "name": "nameInScope",
+                "properties": [{ "name": "asc" }, { "scope": "asc" }],
+                "unique": true
+            }]);
+            handle["required"] = serde_json::json!(["name", "scope"]);
+            post["properties"]["scope"] =
+                serde_json::json!({ "type": "string", "maxLength": 63, "position": 2 });
+            post["properties"]["authorHandle"]["refersTo"]["findBy"] =
+                serde_json::json!({ "name": ".", "scope": "scope" });
+            post["required"] = serde_json::json!(["authorHandle", "body", "scope"]);
+        });
+        for scope in ["art", "music"] {
+            let (_, result) = fixture
+                .create(
+                    Who::Alice,
+                    "handle",
+                    &[("name", text("alice")), ("scope", text(scope))],
+                    &[],
+                    COMMIT_HEIGHT,
+                )
+                .await;
+            assert_written(result);
+        }
+        let (post, result) = fixture
+            .create(
+                Who::Alice,
+                "post",
+                &[
+                    ("authorHandle", text("alice")),
+                    ("scope", text("art")),
+                    ("body", text("gm")),
+                ],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_written(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("scope", text("sports")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_no_handle(result);
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("scope", text("music")),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_written(result);
+    }
+
+    /// The fixture with a `handle`, never changed, unique by an optional `tag` of up
+    /// to 20 bytes, and a mutable `post` whose `authorTag` byte array, of up to 300
+    /// bytes, refers to it by that tag, read as is: `findBy: { "tag": "." }`.
+    fn tag_fixture() -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let schemas = &mut contract["documentSchemas"];
+            schemas["handle"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": false,
+                "properties": {
+                    "tag": {
+                        "type": "array", "byteArray": true, "maxItems": 20, "position": 0
+                    }
+                },
+                "indices": [
+                    { "name": "tag", "properties": [{ "tag": "asc" }], "unique": true }
+                ],
+                "additionalProperties": false
+            });
+            schemas["post"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": true,
+                "canBeDeleted": true,
+                "properties": {
+                    "authorTag": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 300,
+                        "position": 0,
+                        "refersTo": {
+                            "type": "permanentDocument",
+                            "documentType": "handle",
+                            "findBy": { "tag": "." }
+                        }
+                    }
+                },
+                "required": ["authorTag"],
+                "additionalProperties": false
+            });
+        })
+    }
+
+    /// A handle of Alice's with `tag`, or with none, made in [`COMMIT_HEIGHT`].
+    async fn make_tagged_handle(fixture: &mut CommitRevealFixture, tag: Option<Value>) {
+        let values = tag.map(|tag| vec![("tag", tag)]).unwrap_or_default();
+        let (_, result) = fixture
+            .create(Who::Alice, "handle", &values, &[], COMMIT_HEIGHT)
+            .await;
+        assert_written(result);
+    }
+
+    /// A post of Alice's by the handle with `tag`, in [`REVEAL_HEIGHT`].
+    async fn tagged_post(
+        fixture: &mut CommitRevealFixture,
+        tag: Value,
+    ) -> (Document, StateTransitionExecutionResult) {
+        fixture
+            .create(
+                Who::Alice,
+                "post",
+                &[("authorTag", tag)],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await
+    }
+
+    /// A byte array value finds the document holding the same bytes, whichever binary
+    /// form the transition carries it in, is refused when no handle has it, and is
+    /// judged again when a replace changes it
+    #[tokio::test]
+    async fn should_find_a_document_by_a_byte_array_value_through_the_write_pipeline() {
+        let mut fixture = tag_fixture();
+        make_tagged_handle(&mut fixture, Some(Value::Bytes(vec![0x5a; 20]))).await;
+        make_tagged_handle(&mut fixture, Some(Value::Bytes(vec![0x5c; 7]))).await;
+
+        let (post, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5a; 20])).await;
+        assert_written(result);
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes20([0x5a; 20])).await;
+        assert_written(result);
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5c; 7])).await;
+        assert_written(result);
+
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5b; 20])).await;
+        assert_not_found(result, "authorTag");
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorTag", Value::Bytes(vec![0x5b; 20])),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_not_found(result, "authorTag");
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorTag", Value::Bytes(vec![0x5c; 7])),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_written(result);
+    }
+
+    /// An empty byte array has the key of no value at all: it does not find a handle
+    /// without a tag
+    #[tokio::test]
+    async fn should_refuse_an_empty_byte_array_value_as_finding_no_document() {
+        let mut fixture = tag_fixture();
+        make_tagged_handle(&mut fixture, None).await;
+
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![])).await;
+        assert_not_found(result, "authorTag");
+    }
+
+    /// A byte array longer than an index key may be finds nothing, on a create and on
+    /// a replace, rather than failing the transition
+    #[tokio::test]
+    async fn should_refuse_a_byte_array_value_too_long_for_the_index_as_finding_no_document() {
+        let mut fixture = tag_fixture();
+        make_tagged_handle(&mut fixture, Some(Value::Bytes(vec![0x5a; 20]))).await;
+
+        let (_, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5a; 256])).await;
+        assert_not_found(result, "authorTag");
+
+        let (post, result) = tagged_post(&mut fixture, Value::Bytes(vec![0x5a; 20])).await;
+        assert_written(result);
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "post",
+                &post,
+                |post| post.set("authorTag", Value::Bytes(vec![0x5a; 256])),
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_not_found(result, "authorTag");
     }
 }

@@ -539,7 +539,7 @@ pub fn first_unrevealable_lookup_key(
                 let computed = target.leaves().into_iter().any(|leaf| {
                     leaf.as_any_document_reference()
                         .and_then(|declaration| declaration.lookup)
-                        .is_some_and(|lookup| lookup.is_checked_on_create_only())
+                        .is_some_and(|lookup| lookup.hash_key().is_some())
                 });
                 match read_data_at_path(document_data, path) {
                     Err(RepeatedKey) if computed => {
@@ -711,10 +711,23 @@ mod tests {
         )]));
         let owner = Identifier::from([1; 32]);
         assert_eq!(
-            lookup.key_values(owner, &document, owner, Some(&hash)),
+            lookup.key_values(
+                &Value::Identifier(owner.to_buffer()),
+                &document,
+                owner,
+                Some(&hash)
+            ),
             Some(BTreeMap::from([("saltedDomainHash".to_string(), hash)]))
         );
-        assert_eq!(lookup.key_values(owner, &document, owner, None), None);
+        assert_eq!(
+            lookup.key_values(
+                &Value::Identifier(owner.to_buffer()),
+                &document,
+                owner,
+                None
+            ),
+            None
+        );
     }
 
     #[test]
