@@ -28,7 +28,9 @@ use dpp::{
 };
 use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
 use drive::query::drive_document_having_query::resolve_having_query_for_mode;
-use drive::query::{DocumentHavingMode, RankedEntry, RankedPaginationInputs};
+use drive::query::{
+    key_array_element_clauses, DocumentHavingMode, RankedEntry, RankedPaginationInputs,
+};
 use drive_proof_verifier::verify_having_range_proof;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
@@ -56,12 +58,32 @@ pub(super) fn assert_having_shape(
         has_start_at: request.start.is_some(),
     };
 
+    // Key the elements of a typed array as the server does: one pinned
+    // element (`contains`) at most.
+    let document_type = request
+        .data_contract
+        .document_type_for_name(&request.document_type_name)
+        .map_err(|e| drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "document type {} not found in contract: {}",
+                request.document_type_name, e
+            ),
+        })?;
+    let where_clauses = key_array_element_clauses(
+        request.where_clauses.clone(),
+        document_type,
+        false,
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("this DocumentQuery is not a well-formed having-range query: {e}"),
+    })?;
     detect_having_mode(
         &request.select,
         &request.group_by,
         &request.having,
         &request.order_by_clauses,
-        &request.where_clauses,
+        &where_clauses,
         pagination,
         platform_version,
     )

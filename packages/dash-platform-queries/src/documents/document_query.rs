@@ -812,6 +812,30 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             "encoding GetDocumentsRequest"
         );
 
+        // The elements of a typed array are first indexed at protocol version
+        // 14, the first whose contract grammar (document meta-schema
+        // generation 3) admits an index on a typed array. A server before it
+        // knows neither operator.
+        let reads_array_elements = where_clauses
+            .iter()
+            .any(|clause| clause.operator.reads_array_elements());
+        if reads_array_elements
+            && platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .document_type_schema
+                < 3
+        {
+            return Err(Error::Config(format!(
+                "contains and containsAny queries require protocol version 14+, the first \
+                 version whose contract grammar indexes the elements of a typed array; this \
+                 network runs protocol version {}",
+                platform_version.protocol_version
+            )));
+        }
+
         match feature_version {
             0 => {
                 if !sub_queries.is_empty() {
@@ -1356,7 +1380,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
 pub(crate) fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
     Ok(ProtoWhereClause {
         field: clause.field,
-        operator: where_operator_to_proto(clause.operator)? as i32,
+        operator: where_operator_to_proto(clause.operator) as i32,
         value: Some(value_to_proto(clause.value)?),
         // The typed IN_TIME_RANGE operand; never set on an ordinary value
         // clause (time-range selections are encoded by `encode_v1` itself,
@@ -1449,8 +1473,8 @@ fn having_operator_to_proto(op: HavingOperator) -> having_clause::Operator {
     }
 }
 
-fn where_operator_to_proto(op: WhereOperator) -> Result<ProtoWhereOperator, Error> {
-    Ok(match op {
+fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
+    match op {
         WhereOperator::Equal => ProtoWhereOperator::Equal,
         WhereOperator::GreaterThan => ProtoWhereOperator::GreaterThan,
         WhereOperator::GreaterThanOrEquals => ProtoWhereOperator::GreaterThanOrEquals,
@@ -1462,14 +1486,9 @@ fn where_operator_to_proto(op: WhereOperator) -> Result<ProtoWhereOperator, Erro
         WhereOperator::BetweenExcludeRight => ProtoWhereOperator::BetweenExcludeRight,
         WhereOperator::In => ProtoWhereOperator::In,
         WhereOperator::StartsWith => ProtoWhereOperator::StartsWith,
-        // The elements of a typed array are read through the v1 request once
-        // it carries the two operators.
-        WhereOperator::Contains | WhereOperator::ContainsAny => {
-            return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
-                "the {op} operator has no getDocuments wire encoding yet"
-            ))))
-        }
-    })
+        WhereOperator::Contains => ProtoWhereOperator::Contains,
+        WhereOperator::ContainsAny => ProtoWhereOperator::ContainsAny,
+    }
 }
 
 /// Map `dpp::platform_value::Value` onto the wire-shape
@@ -1663,6 +1682,50 @@ mod encode_version_gate_tests {
         assert_eq!(selection.selector, ProtoTimeRangeSelector::Newest as i32);
         assert_eq!(selection.start_ms, None);
         assert_eq!(selection.grid, None, "a grid-less selection names no grid");
+    }
+
+    fn contains_query() -> DocumentQuery {
+        DocumentQuery::new(post_contract(), "post")
+            .expect("the fixture has this document type")
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Contains,
+                value: platform_value!("dash"),
+            })
+    }
+
+    #[test]
+    fn an_element_query_refuses_to_encode_for_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let error =
+            GetDocumentsRequest::try_from_platform_versioned(contains_query(), platform_version)
+                .expect_err("protocol version 13's contract grammar indexes no typed array");
+        let message = match error {
+            Error::Config(message) => message,
+            other => panic!("expected Error::Config, got {other:?}"),
+        };
+        assert!(
+            message.contains("protocol version 14"),
+            "the refusal must name the real version floor, got: {message}"
+        );
+    }
+
+    #[test]
+    fn an_element_query_encodes_its_operator_for_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        for (operator, expected) in [
+            (WhereOperator::Contains, ProtoWhereOperator::Contains),
+            (WhereOperator::ContainsAny, ProtoWhereOperator::ContainsAny),
+        ] {
+            let mut query = contains_query();
+            query.where_clauses[0].operator = operator;
+            let request = GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
+                .expect("protocol version 14 indexes typed arrays");
+            let Some(V1(v1)) = request.version else {
+                panic!("protocol version 14 encodes on the v1 wire");
+            };
+            assert_eq!(v1.where_clauses[0].operator, expected as i32);
+        }
     }
 
     #[test]

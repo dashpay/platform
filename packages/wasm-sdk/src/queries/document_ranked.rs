@@ -38,9 +38,9 @@ use dash_sdk::platform::{DataContract, Fetch};
 use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
 use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
 use drive::query::{
-    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-    RankedAxis, RankedEntry, RankedEntryValue, RankedPaginationInputs, SelectFunction,
-    SelectProjection, RANKED_AVG_SCALE,
+    key_array_element_clauses, HavingAggregate, HavingAggregateFunction, HavingClause,
+    HavingOperator, HavingRightOperand, RankedAxis, RankedEntry, RankedEntryValue,
+    RankedPaginationInputs, SelectFunction, SelectProjection, RANKED_AVG_SCALE,
 };
 use drive_proof_verifier::{DocumentHavingEntries, DocumentRankedEntries};
 use js_sys::{Array, Object, Reflect};
@@ -766,12 +766,28 @@ fn assert_ranked_shape(
     query: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), WasmSdkError> {
+    // The server keys a typed array's `contains` pin as an equality first.
+    let where_clauses = query
+        .data_contract
+        .document_type_for_name(&query.document_type_name)
+        .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))
+        .and_then(|document_type| {
+            key_array_element_clauses(
+                query.where_clauses.clone(),
+                document_type,
+                false,
+                platform_version,
+            )
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("not a well-formed ranked query: {e}"))
+            })
+        })?;
     detect_ranked_mode(
         &query.select,
         &query.group_by,
         &query.having,
         &query.order_by_clauses,
-        &query.where_clauses,
+        &where_clauses,
         pagination_inputs(query),
         platform_version,
     )
@@ -791,12 +807,28 @@ fn assert_having_shape(
     query: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), WasmSdkError> {
+    // The server keys a typed array's `contains` pin as an equality first.
+    let where_clauses = query
+        .data_contract
+        .document_type_for_name(&query.document_type_name)
+        .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))
+        .and_then(|document_type| {
+            key_array_element_clauses(
+                query.where_clauses.clone(),
+                document_type,
+                false,
+                platform_version,
+            )
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("not a well-formed having-range query: {e}"))
+            })
+        })?;
     detect_having_mode(
         &query.select,
         &query.group_by,
         &query.having,
         &query.order_by_clauses,
-        &query.where_clauses,
+        &where_clauses,
         pagination_inputs(query),
         platform_version,
     )

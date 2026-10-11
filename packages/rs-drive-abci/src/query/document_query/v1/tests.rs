@@ -7302,3 +7302,231 @@ mod composite_trust_boundary {
         );
     }
 }
+
+/// Wire-level coverage for the elements of a typed array (protocol version
+/// 14): `CONTAINS` and `CONTAINS_ANY` decode to Drive's element operators and
+/// read an index naming the array, through documents and count selects.
+mod array_element_wire_tests {
+    use super::*;
+    use dpp::data_contract::{DataContract, DataContractFactory};
+    use dpp::document::{Document, DocumentV0};
+    use dpp::platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    fn post_contract(platform_version: &PlatformVersion) -> DataContract {
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory")
+            .create_with_value_config(
+                Identifier::from([3; 32]),
+                0,
+                platform_value!({"post": {
+                    "type": "object",
+                    "properties": {
+                        "hashtags": {
+                            "type": "array",
+                            "maxItems": 10,
+                            "items": {"type": "string", "minLength": 1, "maxLength": 61},
+                            "position": 0
+                        }
+                    },
+                    "required": ["$createdAt"],
+                    "indices": [
+                        {"name": "byHashtagTime",
+                         "properties": [{"hashtags": "asc"}, {"$createdAt": "asc"}]},
+                        {"name": "byHashtag", "properties": [{"hashtags": "asc"}],
+                         "countable": "countable"}
+                    ],
+                    "additionalProperties": false
+                }}),
+                None,
+                None,
+            )
+            .expect("contract")
+            .data_contract_owned()
+    }
+
+    fn setup_posts() -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<crate::platform_types::platform_state::PlatformState>,
+        &'static PlatformVersion,
+        DataContract,
+    ) {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = post_contract(version);
+        store_data_contract(&platform, &contract, version);
+        let document_type = contract.document_type_for_name("post").expect("post");
+        for (id, tags) in [
+            (1u8, &["dash", "crypto"][..]),
+            (2, &["crypto"][..]),
+            (3, &["dash"][..]),
+            (4, &["news", "dash"][..]),
+        ] {
+            let document = Document::V0(DocumentV0 {
+                id: Identifier::from([id; 32]),
+                owner_id: Identifier::from([7; 32]),
+                properties: BTreeMap::from([(
+                    "hashtags".to_string(),
+                    Value::Array(
+                        tags.iter()
+                            .map(|tag| Value::Text(tag.to_string()))
+                            .collect(),
+                    ),
+                )]),
+                created_at: Some(1_750_000_000_000 + u64::from(id)),
+                revision: Some(1),
+                ..Default::default()
+            });
+            store_document(&platform, &contract, document_type, &document, version);
+        }
+        (platform, state, version, contract)
+    }
+
+    fn request(
+        contract: &DataContract,
+        where_clauses: Vec<ProtoWhereClause>,
+        order_by: Vec<ProtoOrderClause>,
+        selects: Vec<V1Select>,
+        group_by: Vec<String>,
+        prove: bool,
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            document_type: "post".to_string(),
+            where_clauses,
+            order_by,
+            limit: None,
+            start: None,
+            prove,
+            selects,
+            group_by,
+            having: Vec::new(),
+            offset: None,
+            chained: None,
+            sub_queries: Vec::new(),
+        }
+    }
+
+    fn document_count(response: GetDocumentsResponseV1) -> usize {
+        match response.result {
+            Some(get_documents_response_v1::Result::Data(ResultData {
+                variant: Some(result_data::Variant::Documents(documents)),
+            })) => documents.documents.len(),
+            other => panic!("expected documents, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn contains_and_contains_any_read_the_elements_through_the_wire() {
+        let (platform, state, version, contract) = setup_posts();
+        let query = |request: GetDocumentsRequestV1| {
+            let result = platform
+                .query_documents_v1(request, &state, version)
+                .expect("query call should not error at the transport layer");
+            assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+            result.data.expect("data")
+        };
+
+        let dash = vec![wc(
+            "hashtags",
+            ProtoWhereOperator::Contains,
+            platform_value!("dash"),
+        )];
+        assert_eq!(
+            document_count(query(request(
+                &contract,
+                dash.clone(),
+                vec![oc("$createdAt", false)],
+                select_documents(),
+                Vec::new(),
+                false,
+            ))),
+            3
+        );
+        match query(request(
+            &contract,
+            dash.clone(),
+            vec![oc("$createdAt", false)],
+            select_documents(),
+            Vec::new(),
+            true,
+        ))
+        .result
+        {
+            Some(get_documents_response_v1::Result::Proof(proof)) => {
+                assert!(!proof.grovedb_proof.is_empty(), "proof should not be empty");
+            }
+            other => panic!("expected a proof, got {:?}", other),
+        }
+
+        // Each post once, though post 1 holds both elements.
+        assert_eq!(
+            document_count(query(request(
+                &contract,
+                vec![wc(
+                    "hashtags",
+                    ProtoWhereOperator::ContainsAny,
+                    platform_value!(["crypto", "dash"])
+                )],
+                vec![oc("hashtags", true)],
+                select_documents(),
+                Vec::new(),
+                false,
+            ))),
+            4
+        );
+
+        // One count per element.
+        let entries = match query(request(
+            &contract,
+            vec![wc(
+                "hashtags",
+                ProtoWhereOperator::ContainsAny,
+                platform_value!(["crypto", "dash", "news"]),
+            )],
+            Vec::new(),
+            select_count_star(),
+            vec!["hashtags".to_string()],
+            false,
+        ))
+        .result
+        {
+            Some(get_documents_response_v1::Result::Data(ResultData {
+                variant:
+                    Some(result_data::Variant::Counts(CountResults {
+                        variant: Some(count_results::Variant::Entries(entries)),
+                    })),
+            })) => entries.entries,
+            other => panic!("expected per-element counts, got {:?}", other),
+        };
+        let counts: Vec<u64> = entries.iter().map(|entry| entry.count).collect();
+        assert_eq!(counts, vec![2, 3, 1]);
+    }
+
+    #[test]
+    fn an_equality_on_a_typed_array_is_refused_on_the_wire() {
+        let (platform, state, version, contract) = setup_posts();
+        let result = platform
+            .query_documents_v1(
+                request(
+                    &contract,
+                    vec![wc(
+                        "hashtags",
+                        ProtoWhereOperator::Equal,
+                        platform_value!("dash"),
+                    )],
+                    Vec::new(),
+                    select_documents(),
+                    Vec::new(),
+                    false,
+                ),
+                &state,
+                version,
+            )
+            .expect("query call should not error at the transport layer");
+        assert!(
+            format!("{:?}", result.errors).contains("read with contains or containsAny"),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+}

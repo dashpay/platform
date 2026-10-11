@@ -34,7 +34,7 @@ use drive::query::drive_document_sum_query::index_picker::{
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
-use drive::query::validate_and_canonicalize_where_clauses;
+use drive::query::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
@@ -121,14 +121,6 @@ pub(super) fn verify_sum_query(
     // pairs into one `between*` clause before its mode detection, so mode
     // detection here must run over the same canonical shape or a valid
     // proof is rejected.
-    request.where_clauses = validate_and_canonicalize_where_clauses(
-        std::mem::take(&mut request.where_clauses),
-        platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("where-clause canonicalization failed: {e}"),
-    })?;
-
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -138,6 +130,26 @@ pub(super) fn verify_sum_query(
                 request.document_type_name, e
             ),
         })?;
+
+    // Key the elements of a typed array first, as the server does (the
+    // shared step in `drive::query::canonicalize`). The server refuses a
+    // total over several elements before proving anything, so a proof is
+    // only ever for a shape it accepted, and keying here refuses nothing.
+    let keyed_where_clauses = key_array_element_clauses(
+        std::mem::take(&mut request.where_clauses),
+        document_type,
+        true,
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("where-clause keying failed: {e}"),
+    })?;
+    request.where_clauses =
+        validate_and_canonicalize_where_clauses(keyed_where_clauses, platform_version).map_err(
+            |e| drive_proof_verifier::Error::RequestError {
+                error: format!("where-clause canonicalization failed: {e}"),
+            },
+        )?;
 
     // Resolve the SQL-shape `SumMode` the request implies. Same
     // decision tree as `validate_and_route` in the abci handler —

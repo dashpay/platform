@@ -15,6 +15,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Usage](#usage)
 - [Facades](#facades)
 - [Ranked queries](#ranked-queries)
+- [Querying the elements of a list (`contains`, `containsAny`)](#querying-the-elements-of-a-list-contains-containsany)
 - [Document references (`refersTo`)](#document-references-refersto)
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
@@ -162,6 +163,42 @@ Each pin is a `==`, except that at most **one** may be a branching `in` carrying
 A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested from one secondary's counted commitments, and there is no counted structure over a branch union. Page one prefix at a time (`==` plus `offset`), or drop the offset.
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
+
+## Querying the elements of a list (`contains`, `containsAny`)
+
+From protocol version 14, an index can name a typed array (a list property such as a post's `hashtags` or `mentions`). The platform enters the document once under each distinct element, and two operators read it:
+
+```ts
+// Posts tagged `dash`, newest first.
+const posts = await sdk.documents.query({
+  dataContractId: SOCIAL,
+  documentTypeName: 'post',
+  where: [['hashtags', 'contains', 'dash']],
+  orderBy: [['$createdAt', 'desc']],
+  limit: 20,
+});
+
+// Posts that mention an identity (base58 or bytes).
+const mentions = await sdk.documents.query({
+  dataContractId: SOCIAL,
+  documentTypeName: 'post',
+  where: [['mentions', 'contains', identityId]],
+});
+
+// Posts tagged `dash` or `news`: each post once, walked tag by tag.
+const either = await sdk.documents.query({
+  dataContractId: SOCIAL,
+  documentTypeName: 'post',
+  where: [['hashtags', 'containsAny', ['dash', 'news']]],
+  orderBy: [['hashtags', 'asc'], ['$createdAt', 'desc']],
+});
+```
+
+- `contains` takes one value of the element type and pages like `==`, cursors included (the cursor's document must hold the element).
+- `containsAny` takes 1 to 100 values and needs an `orderBy` on the array, which sets the order the elements are walked in. A post holding several of them comes back once, where it first appears; the limit counts every entry walked, so a page can be short, and there is no `startAt` or `startAfter`.
+- No other operator may name a typed array, and an index naming one is read only with its elements bound.
+
+Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags. A count over several elements at once is refused, since it would count a document once per element it holds.
 
 ## Contracts the app already holds
 

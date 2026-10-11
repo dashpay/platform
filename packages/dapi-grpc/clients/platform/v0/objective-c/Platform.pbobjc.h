@@ -517,9 +517,9 @@ BOOL GetContractTeamActionSignersRequest_ActionStatus_IsValidValue(int32_t value
  *
  * `BETWEEN*` operators expect the right-hand operand to be a
  * 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
- * `IN` expects a `list` of candidate values; all other operators
- * expect a scalar `DocumentFieldValue` matching the indexed
- * field's type.
+ * `IN` and `CONTAINS_ANY` expect a `list` of candidate values; all
+ * other operators expect a scalar `DocumentFieldValue` matching the
+ * indexed field's type (for `CONTAINS`, the type of one element).
  **/
 typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
   /**
@@ -566,6 +566,28 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
    * `drive::query::resolve_integer_range_bucket_clause`.
    **/
   GetDocumentsRequest_WhereOperator_InIntegerRange = 12,
+
+  /**
+   * An element of a typed array equals the operand (v1 only; protocol
+   * version 14). `field` names a typed array an index keys by its
+   * elements: the index holds a document once per distinct element,
+   * so the clause is an equality on one element's key and may page
+   * with a cursor whose document holds the element. No other
+   * operator may name a typed array. See "Indexes on typed arrays"
+   * in the book's indexes chapter.
+   **/
+  GetDocumentsRequest_WhereOperator_Contains = 13,
+
+  /**
+   * An element of a typed array is one of the operands (v1 only;
+   * protocol version 14): an `IN` over the elements. A document
+   * holding several of them is under each, and a documents page
+   * returns it once, where it first appears; the limit counts every
+   * entry the walk passes. Takes an `ORDER BY` on the array (the
+   * order the elements are walked in) and no cursor. Counts, sums and
+   * averages read several elements only grouped by them.
+   **/
+  GetDocumentsRequest_WhereOperator_ContainsAny = 14,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);

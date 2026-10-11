@@ -50,10 +50,13 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v0(
                 | WhereOperator::StartsWith
         )
     };
+    // `containsAny` is an `In` over a typed array's elements (protocol version
+    // 14): grouping by the array gives one group per element.
     let is_in_field = |field: &str| {
-        where_clauses
-            .iter()
-            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
+        where_clauses.iter().any(|wc| {
+            matches!(wc.operator, WhereOperator::In | WhereOperator::ContainsAny)
+                && wc.field == field
+        })
     };
     let is_range_field = |field: &str| {
         where_clauses
