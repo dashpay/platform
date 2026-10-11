@@ -2,7 +2,6 @@ use crate::utils::getters::VecU8ToUint8Array;
 use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identity_to_js_value;
 use dpp::version::PlatformVersion;
-use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use drive::drive::Drive;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
@@ -28,14 +27,12 @@ impl VerifyFullIdentityByNonUniquePublicKeyHashResult {
 
 #[wasm_bindgen(js_name = "verifyFullIdentityByNonUniquePublicKeyHash")]
 pub fn verify_full_identity_by_non_unique_public_key_hash(
-    identity_proof: Option<Uint8Array>,
-    identity_id_public_key_hash_proof: &Uint8Array,
+    proof: &Uint8Array,
     public_key_hash: &Uint8Array,
     after: Option<Uint8Array>,
     platform_version_number: u32,
 ) -> Result<VerifyFullIdentityByNonUniquePublicKeyHashResult, JsValue> {
-    let identity_proof_vec = identity_proof.map(|proof| proof.to_vec());
-    let identity_id_public_key_hash_proof_vec = identity_id_public_key_hash_proof.to_vec();
+    let proof = proof.to_vec();
 
     let public_key_hash_bytes: [u8; 20] = public_key_hash
         .to_vec()
@@ -56,20 +53,13 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    if let Some(identity_proof) = identity_proof_vec.as_deref() {
-        supported_grovedb_proof(identity_proof)?;
-    }
-    supported_grovedb_proof(&identity_id_public_key_hash_proof_vec)?;
-
-    let proof = IdentityAndNonUniquePublicKeyHashDoubleProof {
-        identity_proof: identity_proof_vec,
-        identity_id_public_key_hash_proof: identity_id_public_key_hash_proof_vec,
-    };
+    supported_grovedb_proof(&proof)?;
 
     let (root_hash, identity_option) = Drive::verify_full_identity_by_non_unique_public_key_hash(
         &proof,
         public_key_hash_bytes,
         after_bytes,
+        platform_version,
         platform_version,
     )
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
@@ -83,4 +73,99 @@ pub fn verify_full_identity_by_non_unique_public_key_hash(
         root_hash: root_hash.to_vec(),
         identity: identity_js,
     })
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use super::verify_full_identity_by_non_unique_public_key_hash;
+    use js_sys::Uint8Array;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_verify_first_next_and_absence_from_one_proof_blob() {
+        let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tests/fixtures/nonunique_single_proof.json"
+        ))
+        .expect("deterministic verified vectors");
+        for version in [
+            12,
+            13,
+            dpp::version::PlatformVersion::latest().protocol_version,
+        ] {
+            for vector in &vectors {
+                let bytes =
+                    hex::decode(vector["proof"].as_str().expect("proof")).expect("proof hex");
+                let hash = hex::decode(vector["hash"].as_str().expect("hash")).expect("hash hex");
+                let after = vector["after"].as_str().map(|after| {
+                    Uint8Array::from(hex::decode(after).expect("cursor hex").as_slice())
+                });
+                let result = verify_full_identity_by_non_unique_public_key_hash(
+                    &Uint8Array::from(bytes.as_slice()),
+                    &Uint8Array::from(hash.as_slice()),
+                    after,
+                    version,
+                )
+                .expect("one blob reaches complete verifier");
+                assert_eq!(
+                    result.root_hash().to_vec(),
+                    hex::decode(vector["root"].as_str().expect("root")).expect("root hex")
+                );
+                if let Some(id) = vector["identity_id"].as_str() {
+                    let identity: serde_json::Value =
+                        serde_wasm_bindgen::from_value(result.identity()).expect("identity JSON");
+                    assert_eq!(
+                        identity["id"],
+                        bs58::encode(hex::decode(id).expect("identity ID")).into_string()
+                    );
+                    assert_eq!(identity["balance"], vector["balance"]);
+                    assert_eq!(identity["revision"], vector["revision"]);
+                    assert_eq!(
+                        identity["public_keys"]
+                            .as_array()
+                            .expect("all public keys")
+                            .len() as u64,
+                        vector["key_count"].as_u64().expect("key count")
+                    );
+                } else {
+                    assert!(result.identity().is_null());
+                }
+            }
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_bad_complete_proof_and_request_lengths() {
+        let vector: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../tests/fixtures/nonunique_single_proof.json"
+        ))
+        .expect("vectors");
+        let hash = hex::decode(vector[0]["hash"].as_str().expect("hash")).expect("hash bytes");
+        let hash = Uint8Array::from(hash.as_slice());
+        let version = dpp::version::PlatformVersion::latest().protocol_version;
+        for bytes in [vec![], vec![0], vec![1]] {
+            assert!(verify_full_identity_by_non_unique_public_key_hash(
+                &Uint8Array::from(bytes.as_slice()),
+                &hash,
+                None,
+                version
+            )
+            .is_err());
+        }
+        let proof = hex::decode(vector[0]["proof"].as_str().expect("proof")).expect("proof bytes");
+        let proof = Uint8Array::from(proof.as_slice());
+        assert!(verify_full_identity_by_non_unique_public_key_hash(
+            &proof,
+            &Uint8Array::from(&[0u8; 19][..]),
+            None,
+            version
+        )
+        .is_err());
+        assert!(verify_full_identity_by_non_unique_public_key_hash(
+            &proof,
+            &hash,
+            Some(Uint8Array::from(&[0u8; 31][..])),
+            version
+        )
+        .is_err());
+    }
 }

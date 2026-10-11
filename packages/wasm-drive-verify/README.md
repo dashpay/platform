@@ -49,6 +49,23 @@ const identityResult = await verifyFullIdentityByIdentityId(proof, identityId, p
 const contractResult = await verifyContract(proof, contractId, platformVersion);
 ```
 
+### Non-unique public key hash lookup
+
+```javascript
+import { verifyFullIdentityByNonUniquePublicKeyHash } from 'wasm-drive-verify/identity';
+const result = verifyFullIdentityByNonUniquePublicKeyHash(
+  proofBytes, publicKeyHashBytes, startAfterBytes, producerProtocolVersion,
+);
+```
+
+This direct verifier accepts one complete GroveDB proof blob. It proves the first
+matching identity after the exclusive cursor, including its keys, balance and
+revision, or complete absence. It replaces the earlier two-blob signature;
+callers must migrate together with the server's standard `Proof` response.
+Authenticate the returned root against a trusted signed block separately; this
+standalone function does not verify the quorum signature. High-level SDK proof
+verification also authenticates the root and metadata.
+
 ### Dynamic Imports
 
 Load modules on-demand for code splitting:
