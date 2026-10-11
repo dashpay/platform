@@ -104,6 +104,9 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
 # Dev-only, so the production build stays on the leaner default features.
 key-wallet = { workspace = true, features = ["test-utils"] }
+# `test-utils` exposes the SPV client's masternode list engine, so a test can
+# hold a quorum at a known verification status.
+dash-spv = { workspace = true, features = ["test-utils"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
