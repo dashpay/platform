@@ -7506,6 +7506,75 @@ mod array_element_wire_tests {
         assert_eq!(counts, vec![2, 3, 1]);
     }
 
+    /// Before protocol version 14 no document type has a typed array, so an
+    /// element read is refused there wherever it is routed: a documents query
+    /// by grouping v0, and a count grouped by the field, which the shipped
+    /// routing table sends on as `GroupByIn`, when Drive keys the clause.
+    #[test]
+    fn should_refuse_element_reads_at_protocol_version_13() {
+        let (platform, state, latest) = setup_platform(None, Network::Testnet, None);
+        let contract = DataContractFactory::new(latest.protocol_version)
+            .expect("factory")
+            .create_with_value_config(
+                Identifier::from([5; 32]),
+                0,
+                platform_value!({"post": {
+                    "type": "object",
+                    "properties": {
+                        "hashtag": {"type": "string", "maxLength": 61, "position": 0}
+                    },
+                    "indices": [
+                        {"name": "byHashtag", "properties": [{"hashtag": "asc"}],
+                         "countable": "countable"}
+                    ],
+                    "additionalProperties": false
+                }}),
+                None,
+                None,
+            )
+            .expect("contract")
+            .data_contract_owned();
+        store_data_contract(&platform, &contract, latest);
+        let protocol_version_13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let errors = |request: GetDocumentsRequestV1| {
+            let result = platform
+                .query_documents_v1(request, &state, protocol_version_13)
+                .expect("query call should not error at the transport layer");
+            format!("{:?}", result.errors)
+        };
+        let element_read = |operator, value| {
+            request(
+                &contract,
+                vec![wc("hashtag", operator, value)],
+                Vec::new(),
+                select_documents(),
+                Vec::new(),
+                false,
+            )
+        };
+
+        let documents = errors(element_read(
+            ProtoWhereOperator::Contains,
+            platform_value!("dash"),
+        ));
+        assert!(
+            documents.contains("which no index keys before protocol version 14"),
+            "errors: {documents}"
+        );
+        let grouped_count = errors(GetDocumentsRequestV1 {
+            selects: select_count_star(),
+            group_by: vec!["hashtag".to_string()],
+            ..element_read(
+                ProtoWhereOperator::ContainsAny,
+                platform_value!(["dash", "news"]),
+            )
+        });
+        assert!(
+            grouped_count.contains("read the elements of a typed array"),
+            "errors: {grouped_count}"
+        );
+    }
+
     #[test]
     fn should_refuse_an_equality_on_a_typed_array_on_the_wire() {
         let (platform, state, version, contract) = setup_posts();
@@ -7531,6 +7600,509 @@ mod array_element_wire_tests {
             format!("{:?}", result.errors).contains("read with contains or containsAny"),
             "errors: {:?}",
             result.errors
+        );
+    }
+}
+
+/// Element queries (protocol version 14) proved by the v1 handler and
+/// verified through the SDK's `FromProof<DocumentQuery>` entry points, so the
+/// SDK's keying of element clauses is checked against what the prover built:
+/// documents read under several elements, per-element counts and sums, a
+/// pinned element's average, ranking and having bound, and a grouped proof
+/// offered for an ungrouped total, which the SDK must refuse.
+mod array_element_proof_round_trips {
+    use super::time_range_proof_verification::{
+        prove_and_sign, signed_response, state_with_committed_block_time,
+    };
+    use super::*;
+    use crate::platform_types::platform_state::PlatformState;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dash_platform_queries::documents::document_query::{
+        DocumentQuery as SdkDocumentQuery, RankingDirection,
+    };
+    use dpp::data_contract::{DataContract, DataContractFactory};
+    use dpp::document::{Document, DocumentV0};
+    use dpp::platform_value::Identifier;
+    use drive::query::{
+        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
+        OrderClause, RankedEntryValue, SelectProjection,
+    };
+    use drive_proof_verifier::types::Documents;
+    use drive_proof_verifier::{
+        DocumentAverage, DocumentCount, DocumentHavingEntries, DocumentRankedEntries,
+        DocumentSplitCounts, DocumentSplitSums, Error as ProofVerifierError, FromProof,
+    };
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    /// `post`: hashtags, an author and likes, read through the elements of
+    /// `hashtags` by documents (`byHashtagTime`) and by count and sum
+    /// (`byHashtag`). `vote`: hashtags and an author, ranked by author
+    /// within one hashtag (`byHashtagAuthor`), which a countable index ending
+    /// at `hashtags` on the same type would forbid.
+    fn contract(platform_version: &PlatformVersion) -> DataContract {
+        let hashtags = platform_value!({
+            "type": "array",
+            "maxItems": 10,
+            "items": {"type": "string", "minLength": 1, "maxLength": 59},
+            "position": 0
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory")
+            .create_with_value_config(
+                Identifier::from([4; 32]),
+                0,
+                platform_value!({
+                    "post": {
+                        "type": "object",
+                        "properties": {
+                            "hashtags": hashtags.clone(),
+                            "author": {"type": "string", "maxLength": 16, "position": 1},
+                            "likes": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 2}
+                        },
+                        "required": ["$createdAt", "author", "likes"],
+                        "indices": [
+                            {"name": "byHashtagTime",
+                             "properties": [{"hashtags": "asc"}, {"$createdAt": "asc"}]},
+                            {"name": "byHashtag", "properties": [{"hashtags": "asc"}],
+                             "countable": "countable", "summable": "likes"}
+                        ],
+                        "additionalProperties": false
+                    },
+                    "vote": {
+                        "type": "object",
+                        "properties": {
+                            "hashtags": hashtags,
+                            "author": {"type": "string", "maxLength": 16, "position": 1}
+                        },
+                        "required": ["author"],
+                        "indices": [
+                            {"name": "byHashtagAuthor",
+                             "properties": [{"hashtags": "asc"}, {"author": "asc"}],
+                             "countable": "countable", "rangeCountable": true, "rankedCountable": true}
+                        ],
+                        "additionalProperties": false
+                    }
+                }),
+                None,
+                None,
+            )
+            .expect("contract")
+            .data_contract_owned()
+    }
+
+    /// Posts `(id, hashtags, author, likes)`: post 1 holds two of the queried
+    /// elements, so a walk over several reaches it twice.
+    const POSTS: [(u8, &[&str], &str, u64); 4] = [
+        (1, &["dash", "crypto"], "ann", 10),
+        (2, &["crypto"], "bob", 5),
+        (3, &["dash"], "bob", 7),
+        (4, &["news", "dash"], "cat", 3),
+    ];
+    /// Votes `(id, hashtags, author)`: within `#dash`, ann has two and bob one.
+    const VOTES: [(u8, &[&str], &str); 4] = [
+        (11, &["dash"], "ann"),
+        (12, &["dash", "news"], "ann"),
+        (13, &["dash"], "bob"),
+        (14, &["news"], "bob"),
+    ];
+
+    fn tags(hashtags: &[&str]) -> Value {
+        Value::Array(
+            hashtags
+                .iter()
+                .map(|tag| Value::Text(tag.to_string()))
+                .collect(),
+        )
+    }
+
+    fn setup() -> (
+        TempPlatform<MockCoreRPCLike>,
+        PlatformState,
+        &'static PlatformVersion,
+        DataContract,
+    ) {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = contract(version);
+        store_data_contract(&platform, &contract, version);
+        let store = |type_name: &str, id: u8, properties: BTreeMap<String, Value>| {
+            let document_type = contract
+                .document_type_for_name(type_name)
+                .expect("document type");
+            let document = Document::V0(DocumentV0 {
+                id: Identifier::from([id; 32]),
+                owner_id: Identifier::from([9; 32]),
+                properties,
+                created_at: Some(1_750_000_000_000 + u64::from(id)),
+                revision: Some(1),
+                ..Default::default()
+            });
+            store_document(&platform, &contract, document_type, &document, version);
+        };
+        for (id, hashtags, author, likes) in POSTS {
+            store(
+                "post",
+                id,
+                BTreeMap::from([
+                    ("hashtags".to_string(), tags(hashtags)),
+                    ("author".to_string(), Value::Text(author.to_string())),
+                    ("likes".to_string(), Value::U64(likes)),
+                ]),
+            );
+        }
+        for (id, hashtags, author) in VOTES {
+            store(
+                "vote",
+                id,
+                BTreeMap::from([
+                    ("hashtags".to_string(), tags(hashtags)),
+                    ("author".to_string(), Value::Text(author.to_string())),
+                ]),
+            );
+        }
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+        (platform, state, version, contract)
+    }
+
+    fn proved_request(
+        contract: &DataContract,
+        document_type: &str,
+        where_clauses: Vec<ProtoWhereClause>,
+        selects: Vec<V1Select>,
+        group_by: &[&str],
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            document_type: document_type.to_string(),
+            where_clauses,
+            selects,
+            group_by: group_by.iter().map(|field| field.to_string()).collect(),
+            prove: true,
+            ..empty_v1_request()
+        }
+    }
+
+    fn sdk_query(contract: &DataContract, document_type: &str) -> SdkDocumentQuery {
+        SdkDocumentQuery::new(Arc::new(contract.clone()), document_type)
+            .expect("the fixture has this document type")
+    }
+
+    fn element_clause(operator: WhereOperator, value: Value) -> WhereClause {
+        WhereClause {
+            field: "hashtags".to_string(),
+            operator,
+            value,
+        }
+    }
+
+    fn several() -> Value {
+        platform_value!(["crypto", "dash", "news"])
+    }
+
+    fn by_element<V>(entries: impl IntoIterator<Item = (Vec<u8>, V)>) -> BTreeMap<String, V> {
+        entries
+            .into_iter()
+            .map(|(key, value)| (String::from_utf8(key).expect("a hashtag"), value))
+            .collect()
+    }
+
+    #[test]
+    fn should_verify_each_post_once_under_several_elements_through_the_sdk() {
+        let (platform, state, version, contract) = setup();
+        let request = GetDocumentsRequestV1 {
+            order_by: vec![oc("hashtags", true), oc("$createdAt", true)],
+            ..proved_request(
+                &contract,
+                "post",
+                vec![wc(
+                    "hashtags",
+                    ProtoWhereOperator::ContainsAny,
+                    platform_value!(["crypto", "dash"]),
+                )],
+                select_documents(),
+                &[],
+            )
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let query = sdk_query(&contract, "post")
+            .with_where(element_clause(
+                WhereOperator::ContainsAny,
+                platform_value!(["crypto", "dash"]),
+            ))
+            .with_order_by(OrderClause {
+                field: "hashtags".to_string(),
+                ascending: true,
+            })
+            .with_order_by(OrderClause {
+                field: "$createdAt".to_string(),
+                ascending: true,
+            });
+        let (documents, _mtd, _proof) =
+            <Documents as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("the element page verifies through the SDK");
+        let ids: Vec<u8> = documents
+            .expect("posts hold the elements")
+            .keys()
+            .map(|id| id.to_buffer()[0])
+            .collect();
+        // `crypto` walks posts 1 and 2, `dash` posts 1, 3 and 4: post 1 once.
+        assert_eq!(ids, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn should_verify_per_element_counts_and_sums_through_the_sdk() {
+        let (platform, state, version, contract) = setup();
+        let element_in = || vec![wc("hashtags", ProtoWhereOperator::ContainsAny, several())];
+        let grouped = || {
+            sdk_query(&contract, "post")
+                .with_where(element_clause(WhereOperator::ContainsAny, several()))
+                .with_group_by("hashtags")
+        };
+
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            proved_request(
+                &contract,
+                "post",
+                element_in(),
+                select_count_star(),
+                &["hashtags"],
+            ),
+            version,
+        );
+        let (counts, _mtd, _proof) =
+            <DocumentSplitCounts as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                grouped().with_select(SelectProjection::count_star()),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("the per-element counts verify through the SDK");
+        assert_eq!(
+            by_element(counts.expect("counts").into_flat_map()),
+            BTreeMap::from([
+                ("crypto".to_string(), 2),
+                ("dash".to_string(), 3),
+                ("news".to_string(), 1)
+            ])
+        );
+
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            proved_request(
+                &contract,
+                "post",
+                element_in(),
+                vec![V1Select {
+                    function: v1_select::Function::Sum as i32,
+                    field: "likes".to_string(),
+                }],
+                &["hashtags"],
+            ),
+            version,
+        );
+        let (sums, _mtd, _proof) =
+            <DocumentSplitSums as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                grouped().with_select(SelectProjection::sum("likes")),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("the per-element sums verify through the SDK");
+        assert_eq!(
+            by_element(
+                sums.expect("sums")
+                    .try_into_flat_map()
+                    .expect("the sums fit")
+            ),
+            BTreeMap::from([
+                ("crypto".to_string(), 15),
+                ("dash".to_string(), 20),
+                ("news".to_string(), 3)
+            ])
+        );
+    }
+
+    #[test]
+    fn should_verify_a_pinned_element_average_through_the_sdk() {
+        let (platform, state, version, contract) = setup();
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            proved_request(
+                &contract,
+                "post",
+                vec![wc(
+                    "hashtags",
+                    ProtoWhereOperator::Contains,
+                    platform_value!("dash"),
+                )],
+                vec![V1Select {
+                    function: v1_select::Function::Avg as i32,
+                    field: "likes".to_string(),
+                }],
+                &[],
+            ),
+            version,
+        );
+        let (average, _mtd, _proof) =
+            <DocumentAverage as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                sdk_query(&contract, "post")
+                    .with_where(element_clause(
+                        WhereOperator::Contains,
+                        Value::Text("dash".to_string()),
+                    ))
+                    .with_select(SelectProjection::avg("likes")),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("the pinned element's average verifies through the SDK");
+        assert_eq!(
+            average.expect("posts hold dash"),
+            DocumentAverage { count: 3, sum: 20 }
+        );
+    }
+
+    /// A node can only prove the per-element counts of `containsAny`, which
+    /// it serves grouped by the array. Offered for the same request without
+    /// the grouping, a total the server refuses, the summed counts would
+    /// count post 1 twice; the SDK refuses before verifying.
+    #[test]
+    fn should_refuse_a_grouped_proof_offered_for_an_ungrouped_element_total() {
+        let (platform, state, version, contract) = setup();
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            proved_request(
+                &contract,
+                "post",
+                vec![wc(
+                    "hashtags",
+                    ProtoWhereOperator::ContainsAny,
+                    platform_value!(["crypto", "dash"]),
+                )],
+                select_count_star(),
+                &["hashtags"],
+            ),
+            version,
+        );
+        let error = <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+            sdk_query(&contract, "post")
+                .with_where(element_clause(
+                    WhereOperator::ContainsAny,
+                    platform_value!(["crypto", "dash"]),
+                ))
+                .with_select(SelectProjection::count_star()),
+            signed_response(proof, &mtd),
+            Network::Testnet,
+            version,
+            &provider,
+        )
+        .expect_err("an ungrouped total over several elements is never verified");
+        assert!(
+            matches!(&error, ProofVerifierError::RequestError { error } if error.contains("only answered grouped by")),
+            "the SDK refuses the request by the server's rule, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn should_verify_a_pinned_element_ranking_and_having_bound_through_the_sdk() {
+        let (platform, state, version, contract) = setup();
+        let dash = || {
+            vec![wc(
+                "hashtags",
+                ProtoWhereOperator::Contains,
+                platform_value!("dash"),
+            )]
+        };
+        let ranked_query = || {
+            sdk_query(&contract, "vote")
+                .with_where(element_clause(
+                    WhereOperator::Contains,
+                    Value::Text("dash".to_string()),
+                ))
+                .with_select(SelectProjection::count_star())
+                .with_group_by("author")
+                .with_limit(10)
+        };
+        let authors = |entries: &[drive::query::RankedEntry]| -> Vec<(String, u64)> {
+            entries
+                .iter()
+                .map(|entry| {
+                    let RankedEntryValue::Count(count) = entry.value else {
+                        panic!("expected a count, got {:?}", entry.value);
+                    };
+                    (
+                        String::from_utf8(entry.key.clone()).expect("an author"),
+                        count,
+                    )
+                })
+                .collect()
+        };
+
+        let request = GetDocumentsRequestV1 {
+            order_by: vec![oc("$count", false)],
+            limit: Some(10),
+            ..proved_request(&contract, "vote", dash(), select_count_star(), &["author"])
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let (page, _mtd, _proof) =
+            <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                ranked_query().order_by_selected_aggregate(RankingDirection::Descending),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("the ranking within one element verifies through the SDK");
+        assert_eq!(
+            authors(&page.expect("dash has voters").entries),
+            vec![("ann".to_string(), 2), ("bob".to_string(), 1)]
+        );
+
+        let request = GetDocumentsRequestV1 {
+            having: vec![hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThanOrEquals,
+                Value::U64(2),
+            )],
+            limit: Some(10),
+            ..proved_request(&contract, "vote", dash(), select_count_star(), &["author"])
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let (entries, _mtd, _proof) =
+            <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                ranked_query().with_having(vec![HavingClause {
+                    aggregate: HavingAggregate {
+                        function: HavingAggregateFunction::Count,
+                        field: String::new(),
+                    },
+                    operator: HavingOperator::GreaterThanOrEquals,
+                    right: HavingRightOperand::Value(Value::U64(2)),
+                }]),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("the having bound within one element verifies through the SDK");
+        assert_eq!(
+            authors(&entries.expect("ann has two votes").entries),
+            vec![("ann".to_string(), 2)]
         );
     }
 }
