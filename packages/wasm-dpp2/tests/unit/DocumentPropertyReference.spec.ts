@@ -861,7 +861,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
      * schemas come from JSON, where `__proto__` is an ordinary key.
      */
     it('should keep a where entry named __proto__ as an own key', () => {
-      const schemas = JSON.parse(`{
+      const protoSchemas = JSON.parse(`{
         "post": {
           "type": "object",
           "canBeDeleted": false,
@@ -891,7 +891,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
           "additionalProperties": false
         }
       }`);
-      const [postId] = buildModeratedContract(schemas).documentTypeReferences(
+      const [postId] = buildModeratedContract(protoSchemas).documentTypeReferences(
         'reply',
       ) as Reference[];
 

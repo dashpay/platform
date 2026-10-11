@@ -427,7 +427,7 @@ fn validate_document_type_references_v0(
                     Some(RevealedValue { value, billed_key }),
                     path,
                     None,
-                    &mut BTreeMap::new(),
+                    &mut referenced_contracts,
                     &mut fetched_documents,
                     platform,
                     block_info,
