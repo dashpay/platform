@@ -120,7 +120,7 @@ fn should_parse_a_string_or_byte_array_property_found_by_its_value_as_is() {
         let lookup = author_lookup(&parsed);
         assert_eq!(lookup, value_as_is(index_property));
         // No function: judged again on a replace, as an identifier's lookup is
-        assert!(!lookup.is_checked_on_create_only());
+        assert!(!lookup.is_checked_on_create_only(true));
     }
 }
 

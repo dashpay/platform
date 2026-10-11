@@ -813,3 +813,24 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
         "list element (seats.members of the electedCharter document meta.charterId names)"
     );
 }
+
+/// `minimumAgeBlocks` and `consume` describe a document `findBy` finds by a key. A list
+/// element reference has nothing to hold them, so both parses refuse them rather than drop
+/// them unenforced, on a referring type whose documents are never replaced too
+#[test]
+fn should_refuse_minimum_age_blocks_and_consume_beside_in_list() {
+    let mut never_replaced = charter_contract(members_of_the_charter());
+    never_replaced["documentSchemas"]["resignation"]["documentsMutable"] = json!(false);
+    contract(never_replaced.clone()).expect("the list element reference registers alone");
+
+    for (keyword, value) in [("minimumAgeBlocks", json!(100)), ("consume", json!(true))] {
+        let mut schema = never_replaced.clone();
+        schema["documentSchemas"]["resignation"]["properties"]["memberId"]["refersTo"][keyword] =
+            value;
+        contract(schema.clone()).expect_err("the meta-schema should refuse it");
+        assert_refused(
+            contract_on(schema, false, PlatformVersion::latest()),
+            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume",
+        );
+    }
+}

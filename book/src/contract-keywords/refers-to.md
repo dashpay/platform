@@ -278,7 +278,7 @@ A replace checks a reference again only when its outcome could have changed:
 | any document reference with a `where` entry whose value is `"$ownerId"` | every replace |
 | `permanentDocument` with `findBy`, `inList` included | also when a property `findBy` reads changed |
 | `deletableDocument`, by id or with `findBy` | every replace |
-| a document reference with a `findBy` function | never: the whole declaration, its `where` included, is judged on the create alone (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)) |
+| a document reference with a `findBy` function | never: the whole declaration, its `where` included, is judged on the create alone (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)); a type whose documents are never replaced has no replace at all |
 | `identityPublicKey` with `keyIdProperty` | the identity or the key id changed |
 | key id with `identityProperty: "$ownerId"` | every replace |
 | key id with `identityProperty: "$creatorId"` | the key id changed |
