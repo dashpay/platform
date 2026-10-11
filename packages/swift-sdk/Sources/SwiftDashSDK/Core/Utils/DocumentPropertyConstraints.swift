@@ -161,62 +161,41 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// A rule's `readsSystem` names, `[]` when the key is missing (a library
     /// built before it), or `nil` for anything but an array of strings.
     private static func systemReads(_ value: Any?) -> [String]? {
-        guard let value else {
-            return []
-        }
-        guard let entries = value as? [Any] else {
-            return nil
-        }
-        var names: [String] = []
-        names.reserveCapacity(entries.count)
-        for entry in entries {
-            guard let name = entry as? String else {
-                return nil
-            }
-            names.append(name)
-        }
-        return names
+        entries(value) { $0 as? String }
     }
 
     /// A rule's `readsTotals`, `[]` when the key is missing (a library built
     /// before it), or `nil` for anything but an array of well-formed totals.
     private static func totalReads(_ value: Any?) -> [PropertyConstraintTotalRead]? {
-        guard let value else {
-            return []
-        }
-        guard let entries = value as? [Any] else {
-            return nil
-        }
-        var totals: [PropertyConstraintTotalRead] = []
-        totals.reserveCapacity(entries.count)
-        for entry in entries {
-            guard let total = PropertyConstraintTotalRead(jsonEntry: entry) else {
-                return nil
-            }
-            totals.append(total)
-        }
-        return totals
+        entries(value, PropertyConstraintTotalRead.init(jsonEntry:))
     }
 
     /// A rule's `readsReferenced`, `[]` when the key is missing (a library
     /// built before it), or `nil` for anything but an array of well-formed
     /// reads.
     private static func referencedReads(_ value: Any?) -> [PropertyConstraintReferencedRead]? {
+        entries(value, PropertyConstraintReferencedRead.init(jsonEntry:))
+    }
+
+    /// The entries of a rule's optional `reads...` key, each decoded by
+    /// `make`: `[]` when the key is missing (a library built before it), or
+    /// `nil` when the value is not an array or `make` refuses an entry.
+    private static func entries<T>(_ value: Any?, _ make: (Any) -> T?) -> [T]? {
         guard let value else {
             return []
         }
-        guard let entries = value as? [Any] else {
+        guard let array = value as? [Any] else {
             return nil
         }
-        var reads: [PropertyConstraintReferencedRead] = []
-        reads.reserveCapacity(entries.count)
-        for entry in entries {
-            guard let read = PropertyConstraintReferencedRead(jsonEntry: entry) else {
+        var decoded: [T] = []
+        decoded.reserveCapacity(array.count)
+        for entry in array {
+            guard let item = make(entry) else {
                 return nil
             }
-            reads.append(read)
+            decoded.append(item)
         }
-        return reads
+        return decoded
     }
 }
 

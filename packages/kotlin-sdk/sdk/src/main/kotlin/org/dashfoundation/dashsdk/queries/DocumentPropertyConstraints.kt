@@ -154,30 +154,36 @@ data class DocumentPropertyConstraint(
          * The names [rule]'s `readsSystem` lists: empty when the key is
          * missing, `null` when it is anything but an array of strings.
          */
-        private fun readsSystemOf(rule: JsonObject): List<String>? {
-            val value = rule["readsSystem"] ?: return emptyList()
-            val names = value as? JsonArray ?: return null
-            return names.map { it.jsonStringOrNull() ?: return null }
-        }
+        private fun readsSystemOf(rule: JsonObject): List<String>? =
+            listOrNull(rule, "readsSystem") { it.jsonStringOrNull() }
 
         /**
          * The totals [rule]'s `readsTotals` lists: empty when the key is
          * missing, `null` when it or an entry is malformed.
          */
-        private fun readsTotalsOf(rule: JsonObject): List<PropertyConstraintTotalRead>? {
-            val value = rule["readsTotals"] ?: return emptyList()
-            val entries = value as? JsonArray ?: return null
-            return entries.map { PropertyConstraintTotalRead.fromJsonOrNull(it) ?: return null }
-        }
+        private fun readsTotalsOf(rule: JsonObject): List<PropertyConstraintTotalRead>? =
+            listOrNull(rule, "readsTotals", PropertyConstraintTotalRead::fromJsonOrNull)
 
         /**
          * The reads [rule]'s `readsReferenced` lists: empty when the key is
          * missing, `null` when it or an entry is malformed.
          */
-        private fun readsReferencedOf(rule: JsonObject): List<PropertyConstraintReferencedRead>? {
-            val value = rule["readsReferenced"] ?: return emptyList()
+        private fun readsReferencedOf(rule: JsonObject): List<PropertyConstraintReferencedRead>? =
+            listOrNull(rule, "readsReferenced", PropertyConstraintReferencedRead::fromJsonOrNull)
+
+        /**
+         * The entries [rule]'s optional [key] lists, each read by [read]:
+         * empty when the key is missing (a native library built before it),
+         * `null` when the value is not an array or [read] refuses an entry.
+         */
+        private fun <T> listOrNull(
+            rule: JsonObject,
+            key: String,
+            read: (JsonElement) -> T?,
+        ): List<T>? {
+            val value = rule[key] ?: return emptyList()
             val entries = value as? JsonArray ?: return null
-            return entries.map { PropertyConstraintReferencedRead.fromJsonOrNull(it) ?: return null }
+            return entries.map { read(it) ?: return null }
         }
     }
 }
