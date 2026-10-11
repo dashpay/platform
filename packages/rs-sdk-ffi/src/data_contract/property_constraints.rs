@@ -1073,7 +1073,10 @@ mod tests {
 
         let rules = rules.expect("rules of listing");
         assert_eq!(rules[0]["name"], "createdUnrevised");
-        assert_eq!(rules[0]["readsSystem"], json!(["$old.$revision", "$revision"]));
+        assert_eq!(
+            rules[0]["readsSystem"],
+            json!(["$old.$revision", "$revision"])
+        );
         assert_eq!(rules[0]["readsStored"], json!(true));
         assert_eq!(rules[1]["name"], "priceNeverRises");
         assert_eq!(

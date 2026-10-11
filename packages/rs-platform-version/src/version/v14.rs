@@ -1551,7 +1551,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ability, appended to `ModerationAbility`, on the type, and citing a
 ///     listed reason) sets or removes those fields on any document of the type,
 ///     whoever owns it. The changed document is judged as a replace judges one
-///     (schema, `propertyConstraints` with their totals, `distinctFrom`,
+///     (schema, the `propertyConstraints` reading a field it changes, `$revision`
+///     or a total, with the stored document under `$old.` (item 39), `distinctFrom`,
 ///     `encryptedFor` shapes, unique indexes through
 ///     `validate_moderated_document_uniqueness`, the restore's check
 ///     generalized and renamed), its references are not checked again, and it
@@ -2278,9 +2279,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through generation 0.
 ///
 /// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
-///     validation 0, in place, judges every rule of the restored type after uniqueness
-///     and before constructing restoration operations. The retained document supplies
-///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     validation 0, in place, judges the rules of the restored type that read a
+///     `countOf` or `sumOf` total (`SystemChange::Restore`, item 39), the only values
+///     that can have moved while the document was gone, after uniqueness and before
+///     constructing restoration operations. The retained document supplies its original
+///     id, owner, properties, times, heights and revision, and is the stored version a
+///     rule reads through `$old.`. The shared aggregate reader
 ///     adds it to the live totals as an insertion, with no contribution from its removal
 ///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
 ///     (10422) in a block, charging the moderator and consuming its nonce while leaving
