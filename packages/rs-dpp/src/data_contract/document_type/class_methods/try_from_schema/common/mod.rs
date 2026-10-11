@@ -2986,6 +2986,10 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                     if let Some((_, key)) = lookup.hash_key() {
                         read.extend(key.properties_read().map(top_level_property));
                     }
+                    // The `firstAmong` function's params, for the same reason
+                    if let Some(first_among) = &lookup.first_among {
+                        read.extend(first_among.key.properties_read().map(top_level_property));
+                    }
                     Some(property_agreement)
                 }
                 DocumentPropertyReferenceTarget::ListElement(list_element) => {

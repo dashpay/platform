@@ -410,15 +410,14 @@ pub struct SystemLimits {
     /// `firstAmong` value from earlier blocks, read oldest first (by `$createdAtBlockHeight`,
     /// then by id) through the type's index over exactly that property and
     /// `$createdAtBlockHeight`, in one query. The create is refused at the first valid
-    /// competitor among them, and stands when none of the first this many is one, so copies
-    /// can only make a create cost more, never refuse it. To hide a valid commitment a copier
-    /// needs this many documents holding its value ordered before it, each from a block before
-    /// its own or from its block with a smaller id: made from its value while it was still
-    /// pending, since every copy made after it landed is ordered after it. Read by document
-    /// reference validation 0 (protocol version 14).
-    ///
-    /// `None` on protocol versions whose parsers do not read `firstAmong`.
-    pub max_first_among_candidates: Option<u16>,
+    /// competitor among them, and stands when none of the first this many is one, so documents
+    /// that are no valid competitor can make a create cost more, never refuse it. Registration
+    /// demands a unique index over the referenced type's `$ownerId` and that property, so each
+    /// of them is another identity's, and ordering this many before a valid commitment takes
+    /// this many identities holding the value from before it landed. Read by document reference
+    /// validation 0 (protocol version 14); the earlier tables carry the same number, which
+    /// nothing reads there.
+    pub max_first_among_candidates: u16,
 }
 
 #[cfg(test)]

@@ -38,7 +38,7 @@ const MODERATORS_CHANGE: &str = "the contract's moderators change";
 /// Why a key part moves when it is an immutable, optional `deletableDocument`
 /// reference by id: a replace may clear it once its document is deleted.
 const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
-use crate::data_contract::document_type::{DocumentTypeRef, Index};
+use crate::data_contract::document_type::{property_names, DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, ID, OWNER_ID,
@@ -46,12 +46,13 @@ use crate::document::property_names::{
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::nft::TradeMode;
+use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::{Identifier, Value};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::mem::Discriminant;
 
 /// The wire name of [`LookupKeySource::ReferenceValue`].
@@ -540,23 +541,28 @@ impl DocumentReferenceLookup {
     /// is judged by computing the `findBy` function with its owner in place of the writer,
     /// so:
     ///
-    /// * `findBy` holds a function reading `"$ownerId"`, and the entry
+    /// * `findBy` holds exactly two entries, a function reading `"$ownerId"` and
     ///   `"$ownerId": "$ownerId"`, so a commitment names its owner twice, once in its hash
     ///   and once as its owner: copying another identity's hash yields a commitment whose
-    ///   owner is not the one hashed. The function makes the lookup judged on the create
-    ///   alone ([`Self::is_checked_on_create_only`]);
+    ///   owner is not the one hashed. Any other entry (a property or `"."` source) would be
+    ///   a part of the commitment a competitor is never compared on. The function makes the
+    ///   lookup judged on the create alone ([`Self::is_checked_on_create_only`]);
     /// * the `findBy` function reads no `"."`, which stands for the writer or the creator on
     ///   an `ownerRefersTo` or `creatorRefersTo`, and could not be put in a competitor's
     ///   place;
     /// * the `firstAmong` function reads neither the writer nor `"."`: its value must be the
     ///   same for every identity committing to the same values, and its params follow the
     ///   rules of a `findBy` function's ([`LookupHashKey::referring_side_error`]);
-    /// * every property the `findBy` function reads, the `firstAmong` function reads too: a
-    ///   competitor holding the same `firstAmong` value then committed to the same values,
-    ///   and a `findBy` value read elsewhere (a salt) would make every competitor look like a
-    ///   copy, a check that never refuses;
-    /// * the property `firstAmong` fills is not one `findBy` names: the found document holds
-    ///   the `findBy` key already, and the `firstAmong` value is computed apart from it.
+    /// * the two functions read the same properties. A competitor holding the same
+    ///   `firstAmong` value then committed to the same values: a property only the `findBy`
+    ///   function read (a salt) would make every competitor look like a copy, and one only
+    ///   the `firstAmong` function read would let a later committer pick another value for it
+    ///   and stand where no competitor exists;
+    /// * the property `firstAmong` fills is not one `findBy` names;
+    /// * a create of `declaring` offers nobody else to pay its gas
+    ///   (`documentActionTokenCost` `gasFeesPaidBy`): a create relying on a sponsor is
+    ///   judged, state included, before anyone has paid for it, which the competitor scan
+    ///   must not be.
     fn first_among_referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
         let first_among = self.first_among.as_ref()?;
         let property = first_among.property.as_str();
@@ -574,11 +580,13 @@ impl DocumentReferenceLookup {
                  reading \"{OWNER_ID}\""
             ));
         };
-        if !matches!(self.keys.get(OWNER_ID), Some(LookupKeySource::OwnerId)) {
+        if self.keys.len() != 2
+            || !matches!(self.keys.get(OWNER_ID), Some(LookupKeySource::OwnerId))
+        {
             return Some(format!(
-                "firstAmong \"{property}\" needs the findBy entry \"{OWNER_ID}\": \
-                 \"{OWNER_ID}\", so a commitment's owner is the identity its findBy function \
-                 hashes"
+                "firstAmong \"{property}\" needs findBy to hold the entry \"{OWNER_ID}\": \
+                 \"{OWNER_ID}\" beside its function and nothing else, so a commitment's owner is \
+                 the identity its function hashes and a competitor is judged on all of its key"
             ));
         }
         if find_by_key.reference_value_uses() > 0 {
@@ -596,20 +604,33 @@ impl DocumentReferenceLookup {
         if let Some(reason) = first_among.key.referring_side_error(declaring) {
             return Some(format!("firstAmong function \"{property}\" {reason}"));
         }
-        if let Some(missing) = find_by_key
-            .properties_read()
-            .find(|path| !first_among.key.properties_read().any(|read| read == *path))
+        let find_by_reads: BTreeSet<&str> = find_by_key.properties_read().collect();
+        let first_among_reads: BTreeSet<&str> = first_among.key.properties_read().collect();
+        if let Some(only_one_reads) = find_by_reads
+            .symmetric_difference(&first_among_reads)
+            .next()
         {
             return Some(format!(
-                "firstAmong function \"{property}\" must read every property the findBy \
-                 function \"{find_by_property}\" reads, and does not read \"{missing}\": a \
-                 competitor's findBy value is computed from the values of the create"
+                "firstAmong function \"{property}\" must read the properties the findBy function \
+                 \"{find_by_property}\" reads and no others, and \"{only_one_reads}\" is read by \
+                 one of them only: a competitor holding the same firstAmong value must have \
+                 committed to the same values"
             ));
         }
         if self.keys.contains_key(property) {
             return Some(format!(
                 "firstAmong \"{property}\" names a property findBy names: the firstAmong \
                  function fills a property of its own"
+            ));
+        }
+        if declaring
+            .document_creation_token_cost()
+            .is_some_and(|cost| cost.gas_fees_paid_by != GasFeesPaidBy::DocumentOwner)
+        {
+            return Some(format!(
+                "firstAmong \"{property}\" reads the commitment's competitors when a document is \
+                 created, so its creates may not offer gas sponsorship (gasFeesPaidBy): a create \
+                 relying on a sponsor is judged before anyone pays for it"
             ));
         }
         None
@@ -677,20 +698,12 @@ impl DocumentReferenceLookup {
                 // A hash is a byte array exactly as long as the hash's output,
                 // which the index property must hold
                 LookupKeySource::Hash(key) => {
-                    let length = key.function.output_length();
-                    let holds_hash = matches!(
-                        referenced
-                            .flattened_properties()
-                            .get(index_property)
-                            .map(|property| &property.property_type),
-                        Some(DocumentPropertyType::ByteArray(sizes))
-                            if sizes.min_size == Some(length) && sizes.max_size == Some(length)
-                    );
-                    if !holds_hash {
+                    if !holds_hash(referenced, index_property, key) {
                         return Some(format!(
                             "findBy function \"{index_property}\" is a {} hash, so the index \
-                             property must be a byte array of exactly {length} bytes",
-                            key.function.as_str()
+                             property must be a byte array of exactly {} bytes",
+                            key.function.as_str(),
+                            key.function.output_length()
                         ));
                     }
                     continue;
@@ -713,17 +726,24 @@ impl DocumentReferenceLookup {
                 ));
             }
         }
-        // A minimum age is judged against the found document's creation height,
-        // so the type must record one; consuming deletes the document as its
-        // own owner would, which the type must allow, or keep for consumption
-        // alone (`canBeDeleted: "onlyWhenConsumed"`)
-        if self.minimum_age_blocks.is_some()
-            && !referenced
+        // A minimum age and `firstAmong` are judged against the found document's
+        // creation height (`firstAmong` its competitors' too), so the type must record
+        // one; consuming deletes the document as its own owner would, which the type
+        // must allow, or keep for consumption alone (`canBeDeleted: "onlyWhenConsumed"`)
+        let judged_by_height = if self.minimum_age_blocks.is_some() {
+            Some(property_names::MINIMUM_AGE_BLOCKS)
+        } else if self.first_among.is_some() {
+            Some(property_names::FIRST_AMONG)
+        } else {
+            None
+        };
+        if let Some(keyword) = judged_by_height.filter(|_| {
+            !referenced
                 .required_fields()
                 .contains(CREATED_AT_BLOCK_HEIGHT)
-        {
+        }) {
             return Some(format!(
-                "minimumAgeBlocks is judged against the found document's \
+                "{keyword} is judged against the found document's \
                  {CREATED_AT_BLOCK_HEIGHT}, which \"{}\" does not record: list \
                  {CREATED_AT_BLOCK_HEIGHT} in its `required`",
                 referenced.name()
@@ -810,97 +830,113 @@ impl DocumentReferenceLookup {
     }
 
     /// Why this lookup's `firstAmong` cannot find the competitors of a document of
-    /// `referenced`, the referenced document type; `None` when it can or there is none. The
-    /// property it names must be a stored byte array exactly as long as its function's output,
-    /// fixed once written, under an index over exactly (that property,
-    /// `$createdAtBlockHeight`), in that order, through which the competitors from earlier
-    /// blocks are read oldest first. The index must not be unique, or a copy of a pending
-    /// commitment's value landing first would keep the commitment out of state; it must not
-    /// bucket its first property, nor keep entries past a delete, since a consumed commitment
-    /// is no competitor. The type must record `$createdAtBlockHeight`, which both the found
-    /// document and its competitors are ordered by. Every flag read here is immutable on
-    /// contract update, and a type's indexes never change, so the answer holds for good.
+    /// `referenced`, the referenced document type; `None` when it can or there is none
+    /// (the creation height the competitors are ordered by is required with
+    /// `minimumAgeBlocks`'s, see [`Self::referenced_side_error`]):
+    ///
+    /// * the property it names is a stored byte array exactly as long as its function's
+    ///   output, fixed once written;
+    /// * the type's documents expire (`ttl`): a commitment never revealed would otherwise
+    ///   precede every later one for good;
+    /// * an index over exactly (that property, `$createdAtBlockHeight`), in that order,
+    ///   through which the competitors from earlier blocks are read oldest first, that is
+    ///   not unique;
+    /// * every unique index holding the property holds `$ownerId` too, or a copy of a
+    ///   pending commitment's value landing first would keep the commitment out of state;
+    ///   and one is over exactly `$ownerId` and the property, so an identity holds at most
+    ///   one commitment to a value: filling the competitors a create reads, which stand
+    ///   before an older valid one, takes as many identities as are read, and the writer
+    ///   holds none of them but the one found.
+    ///
+    /// Every flag read here is immutable on contract update, and a type's indexes never
+    /// change, so the answer holds for good.
     fn first_among_referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
         let first_among = self.first_among.as_ref()?;
         let property = first_among.property.as_str();
-        let length = first_among.key.function.output_length();
-        let holds_hash = matches!(
-            referenced
-                .flattened_properties()
-                .get(property)
-                .map(|property| &property.property_type),
-            Some(DocumentPropertyType::ByteArray(sizes))
-                if sizes.min_size == Some(length) && sizes.max_size == Some(length)
-        );
-        if !holds_hash {
+        let name = referenced.name();
+        if !holds_hash(referenced, property, &first_among.key) {
             return Some(format!(
                 "firstAmong function \"{property}\" is a {} hash, so \"{property}\" must be a \
-                 byte array of exactly {length} bytes of \"{}\"",
+                 byte array of exactly {} bytes of \"{name}\"",
                 first_among.key.function.as_str(),
-                referenced.name()
+                first_among.key.function.output_length()
             ));
         }
         if is_transient(referenced, property) {
             return Some(format!(
-                "firstAmong names \"{property}\" of \"{}\", which is transient or inside a \
-                 transient object: its value is never stored, so no competitor could be found",
-                referenced.name()
+                "firstAmong names \"{property}\" of \"{name}\", which is transient or inside a \
+                 transient object: its value is never stored, so no competitor could be found"
             ));
         }
         if let Some(why) = why_value_can_change(referenced, property) {
             return Some(format!(
-                "firstAmong names \"{property}\" of \"{}\", which {why}: a competitor must \
+                "firstAmong names \"{property}\" of \"{name}\", which {why}: a competitor must \
                  keep the value it committed to, so the property must be fixed once the \
-                 document is written",
-                referenced.name()
+                 document is written"
             ));
         }
-        if !referenced
-            .required_fields()
-            .contains(CREATED_AT_BLOCK_HEIGHT)
-        {
+        if referenced.documents_ttl_seconds().is_none() {
             return Some(format!(
-                "firstAmong orders commitments by their {CREATED_AT_BLOCK_HEIGHT}, which \"{}\" \
-                 does not record: list {CREATED_AT_BLOCK_HEIGHT} in its `required`",
-                referenced.name()
+                "firstAmong reads the commitments of \"{name}\", whose documents must expire \
+                 (declare a `ttl`): a commitment never revealed would otherwise precede every \
+                 later one for good"
             ));
         }
-        let over_property_and_height: Vec<(&String, &Index)> = referenced
+        let holds = |index: &Index, name: &str| {
+            index
+                .properties
+                .iter()
+                .any(|index_property| index_property.name == name)
+        };
+        match referenced.indexes().iter().find(|(_, index)| {
+            matches!(
+                index.properties.as_slice(),
+                [first, second]
+                    if first.name == property && second.name == CREATED_AT_BLOCK_HEIGHT
+            )
+        }) {
+            None => {
+                return Some(format!(
+                    "firstAmong \"{property}\" reads the commitments holding the same value, \
+                     oldest first, through a non-unique index of \"{name}\" over exactly \
+                     ({property}, {CREATED_AT_BLOCK_HEIGHT}), in that order, which it does not \
+                     have"
+                ))
+            }
+            Some((index_name, index)) if index.unique => {
+                return Some(format!(
+                    "index \"{index_name}\" of \"{name}\" over ({property}, \
+                     {CREATED_AT_BLOCK_HEIGHT}) is unique: firstAmong reads every commitment to \
+                     the same values, so the index may not keep a later one out"
+                ))
+            }
+            Some(_) => {}
+        }
+        if let Some((index_name, _)) = referenced
             .indexes()
             .iter()
-            .filter(|(_, index)| {
-                matches!(
-                    index.properties.as_slice(),
-                    [first, second]
-                        if first.name == property && second.name == CREATED_AT_BLOCK_HEIGHT
-                )
-            })
-            .collect();
-        if over_property_and_height.iter().any(|(_, index)| {
-            !index.unique && index.bucketing().is_none() && !index.outlives_delete
-        }) {
-            return None;
+            .find(|(_, index)| index.unique && holds(index, property) && !holds(index, OWNER_ID))
+        {
+            return Some(format!(
+                "index \"{index_name}\" of \"{name}\" is unique over \"{property}\" without \
+                 {OWNER_ID}: a copy of a pending commitment's value landing first would keep the \
+                 commitment out"
+            ));
         }
-        Some(match over_property_and_height.first() {
-            Some((name, index)) if index.unique => format!(
-                "index \"{name}\" of \"{}\" over ({property}, {CREATED_AT_BLOCK_HEIGHT}) is \
-                 unique: firstAmong reads every commitment to the same values, so the index may \
-                 not keep a later one out",
-                referenced.name()
-            ),
-            Some((name, _)) => format!(
-                "index \"{name}\" of \"{}\" over ({property}, {CREATED_AT_BLOCK_HEIGHT}) \
-                 buckets its first property or keeps its entries past a delete, so it cannot \
-                 list the commitments in state",
-                referenced.name()
-            ),
-            None => format!(
-                "firstAmong \"{property}\" reads the commitments holding the same value, oldest \
-                 first, through a non-unique index of \"{}\" over exactly ({property}, \
-                 {CREATED_AT_BLOCK_HEIGHT}), in that order, which it does not have",
-                referenced.name()
-            ),
-        })
+        if !referenced.indexes().values().any(|index| {
+            index.unique
+                && index.properties.len() == 2
+                && holds(index, OWNER_ID)
+                && holds(index, property)
+        }) {
+            return Some(format!(
+                "firstAmong \"{property}\" needs a unique index of \"{name}\" over exactly \
+                 ({OWNER_ID}, {property}), in either order: each identity then holds at most one \
+                 commitment to a value, so the competitors a create reads are each another \
+                 identity's"
+            ));
+        }
+        None
     }
 
     /// The first key part a referenced document of `referenced` can change
@@ -1065,6 +1101,21 @@ pub(crate) fn clearable_once_its_document_is_deleted(
                         )
                     )
             })
+}
+
+/// Whether the property `property` of `document_type` can hold the hash `key` computes: a
+/// byte array exactly as long as its function's output. A `findBy` function's property and a
+/// `firstAmong` one are judged by this one rule.
+fn holds_hash(document_type: DocumentTypeRef, property: &str, key: &LookupHashKey) -> bool {
+    let length = key.function.output_length();
+    matches!(
+        document_type
+            .flattened_properties()
+            .get(property)
+            .map(|property| &property.property_type),
+        Some(DocumentPropertyType::ByteArray(sizes))
+            if sizes.min_size == Some(length) && sizes.max_size == Some(length)
+    )
 }
 
 /// The kind of value `"."` stands for on a reference of `declaring` carried by

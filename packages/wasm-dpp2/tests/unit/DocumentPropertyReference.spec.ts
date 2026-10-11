@@ -510,71 +510,86 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(salted.consume).to.equal(true);
     });
 
-    it('should report firstAmong beside a findBy function reading the writer', () => {
+    const nameParams = ['normalizedLabel', { const: '.' }, 'normalizedParentDomainName'];
+
+    // A name registration whose preorders hold the hash of the writer and the
+    // name, and that of the name alone at `nameProperty`
+    const firstAmongSchemas = (nameProperty: string) => {
       const hash = {
         type: 'array',
         byteArray: true,
         minItems: 32,
         maxItems: 32,
       };
-      const nameParams = ['normalizedLabel', { const: '.' }, 'normalizedParentDomainName'];
-      const contract = new wasm.DataContract({
-        ownerId,
-        identityNonce: BigInt(2),
-        schemas: {
-          namePreorder: {
-            type: 'object',
-            documentsMutable: false,
-            canBeDeleted: true,
-            properties: {
-              ownerNameHash: { ...hash, position: 0 },
-              nameHash: { ...hash, position: 1 },
-            },
-            indices: [
-              {
-                name: 'ownerAndNameHash',
-                properties: [{ $ownerId: 'asc' }, { ownerNameHash: 'asc' }],
-                unique: true,
-              },
-              {
-                name: 'nameHashByHeight',
-                properties: [{ nameHash: 'asc' }, { $createdAtBlockHeight: 'asc' }],
-              },
-            ],
-            required: ['$createdAtBlockHeight', 'ownerNameHash', 'nameHash'],
-            additionalProperties: false,
+      return {
+        namePreorder: {
+          type: 'object',
+          documentsMutable: false,
+          canBeDeleted: true,
+          ttl: 3600,
+          properties: {
+            ownerNameHash: { ...hash, position: 0 },
+            [nameProperty]: { ...hash, position: 1 },
           },
-          name: {
-            type: 'object',
-            documentsMutable: false,
-            transferable: 1,
-            properties: {
-              normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
-              normalizedParentDomainName: { type: 'string', maxLength: 63, position: 1 },
+          indices: [
+            {
+              name: 'ownerAndNameHash',
+              properties: [{ $ownerId: 'asc' }, { ownerNameHash: 'asc' }],
+              unique: true,
             },
-            required: ['normalizedLabel', 'normalizedParentDomainName'],
-            creatorRefersTo: {
-              type: 'deletableDocument',
-              documentType: 'namePreorder',
-              findBy: {
-                $ownerId: '$ownerId',
-                ownerNameHash: {
-                  function: 'sys.hash.sha256d',
-                  params: ['$ownerId', ...nameParams],
-                },
-              },
-              firstAmong: {
-                nameHash: { function: 'sys.hash.sha256d', params: nameParams },
-              },
-              minimumAgeBlocks: 1,
+            {
+              name: 'ownerAndName',
+              properties: [{ $ownerId: 'asc' }, { [nameProperty]: 'asc' }],
+              unique: true,
             },
-            additionalProperties: false,
-          },
+            {
+              name: 'nameHashByHeight',
+              properties: [{ [nameProperty]: 'asc' }, { $createdAtBlockHeight: 'asc' }],
+            },
+          ],
+          required: ['$createdAt', '$createdAtBlockHeight', 'ownerNameHash', nameProperty],
+          additionalProperties: false,
         },
-        definitions: null,
-        fullValidation: true,
-        platformVersion: new PlatformVersion(14),
-      });
+        name: {
+          type: 'object',
+          documentsMutable: false,
+          transferable: 1,
+          properties: {
+            normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+            normalizedParentDomainName: { type: 'string', maxLength: 63, position: 1 },
+          },
+          required: ['normalizedLabel', 'normalizedParentDomainName'],
+          creatorRefersTo: {
+            type: 'deletableDocument',
+            documentType: 'namePreorder',
+            findBy: {
+              $ownerId: '$ownerId',
+              ownerNameHash: {
+                function: 'sys.hash.sha256d',
+                params: ['$ownerId', ...nameParams],
+              },
+            },
+            firstAmong: {
+              [nameProperty]: { function: 'sys.hash.sha256d', params: nameParams },
+            },
+            minimumAgeBlocks: 1,
+          },
+          additionalProperties: false,
+        },
+      };
+    };
+
+    const firstAmongContract = (schemas: Record<string, unknown>) => new wasm.DataContract({
+      ownerId,
+      identityNonce: BigInt(2),
+      schemas,
+      definitions: null,
+      fullValidation: true,
+      platformVersion: new PlatformVersion(14),
+    });
+
+    it('should report firstAmong beside a findBy function reading the writer', () => {
+      const contract = firstAmongContract(firstAmongSchemas('nameHash'));
       const [creator] = contract.documentTypeReferences('name') as Reference[];
 
       // The writer is the "$ownerId" param of the findBy function, and
@@ -591,6 +606,19 @@ describe('DataContract — refersTo declarations (v14)', () => {
         nameHash: { function: 'sys.hash.sha256d', params: nameParams },
       });
       expect(creator.minimumAgeBlocks).to.equal(1);
+    });
+
+    it('should report a firstAmong property named __proto__ as an own entry', () => {
+      // A computed key, unlike a literal `__proto__:`, makes an own property
+      const contract = firstAmongContract(firstAmongSchemas('__proto__'));
+      const [creator] = contract.documentTypeReferences('name') as Reference[];
+
+      expect(Object.keys(creator.firstAmong as object)).to.deep.equal(['__proto__']);
+      expect(JSON.stringify(creator.firstAmong)).to.equal(
+        JSON.stringify({
+          ['__proto__']: { function: 'sys.hash.sha256d', params: nameParams },
+        }),
+      );
     });
 
     it('should refuse findBy naming exactly the properties of an index that is not unique', () => {
@@ -1114,10 +1142,12 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRequirementNotMet).to.equal(40142);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotModerated).to.equal(40143);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeIndexOnly).to.equal(40146);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentPreceded).to.equal(40149);
     });
 
     it('should resolve a code back to its name', () => {

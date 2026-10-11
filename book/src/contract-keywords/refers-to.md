@@ -52,7 +52,7 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 | `identity` | the id of an existing identity | none |
 | `contract` | the id of an existing data contract | `contractRequirements` |
 | `token` | the id of an existing token | none |
-| `permanentDocument` | the id of an existing document of a type whose documents can never disappear; with `findBy`, one part of the key that finds it; with `inList`, one of the identifiers a list on it holds | `documentType` (required), `contractId`, `findBy`, `where`, `inList`, and beside a `findBy` function `minimumAgeBlocks` and `firstAmong` |
+| `permanentDocument` | the id of an existing document of a type whose documents can never disappear; with `findBy`, one part of the key that finds it; with `inList`, one of the identifiers a list on it holds | `documentType` (required), `contractId`, `findBy`, `where`, `inList`, and beside a `findBy` function `minimumAgeBlocks` |
 | `moderatedDocument` | the id of an existing document of a type whose documents disappear only when the contract's moderators remove them, on the record | `documentType` (required), `contractId`, `where` |
 | `deletableDocument` | the id of an existing document of a type whose documents can disappear in any other way; with `findBy`, one part of the key that finds it | `documentType` (required), `contractId`, `findBy`, `where`, and beside a `findBy` function `minimumAgeBlocks`, `consume` and `firstAmong` |
 | `identityPublicKey` | an identity key that exists and is not disabled | `keyIdProperty` or `identityProperty` (one of them, required), `keyRequirements` |
@@ -252,7 +252,7 @@ At registration `boundTo` must name a document type of the contract, and one a k
 
 ### `findBy`, `inList`, `anyOf` and `allOf`
 
-- [`findBy`](refers-to-lookup.md) finds a `permanentDocument` or `deletableDocument` through the unique index of its type over exactly the properties it names, with the value as one part of the key. One entry may be a function, for a [commit and reveal](refers-to-lookup.md#commit-and-reveal), beside which the `refersTo` may declare `minimumAgeBlocks`, `consume` and [`firstAmong`](refers-to-lookup.md#first-among-commitments-firstamong).
+- [`findBy`](refers-to-lookup.md) finds a `permanentDocument` or `deletableDocument` through the unique index of its type over exactly the properties it names, with the value as one part of the key. One entry may be a function, for a [commit and reveal](refers-to-lookup.md#commit-and-reveal), beside which the `refersTo` may declare `minimumAgeBlocks`, and on a `deletableDocument` `consume` and [`firstAmong`](refers-to-lookup.md#first-among-commitments-firstamong).
 - [`inList`](refers-to-list-element.md), on a `permanentDocument` whose `findBy` is `{ "$id": <property> }`, names the list on that document the value must be in.
 - [`anyOf` and `allOf`](refers-to-expressions.md) combine several targets in one declaration.
 

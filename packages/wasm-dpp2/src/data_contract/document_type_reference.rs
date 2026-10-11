@@ -13,6 +13,7 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
@@ -120,13 +121,6 @@ export type DocumentPropertyReferenceTarget =
        * it was not).
        */
       minimumAgeBlocks?: number;
-      /**
-       * Beside a `findBy` function reading `'$ownerId'` and the `findBy`
-       * entry `$ownerId: '$ownerId'`: the create is refused while another
-       * identity holds a valid commitment to the same values from an earlier
-       * block (code 40148). See {@link DocumentReferenceFirstAmong}.
-       */
-      firstAmong?: DocumentReferenceFirstAmong;
       /**
        * A list the value must be in: the value (on a typed array, every
        * element) must be one of the identifiers the typed array `inList`
@@ -246,7 +240,7 @@ export type DocumentPropertyReferenceTarget =
        * Beside a `findBy` function reading `'$ownerId'` and the `findBy`
        * entry `$ownerId: '$ownerId'`: the create is refused while another
        * identity holds a valid commitment to the same values from an earlier
-       * block (code 40148). See {@link DocumentReferenceFirstAmong}.
+       * block (code 40149). See {@link DocumentReferenceFirstAmong}.
        */
       firstAmong?: DocumentReferenceFirstAmong;
     }
@@ -371,17 +365,18 @@ export type DocumentReferenceFindByFunction = {
 };
 
 /**
- * A reference's `firstAmong`: `{ <referenced property>: <function> }`, one
- * entry, the function a {@link DocumentReferenceFindByFunction} over values
- * of the document being created, never `'$ownerId'` or `'.'`, reading every
- * property the `findBy` function reads. Every commitment to the same values
- * holds its hash at that property, whoever made it, under a non-unique index
- * over (that property, `$createdAtBlockHeight`). A create is refused when
- * another identity's commitment from an earlier block holds the same value,
- * is not past its `ttl`, and is valid: the property the `findBy` function
- * fills holds that function computed with the commitment's owner as
- * `'$ownerId'`, which takes knowing the values, so a copied hash does not
- * count. The first identity to commit wins.
+ * A `deletableDocument` reference's `firstAmong`: `{ <referenced property>:
+ * <function> }`, one entry, a {@link DocumentReferenceFindByFunction} over
+ * exactly the properties the `findBy` function reads, never `'$ownerId'` or
+ * `'.'`, beside a `findBy` holding that function (reading `'$ownerId'`) and
+ * `$ownerId: '$ownerId'` alone. Every commitment to the same values holds its
+ * hash at that property, whoever made it. A create is refused when another
+ * identity's commitment from an earlier block holds the same value, is not
+ * past its `ttl`, and is valid: the property the `findBy` function fills holds
+ * that function computed with the commitment's owner as `'$ownerId'`, which
+ * takes knowing the values, so a copied hash does not count (code 40149). A
+ * commitment past its own `ttl` reveals nothing (code 40120). The commitment
+ * that lands first wins; a commitment from the same block does not precede.
  */
 export type DocumentReferenceFirstAmong = Record<string, DocumentReferenceFindByFunction>;
 
@@ -415,7 +410,7 @@ export type DocumentPropertyReference = {
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135,
-   * 40136, 40142 and 40148), except that a write error names the failing element by its
+   * 40136, 40142 and 40149), except that a write error names the failing element by its
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
@@ -574,7 +569,9 @@ fn set_find_by_fields(
             LookupKeySource::Hash(key) => find_by_function_to_js(key, path)?,
             source => JsValue::from_str(source.as_str()),
         };
-        set_field(&find_by, index_property, &value, path)?;
+        // A schema property name may be `__proto__`, which a plain set would hand to the
+        // inherited accessor
+        define_own_property(&find_by, index_property, value)?;
     }
     set_field(object, "findBy", &find_by, path)?;
     if let Some(blocks) = lookup.minimum_age_blocks {
@@ -585,11 +582,10 @@ fn set_find_by_fields(
     }
     if let Some(first_among) = &lookup.first_among {
         let first_among_object = Object::new();
-        set_field(
+        define_own_property(
             &first_among_object,
             &first_among.property,
-            &find_by_function_to_js(&first_among.key, path)?,
-            path,
+            find_by_function_to_js(&first_among.key, path)?,
         )?;
         set_field(object, "firstAmong", &first_among_object, path)?;
     }

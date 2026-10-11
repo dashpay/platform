@@ -7,7 +7,9 @@
 //! the checks of the referenced side at contract level, and the protocol
 //! version gate.
 
-use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
+use super::reference_test_helpers::{
+    assert_refused, assert_refused_by_the_parser, contract, contract_on, CONTRACT_ID,
+};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -226,17 +228,6 @@ fn dpns_lookup(minimum_age_blocks: Option<u32>, consume: bool) -> DocumentRefere
         consume,
         first_among: None,
     }
-}
-
-/// Both parses refuse `contract_value`: the validating one with the
-/// meta-schema or the parser, the one that skips the meta-schema with the
-/// parser's `fragment`.
-fn assert_refused_by_the_parser(contract_value: serde_json::Value, fragment: &str) {
-    contract(contract_value.clone()).expect_err("a validating parse should refuse it");
-    assert_refused(
-        contract_on(contract_value, false, PlatformVersion::latest()),
-        fragment,
-    );
 }
 
 #[test]

@@ -1,37 +1,45 @@
 //! `firstAmong` (protocol version 14), beside a `findBy` function reading the
 //! writer: the parse into the lookup's `LookupFirstAmong`, the checks of the
 //! referring side on every parse, the checks of the referenced side at contract
-//! level, the update rule and the protocol version gate. The fixture is a name
-//! registration whose `preorder` holds two hashes, `ownerNameHash` (of its
-//! owner and the name, unique per owner) and `nameHash` (of the name alone,
-//! under a non-unique index with `$createdAtBlockHeight`), and whose transferable
-//! `domain` reveals the writer's own preorder through `creatorRefersTo`.
+//! level, the update rule, the create structure check and the protocol version
+//! gate. The fixture is a name registration whose `preorder` holds two hashes,
+//! `ownerNameHash` (of its owner and the name, unique per owner) and `nameHash`
+//! (of the name alone, unique per owner too, and indexed with
+//! `$createdAtBlockHeight`), and expires; its transferable `domain` reveals the
+//! writer's own preorder through `creatorRefersTo`.
 
-use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
+use super::reference_test_helpers::{
+    assert_refused, assert_refused_by_the_parser, contract, contract_on, CONTRACT_ID,
+};
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::{
-    DocumentReferenceLookup, HashFunction, LookupFirstAmong, LookupHashKey, LookupKeyParam,
-    LookupKeySource, PropertyReference,
+    first_unrevealable_lookup_key, DocumentReferenceLookup, HashFunction, LookupFirstAmong,
+    LookupHashKey, LookupKeyParam, LookupKeySource, PropertyReference,
 };
 use crate::data_contract::DataContract;
 use platform_value::string_encoding::Encoding;
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 /// A 32-byte byte array at `position`.
 fn hash_property(position: u32) -> serde_json::Value {
     json!({ "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": position })
 }
 
-/// The preorder: immutable, deletable, recording `$createdAtBlockHeight`, unique
-/// on (`$ownerId`, `ownerNameHash`) and indexed, not uniquely, on (`nameHash`,
-/// `$createdAtBlockHeight`).
+/// The preorder: immutable, deletable, expiring after an hour, recording
+/// `$createdAt` and `$createdAtBlockHeight`, unique on (`$ownerId`,
+/// `ownerNameHash`) and on (`$ownerId`, `nameHash`), and indexed, not uniquely,
+/// on (`nameHash`, `$createdAtBlockHeight`).
 fn preorder_schema() -> serde_json::Value {
     json!({
         "type": "object",
         "documentsMutable": false,
         "canBeDeleted": true,
+        "ttl": 3600,
         "properties": {
             "ownerNameHash": hash_property(0),
             "nameHash": hash_property(1),
@@ -44,11 +52,16 @@ fn preorder_schema() -> serde_json::Value {
                 "unique": true
             },
             {
+                "name": "ownerAndName",
+                "properties": [{ "$ownerId": "asc" }, { "nameHash": "asc" }],
+                "unique": true
+            },
+            {
                 "name": "nameHashByHeight",
                 "properties": [{ "nameHash": "asc" }, { "$createdAtBlockHeight": "asc" }]
             }
         ],
-        "required": ["$createdAtBlockHeight", "ownerNameHash", "nameHash"],
+        "required": ["$createdAt", "$createdAtBlockHeight", "ownerNameHash", "nameHash"],
         "additionalProperties": false
     })
 }
@@ -65,7 +78,18 @@ fn domain_schema() -> serde_json::Value {
             "normalizedLabel": { "type": "string", "maxLength": 63, "position": 1 },
             "normalizedParentDomainName": { "type": "string", "maxLength": 63, "position": 2 },
             "count": { "type": "integer", "minimum": 0, "maximum": 100, "position": 3 },
-            "salt": hash_property(4)
+            "salt": hash_property(4),
+            "tag": { "type": "string", "maxLength": 63, "position": 5 },
+            "claim": hash_property(6),
+            "aliases": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                },
+                "position": 7
+            }
         },
         "required": ["label", "normalizedLabel", "normalizedParentDomainName"],
         "transient": ["salt"],
@@ -109,14 +133,16 @@ fn reveal() -> serde_json::Value {
     })
 }
 
-/// A contract whose `domain` declares `creator_refers_to`, with `preorder_change`
-/// applied to the preorder.
-fn contract_with(
+/// A contract whose `domain` declares `creator_refers_to`, with `domain_change`
+/// applied to the domain and `preorder_change` to the preorder.
+fn contract_changed(
     creator_refers_to: serde_json::Value,
+    domain_change: impl FnOnce(&mut serde_json::Value),
     preorder_change: impl FnOnce(&mut serde_json::Value),
 ) -> serde_json::Value {
     let mut domain = domain_schema();
     domain["creatorRefersTo"] = creator_refers_to;
+    domain_change(&mut domain);
     let mut preorder = preorder_schema();
     preorder_change(&mut preorder);
     json!({
@@ -126,6 +152,15 @@ fn contract_with(
         "version": 1,
         "documentSchemas": { "preorder": preorder, "domain": domain }
     })
+}
+
+/// A contract whose `domain` declares `creator_refers_to`, with `preorder_change`
+/// applied to the preorder.
+fn contract_with(
+    creator_refers_to: serde_json::Value,
+    preorder_change: impl FnOnce(&mut serde_json::Value),
+) -> serde_json::Value {
+    contract_changed(creator_refers_to, |_| {}, preorder_change)
 }
 
 fn contract_revealing(creator_refers_to: serde_json::Value) -> serde_json::Value {
@@ -154,17 +189,6 @@ fn creator_lookup(contract: &DataContract) -> DocumentReferenceLookup {
         .and_then(|declaration| declaration.lookup)
         .cloned()
         .expect("the creator's lookup")
-}
-
-/// Both parses refuse `contract_value`, the validating one with the meta-schema
-/// or the parser, the one that skips the meta-schema (a stored contract) with
-/// the parser's `fragment`: the rule holds on every parse.
-fn assert_refused_on_every_parse(contract_value: serde_json::Value, fragment: &str) {
-    contract(contract_value.clone()).expect_err("a validating parse should refuse it");
-    assert_refused(
-        contract_on(contract_value, false, PlatformVersion::latest()),
-        fragment,
-    );
 }
 
 /// Both parses refuse `contract_value` with the parser's `fragment`.
@@ -246,10 +270,12 @@ fn should_refuse_first_among_without_a_find_by_function_reading_the_writer() {
     );
 }
 
+/// `findBy` beside `firstAmong` holds the writer entry and its function and nothing
+/// else: without the writer entry the commitment found need not be the writer's own,
+/// and another entry (a property or `"."` source) would be a part of the commitment a
+/// competitor is never compared on.
 #[test]
-fn should_refuse_first_among_without_the_writer_find_by_entry() {
-    // The writer hashed but not keyed: the commitment found need not be the
-    // writer's own, whose owner a competitor's is judged against
+fn should_refuse_first_among_beside_a_find_by_other_than_the_writer_and_its_function() {
     let without_owner_entry = reveal_with(|reveal| {
         reveal["findBy"] = json!({ "ownerNameHash": owner_name_function() });
     });
@@ -261,7 +287,56 @@ fn should_refuse_first_among_without_the_writer_find_by_entry() {
                 "unique": true
             });
         }),
-        "needs the findBy entry \"$ownerId\": \"$ownerId\"",
+        "needs findBy to hold the entry \"$ownerId\": \"$ownerId\" beside its function and \
+         nothing else",
+    );
+
+    // The parent read as is beside the function: a commitment under another parent
+    // would otherwise precede the create
+    let with_parent_entry = reveal_with(|reveal| {
+        reveal["findBy"] = json!({
+            "$ownerId": "$ownerId",
+            "note": "normalizedParentDomainName",
+            "ownerNameHash": function(json!(["$ownerId", "normalizedLabel"]))
+        });
+        reveal["firstAmong"] = json!({ "nameHash": function(json!(["normalizedLabel"])) });
+    });
+    assert_refused_by_the_parser_on_every_parse(
+        contract_with(with_parent_entry, |preorder| {
+            preorder["indices"][0] = json!({
+                "name": "ownerParentAndNameHash",
+                "properties": [{ "$ownerId": "asc" }, { "note": "asc" }, { "ownerNameHash": "asc" }],
+                "unique": true
+            });
+            preorder["required"] = json!([
+                "$createdAt",
+                "$createdAtBlockHeight",
+                "ownerNameHash",
+                "nameHash",
+                "note"
+            ]);
+        }),
+        "needs findBy to hold the entry \"$ownerId\": \"$ownerId\" beside its function and \
+         nothing else",
+    );
+}
+
+/// A `where` beside `firstAmong` compares nothing but the writer with the
+/// commitment's owner.
+#[test]
+fn should_refuse_a_where_entry_beside_first_among_other_than_the_writer() {
+    let reveal_where = |entries: serde_json::Value| {
+        reveal_with(|reveal| {
+            reveal["where"] = entries;
+        })
+    };
+    contract(contract_revealing(reveal_where(
+        json!({ "$ownerId": "$ownerId" }),
+    )))
+    .expect("the writer entry is the commitment's own owner");
+    assert_refused_by_the_parser_on_every_parse(
+        contract_revealing(reveal_where(json!({ "note": "label" }))),
+        "where \"note\": \"label\" beside firstAmong",
     );
 }
 
@@ -310,10 +385,17 @@ fn should_refuse_a_first_among_function_reading_the_writer_or_dot() {
     }
 }
 
+/// The two functions read the same properties: a salt only the findBy function
+/// read would make every competitor look like a copy, a `tag` only the
+/// firstAmong function read would let a later committer pick another one and
+/// stand where no competitor exists, and a findBy function over the writer
+/// alone would let anyone copying a pending commitment's name hash, without
+/// knowing the name, hold a valid competitor.
 #[test]
-fn should_refuse_a_first_among_function_leaving_out_a_value_the_find_by_function_reads() {
-    // A salt in the findBy hash alone would make every competitor look like a
-    // copy: the check would never refuse
+fn should_refuse_functions_reading_different_properties() {
+    let owner_only = reveal_with(|reveal| {
+        reveal["findBy"]["ownerNameHash"] = function(json!(["$ownerId"]));
+    });
     let salted = reveal_with(|reveal| {
         reveal["findBy"]["ownerNameHash"] = function(json!([
             "$ownerId",
@@ -323,11 +405,28 @@ fn should_refuse_a_first_among_function_leaving_out_a_value_the_find_by_function
             "normalizedParentDomainName"
         ]));
     });
-    assert_refused_by_the_parser_on_every_parse(
-        contract_revealing(salted),
-        "must read every property the findBy function \"ownerNameHash\" reads, and does not \
-         read \"salt\"",
-    );
+    let tagged = reveal_with(|reveal| {
+        reveal["firstAmong"]["nameHash"] = function(json!([
+            "normalizedLabel",
+            { "const": "." },
+            "normalizedParentDomainName",
+            { "const": "/" },
+            "tag"
+        ]));
+    });
+    for (reveal, only_one_reads) in [
+        (salted, "salt"),
+        (tagged, "tag"),
+        (owner_only, "normalizedLabel"),
+    ] {
+        assert_refused_by_the_parser_on_every_parse(
+            contract_revealing(reveal),
+            &format!(
+                "must read the properties the findBy function \"ownerNameHash\" reads and no \
+                 others, and \"{only_one_reads}\" is read by one of them only"
+            ),
+        );
+    }
 }
 
 #[test]
@@ -367,6 +466,7 @@ fn should_refuse_first_among_naming_a_property_find_by_names() {
     );
 }
 
+/// A malformed `firstAmong` is refused naming `firstAmong`, not `findBy`.
 #[test]
 fn should_refuse_malformed_first_among_declarations() {
     for (first_among, fragment) in [
@@ -385,27 +485,102 @@ fn should_refuse_malformed_first_among_declarations() {
         ),
         (
             json!({ "nameHash": { "function": "sys.hash.sha256d", "params": [] } }),
-            "lists between 1 and 16 params",
+            "a refersTo firstAmong function lists between 1 and 16 params",
+        ),
+        (
+            json!({ "nameHash": { "function": "sys.hash.sha256d", "params": ["$creatorId"] } }),
+            "a refersTo firstAmong function param is",
         ),
     ] {
         let reveal = reveal_with(|reveal| reveal["firstAmong"] = first_among.clone());
-        assert_refused_on_every_parse(contract_revealing(reveal), fragment);
+        assert_refused_by_the_parser(contract_revealing(reveal), fragment);
     }
 }
 
 /// `firstAmong` describes the document `findBy` finds, and needs it; beside `inList` it is
-/// refused with `minimumAgeBlocks` and `consume` (`list_element_reference_tests`).
+/// refused with `minimumAgeBlocks` and `consume` (`list_element_reference_tests`). It reads
+/// commitments that expire, so only on a `deletableDocument` reference.
 #[test]
-fn should_refuse_first_among_without_find_by() {
+fn should_refuse_first_among_without_find_by_or_on_a_permanent_reference() {
     let without_find_by = json!({
         "type": "deletableDocument",
         "documentType": "preorder",
         "firstAmong": { "nameHash": name_function() }
     });
-    assert_refused_on_every_parse(
+    assert_refused_by_the_parser(
         contract_revealing(without_find_by),
         "does not take firstAmong without findBy",
     );
+
+    let permanent = reveal_with(|reveal| reveal["type"] = json!("permanentDocument"));
+    assert_refused_by_the_parser(
+        contract_revealing(permanent),
+        "permanentDocument refersTo does not take firstAmong",
+    );
+}
+
+/// A create reads the competitors of each `firstAmong` it judges, so one sits on one
+/// single reference per document type: not on the elements of a typed array, not on an
+/// operand of a reference expression, and not twice.
+#[test]
+fn should_refuse_first_among_on_elements_operands_or_twice() {
+    let on_elements = contract_changed(
+        reveal(),
+        |domain| {
+            domain
+                .as_object_mut()
+                .expect("an object")
+                .remove("creatorRefersTo");
+            domain["properties"]["aliases"]["items"]["refersTo"] = reveal_with(|reveal| {
+                reveal["findBy"]["identityHash"] = json!(".");
+            });
+        },
+        |_| {},
+    );
+    assert_refused_by_the_parser(on_elements, "firstAmong may not sit on the elements");
+
+    let on_operand = contract_revealing(json!({
+        "anyOf": [{ "type": "identity" }, reveal()]
+    }));
+    assert_refused_by_the_parser(
+        on_operand,
+        "firstAmong may not sit on an operand of a reference expression",
+    );
+
+    let twice = contract_changed(
+        reveal(),
+        |domain| {
+            domain["properties"]["claim"]["refersTo"] = reveal_with(|reveal| {
+                reveal["findBy"]["ownerNameHash"] =
+                    function(json!(["$ownerId", "claim", "normalizedLabel"]));
+                reveal["firstAmong"]["nameHash"] = function(json!(["claim", "normalizedLabel"]));
+            });
+        },
+        |_| {},
+    );
+    assert_refused_by_the_parser(twice, "a document type declares at most one firstAmong");
+}
+
+/// A create relying on a gas sponsor is judged, state included, before anyone pays for
+/// it, which the competitor scan must not be.
+#[test]
+fn should_refuse_first_among_on_a_type_whose_creates_offer_gas_sponsorship() {
+    let sponsored = contract_changed(
+        reveal(),
+        |domain| {
+            domain["tokenCost"] = json!({
+                "create": {
+                    "contractId": Identifier::from([9; 32]).to_string(Encoding::Base58),
+                    "tokenPosition": 0,
+                    "amount": 10,
+                    "effect": 0,
+                    "gasFeesPaidBy": 1
+                }
+            });
+        },
+        |_| {},
+    );
+    assert_refused_by_the_parser(sponsored, "its creates may not offer gas sponsorship");
 }
 
 /// What `firstAmong` names on the referenced type is checked when the contract
@@ -434,7 +609,7 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
         ),
         (
             Box::new(|preorder| {
-                preorder["indices"][1]["properties"] =
+                preorder["indices"][2]["properties"] =
                     json!([{ "$createdAtBlockHeight": "asc" }, { "nameHash": "asc" }])
             }),
             "through a non-unique index of \"preorder\" over exactly (nameHash, \
@@ -442,7 +617,7 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
         ),
         (
             Box::new(|preorder| {
-                preorder["indices"][1]["properties"] = json!([
+                preorder["indices"][2]["properties"] = json!([
                     { "nameHash": "asc" },
                     { "$createdAtBlockHeight": "asc" },
                     { "note": "asc" }
@@ -451,13 +626,7 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
             "which it does not have",
         ),
         (
-            Box::new(|preorder| {
-                preorder["indices"][1]["properties"] = json!([{ "nameHash": "asc" }])
-            }),
-            "which it does not have",
-        ),
-        (
-            Box::new(|preorder| preorder["indices"][1]["unique"] = json!(true)),
+            Box::new(|preorder| preorder["indices"][2]["unique"] = json!(true)),
             "index \"nameHashByHeight\" of \"preorder\" over (nameHash, $createdAtBlockHeight) is \
              unique",
         ),
@@ -467,6 +636,33 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
                 preorder["immutable"] = json!(["ownerNameHash"]);
             }),
             "firstAmong names \"nameHash\" of \"preorder\", which a replace can change",
+        ),
+        // Without a ttl a commitment never revealed would precede every later one for good
+        (
+            Box::new(|preorder| {
+                preorder.as_object_mut().expect("an object").remove("ttl");
+            }),
+            "firstAmong reads the commitments of \"preorder\", whose documents must expire",
+        ),
+        // A copy of a pending commitment's value landing first would keep it out
+        (
+            Box::new(|preorder| {
+                preorder["indices"][1] = json!({
+                    "name": "nameHashAndNote",
+                    "properties": [{ "nameHash": "asc" }, { "note": "asc" }],
+                    "unique": true
+                })
+            }),
+            "index \"nameHashAndNote\" of \"preorder\" is unique over \"nameHash\" without \
+             $ownerId",
+        ),
+        // One identity could hold many commitments to one value
+        (
+            Box::new(|preorder| {
+                preorder["indices"][1]["unique"] = json!(false);
+            }),
+            "firstAmong \"nameHash\" needs a unique index of \"preorder\" over exactly \
+             ($ownerId, nameHash)",
         ),
     ];
     for (change, fragment) in cases {
@@ -483,10 +679,10 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
     });
     assert_refused(
         contract(contract_with(without_age, |preorder| {
-            preorder["required"] = json!(["ownerNameHash", "nameHash"])
+            preorder["required"] = json!(["$createdAt", "ownerNameHash", "nameHash"])
         })),
-        "firstAmong orders commitments by their $createdAtBlockHeight, which \"preorder\" does \
-         not record",
+        "firstAmong is judged against the found document's $createdAtBlockHeight, which \
+         \"preorder\" does not record",
     );
 }
 
@@ -494,9 +690,6 @@ fn should_refuse_first_among_a_referenced_type_cannot_answer() {
 /// removing or changing `firstAmong` is an incompatible schema change.
 #[test]
 fn should_refuse_an_update_adding_removing_or_changing_first_among() {
-    use crate::consensus::basic::BasicError;
-    use crate::consensus::ConsensusError;
-
     let platform_version = PlatformVersion::latest();
     let without_first_among = reveal_with(|reveal| {
         reveal
@@ -549,47 +742,46 @@ fn should_refuse_first_among_below_protocol_version_14_and_accept_it_at_14() {
     contract_on(schema, true, PlatformVersion::latest()).expect("protocol version 14 parses it");
 }
 
-/// A create must carry every value the `firstAmong` function reads, as for a `findBy`
-/// function: one missing is refused before any read, here a `tag` only `firstAmong` reads.
+/// The two functions read the same properties but may join them with other separators, so
+/// a create can hold a value the `findBy` function takes and the `firstAmong` function
+/// refuses, which is refused before any read, naming the `firstAmong` function.
 #[test]
-fn should_refuse_a_create_missing_a_param_of_the_first_among_function() {
-    use crate::data_contract::document_type::first_unrevealable_lookup_key;
-    use platform_value::Value;
-    use std::collections::BTreeMap;
-
-    let tagged = reveal_with(|reveal| {
+fn should_refuse_a_create_holding_a_separator_of_the_first_among_function() {
+    let slashed = reveal_with(|reveal| {
         reveal["firstAmong"]["nameHash"] = function(json!([
             "normalizedLabel",
-            { "const": "." },
-            "normalizedParentDomainName",
             { "const": "/" },
-            "tag"
+            "normalizedParentDomainName"
         ]));
     });
-    let mut contract_value = contract_revealing(tagged);
-    contract_value["documentSchemas"]["domain"]["properties"]["tag"] =
-        json!({ "type": "string", "maxLength": 63, "position": 5 });
-    let parsed = contract(contract_value).expect("the tagged reveal should parse");
+    let parsed = contract(contract_revealing(slashed)).expect("the reveal should parse");
     let domain = parsed
         .document_type_for_name("domain")
         .expect("the domain document type");
-    let mut data = BTreeMap::from([
-        ("label".to_string(), Value::Text("Al1ce".to_string())),
-        (
-            "normalizedLabel".to_string(),
-            Value::Text("al1ce".to_string()),
-        ),
-        (
-            "normalizedParentDomainName".to_string(),
-            Value::Text("dash".to_string()),
-        ),
-    ]);
+    let data = |label: &str| {
+        BTreeMap::from([
+            ("label".to_string(), Value::Text(label.to_string())),
+            (
+                "normalizedLabel".to_string(),
+                Value::Text(label.to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+        ])
+    };
     let writer = Identifier::from([3; 32]);
 
     assert!(matches!(
-        first_unrevealable_lookup_key(domain, &data, writer),
-        Some((path, error)) if path == "$creatorId" && error.param == "tag"
+        first_unrevealable_lookup_key(domain, &data("a/b"), writer),
+        Some((path, error))
+            if path == "$creatorId"
+                && error.param == "normalizedLabel"
+                && error.reason.contains("the firstAmong function")
     ));
-    data.insert("tag".to_string(), Value::Text("t".to_string()));
-    assert_eq!(first_unrevealable_lookup_key(domain, &data, writer), None);
+    assert_eq!(
+        first_unrevealable_lookup_key(domain, &data("al1ce"), writer),
+        None
+    );
 }

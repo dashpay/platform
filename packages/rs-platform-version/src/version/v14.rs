@@ -1666,30 +1666,41 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a parent byte for byte; the DPNS contract and its create trigger are
 ///     unchanged. See `book/src/data-model/documents.md`.
 ///
-///     `firstAmong` (`LookupFirstAmong`) sits beside a `findBy` function
-///     reading `"$ownerId"` and the `findBy` entry `"$ownerId": "$ownerId"`:
+///     `firstAmong` (`LookupFirstAmong`) sits on a `deletableDocument`
+///     reference whose `findBy` holds exactly the entry `"$ownerId":
+///     "$ownerId"` and a function reading `"$ownerId"`:
 ///     `{ "<referenced property>": <function> }`, a second function over values
-///     of the create, never the writer or `"."`, reading every property the
-///     `findBy` function reads, whose hash every commitment to the same values
-///     holds, whoever made it. Document reference validation 0, in place,
-///     hashes it once (`DoubleSha256`), refuses a found document not holding it
-///     (40120), and reads in one billed query the documents holding the same
-///     value from blocks before the found one's, oldest first
+///     of the create, never the writer or `"."`, reading exactly the
+///     properties the `findBy` function reads, whose hash every commitment to
+///     the same values holds, whoever made it. Document reference validation
+///     0, in place, refuses a found document past its type's `ttl` (40120),
+///     hashes the function once (`DoubleSha256`), refuses a found document not
+///     holding it (40120), and reads in one billed query the documents holding
+///     the same value from blocks before the found one's, oldest first
 ///     (`fetch_documents_holding_before`, through a non-unique index over
 ///     exactly that property and `$createdAtBlockHeight`), at most
-///     `SYSTEM_LIMITS_V4.max_first_among_candidates` (1,000; `None` in the
-///     earlier tables). The first that another identity owns, that is not past
-///     its type's `ttl`, and that holds at the `findBy` function's property that
-///     function computed with its owner as `"$ownerId"` (`DoubleSha256`, once
-///     per owner) refuses the create (`ReferencedDocumentPrecededError`,
-///     40148). A copied hash names another owner and never refuses, and when
-///     none of the documents read refuses, the create stands. Registration, on
-///     the same contract and on another (`DocumentReferenceLookup`'s
-///     `referring_side_error` and `referenced_side_error`), requires the
-///     property to be a stored 32-byte byte array fixed once written, the
-///     index, and `$createdAtBlockHeight` in the referenced type's `required`;
-///     document create structure validation 1 refuses a create missing a param
-///     of the function (10423). Inert before this version: only meta-schema v3
+///     `SYSTEM_LIMITS_V4.max_first_among_candidates` (1,000; backfilled into
+///     the earlier tables, which nothing reads there). The first that is not
+///     past its type's `ttl` and holds, at the `findBy` function's property,
+///     that function computed with its owner as `"$ownerId"` (`DoubleSha256`
+///     each, `WriterPreimage`) refuses the create
+///     (`ReferencedDocumentPrecededError`, 40149). A copied hash names another
+///     owner and never refuses, and when none of the documents read refuses,
+///     the create stands. Registration, on the same contract and on another
+///     (`DocumentReferenceLookup`'s `referring_side_error` and
+///     `referenced_side_error`, and the parser's
+///     `validate_reference_lookup_sources`), requires the property to be a
+///     stored 32-byte byte array fixed once written; the referenced type to
+///     expire (`ttl`), to hold the index, a unique index over exactly
+///     `$ownerId` and the property (so each competitor read is another
+///     identity's) and no unique index holding the property without
+///     `$ownerId`, and to require `$createdAtBlockHeight`; at most one
+///     `firstAmong` per type, not on typed array elements or expression
+///     operands, a `where` holding nothing but `"$ownerId": "$ownerId"`, and
+///     no gas sponsorship of the declaring type's creates (a sponsored create
+///     is judged, state included, before anyone pays). Document create
+///     structure validation 1 refuses a create missing a param of the
+///     function (10423). Inert before this version: only meta-schema v3
 ///     admits `firstAmong` and the `"$ownerId"` param, so the writer reaching
 ///     `hash_lookup_key` in place in reference validation 0 and batch state 0
 ///     changes nothing earlier.

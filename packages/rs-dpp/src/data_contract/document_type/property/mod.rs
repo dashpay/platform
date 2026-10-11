@@ -54,6 +54,7 @@ pub use generated_from::{
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{
     first_unrevealable_lookup_key, LookupHashKey, LookupKeyParam, LookupPreimageError,
+    WriterPreimage,
 };
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,

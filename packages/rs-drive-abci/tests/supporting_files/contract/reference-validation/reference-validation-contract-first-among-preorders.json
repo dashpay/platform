@@ -8,6 +8,7 @@
       "type": "object",
       "documentsMutable": false,
       "canBeDeleted": true,
+      "ttl": 3600,
       "properties": {
         "ownerNameHash": {
           "type": "array",
@@ -33,6 +34,18 @@
             },
             {
               "ownerNameHash": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "ownerAndName",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "nameHash": "asc"
             }
           ],
           "unique": true
@@ -50,6 +63,7 @@
         }
       ],
       "required": [
+        "$createdAt",
         "$createdAtBlockHeight",
         "ownerNameHash",
         "nameHash"
@@ -60,6 +74,7 @@
       "type": "object",
       "documentsMutable": false,
       "canBeDeleted": true,
+      "ttl": 3600,
       "properties": {
         "ownerNameHash": {
           "type": "array",
@@ -88,9 +103,22 @@
             }
           ],
           "unique": true
+        },
+        {
+          "name": "ownerAndName",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "nameHash": "asc"
+            }
+          ],
+          "unique": true
         }
       ],
       "required": [
+        "$createdAt",
         "$createdAtBlockHeight",
         "ownerNameHash",
         "nameHash"

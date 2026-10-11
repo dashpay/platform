@@ -612,8 +612,9 @@ pub(crate) fn fetch_document_through_lookup(
 /// a string and a byte array: the empty string as `"\0"`, and an empty byte
 /// array as no value at all. So for those the document must hold exactly the
 /// same text or bytes, whichever binary form either side carries; every other
-/// kind encodes one value one way only, and holds by being found.
-fn holds_key_part(
+/// kind encodes one value one way only, and holds by being found. A `firstAmong`
+/// reads it for the 32-byte hashes it compares, which it judges byte for byte.
+pub(crate) fn holds_key_part(
     document_type: DocumentTypeRef,
     document: &Document,
     index_property: &str,
@@ -709,13 +710,9 @@ pub(crate) fn fetch_documents_holding_before(
         transaction,
         Some(platform_version.protocol_version),
     )?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
-        storage_fee: 0,
-        processing_fee: documents_outcome.cost(),
-        fee_refunds: Default::default(),
-        removed_bytes_from_system: 0,
-        lifetime_storage_fees: Default::default(),
-    }));
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        FeeResult::new_from_processing_fee(documents_outcome.cost()),
+    ));
 
     Ok(documents_outcome.documents_owned())
 }

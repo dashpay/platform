@@ -45,7 +45,6 @@ use dpp::version::PlatformVersion;
 use std::borrow::Cow;
 use std::sync::Arc;
 use drive::drive::contract::DataContractFetchInfo;
-use drive::drive::document::expiration::pricing::document_expires_at;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
@@ -65,8 +64,9 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
     fetch_document_through_lookup, fetch_document_with_id, fetch_documents_holding_before,
-    hash_lookup_key, BilledLookupKey,
+    hash_lookup_key, holds_key_part, BilledLookupKey,
 };
+use crate::execution::validation::state_transition::common::validate_document_not_expired::document_is_expired;
 use crate::platform_types::platform::PlatformStateRef;
 
 /// Versioned, stateful validation of document references using the v0 rules.
@@ -1628,24 +1628,29 @@ fn validate_reference_target_v0(
 
 /// Checks a create's `firstAmong` (see `LookupFirstAmong`): the commitment `found`, which
 /// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
-/// valid commitment to the values the create reveals. Its `firstAmong` function is hashed and
-/// billed once, and `found` must hold the hash at the property `firstAmong` names, or the
-/// reference finds no document (`ReferencedEntityNotFoundError`, 40120, naming
-/// `referenced_id`). Then the documents of `referenced_document_type` holding the same hash
-/// from a block before `found`'s are read in one query, oldest first, at most
-/// `SystemLimits::max_first_among_candidates`, and each is a competitor unless the writer
-/// `owner_id` owns it or it is past its type's `ttl` at the block of the create, the cleanup
-/// not having reached it yet. A competitor is valid when it holds, at the property the `findBy`
-/// function fills, that function computed from the create's values with the competitor's owner
-/// as `"$ownerId"`, hashed and billed once per owner: a copy of another identity's hash is
-/// owned by an identity the hash does not name. The first valid competitor refuses the create
-/// (`ReferencedDocumentPrecededError`, 40148). A tie in the block of `found` is no competitor;
-/// the unique index the create writes decides it. When none of the documents read is a valid
-/// competitor the create stands: documents ordered before a valid commitment were made from its
-/// hash while it was pending, so copies can make a create cost more but never refuse it.
+/// valid commitment to the values the create reveals.
 ///
-/// A `found` recording no `$createdAtBlockHeight`, which registration's `required` rules out,
-/// can not be shown first (`ReferencedDocumentRequirementNotMetError`, 40142).
+/// * A commitment past its type's `ttl` at the block time is gone, whether or not the cleanup
+///   has reached it: `found` past it finds no document (`ReferencedEntityNotFoundError`,
+///   40120, naming `referenced_id`), as a competitor past it precedes nobody.
+/// * The `firstAmong` function is hashed and billed once, and `found` must hold the hash at
+///   the property `firstAmong` names (40120 otherwise).
+/// * The documents of `referenced_document_type` holding the same hash from a block before
+///   `found`'s are read in one query, oldest first, at most
+///   `SystemLimits::max_first_among_candidates`. Each not past its `ttl` is a competitor,
+///   valid when it holds, at the property the `findBy` function fills, that function computed
+///   from the create's values with the competitor's owner as `"$ownerId"` (billed as the double
+///   SHA-256 it is): a copy of another identity's hash is owned by an identity the hash does
+///   not name. The first valid competitor refuses the create
+///   (`ReferencedDocumentPrecededError`, 40149).
+///
+/// Registration demands a unique index over the referenced type's `$ownerId` and the
+/// `firstAmong` property, so each competitor is another identity's: the writer's only document
+/// holding the value is `found`. A tie in the block of `found` is no competitor; the unique index
+/// the create writes decides it. When none of the documents read is a valid competitor the
+/// create stands, so documents that are none can make a create cost more but never refuse it.
+/// A `found` recording no `$createdAtBlockHeight`, or a lookup holding no `findBy` function,
+/// are what registration rules out, so either is an internal error.
 ///
 /// In place in generation 0: only the protocol version 14 parser produces a `firstAmong`.
 #[allow(clippy::too_many_arguments)]
@@ -1667,51 +1672,58 @@ fn validate_first_among_v0(
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let property = first_among.property.as_str();
-    // The `firstAmong` function reads neither `"."` nor the writer, which registration
-    // refuses, only values of the create
-    let first_among_key = hash_lookup_key(
-        &first_among.key,
-        declaring_document_type,
-        None,
-        owner_id,
-        document_data,
-        execution_context,
-    );
-    let Some(first_among_key) =
-        first_among_key.filter(|key| holds_bytes(found, property, &key.digest()))
-    else {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
+    let not_found = || {
+        SimpleConsensusValidationResult::new_with_error(
             ReferencedEntityNotFoundError::new(
                 Identifier::from(referenced_id),
                 reference_target.clone(),
                 path.to_string(),
             )
             .into(),
-        ));
+        )
     };
-    let Some(found_height) = found.created_at_block_height() else {
-        return Ok(SimpleConsensusValidationResult::new_with_error(
-            ReferencedDocumentRequirementNotMetError::new(
-                found.id(),
-                "firstAmong".to_string(),
-                property.to_string(),
-                path.to_string(),
-            )
-            .into(),
-        ));
+    if document_is_expired(referenced_document_type, found.created_at(), block_info)? {
+        return Ok(not_found());
+    }
+    let property = first_among.property.as_str();
+    // The `firstAmong` function reads neither `"."` nor the writer, which registration
+    // refuses, only values of the create
+    let Some(first_among_key) = hash_lookup_key(
+        &first_among.key,
+        declaring_document_type,
+        None,
+        owner_id,
+        document_data,
+        execution_context,
+    )
+    .filter(|key| {
+        holds_key_part(
+            referenced_document_type,
+            found,
+            property,
+            &Value::Bytes32(key.digest()),
+        )
+    }) else {
+        return Ok(not_found());
     };
-    let Some((find_by_property, find_by_key)) = lookup.hash_key() else {
+    let (Some(found_height), Some((find_by_property, find_by_key))) =
+        (found.created_at_block_height(), lookup.hash_key())
+    else {
         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "registration admits firstAmong only beside a findBy function",
+            "registration requires a findBy function beside firstAmong, and the commitments it \
+             reads to record their creation height",
         )));
     };
-    let Some(limit) = platform_version.system_limits.max_first_among_candidates else {
-        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "firstAmong parses only at protocol versions whose system limits bound its \
-             competitors",
-        )));
-    };
+    // The findBy function's preimage for the writer, which found `found`: a competitor's key
+    // is the same bytes with its owner in the `"$ownerId"` slots. The function reads no `"."`,
+    // which registration refuses beside `firstAmong`
+    let mut find_by_preimage = find_by_key
+        .writer_preimage(declaring_document_type, None, owner_id, document_data)
+        .map_err(|_| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "the findBy preimage assembled for the lookup that found the commitment",
+            ))
+        })?;
     let competitors = fetch_documents_holding_before(
         platform.drive,
         referenced_contract,
@@ -1719,37 +1731,28 @@ fn validate_first_among_v0(
         property,
         Value::Bytes32(first_among_key.digest()),
         found_height,
-        limit,
+        platform_version.system_limits.max_first_among_candidates,
         &block_info.epoch,
         execution_context,
         transaction,
         platform_version,
     )?;
-    let ttl_seconds = referenced_document_type.documents_ttl_seconds();
-    // What each owner's commitment to the create's values holds, hashed once per owner
-    let mut find_by_values: BTreeMap<Identifier, Option<BilledLookupKey>> = BTreeMap::new();
     for competitor in &competitors {
-        let competitor_owner = competitor.owner_id();
-        if competitor_owner == owner_id {
+        if document_is_expired(
+            referenced_document_type,
+            competitor.created_at(),
+            block_info,
+        )? {
             continue;
         }
-        if let (Some(ttl_seconds), Some(created_at)) = (ttl_seconds, competitor.created_at()) {
-            if block_info.time_ms >= document_expires_at(created_at, ttl_seconds)? {
-                continue;
-            }
-        }
-        let find_by_value = *find_by_values.entry(competitor_owner).or_insert_with(|| {
-            hash_lookup_key(
-                find_by_key,
-                declaring_document_type,
-                None,
-                competitor_owner,
-                document_data,
-                execution_context,
-            )
-        });
-        if find_by_value.is_some_and(|key| holds_bytes(competitor, find_by_property, &key.digest()))
-        {
+        let (digest, blocks) = find_by_preimage.key_value_for(competitor.owner_id());
+        execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
+        if holds_key_part(
+            referenced_document_type,
+            competitor,
+            find_by_property,
+            &Value::Bytes32(digest),
+        ) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ReferencedDocumentPrecededError::new(
                     found.id(),
@@ -1762,14 +1765,6 @@ fn validate_first_among_v0(
         }
     }
     Ok(SimpleConsensusValidationResult::new())
-}
-
-/// Whether `document` holds exactly `bytes` at `property`, whichever binary form it carries.
-fn holds_bytes(document: &Document, property: &str, bytes: &[u8]) -> bool {
-    document
-        .get(property)
-        .and_then(|value| value.as_bytes_slice().ok())
-        .is_some_and(|held| held == bytes)
 }
 
 /// A `moderatedDocument` reference a replace keeps, whose document a moderator

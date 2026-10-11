@@ -8,7 +8,7 @@
 | **Value** | An object of 1 to 10 entries `{ "<referenced property>": <source> }`. Each key is a property of `documentType`, by its name there (system ones such as `$ownerId` included). Each source is `"."` (the reference's own value), `"$ownerId"` (the writer), a property path of the referring document type, or at most one [function](#commit-and-reveal). The keys must be exactly the properties of one unique index of `documentType`, in any order. Beside a function the `refersTo` may also declare `minimumAgeBlocks`, `consume` and [`firstAmong`](#first-among-commitments-firstamong). With [`inList`](refers-to-list-element.md), `findBy` is `{ "$id": <property> }` instead. |
 | **Since** | protocol version 14 |
 | **On update** | Fixed, like the rest of `refersTo`: adding, removing or changing `findBy` is refused (`IncompatibleDocumentTypeSchemaError`, 10246). |
-| **Errors** | `ReferencedEntityNotFoundError` (40120) when no document is found; at registration `ReferencedDocumentLookupInvalidError` (40137) for a document type of another contract, `InvalidContractStructure` (10231) for one of the same contract. A function adds `DocumentReferencePreimageInvalidError` (10423) and `ReferencedDocumentRequirementNotMetError` (40142), and `firstAmong` `ReferencedDocumentPrecededError` (40148). |
+| **Errors** | `ReferencedEntityNotFoundError` (40120) when no document is found; at registration `ReferencedDocumentLookupInvalidError` (40137) for a document type of another contract, `InvalidContractStructure` (10231) for one of the same contract. A function adds `DocumentReferencePreimageInvalidError` (10423) and `ReferencedDocumentRequirementNotMetError` (40142), and `firstAmong` `ReferencedDocumentPrecededError` (40149). |
 
 ## Example
 
@@ -184,9 +184,9 @@ A create missing a param, or with a value holding its separator, is refused befo
 
 ### First among commitments (firstAmong)
 
-Once a create reveals a commitment, anyone reading the pending create learns the values it reveals. Where blocks are full and fees order the mempool, another identity could then commit to the same values, pay more to land its commitment, and reveal in the next block, before the first committer's reveal lands. `firstAmong` refuses that later create: a create stands only while no other identity holds a valid commitment to the same values from an earlier block, so the first identity to commit wins.
+Once a create reveals a commitment, anyone reading the pending create learns the values it reveals. Where blocks are full and fees order the mempool, another identity could then commit to the same values, pay more to land its commitment, and reveal in the next block, before the first committer's reveal lands. `firstAmong` refuses that later create: a create stands only while no other identity holds a valid commitment to the same values from an earlier block, so the commitment that lands in the earliest block wins.
 
-It sits on the `refersTo` beside a `findBy` function that reads `"$ownerId"` and the `findBy` entry `"$ownerId": "$ownerId"`. A name registration whose preorders carry two hashes reads:
+It sits on a `deletableDocument` `refersTo` whose `findBy` holds exactly two entries, `"$ownerId": "$ownerId"` and a function that reads `"$ownerId"`, into a type whose documents expire (`ttl`). A name registration whose preorders carry two hashes reads:
 
 ```json
 "preorder": {
@@ -202,6 +202,11 @@ It sits on the `refersTo` beside a `findBy` function that reads `"$ownerId"` and
     {
       "name": "ownerAndNameHash",
       "properties": [{ "$ownerId": "asc" }, { "ownerNameHash": "asc" }],
+      "unique": true
+    },
+    {
+      "name": "ownerAndName",
+      "properties": [{ "$ownerId": "asc" }, { "nameHash": "asc" }],
       "unique": true
     },
     { "name": "nameHashByHeight", "properties": [{ "nameHash": "asc" }, { "$createdAtBlockHeight": "asc" }] }
@@ -243,20 +248,20 @@ WHERE c.nameHash = sha256d(:normalizedLabel || '.' || :normalizedParentDomainNam
 ORDER BY c.$createdAtBlockHeight, c.$id
 LIMIT 1000                                                       -- max_first_among_candidates
 -- refused by the first row where:
---   c.$ownerId <> :writer                                       -- another identity
---   AND NOT expired(c)                                          -- within its ttl
+--   NOT expired(c)                                              -- within its ttl
 --   AND c.ownerNameHash = sha256d(c.$ownerId || :normalizedLabel || '.' || :normalizedParentDomainName)
 ```
 
 - **Valid, not copied.** Anyone can copy a pending preorder's `nameHash` without knowing the name. A competitor counts only when the property the `findBy` function fills holds that function computed with the competitor's owner in place of the writer, which takes knowing the name: a copy names another identity in its hash than the one that owns it. Copies never refuse a create.
 - **Ties.** A competitor from the found preorder's own block does not count. The first create then wins through the name's unique index.
-- **Expiry.** A competitor past its type's `ttl` does not count, though the cleanup may not have deleted it yet.
-- **The writer's own.** The writer's other preorders do not count.
+- **Expiry.** A competitor past its type's `ttl` does not count, though the cleanup may not have deleted it yet. A found preorder past its `ttl` is no commitment either: the reference finds no document.
+- **Another identity's.** The unique index over `$ownerId` and `nameHash` holds one preorder of a name per identity, and the writer's is the one found, so every competitor read is another identity's.
 - **Consumed.** With `consume` (beside the `where` entry `"$ownerId": "$ownerId"`), a reveal deletes the preorder it found, which then precedes nobody, so a later reveal of the same name by another identity, a contested join, is judged as if it had never existed.
-- **The bound.** The competitors are read in one query, oldest first (by `$createdAtBlockHeight`, then by `$id`), at most `max_first_among_candidates` of `SystemLimits` (1,000 at protocol version 14). When none of them refuses, the create stands. A document ordered before a valid preorder holds its `nameHash` from before that preorder landed, so copies made once it is in state come after it: to hide it, 1,000 copies would have to land ahead of it from its pending transition. Copies make a create cost more, never refuse it.
-- **Billing.** The `firstAmong` hash is billed as the double SHA-256 it is, the query as the document fetch it is, and the `findBy` function computed for a competitor once per owner, as a double SHA-256 too.
+- **The bound.** The competitors are read in one query, oldest first (by `$createdAtBlockHeight`, then by `$id`), at most `max_first_among_candidates` of `SystemLimits` (1,000 at protocol version 14). When none of them refuses, the create stands: refusing past the bound would let anyone block a name with copies. Each identity holds one preorder of a name, so pushing an older valid preorder past the bound takes 1,000 other identities, each paying for a preorder of the name that lands no later than the hidden one's block, while that one is still pending. Copies and expired preorders make a create cost more, never refuse it.
+- **Billing.** The `firstAmong` hash is billed as the double SHA-256 it is, the query as the document fetch it is, and the `findBy` function computed for each competitor as a double SHA-256 too.
+- **What it does not hide.** The `firstAmong` hash carries no salt: every preorder of a name holds the same one, so a preorder of a name easy to guess discloses it, and anyone who guesses it can commit too. That commitment lands in the same block at best, where it does not count, and the race between the two reveals is then decided by the name's unique index.
 
-The found preorder must hold the `firstAmong` hash, or the reference finds no document (`ReferencedEntityNotFoundError`, 40120). A valid competitor refuses the create with `ReferencedDocumentPrecededError` (40148), which names the found preorder, the competitor and the property. A create missing a param of the `firstAmong` function is refused before any read (`DocumentReferencePreimageInvalidError`, 10423).
+The found preorder must hold the `firstAmong` hash and be within its `ttl`, or the reference finds no document (`ReferencedEntityNotFoundError`, 40120). A valid competitor refuses the create with `ReferencedDocumentPrecededError` (40149), which names the found preorder, the competitor and the property. A create missing a param of the `firstAmong` function is refused before any read (`DocumentReferencePreimageInvalidError`, 10423).
 
 ## Rules at registration
 
@@ -269,14 +274,14 @@ The found preorder must hold the `firstAmong` hash, or the reference finds no do
 - A `"$ownerId"` source needs a referring type whose documents can be neither transferred nor traded, unless the reference is judged on the create alone (a [function](#commit-and-reveal) in `findBy`, or a referring type whose documents are never replaced): a transfer or a purchase would move the writer part of the key without a write, but such a reference is never checked again.
 - A `deletableDocument` found by `findBy` may not sit under an `immutable` property (a string or byte array one included), alone or as an operand of an expression: every replace checks it again, so once its document is deleted the property would have to change. One whose key a [function](#commit-and-reveal) computes is the exception: it is checked on the create alone, and its carrier must be fixed once written.
 - `{ "$id": ... }` is allowed only with [`inList`](refers-to-list-element.md), as the only entry.
-- [`firstAmong`](#first-among-commitments-firstamong) sits only beside a function in `findBy` that reads `"$ownerId"`, next to the entry `"$ownerId": "$ownerId"`, and that function reads no `"."`. It holds one entry, a function reading neither `"$ownerId"` nor `"."`, whose params follow a function's rules and include every property the `findBy` function reads (a `findBy` value read elsewhere, such as a salt, would make every competitor look like a copy), into a property `findBy` does not name. Never beside `inList`.
+- [`firstAmong`](#first-among-commitments-firstamong) sits only on a `deletableDocument` reference whose `findBy` holds exactly two entries, `"$ownerId": "$ownerId"` and a function reading `"$ownerId"` and no `"."`, with no `where` entry but `"$ownerId": "$ownerId"`. It holds one entry, a function reading neither `"$ownerId"` nor `"."`, whose params follow a function's rules and read exactly the properties the `findBy` function reads (a property only one of them read, such as a salt, would let a competitor holding the same `firstAmong` hash have committed to other values), into a property `findBy` does not name. A document type declares at most one, never on the elements of a typed array, as an operand of an expression or beside `inList`, and its creates may offer no gas sponsorship (`gasFeesPaidBy` other than `DocumentOwner`): a sponsored create is judged, state included, before anyone has paid for it.
 
 **On the referenced side**, refused with `InvalidContractStructure` (10231) for a document type of the declaring contract and with `ReferencedDocumentLookupInvalidError` (40137) for one of another contract:
 
 - The keys are exactly the properties of one unique index of the type, by their names on the referenced side (system properties such as `$ownerId` included), in any order, and nothing else (see [Which index finds the document](#which-index-finds-the-document)). That index does not bucket its first property by a `timeRange` or an `integerRange`, the referenced type is not `indexOnly`, and no index property is `transient`.
 - Each source holds the same type of value as the property it fills. `"$ownerId"` is an identifier, and so is `"."`, but on a string or byte array property, where it is that property's value.
 - The key stays with the document it found. Every schema property of the index must be fixed once written: the referenced type is immutable (`documentsMutable: false`), or the property's top-level property is listed under `immutable` and is no optional `deletableDocument` reference by id, which a replace may clear once its document is deleted. `$ownerId` may be a key part only where the referenced documents can be neither transferred nor traded. `$updatedAt` and its block height forms may be one only where they can be neither replaced, transferred nor traded, and `$transferredAt` and its forms only where they can be neither transferred nor traded. `$id`, `$creatorId`, `$createdAt` and its forms never change.
-- A [`firstAmong`](#first-among-commitments-firstamong) property is a byte array of exactly 32 bytes, fixed once written and not `transient`, under an index over exactly that property and `$createdAtBlockHeight`, in that order, that is not unique (a copy landing first would otherwise keep the commitment out), does not bucket its first property and keeps no entry past a delete (`outlivesDelete`). The referenced type lists `$createdAtBlockHeight` in `required`.
+- A [`firstAmong`](#first-among-commitments-firstamong) property is a byte array of exactly 32 bytes, fixed once written and not `transient`, of a type whose documents expire (`ttl`), so a commitment never revealed stops preceding others. The type has an index over exactly that property and `$createdAtBlockHeight`, in that order, that is not unique, a unique index over exactly `$ownerId` and that property, in either order, and no unique index holding that property without `$ownerId` (a copy landing first would otherwise keep the commitment out). It lists `$createdAtBlockHeight` in `required`.
 
 **The referenced type** must exist (`ReferencedDocumentTypeNotFoundError`, 40121). A `permanentDocument` found by `findBy` in a type whose documents can disappear is refused with `ReferencedDocumentTypeDeletableError` (40122), and a `deletableDocument` found by `findBy` in one whose documents cannot with `ReferencedDocumentTypeNotDeletableError` (40131).
 

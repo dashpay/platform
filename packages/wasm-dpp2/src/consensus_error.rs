@@ -113,7 +113,7 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// same value at the property the reference's `firstAmong` names) from an
     /// earlier block, not expired, and valid, made by an identity that knew
     /// the values and not copied. The first identity to commit wins.
-    ReferencedDocumentPreceded = 40148,
+    ReferencedDocumentPreceded = 40149,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
@@ -123,7 +123,7 @@ pub enum DocumentReferenceErrorCodeWasm {
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
     /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40146,
-    /// 40148 or 10423.
+    /// 40149 or 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -142,7 +142,7 @@ impl DocumentReferenceErrorCodeWasm {
             40144 => Some(Self::ReferencedDocumentTypeModerated),
             40145 => Some(Self::ReferencedDocumentRemoved),
             40146 => Some(Self::ReferencedDocumentTypeIndexOnly),
-            40148 => Some(Self::ReferencedDocumentPreceded),
+            40149 => Some(Self::ReferencedDocumentPreceded),
             10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
@@ -384,7 +384,7 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40148
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40149
     /// and 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {

@@ -24,7 +24,7 @@ use crate::data_contract::document_type::{
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
     KeyReferenceIdentityProperty, ListElementReference, LookupFirstAmong, LookupHashKey,
-    LookupKeySource, ReferenceCombinator, ReferenceOperands, SystemFunction,
+    LookupKeySource, PropertyReference, ReferenceCombinator, ReferenceOperands, SystemFunction,
     COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
@@ -1361,6 +1361,16 @@ fn parse_reference_target(
                                 .to_string(),
                         ));
                     }
+                    // `firstAmong` reads commitments that expire (`ttl`), which a permanent
+                    // document never does
+                    if lookup.first_among.is_some() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "permanentDocument refersTo does not take firstAmong: the \
+                             commitments it reads must expire, and a permanent document never \
+                             leaves state: firstAmong needs a deletableDocument reference"
+                                .to_string(),
+                        ));
+                    }
                     DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                         contract_id,
                         document_type_name,
@@ -1920,8 +1930,9 @@ pub(super) fn parse_doctype_reference(
 /// referring-side rules). `$id` finds a document by id only for a list
 /// ([`parse_list_element_reference`]): without `findBy` the value is the id.
 /// Beside a function the `refersTo`, `refers_to_map`, may declare
-/// `minimumAgeBlocks` and `consume`, what the commitment the key finds must be
-/// and whether the create deletes it, held on the parsed lookup. What the
+/// `minimumAgeBlocks`, `consume` and `firstAmong`, what the commitment the key
+/// finds must be, whether the create deletes it and which commitments to the
+/// same values it must precede, held on the parsed lookup. What the
 /// names resolve to is checked once the document types are parsed: the
 /// sources against the declaring type ([`validate_reference_lookup_sources`]),
 /// the index against the referenced one (at contract level for a type of the
@@ -2073,7 +2084,7 @@ fn parse_first_among(first_among_value: &Value) -> Result<LookupFirstAmong, Data
     }
     Ok(LookupFirstAmong {
         property,
-        key: LookupHashKey::from_value(function)?,
+        key: LookupHashKey::from_value_of(function, property_names::FIRST_AMONG)?,
     })
 }
 
@@ -2100,10 +2111,13 @@ pub(super) fn validate_reference_lookup_sources(
     // element, and the owner or creator reference's `"."` is that identity,
     // named by the path `$ownerId` or `$creatorId`, which no property source
     // can be
+    // At most one `firstAmong` on the type, so a create reads one set of competitors
+    let mut first_among_declared = false;
     for (holder, reference) in document_type.reference_declarations() {
         let Some(target) = reference.target() else {
             continue;
         };
+        let on_elements = matches!(reference, PropertyReference::Elements { .. });
         // Each leaf of a reference expression reads its key as it would
         // alone, and the error names the leaf (`refersTo anyOf[1] findBy`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
@@ -2113,8 +2127,20 @@ pub(super) fn validate_reference_lookup_sources(
             let Some(lookup) = declaration.lookup else {
                 continue;
             };
-            if let Some(reason) = lookup
-                .referring_side_error(document_type, holder.path())
+            let first_among_error = lookup.first_among.as_ref().and_then(|_| {
+                let error = first_among_declaration_error(
+                    on_elements,
+                    &leaf_path,
+                    declaration.property_agreement,
+                    first_among_declared,
+                );
+                first_among_declared = true;
+                error
+            });
+            // Where a `firstAmong` sits is judged first: on the elements of a typed array its
+            // findBy, which may read the element in no function, would be refused for that
+            if let Some(reason) = first_among_error
+                .or_else(|| lookup.referring_side_error(document_type, holder.path()))
                 .or_else(|| {
                     create_only_leaf_error(
                         document_type,
@@ -2138,6 +2164,56 @@ pub(super) fn validate_reference_lookup_sources(
         }
     }
     Ok(())
+}
+
+/// Why a `firstAmong` cannot sit where it is declared; `None` when it can. A create reads
+/// the commitments a `firstAmong` precedes once per value it judges, up to
+/// `SystemLimits::max_first_among_candidates` documents, so a document type declares at most
+/// one (`already_declared` is whether an earlier declaration of the type held one), on a
+/// single reference: not on the elements of a typed array (`on_elements`), each element of
+/// which would read them again, nor on an operand of a reference expression (`leaf_path`
+/// not empty). A `where` beside it compares nothing but the writer with the commitment's
+/// owner (`property_agreement`): a competitor is judged on its key alone, so a commitment
+/// differing from the create's in a `where` value could precede it.
+fn first_among_declaration_error(
+    on_elements: bool,
+    leaf_path: &str,
+    property_agreement: &BTreeMap<String, String>,
+    already_declared: bool,
+) -> Option<String> {
+    if already_declared {
+        return Some(
+            "a document type declares at most one firstAmong: a create reads the competitors \
+             of each"
+                .to_string(),
+        );
+    }
+    if on_elements {
+        return Some(
+            "firstAmong may not sit on the elements of a typed array: every element would read \
+             the competitors of its commitment again"
+                .to_string(),
+        );
+    }
+    if !leaf_path.is_empty() {
+        return Some(
+            "firstAmong may not sit on an operand of a reference expression: it describes the \
+             one commitment a reference reveals"
+                .to_string(),
+        );
+    }
+    property_agreement
+        .iter()
+        .find(|(referring, referenced)| {
+            referring.as_str() != OWNER_ID || referenced.as_str() != OWNER_ID
+        })
+        .map(|(referring, referenced)| {
+            format!(
+                "where \"{referenced}\": \"{referring}\" beside firstAmong: a competitor is \
+                 judged on its key alone, so where may compare nothing but \"{OWNER_ID}\" with \
+                 the writer"
+            )
+        })
 }
 
 /// Why a lookup declared on `document_type` may not declare `minimumAgeBlocks` or `consume`;
