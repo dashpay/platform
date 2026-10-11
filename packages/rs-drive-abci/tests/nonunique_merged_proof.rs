@@ -14,6 +14,7 @@ use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMeth
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
+use drive::error::proof::ProofError;
 use drive::error::Error as DriveError;
 use drive::grovedb::{Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem};
 use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
@@ -932,7 +933,7 @@ mod signed {
     #[test]
     fn should_reject_malformed_index_values_keys_and_missing_identity() {
         for version in versions() {
-            for case in 0..3 {
+            for case in 0..2 {
                 let fixture = Fixture::new(version);
                 let first = fixture.identities[0].id().to_buffer();
                 let mut index =
@@ -942,7 +943,7 @@ mod signed {
                 let (key, element) = match case {
                     0 => (first.to_vec(), Element::new_item(vec![0x51])),
                     1 => (vec![0x01; 31], Element::new_item(vec![])),
-                    _ => (vec![0x01; 32], Element::new_item(vec![])),
+                    _ => unreachable!("only malformed value and malformed length"),
                 };
                 fixture
                     .platform
@@ -972,19 +973,71 @@ mod signed {
                     .prove_query(&query, None, &version.drive.grove_version)
                     .unwrap()
                     .expect("proof at actual stored root");
-                assert!(
-                    Drive::verify_full_identity_by_non_unique_public_key_hash(
-                        &blob,
-                        fixture.hash,
-                        None,
-                        version,
-                        version
-                    )
-                    .is_err(),
-                    "PV{} malformed index case={case}",
-                    version.protocol_version
-                );
+                Drive::verify_full_identity_by_non_unique_public_key_hash(
+                    &blob,
+                    fixture.hash,
+                    None,
+                    version,
+                    version,
+                )
+                .expect_err("malformed index cannot produce a valid lookup");
             }
+            let fixture = Fixture::new(version);
+            let missing_id = [0; 32];
+            assert!(fixture
+                .identities
+                .iter()
+                .all(|identity| missing_id < identity.id().to_buffer()));
+            let mut index_path =
+                Drive::identity_id_by_non_unique_public_key_hash_query(fixture.hash, None).path;
+            index_path.push(fixture.hash.to_vec());
+            fixture
+                .platform
+                .drive
+                .grove
+                .insert(
+                    index_path.as_slice(),
+                    &missing_id,
+                    Element::new_item(vec![]),
+                    None,
+                    None,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("commit dangling indexed identity");
+            let blob = fixture
+                .platform
+                .drive
+                .prove_full_identity_by_non_unique_public_key_hash(
+                    fixture.hash,
+                    None,
+                    None,
+                    version,
+                )
+                .expect("actual producer proves the indexed identity absence");
+            let (root, identity) =
+                Drive::verify_full_identity_by_identity_id(&blob, true, missing_id, version)
+                    .expect("full identity absence is complete at the stored root");
+            assert_eq!(root, fixture.root());
+            assert_eq!(identity, None);
+            let error = Drive::verify_full_identity_by_non_unique_public_key_hash(
+                &blob,
+                fixture.hash,
+                None,
+                version,
+                version,
+            )
+            .expect_err("a dangling index is not an absent hash lookup");
+            assert!(
+                matches!(
+                    error,
+                    DriveError::Proof(ProofError::IncompleteProof(
+                        "non-unique index references a missing full identity"
+                    ))
+                ),
+                "PV{} dangling indexed identity: {error:?}",
+                version.protocol_version
+            );
             let fixture = Fixture::new(version);
             let wire = fixture
                 .platform

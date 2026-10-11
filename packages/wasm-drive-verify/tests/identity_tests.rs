@@ -136,6 +136,7 @@ fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_complete_proof(
         &public_key_hash,
         None,
         PlatformVersion::latest().protocol_version,
+        PlatformVersion::latest().protocol_version,
     );
     assert_error_contains(
         &result.map(|_| ()),

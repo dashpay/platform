@@ -83,14 +83,13 @@ impl Drive {
             };
             // Selection and proving must observe one committed state. All attempted
             // reads remain in the cost accumulator, including discarded proofs.
-            if root_before != root_after {
+            // A failed attempt has no proof to discard; preserve its original fault.
+            if root_before != root_after && result.is_ok() {
                 continue;
             }
             return result;
         }
-        Err(Error::Drive(DriveError::NotSupported(
-            "non-unique identity proof generation raced a block commit on every attempt; transient — retry the request",
-        )))
+        Err(Error::Drive(DriveError::ProofGenerationRetriesExhausted))
     }
 }
 
@@ -141,6 +140,8 @@ mod tests {
     use dpp::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     #[test]
     fn should_prove_a_single_identity_with_non_unique_key() {
@@ -426,7 +427,14 @@ mod tests {
                 platform_version,
             )
             .expect_err("persistent drift is transient, not a successful incoherent proof");
-        assert!(matches!(error, Error::Drive(DriveError::NotSupported(_))));
+        assert!(
+            !matches!(error, Error::Drive(DriveError::NotSupported(_))),
+            "a commit race must not be classified as an unsupported operation: {error:?}"
+        );
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::ProofGenerationRetriesExhausted)
+        ));
         assert_eq!(attempts.get(), 3);
         assert_eq!(all_attempts.len(), one_attempt.len() * 3);
         assert!(all_attempts
@@ -472,5 +480,59 @@ mod tests {
             matches!(&error, Error::GroveDB(error) if matches!(error.as_ref(), grovedb::Error::NotSupported(_)))
         );
         assert_eq!(error.to_string(), Error::from(expected).to_string());
+    }
+
+    #[test]
+    fn should_preserve_raw_proving_error_during_root_drift() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let hash = [7; 20];
+        let transaction = drive.grove.start_transaction();
+        let query = Drive::identity_id_by_non_unique_public_key_hash_query(hash, None);
+        let expected = drive
+            .grove
+            .get_proved_path_query(
+                &query,
+                None,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect_err("raw backend does not support transaction proofs");
+        let attempts = Rc::new(Cell::new(0u64));
+        let hook_attempts = Rc::clone(&attempts);
+        let _hook = selection_hook::install(move |drive| {
+            let next = hook_attempts.get() + 1;
+            hook_attempts.set(next);
+            drive
+                .grove
+                .insert(
+                    &[] as &[&[u8]],
+                    &[0xff],
+                    grovedb::Element::new_item(next.to_be_bytes().to_vec()),
+                    None,
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("commit after transaction selection");
+        });
+        let error = drive
+            .prove_full_identity_by_non_unique_public_key_hash(
+                hash,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect_err("proof must retain raw backend fault");
+        assert!(
+            matches!(&error, Error::GroveDB(error) if matches!(error.as_ref(), grovedb::Error::NotSupported(_)))
+        );
+        assert_eq!(error.to_string(), Error::from(expected).to_string());
+        assert_eq!(
+            attempts.get(),
+            1,
+            "a backend fault is not retried on root drift"
+        );
     }
 }

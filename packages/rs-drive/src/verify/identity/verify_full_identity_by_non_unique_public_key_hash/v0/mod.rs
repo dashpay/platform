@@ -1,7 +1,5 @@
-use crate::drive::balances::balance_path_vec;
-use crate::drive::identity::{
-    identity_key_tree_path_vec, identity_path_vec, IdentityRootStructure,
-};
+use crate::drive::balances::balance_path;
+use crate::drive::identity::{identity_key_tree_path, identity_path, IdentityRootStructure};
 use crate::drive::{non_unique_key_hashes_sub_tree_path_vec, Drive};
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -60,6 +58,10 @@ impl Drive {
                 "non-unique lookup verification roots differ".to_string(),
             )));
         }
+        let balance_path = balance_path();
+        let identity_paths = candidate
+            .as_ref()
+            .map(|id| (identity_path(id), identity_key_tree_path(id)));
         let mut authoritative_ids = Vec::new();
         for (path, key, element) in rows {
             if path == index_path {
@@ -74,11 +76,13 @@ impl Drive {
                     ))
                 })?;
                 authoritative_ids.push(id);
-            } else if let Some(id) = candidate {
-                let balance = path == balance_path_vec() && key == id;
-                let revision = path == identity_path_vec(&id)
-                    && key == vec![IdentityRootStructure::IdentityTreeRevision as u8];
-                let keys = path == identity_key_tree_path_vec(&id);
+            } else if let (Some(id), Some((identity_path, identity_keys_path))) =
+                (candidate, identity_paths)
+            {
+                let balance = path == balance_path && key == id;
+                let revision = path == identity_path
+                    && key.as_slice() == [IdentityRootStructure::IdentityTreeRevision as u8];
+                let keys = path == identity_keys_path;
                 if !balance && !revision && !keys {
                     return Err(Error::Proof(ProofError::TooManyElements(
                         "non-unique lookup proved an unrelated identity component",
