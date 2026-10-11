@@ -1916,6 +1916,8 @@ mod documents_ttl_tests;
 mod dotted_aggregate_name_tests;
 #[cfg(all(test, feature = "validation"))]
 mod expiring_summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod first_among_tests;
 #[cfg(test)]
 mod immutable_tests;
 #[cfg(test)]

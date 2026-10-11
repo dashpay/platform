@@ -184,6 +184,7 @@ mod tests {
                 keys: [("moderatorId".to_string(), LookupKeySource::ReferenceValue)].into(),
                 minimum_age_blocks: None,
                 consume: false,
+                first_among: None,
             },
         }
     }

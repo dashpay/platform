@@ -814,23 +814,31 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
     );
 }
 
-/// `minimumAgeBlocks` and `consume` describe a document `findBy` finds by a key. A list
-/// element reference has nothing to hold them, so both parses refuse them rather than drop
-/// them unenforced, on a referring type whose documents are never replaced too
+/// `minimumAgeBlocks`, `consume` and `firstAmong` describe a document `findBy` finds by a
+/// key. A list element reference has nothing to hold them, so both parses refuse them rather
+/// than drop them unenforced, on a referring type whose documents are never replaced too
 #[test]
-fn should_refuse_minimum_age_blocks_and_consume_beside_in_list() {
+fn should_refuse_minimum_age_blocks_consume_and_first_among_beside_in_list() {
     let mut never_replaced = charter_contract(members_of_the_charter());
     never_replaced["documentSchemas"]["resignation"]["documentsMutable"] = json!(false);
     contract(never_replaced.clone()).expect("the list element reference registers alone");
 
-    for (keyword, value) in [("minimumAgeBlocks", json!(100)), ("consume", json!(true))] {
+    for (keyword, value) in [
+        ("minimumAgeBlocks", json!(100)),
+        ("consume", json!(true)),
+        (
+            "firstAmong",
+            json!({ "nameHash": { "function": "sys.hash.sha256d", "params": ["reason"] } }),
+        ),
+    ] {
         let mut schema = never_replaced.clone();
         schema["documentSchemas"]["resignation"]["properties"]["memberId"]["refersTo"][keyword] =
             value;
         contract(schema.clone()).expect_err("the meta-schema should refuse it");
         assert_refused(
             contract_on(schema, false, PlatformVersion::latest()),
-            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume",
+            "permanentDocument refersTo inList does not take minimumAgeBlocks, consume or \
+             firstAmong",
         );
     }
 }

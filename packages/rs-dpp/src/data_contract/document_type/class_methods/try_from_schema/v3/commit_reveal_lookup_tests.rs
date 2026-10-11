@@ -224,6 +224,7 @@ fn dpns_lookup(minimum_age_blocks: Option<u32>, consume: bool) -> DocumentRefere
         )]),
         minimum_age_blocks,
         consume,
+        first_among: None,
     }
 }
 
@@ -408,8 +409,8 @@ fn should_refuse_malformed_functions_in_the_parser() {
             "const holds between 1 and 64 bytes",
         ),
         (
-            json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "$ownerId"] }),
-            "not \"$ownerId\"",
+            json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "$creatorId"] }),
+            "not \"$creatorId\"",
         ),
         (
             json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", { "value": "." }] }),

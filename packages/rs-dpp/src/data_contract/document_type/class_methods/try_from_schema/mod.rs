@@ -23,8 +23,9 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
-    KeyReferenceIdentityProperty, ListElementReference, LookupHashKey, LookupKeySource,
-    ReferenceCombinator, ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
+    KeyReferenceIdentityProperty, ListElementReference, LookupFirstAmong, LookupHashKey,
+    LookupKeySource, ReferenceCombinator, ReferenceOperands, SystemFunction,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1191,16 +1192,20 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks` and `consume` describe the document `findBy` finds
-    // when the referring document is created: they sit beside `findBy` and need
-    // it. That the reference is judged on the create alone (a function in
-    // `findBy`, or a declaring type whose documents are never replaced) needs
-    // the declaring type, and is checked once it is parsed
-    // (`validate_reference_lookup_sources`); `inList` refuses both
+    // `minimumAgeBlocks`, `consume` and `firstAmong` describe the document
+    // `findBy` finds when the referring document is created: they sit beside
+    // `findBy` and need it. That the reference is judged on the create alone (a
+    // function in `findBy`, or a declaring type whose documents are never
+    // replaced) needs the declaring type, and is checked once it is parsed
+    // (`validate_reference_lookup_sources`); `inList` refuses all three
     // (`parse_list_element_reference`)
-    if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
-        .into_iter()
-        .find(|keyword| refers_to_map.contains_key(*keyword))
+    if let Some(keyword) = [
+        property_names::MINIMUM_AGE_BLOCKS,
+        property_names::CONSUME,
+        property_names::FIRST_AMONG,
+    ]
+    .into_iter()
+    .find(|keyword| refers_to_map.contains_key(*keyword))
     {
         if !refers_to_map.contains_key(property_names::FIND_BY) {
             return Err(DataContractError::InvalidContractStructure(format!(
@@ -1516,9 +1521,9 @@ fn parse_where(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
-/// `minimumAgeBlocks` and `consume` are refused on every parse: they describe
-/// a document `findBy` finds by a key, which a list element reference has no
-/// field for, so they would be dropped unenforced.
+/// `minimumAgeBlocks`, `consume` and `firstAmong` are refused on every parse:
+/// they describe a document `findBy` finds by a key, which a list element
+/// reference has no field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
     find_by_value: &Value,
@@ -1528,11 +1533,12 @@ fn parse_list_element_reference(
 ) -> Result<ListElementReference, DataContractError> {
     if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
         || refers_to_map.contains_key(property_names::CONSUME)
+        || refers_to_map.contains_key(property_names::FIRST_AMONG)
     {
         return Err(DataContractError::InvalidContractStructure(
-            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume: they \
-             describe a document findBy finds by a key, and inList checks that a list holds the \
-             value"
+            "permanentDocument refersTo inList does not take minimumAgeBlocks, consume or \
+             firstAmong: they describe a document findBy finds by a key, and inList checks that a \
+             list holds the value"
                 .to_string(),
         ));
     }
@@ -2023,10 +2029,51 @@ fn parse_find_by(
             ))
         }
     };
+    let first_among = refers_to_map
+        .get(property_names::FIRST_AMONG)
+        .map(|value| parse_first_among(value))
+        .transpose()?;
     Ok(DocumentReferenceLookup {
         minimum_age_blocks,
         consume,
+        first_among,
         ..lookup
+    })
+}
+
+/// The `firstAmong` of a document reference, `first_among_value`: exactly one
+/// entry, a schema property of the referenced document type mapped to the
+/// function that fills it, `{ "<property>": { "function", "params" } }`, the
+/// shape of a `findBy` function. What it may read and what it names are
+/// checked once the document types are parsed: the params against the
+/// declaring type, beside the `findBy` function it complements
+/// ([`DocumentReferenceLookup::referring_side_error`], on every parse), the
+/// property and its index against the referenced type
+/// ([`DocumentReferenceLookup::referenced_side_error`]).
+fn parse_first_among(first_among_value: &Value) -> Result<LookupFirstAmong, DataContractError> {
+    let first_among_map = first_among_value.to_btree_ref_string_map()?;
+    let mut entries = first_among_map.into_iter();
+    let (Some((property, function)), None) = (entries.next(), entries.next()) else {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo firstAmong holds exactly one entry, the referenced property its function \
+             fills"
+                .to_string(),
+        ));
+    };
+    if property.is_empty() || property.len() > MAX_LOOKUP_PATH_LENGTH || property.starts_with('$') {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo firstAmong names a schema property of the referenced document type of 1 to \
+             {MAX_LOOKUP_PATH_LENGTH} characters, which its function fills, not {property:?}"
+        )));
+    }
+    if !matches!(function, Value::Map(_)) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo firstAmong \"{property}\" maps to a function, {{ \"function\", \"params\" }}"
+        )));
+    }
+    Ok(LookupFirstAmong {
+        property,
+        key: LookupHashKey::from_value(function)?,
     })
 }
 

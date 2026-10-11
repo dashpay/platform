@@ -84,6 +84,7 @@ use crate::consensus::state::document::referenced_document_removed_error::Refere
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
+use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
@@ -733,6 +734,12 @@ pub enum StateError {
     // document type would pay such a token to its owner (protocol version 14).
     #[error(transparent)]
     TokenNotTransferableError(TokenNotTransferableError),
+
+    // The commitment a create's `refersTo` found is preceded by a valid one of another
+    // identity, from an earlier block, holding the same value at the property the reference's
+    // `firstAmong` names (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -832,6 +839,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    first_among: None,
                 },
             }),
             6
@@ -860,6 +868,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    first_among: None,
                 },
             }),
             10
@@ -1625,6 +1634,19 @@ mod tests {
                 TokenNotTransferableError::new(identity_id, "transfer".to_string())
             )),
             173
+        );
+        // A create's commitment preceded by an older valid one of another identity
+        // (`firstAmong`, protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentPrecededError(
+                ReferencedDocumentPrecededError::new(
+                    identity_id,
+                    identity_id,
+                    "nameHash".to_string(),
+                    "$creatorId".to_string(),
+                )
+            )),
+            174
         );
     }
 }

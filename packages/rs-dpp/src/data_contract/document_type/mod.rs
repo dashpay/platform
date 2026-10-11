@@ -177,6 +177,12 @@ pub(crate) mod property_names {
     /// `refersTo` beside a `findBy` with a computed key: whether the create
     /// deletes the document the key finds.
     pub const CONSUME: &str = "consume";
+    /// `refersTo` beside a `findBy` function reading the writer: a second
+    /// function, over the same revealed values without the writer, naming the
+    /// property every commitment to those values holds, so a create is refused
+    /// while another identity holds a valid older one. Meta-schema v3+
+    /// (protocol version 14).
+    pub const FIRST_AMONG: &str = "firstAmong";
     /// `refersTo: permanentDocument` found by its `$id` from a property: the
     /// typed array of identifiers, on the referenced document, the value must
     /// be an element of. Meta-schema v3+ (protocol version 14).

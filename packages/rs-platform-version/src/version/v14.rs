@@ -1599,8 +1599,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the document is found by that property holding the SHA-256 of the
 ///     SHA-256 of the params' bytes joined in order, a property path of the
 ///     document (the property carrying the reference included),
-///     `{ "const": text }`, or `"."` for a value without a path (each element
-///     of a typed array, the writer, the creator), a string counting as its
+///     `{ "const": text }`, `"."` for a value without a path (each element
+///     of a typed array, the writer, the creator), or `"$ownerId"` for the
+///     writer's id (`LookupKeyParam::Writer`), a string counting as its
 ///     UTF-8, a byte array as its bytes, an identifier as its 32 bytes. The
 ///     parser holds the function as the lookup's computed key
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
@@ -1664,6 +1665,34 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
 ///     a parent byte for byte; the DPNS contract and its create trigger are
 ///     unchanged. See `book/src/data-model/documents.md`.
+///
+///     `firstAmong` (`LookupFirstAmong`) sits beside a `findBy` function
+///     reading `"$ownerId"` and the `findBy` entry `"$ownerId": "$ownerId"`:
+///     `{ "<referenced property>": <function> }`, a second function over values
+///     of the create, never the writer or `"."`, reading every property the
+///     `findBy` function reads, whose hash every commitment to the same values
+///     holds, whoever made it. Document reference validation 0, in place,
+///     hashes it once (`DoubleSha256`), refuses a found document not holding it
+///     (40120), and reads in one billed query the documents holding the same
+///     value from blocks before the found one's, oldest first
+///     (`fetch_documents_holding_before`, through a non-unique index over
+///     exactly that property and `$createdAtBlockHeight`), at most
+///     `SYSTEM_LIMITS_V4.max_first_among_candidates` (1,000; `None` in the
+///     earlier tables). The first that another identity owns, that is not past
+///     its type's `ttl`, and that holds at the `findBy` function's property that
+///     function computed with its owner as `"$ownerId"` (`DoubleSha256`, once
+///     per owner) refuses the create (`ReferencedDocumentPrecededError`,
+///     40148). A copied hash names another owner and never refuses, and when
+///     none of the documents read refuses, the create stands. Registration, on
+///     the same contract and on another (`DocumentReferenceLookup`'s
+///     `referring_side_error` and `referenced_side_error`), requires the
+///     property to be a stored 32-byte byte array fixed once written, the
+///     index, and `$createdAtBlockHeight` in the referenced type's `required`;
+///     document create structure validation 1 refuses a create missing a param
+///     of the function (10423). Inert before this version: only meta-schema v3
+///     admits `firstAmong` and the `"$ownerId"` param, so the writer reaching
+///     `hash_lookup_key` in place in reference validation 0 and batch state 0
+///     changes nothing earlier.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its
@@ -2435,7 +2464,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; a refersTo firstAmong reads at most 1,000 competitors
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

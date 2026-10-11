@@ -17,13 +17,14 @@ use dpp::data_contract::document_type::{
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceKind,
     DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
-    PropertyReference,
+    LookupFirstAmong, PropertyReference, property_names,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::errors::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
@@ -44,6 +45,7 @@ use dpp::version::PlatformVersion;
 use std::borrow::Cow;
 use std::sync::Arc;
 use drive::drive::contract::DataContractFetchInfo;
+use drive::drive::document::expiration::pricing::document_expires_at;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
@@ -62,7 +64,8 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    fetch_document_through_lookup, fetch_document_with_id, hash_lookup_key, BilledLookupKey,
+    fetch_document_through_lookup, fetch_document_with_id, fetch_documents_holding_before,
+    hash_lookup_key, BilledLookupKey,
 };
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -372,13 +375,17 @@ fn validate_document_type_references_v0(
                 // stands for the value in the errors; the create's structure
                 // validation refused a value it could not reveal, before any read. A
                 // value read as is has no hash to stand for it, so the errors carry
-                // an all-zero id beside its path
+                // an all-zero id beside its path. The writer is passed in place in
+                // generation 0, inert before protocol version 14: only meta-schema v3
+                // admits a computed key at all, and the `"$ownerId"` param that reads
+                // the writer
                 let (referenced_id, billed_key) = match hash_key {
                     Some((_, key)) => {
                         let Some(billed_key) = hash_lookup_key(
                             key,
                             document_type,
                             None,
+                            owner_id,
                             document_data,
                             execution_context,
                         ) else {
@@ -1465,12 +1472,13 @@ fn validate_reference_target_v0(
                 }
             }
 
-            // The commitment a computed key found: it must be old enough, and the create
-            // deletes it when the reference consumes it. Its age is judged in blocks, from its
-            // `$createdAtBlockHeight` (registration demands the type record one) to the
-            // block of the create, so 1 means an earlier block; a document recording none
-            // never meets it. Only a lookup the protocol version 14 parser produced has
-            // either
+            // The commitment a computed key found: it must be old enough, the first valid one
+            // among those to the same values when the reference declares `firstAmong`, and
+            // the create deletes it when the reference consumes it. Its age is judged in
+            // blocks, from its `$createdAtBlockHeight` (registration demands the type record
+            // one) to the block of the create, so 1 means an earlier block; a document
+            // recording none never meets it. Only a lookup the protocol version 14 parser
+            // produced has any of them
             if let (Some(lookup), Some(found)) = (lookup, referenced_document) {
                 if let Some(blocks) = lookup.minimum_age_blocks {
                     let old_enough = found
@@ -1487,6 +1495,31 @@ fn validate_reference_target_v0(
                             )
                             .into(),
                         ));
+                    }
+                }
+                // Judged on the create alone, so here a create: registration admits
+                // `firstAmong` only beside a `findBy` function
+                if let Some(first_among) = &lookup.first_among {
+                    let result = validate_first_among_v0(
+                        first_among,
+                        lookup,
+                        found,
+                        referenced_contract,
+                        referenced_document_type,
+                        document_type,
+                        document_data,
+                        owner_id,
+                        referenced_id,
+                        reference_target,
+                        path,
+                        platform,
+                        block_info,
+                        transaction,
+                        execution_context,
+                        platform_version,
+                    )?;
+                    if !result.is_valid() {
+                        return Ok(result);
                     }
                 }
                 if lookup.consume {
@@ -1591,6 +1624,152 @@ fn validate_reference_target_v0(
     }
 
     Ok(SimpleConsensusValidationResult::new())
+}
+
+/// Checks a create's `firstAmong` (see `LookupFirstAmong`): the commitment `found`, which
+/// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
+/// valid commitment to the values the create reveals. Its `firstAmong` function is hashed and
+/// billed once, and `found` must hold the hash at the property `firstAmong` names, or the
+/// reference finds no document (`ReferencedEntityNotFoundError`, 40120, naming
+/// `referenced_id`). Then the documents of `referenced_document_type` holding the same hash
+/// from a block before `found`'s are read in one query, oldest first, at most
+/// `SystemLimits::max_first_among_candidates`, and each is a competitor unless the writer
+/// `owner_id` owns it or it is past its type's `ttl` at the block of the create, the cleanup
+/// not having reached it yet. A competitor is valid when it holds, at the property the `findBy`
+/// function fills, that function computed from the create's values with the competitor's owner
+/// as `"$ownerId"`, hashed and billed once per owner: a copy of another identity's hash is
+/// owned by an identity the hash does not name. The first valid competitor refuses the create
+/// (`ReferencedDocumentPrecededError`, 40148). A tie in the block of `found` is no competitor;
+/// the unique index the create writes decides it. When none of the documents read is a valid
+/// competitor the create stands: documents ordered before a valid commitment were made from its
+/// hash while it was pending, so copies can make a create cost more but never refuse it.
+///
+/// A `found` recording no `$createdAtBlockHeight`, which registration's `required` rules out,
+/// can not be shown first (`ReferencedDocumentRequirementNotMetError`, 40142).
+///
+/// In place in generation 0: only the protocol version 14 parser produces a `firstAmong`.
+#[allow(clippy::too_many_arguments)]
+fn validate_first_among_v0(
+    first_among: &LookupFirstAmong,
+    lookup: &DocumentReferenceLookup,
+    found: &Document,
+    referenced_contract: &DataContract,
+    referenced_document_type: DocumentTypeRef<'_>,
+    declaring_document_type: DocumentTypeRef<'_>,
+    document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
+    referenced_id: [u8; 32],
+    reference_target: &DocumentPropertyReferenceTarget,
+    path: &str,
+    platform: &PlatformStateRef,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let property = first_among.property.as_str();
+    // The `firstAmong` function reads neither `"."` nor the writer, which registration
+    // refuses, only values of the create
+    let first_among_key = hash_lookup_key(
+        &first_among.key,
+        declaring_document_type,
+        None,
+        owner_id,
+        document_data,
+        execution_context,
+    );
+    let Some(first_among_key) =
+        first_among_key.filter(|key| holds_bytes(found, property, &key.digest()))
+    else {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedEntityNotFoundError::new(
+                Identifier::from(referenced_id),
+                reference_target.clone(),
+                path.to_string(),
+            )
+            .into(),
+        ));
+    };
+    let Some(found_height) = found.created_at_block_height() else {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedDocumentRequirementNotMetError::new(
+                found.id(),
+                property_names::FIRST_AMONG.to_string(),
+                property.to_string(),
+                path.to_string(),
+            )
+            .into(),
+        ));
+    };
+    let Some((find_by_property, find_by_key)) = lookup.hash_key() else {
+        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "registration admits firstAmong only beside a findBy function",
+        )));
+    };
+    let Some(limit) = platform_version.system_limits.max_first_among_candidates else {
+        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "firstAmong parses only at protocol versions whose system limits bound its \
+             competitors",
+        )));
+    };
+    let competitors = fetch_documents_holding_before(
+        platform.drive,
+        referenced_contract,
+        referenced_document_type,
+        property,
+        Value::Bytes32(first_among_key.digest()),
+        found_height,
+        limit,
+        &block_info.epoch,
+        execution_context,
+        transaction,
+        platform_version,
+    )?;
+    let ttl_seconds = referenced_document_type.documents_ttl_seconds();
+    // What each owner's commitment to the create's values holds, hashed once per owner
+    let mut find_by_values: BTreeMap<Identifier, Option<BilledLookupKey>> = BTreeMap::new();
+    for competitor in &competitors {
+        let competitor_owner = competitor.owner_id();
+        if competitor_owner == owner_id {
+            continue;
+        }
+        if let (Some(ttl_seconds), Some(created_at)) = (ttl_seconds, competitor.created_at()) {
+            if block_info.time_ms >= document_expires_at(created_at, ttl_seconds)? {
+                continue;
+            }
+        }
+        let find_by_value = *find_by_values.entry(competitor_owner).or_insert_with(|| {
+            hash_lookup_key(
+                find_by_key,
+                declaring_document_type,
+                None,
+                competitor_owner,
+                document_data,
+                execution_context,
+            )
+        });
+        if find_by_value.is_some_and(|key| holds_bytes(competitor, find_by_property, &key.digest()))
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ReferencedDocumentPrecededError::new(
+                    found.id(),
+                    competitor.id(),
+                    property.to_string(),
+                    path.to_string(),
+                )
+                .into(),
+            ));
+        }
+    }
+    Ok(SimpleConsensusValidationResult::new())
+}
+
+/// Whether `document` holds exactly `bytes` at `property`, whichever binary form it carries.
+fn holds_bytes(document: &Document, property: &str, bytes: &[u8]) -> bool {
+    document
+        .get(property)
+        .and_then(|value| value.as_bytes_slice().ok())
+        .is_some_and(|held| held == bytes)
 }
 
 /// A `moderatedDocument` reference a replace keeps, whose document a moderator

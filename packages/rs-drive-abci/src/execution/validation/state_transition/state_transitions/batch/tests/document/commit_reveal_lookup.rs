@@ -1852,4 +1852,431 @@ mod commit_reveal_lookup_tests {
             .await;
         assert_not_found(result, "authorTag");
     }
+
+    /// The fixture with a name registration whose preorders carry two hashes: a
+    /// `namePreorder` holds `ownerNameHash`, the sha256d of its owner's id and the name,
+    /// unique per owner, and `nameHash`, the sha256d of the name alone, under a non-unique
+    /// index with `$createdAtBlockHeight`, and lives an hour (`ttl`). A transferable `name`,
+    /// unique by its label and parent when `unique_names`, reveals through
+    /// `creatorRefersTo` the writer's own preorder from an earlier block, consumes it, and
+    /// must be the first valid one among the preorders of the name (`firstAmong`).
+    fn first_among_fixture(unique_names: bool) -> CommitRevealFixture {
+        CommitRevealFixture::new_with(|contract| {
+            let hash = |position: u32| {
+                serde_json::json!({
+                    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                    "position": position
+                })
+            };
+            let schemas = &mut contract["documentSchemas"];
+            schemas["namePreorder"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": true,
+                "ttl": 3600,
+                "properties": { "ownerNameHash": hash(0), "nameHash": hash(1) },
+                "indices": [
+                    {
+                        "name": "ownerAndNameHash",
+                        "properties": [{ "$ownerId": "asc" }, { "ownerNameHash": "asc" }],
+                        "unique": true
+                    },
+                    {
+                        "name": "nameHashByHeight",
+                        "properties": [{ "nameHash": "asc" }, { "$createdAtBlockHeight": "asc" }]
+                    }
+                ],
+                "required": ["$createdAt", "$createdAtBlockHeight", "ownerNameHash", "nameHash"],
+                "additionalProperties": false
+            });
+            schemas["name"] = serde_json::json!({
+                "type": "object",
+                "documentsMutable": false,
+                "canBeDeleted": false,
+                "transferable": 1,
+                "properties": {
+                    "normalizedLabel": { "type": "string", "minLength": 3, "maxLength": 63, "position": 0 },
+                    "normalizedParentDomainName": {
+                        "type": "string", "minLength": 1, "maxLength": 63, "position": 1
+                    }
+                },
+                "indices": [{
+                    "name": "byName",
+                    "properties": [{ "normalizedParentDomainName": "asc" }, { "normalizedLabel": "asc" }],
+                    "unique": unique_names
+                }],
+                "required": ["normalizedLabel", "normalizedParentDomainName"],
+                "creatorRefersTo": {
+                    "type": "deletableDocument",
+                    "documentType": "namePreorder",
+                    "findBy": {
+                        "$ownerId": "$ownerId",
+                        "ownerNameHash": {
+                            "function": "sys.hash.sha256d",
+                            "params": [
+                                "$ownerId",
+                                "normalizedLabel",
+                                { "const": "." },
+                                "normalizedParentDomainName"
+                            ]
+                        }
+                    },
+                    "where": { "$ownerId": "$ownerId" },
+                    "firstAmong": {
+                        "nameHash": {
+                            "function": "sys.hash.sha256d",
+                            "params": ["normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+                        }
+                    },
+                    "minimumAgeBlocks": 1,
+                    "consume": true
+                },
+                "additionalProperties": false
+            });
+        })
+    }
+
+    /// The name the first-among tests register.
+    const NAME_LABEL: &str = "al1ce";
+    const NAME_PARENT: &str = "dash";
+
+    /// The name's hash, which every preorder of it holds: the sha256d of
+    /// `normalizedLabel ++ "." ++ normalizedParentDomainName`.
+    fn name_hash() -> [u8; 32] {
+        hash_double(format!("{NAME_LABEL}.{NAME_PARENT}").into_bytes())
+    }
+
+    /// `owner`'s hash of the name, which only an identity knowing the name can compute:
+    /// the sha256d of its id and the name.
+    fn owner_name_hash(owner: Identifier) -> [u8; 32] {
+        let mut preimage = owner.to_buffer().to_vec();
+        preimage.extend_from_slice(format!("{NAME_LABEL}.{NAME_PARENT}").as_bytes());
+        hash_double(preimage)
+    }
+
+    /// A `namePreorder` of the name by `who` in block `height`, holding `owner_name_hash`.
+    async fn preorder_name(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        owner_name_hash: [u8; 32],
+        height: u64,
+    ) -> Document {
+        let (preorder, result) = fixture
+            .create(
+                who,
+                "namePreorder",
+                &[
+                    ("ownerNameHash", Value::Bytes32(owner_name_hash)),
+                    ("nameHash", Value::Bytes32(name_hash())),
+                ],
+                &[],
+                height,
+            )
+            .await;
+        assert_written(result);
+        preorder
+    }
+
+    /// `who`'s valid preorder of the name, made in block `height`.
+    async fn commit_name(fixture: &mut CommitRevealFixture, who: Who, height: u64) -> Document {
+        let owner = fixture.id(who);
+        preorder_name(fixture, who, owner_name_hash(owner), height).await
+    }
+
+    /// `who`'s `name` for the name, created in block `height`.
+    async fn reveal_name(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        height: u64,
+    ) -> StateTransitionExecutionResult {
+        fixture
+            .create(
+                who,
+                "name",
+                &[
+                    ("normalizedLabel", NAME_LABEL.into()),
+                    ("normalizedParentDomainName", NAME_PARENT.into()),
+                ],
+                &[],
+                height,
+            )
+            .await
+            .1
+    }
+
+    /// A paid refusal with `ReferencedDocumentPrecededError` (40148): `preorder`, the one the
+    /// reveal found, is preceded by `preceding`.
+    fn assert_preceded(
+        result: StateTransitionExecutionResult,
+        preorder: &Document,
+        preceding: &Document,
+    ) {
+        let PaidConsensusError { error, .. } = result else {
+            panic!("expected a paid refusal, got {result:?}");
+        };
+        assert_eq!(error.code(), 40148);
+        assert_matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))
+                if *e.document_id() == preorder.id()
+                    && *e.preceding_document_id() == preceding.id()
+                    && e.property() == "nameHash"
+                    && e.path() == "$creatorId",
+            "expected 40148 naming the preceding preorder"
+        );
+    }
+
+    /// The type in the fixture parses `firstAmong` beside the writer's `findBy` function.
+    #[test]
+    fn should_parse_the_fixture_name_as_first_among_its_preorders() {
+        let fixture = first_among_fixture(true);
+        let name: DocumentTypeRef = fixture
+            .contract
+            .document_type_for_name("name")
+            .expect("expected the name type");
+        let declarations = name.reference_declarations().collect::<Vec<_>>();
+        let [(ReferenceHolder::Creator, PropertyReference::Value(target))] =
+            declarations.as_slice()
+        else {
+            panic!("expected the creator's reference alone");
+        };
+        let lookup = target
+            .as_any_document_reference()
+            .and_then(|declaration| declaration.lookup)
+            .expect("expected the creator's lookup");
+        assert_eq!(
+            lookup
+                .first_among
+                .as_ref()
+                .map(|first_among| first_among.property.as_str()),
+            Some("nameHash")
+        );
+    }
+
+    /// Mallory reads the name from Alice's pending reveal and lands a preorder of her own
+    /// before the reveal: Alice's older valid preorder refuses Mallory's reveal, which
+    /// consumes nothing, and Alice's own reveal, the first committer's, goes through.
+    #[tokio::test]
+    async fn should_refuse_a_reveal_an_older_valid_commitment_of_another_identity_precedes() {
+        let mut fixture = first_among_fixture(true);
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
+        assert_preceded(result, &mallory, &alice);
+        assert!(fixture.document_exists("namePreorder", mallory.id()));
+
+        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", alice.id()));
+    }
+
+    /// Only an older competitor counts: Alice reveals while Mallory's later preorder of the
+    /// same name waits.
+    #[tokio::test]
+    async fn should_create_the_first_committers_reveal_beside_a_younger_competitor() {
+        let mut fixture = first_among_fixture(true);
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+
+        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", alice.id()));
+        assert!(fixture.document_exists("namePreorder", mallory.id()));
+    }
+
+    /// Anyone can copy a pending preorder's name hash without knowing the name, and land it
+    /// first. A copy is owned by an identity its `ownerNameHash` does not name, whether that
+    /// holds garbage or the copied preorder's own value, so it refuses nothing.
+    #[tokio::test]
+    async fn should_not_count_a_copied_name_hash() {
+        let mut fixture = first_among_fixture(true);
+        let alice_id = fixture.id(Who::Alice);
+        preorder_name(&mut fixture, Who::Mallory, [0xC0; 32], COMMIT_HEIGHT - 2).await;
+        preorder_name(
+            &mut fixture,
+            Who::Mallory,
+            owner_name_hash(alice_id),
+            COMMIT_HEIGHT - 1,
+        )
+        .await;
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", alice.id()));
+    }
+
+    /// Two valid preorders from one block: neither precedes the other, so both reveals pass
+    /// `firstAmong`, and the name's unique index takes the first create.
+    #[tokio::test]
+    async fn should_not_count_a_competitor_from_the_same_block() {
+        let mut fixture = first_among_fixture(true);
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", mallory.id()));
+
+        let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError(_)),
+                ..
+            },
+            "expected the name's unique index to refuse the second create"
+        );
+        assert!(fixture.document_exists("namePreorder", alice.id()));
+    }
+
+    /// A competitor past its `ttl` refuses nothing, though the block-end cleanup has not
+    /// deleted it yet. Blocks are a second apart, so Alice's preorder, made in block
+    /// `COMMIT_HEIGHT`, expires 3,600 blocks later.
+    #[tokio::test]
+    async fn should_not_count_an_expired_competitor() {
+        let mut fixture = first_among_fixture(true);
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 3_000).await;
+
+        // Up to its expiry it precedes Mallory's
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 3_599).await;
+        assert_preceded(result, &mallory, &alice);
+
+        // From its expiry on it does not, still in state
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 3_600).await;
+        assert_written(result);
+        assert!(fixture.document_exists("namePreorder", alice.id()));
+        assert!(!fixture.document_exists("namePreorder", mallory.id()));
+    }
+
+    /// A reveal consumes its preorder, which then precedes nobody: once Alice reveals, a
+    /// later reveal of the same name by Mallory, a join where names are not unique, goes
+    /// through.
+    #[tokio::test]
+    async fn should_not_count_a_consumed_competitor() {
+        let mut fixture = first_among_fixture(false);
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
+        assert_preceded(result, &mallory, &alice);
+
+        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+        assert_written(result);
+
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 3).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", mallory.id()));
+    }
+
+    /// The writer's own older preorders are no competitors, valid or not: Alice's invalid
+    /// one is skipped unhashed.
+    #[tokio::test]
+    async fn should_not_count_the_writers_own_older_commitment() {
+        let mut fixture = first_among_fixture(true);
+        preorder_name(&mut fixture, Who::Alice, [0xA0; 32], COMMIT_HEIGHT - 1).await;
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", alice.id()));
+    }
+
+    /// The `findBy` and `firstAmong` hashes are billed as the double SHA-256s they are, the
+    /// lookup and the competitors as the queries they are, and each competitor's `findBy`
+    /// value once per owner: Alice's own older preorder is skipped unhashed, and Mallory's
+    /// copy and her valid preorder share one hash. The first valid competitor refuses.
+    #[tokio::test]
+    async fn should_bill_the_competitors_query_and_one_hash_per_competing_owner() {
+        let mut fixture = first_among_fixture(true);
+        let platform_version = PlatformVersion::latest();
+        let alice = fixture.id(Who::Alice);
+        let mallory_id = fixture.id(Who::Mallory);
+        preorder_name(&mut fixture, Who::Alice, [0xA0; 32], COMMIT_HEIGHT - 2).await;
+        preorder_name(&mut fixture, Who::Mallory, [0xC0; 32], COMMIT_HEIGHT - 2).await;
+        let mallory = preorder_name(
+            &mut fixture,
+            Who::Mallory,
+            owner_name_hash(mallory_id),
+            COMMIT_HEIGHT - 1,
+        )
+        .await;
+        let alice_preorder = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let (_, contract_fetch_info) = fixture
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                fixture.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract");
+        let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+            id: Identifier::from([0xAB; 32]),
+            identity_contract_nonce: 1,
+            document_type_name: "name".to_string(),
+            data_contract: contract_fetch_info.expect("the contract is in state"),
+            token_cost: None,
+            shielded_token_payment: None,
+            gas_fees_paid_by: GasFeesPaidBy::default(),
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
+        });
+        let platform_state = fixture.platform.state.load();
+        let platform_ref = PlatformStateRef {
+            drive: &fixture.platform.drive,
+            state: &platform_state,
+            config: &fixture.platform.config,
+        };
+        let data: BTreeMap<String, Value> = BTreeMap::from([
+            ("normalizedLabel".to_string(), NAME_LABEL.into()),
+            ("normalizedParentDomainName".to_string(), NAME_PARENT.into()),
+        ]);
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("expected an execution context");
+        let mut consumed = Vec::new();
+        let result = base
+            .validate_document_references(
+                &data,
+                alice,
+                Some(alice),
+                None,
+                None,
+                &platform_ref,
+                &block(REVEAL_HEIGHT),
+                &mut consumed,
+                None,
+                None,
+                &mut execution_context,
+                platform_version,
+            )
+            .expect("expected the references to be validated");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.document_id() == alice_preorder.id()
+                    && *e.preceding_document_id() == mallory.id()
+        );
+        // The writer's id and the name (42 bytes) and the name alone (10 bytes) each pad to
+        // one block, plus the second pass over the digest
+        assert_matches!(
+            execution_context.operations_slice(),
+            [
+                ValidationOperation::DoubleSha256(2),
+                ValidationOperation::PrecalculatedOperation(lookup),
+                ValidationOperation::DoubleSha256(2),
+                ValidationOperation::PrecalculatedOperation(competitors),
+                ValidationOperation::DoubleSha256(2),
+            ] if lookup.processing_fee > 0 && competitors.processing_fee > 0,
+            "the hashes, the lookup and the competitors query are the billed operations"
+        );
+        assert!(consumed.is_empty(), "a refused reveal consumes nothing");
+    }
 }

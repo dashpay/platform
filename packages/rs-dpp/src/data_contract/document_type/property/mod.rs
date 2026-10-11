@@ -59,7 +59,7 @@ pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
 };
-pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
+pub use reference_lookup::{DocumentReferenceLookup, LookupFirstAmong, LookupKeySource};
 
 #[cfg(test)]
 mod byte_array_encoding_flip_tests;
@@ -10441,6 +10441,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    first_among: None,
                 },
             }
             .to_string(),
@@ -10493,6 +10494,7 @@ mod tests {
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
             minimum_age_blocks: None,
             consume: false,
+            first_among: None,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -10826,6 +10828,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    first_among: None,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -10858,6 +10861,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    first_among: None,
                 },
             },
             DocumentPropertyReferenceTarget::ModeratedDocument {

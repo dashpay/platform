@@ -181,4 +181,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
+    max_first_among_candidates: Some(1_000), // refersTo firstAmong (new in v14): competitors a create reads, oldest first
 };

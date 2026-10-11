@@ -85,6 +85,7 @@ fn expected_lookup(keys: &[(&str, LookupKeySource)]) -> DocumentReferenceLookup 
             .collect(),
         minimum_age_blocks: None,
         consume: false,
+        first_among: None,
     }
 }
 

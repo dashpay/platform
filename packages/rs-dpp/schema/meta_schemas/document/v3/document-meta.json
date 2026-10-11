@@ -60,7 +60,7 @@
       }
     },
     "findByFunction": {
-      "description": "The function of a findBy entry, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, the value of the referenced property the entry names that finds the document. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; or \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo). See findBy for what the computed key means.",
+      "description": "The function of a findBy entry, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, the value of the referenced property the entry names that finds the document. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo); or \"$ownerId\", the writer's 32-byte id, which binds the commitment to the identity that may reveal it. See findBy for what the computed key means.",
       "type": "object",
       "properties": {
         "function": {
@@ -75,6 +75,10 @@
               {
                 "type": "string",
                 "const": "."
+              },
+              {
+                "type": "string",
+                "const": "$ownerId"
               },
               {
                 "type": "string",
@@ -836,6 +840,20 @@
             "consume": {
               "description": "Beside findBy, never with inList, on a reference judged when the referring document is created only (a findBy function, or a document type whose documents are never replaced, documentsMutable: false; the parser refuses any other): the create deletes the document findBy finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose where compares \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true) or that only a consume removes (canBeDeleted: \"onlyWhenConsumed\"), that declares no delete token cost and no delete action fee (no delete transition charges them) and requires no stricter signature security level than the declaring type, checked at contract registration. A key bound to a contract or a document type must be allowed to act on every document type the create may consume (ContractBoundedKeyOutOfBoundsError, 20014). A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
               "const": true
+            },
+            "firstAmong": {
+              "description": "Beside a findBy function that reads \"$ownerId\", next to the findBy entry \"$ownerId\": \"$ownerId\" (so the reference is judged when the referring document is created only), never with inList: exactly one entry, a byte array property of the referenced document type mapped to a function of the findByFunction shape that fills it, over values of the create and never \"$ownerId\" or \".\", reading every property the findBy function reads. Every commitment to the same values holds that hash, whoever made it, so anyone can copy it; the findBy function's hash names its owner as well, which a copy cannot. When the referring document is created, after findBy finds the writer's commitment, consensus computes the function (billed as a double SHA-256), requires the found document to hold it at the property (ReferencedEntityNotFoundError, 40120, otherwise), and reads, in one billed query, the documents holding the same value from a block before the found one's, oldest first, at most SystemLimits max_first_among_candidates (1,000 at protocol version 14). Each is a competitor unless the writer owns it or it is past its type's ttl; a competitor is valid when the property the findBy function fills holds that function computed from the create's values with the competitor's owner as \"$ownerId\" (billed as a double SHA-256 once per owner). The first valid competitor refuses the create (ReferencedDocumentPrecededError, 40148): the first identity to commit wins. A commitment from the same block is no competitor. Checked at contract registration: the property is a byte array of exactly the function's 32 bytes, fixed once written and not transient, under a non-unique index over exactly that property and $createdAtBlockHeight, in that order, not bucketing its first property nor keeping entries past a delete, on a type that requires $createdAtBlockHeight; the function's params follow the rules of a findBy function's, and the property is not one findBy names. Available from protocol version 14.",
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "propertyNames": {
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/findByFunction"
+              }
             }
           },
           "if": {
@@ -864,9 +882,13 @@
           "additionalProperties": false,
           "allOf": [
             {
-              "$comment": "minimumAgeBlocks and consume describe the document findBy finds when the referring document is created: they need findBy and no inList (a list element reference has nothing to hold them), and the parser requires the reference to be judged on the create alone (a findBy function, or a document type whose documents are never replaced)",
+              "$comment": "minimumAgeBlocks, consume and firstAmong describe the document findBy finds when the referring document is created: they need findBy and no inList (a list element reference has nothing to hold them), and the parser requires the reference to be judged on the create alone (a findBy function, or a document type whose documents are never replaced; firstAmong needs the function)",
               "if": {
-                "anyOf": [{ "required": ["minimumAgeBlocks"] }, { "required": ["consume"] }]
+                "anyOf": [
+                  { "required": ["minimumAgeBlocks"] },
+                  { "required": ["consume"] },
+                  { "required": ["firstAmong"] }
+                ]
               },
               "then": {
                 "required": ["findBy"],

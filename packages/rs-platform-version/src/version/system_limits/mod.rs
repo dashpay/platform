@@ -405,6 +405,20 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The most documents a create reads for a `refersTo` `firstAmong`, the competitors of
+    /// the commitment its `findBy` found: the documents of the referenced type holding the same
+    /// `firstAmong` value from earlier blocks, read oldest first (by `$createdAtBlockHeight`,
+    /// then by id) through the type's index over exactly that property and
+    /// `$createdAtBlockHeight`, in one query. The create is refused at the first valid
+    /// competitor among them, and stands when none of the first this many is one, so copies
+    /// can only make a create cost more, never refuse it. To hide a valid commitment a copier
+    /// needs this many documents holding its value ordered before it, each from a block before
+    /// its own or from its block with a smaller id: made from its value while it was still
+    /// pending, since every copy made after it landed is ordered after it. Read by document
+    /// reference validation 0 (protocol version 14).
+    ///
+    /// `None` on protocol versions whose parsers do not read `firstAmong`.
+    pub max_first_among_candidates: Option<u16>,
 }
 
 #[cfg(test)]

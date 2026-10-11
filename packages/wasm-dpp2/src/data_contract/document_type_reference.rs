@@ -121,6 +121,13 @@ export type DocumentPropertyReferenceTarget =
        */
       minimumAgeBlocks?: number;
       /**
+       * Beside a `findBy` function reading `'$ownerId'` and the `findBy`
+       * entry `$ownerId: '$ownerId'`: the create is refused while another
+       * identity holds a valid commitment to the same values from an earlier
+       * block (code 40148). See {@link DocumentReferenceFirstAmong}.
+       */
+      firstAmong?: DocumentReferenceFirstAmong;
+      /**
        * A list the value must be in: the value (on a typed array, every
        * element) must be one of the identifiers the typed array `inList`
        * holds, a dotted path on `documentType`, on the document `findBy`
@@ -235,6 +242,13 @@ export type DocumentPropertyReferenceTarget =
        * transition.
        */
       consume?: true;
+      /**
+       * Beside a `findBy` function reading `'$ownerId'` and the `findBy`
+       * entry `$ownerId: '$ownerId'`: the create is refused while another
+       * identity holds a valid commitment to the same values from an earlier
+       * block (code 40148). See {@link DocumentReferenceFirstAmong}.
+       */
+      firstAmong?: DocumentReferenceFirstAmong;
     }
   | {
       /**
@@ -343,9 +357,11 @@ export type DocumentReferenceWhere = Record<string, string>;
  * joined in order with nothing between them. A param is a property path of the
  * document being created (a string's UTF-8, a byte array's bytes, an
  * identifier's 32 bytes), the property carrying the reference included,
- * `{ const }`, fixed UTF-8 text, or `'.'`, the value carrying the reference
+ * `{ const }`, fixed UTF-8 text, `'.'`, the value carrying the reference
  * where it has no path (each element of a typed array, the writer or the
- * creator). The document it finds is a commitment made earlier; the reference
+ * creator), or `'$ownerId'`, the 32 bytes of the writer's identity, the owner
+ * of the document being created. The document it finds is a commitment made
+ * earlier; the reference
  * is checked when the document is created only. To reveal one, compute the
  * same hash over the values you create the document with.
  */
@@ -353,6 +369,21 @@ export type DocumentReferenceFindByFunction = {
   function: 'sys.hash.sha256d';
   params: Array<string | { const: string }>;
 };
+
+/**
+ * A reference's `firstAmong`: `{ <referenced property>: <function> }`, one
+ * entry, the function a {@link DocumentReferenceFindByFunction} over values
+ * of the document being created, never `'$ownerId'` or `'.'`, reading every
+ * property the `findBy` function reads. Every commitment to the same values
+ * holds its hash at that property, whoever made it, under a non-unique index
+ * over (that property, `$createdAtBlockHeight`). A create is refused when
+ * another identity's commitment from an earlier block holds the same value,
+ * is not past its `ttl`, and is valid: the property the `findBy` function
+ * fills holds that function computed with the commitment's owner as
+ * `'$ownerId'`, which takes knowing the values, so a copied hash does not
+ * count. The first identity to commit wins.
+ */
+export type DocumentReferenceFirstAmong = Record<string, DocumentReferenceFindByFunction>;
 
 /**
  * A single `refersTo` declaration on a document type.
@@ -384,7 +415,7 @@ export type DocumentPropertyReference = {
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135,
-   * 40136 and 40142), except that a write error names the failing element by its
+   * 40136, 40142 and 40148), except that a write error names the failing element by its
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
@@ -435,6 +466,7 @@ fn find_by_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsVa
                 set_field(&object, "const", &JsValue::from_str(text), path)?;
                 object.into()
             }
+            LookupKeyParam::Writer => JsValue::from_str("$ownerId"),
         };
         params.push(&param_value);
     }
@@ -530,7 +562,7 @@ fn set_where_field(
 /// The `findBy` field of a document reference found by it: every property it
 /// names mapped to its source as the schema spells it, `'.'`, `'$ownerId'`, a
 /// property path, or a function as `{ function, params }`, and, beside a
-/// function, `minimumAgeBlocks` and `consume` where declared.
+/// function, `minimumAgeBlocks`, `consume` and `firstAmong` where declared.
 fn set_find_by_fields(
     object: &Object,
     lookup: &DocumentReferenceLookup,
@@ -550,6 +582,16 @@ fn set_find_by_fields(
     }
     if lookup.consume {
         set_field(object, "consume", &JsValue::TRUE, path)?;
+    }
+    if let Some(first_among) = &lookup.first_among {
+        let first_among_object = Object::new();
+        set_field(
+            &first_among_object,
+            &first_among.property,
+            &find_by_function_to_js(&first_among.key, path)?,
+            path,
+        )?;
+        set_field(object, "firstAmong", &first_among_object, path)?;
     }
     Ok(())
 }

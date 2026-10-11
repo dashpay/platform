@@ -10,6 +10,7 @@ use dpp::data_contract::document_type::{
     DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef, LookupHashKey,
 };
 use dpp::data_contract::DataContract;
+use dpp::document::property_names::CREATED_AT_BLOCK_HEIGHT;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
@@ -25,7 +26,8 @@ use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use indexmap::IndexMap;
 use std::collections::BTreeMap;
 
 // ============================================================================
@@ -429,21 +431,28 @@ impl BilledLookupKey {
     }
 }
 
-/// Hashes `key` for a create of a document of `declaring_document_type`
-/// carrying `document_data`, `"."` reading `reference_id` (an element's, the
-/// writer's or the creator's id; `None` for a property carrying the reference,
-/// which the key names by its path), and bills it as the double SHA-256 it is
+/// Hashes `key` for a create by `writer_id` of a document of
+/// `declaring_document_type` carrying `document_data`, `"."` reading
+/// `reference_id` (an element's, the writer's or the creator's id; `None` for a
+/// property carrying the reference, which the key names by its path) and
+/// `"$ownerId"` the writer, and bills it as the double SHA-256 it is
 /// (`ValidationOperation::DoubleSha256`, by the blocks it hashes). `None`, with
 /// nothing hashed or billed, when the preimage cannot be assembled.
 pub(crate) fn hash_lookup_key(
     key: &LookupHashKey,
     declaring_document_type: DocumentTypeRef,
     reference_id: Option<Identifier>,
+    writer_id: Identifier,
     document_data: &BTreeMap<String, Value>,
     execution_context: &mut StateTransitionExecutionContext,
 ) -> Option<BilledLookupKey> {
     let (digest, blocks) = key
-        .key_value(declaring_document_type, reference_id, document_data)
+        .key_value(
+            declaring_document_type,
+            reference_id,
+            writer_id,
+            document_data,
+        )
         .ok()?;
     execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
     Some(BilledLookupKey(digest))
@@ -497,7 +506,10 @@ pub(crate) fn fetch_document_through_lookup(
         return Ok(None);
     }
     // A function's `"."` param reads an identifier (an element, the writer or
-    // the creator); a property carrying the reference is named by its path
+    // the creator); a property carrying the reference is named by its path.
+    // The writer is passed in place, inert before protocol version 14: only
+    // meta-schema v3 admits a computed key, and the `"$ownerId"` param that
+    // reads the writer
     let reference_id = match reference_value {
         Value::Identifier(id) => Some(Identifier::from(*id)),
         _ => None,
@@ -508,6 +520,7 @@ pub(crate) fn fetch_document_through_lookup(
                 key,
                 declaring_document_type,
                 reference_id,
+                owner_id,
                 document_data,
                 execution_context,
             )
@@ -622,6 +635,89 @@ fn holds_key_part(
         ),
         _ => true,
     }
+}
+
+// ============================================================================
+// fetch_documents_holding_before
+// ============================================================================
+
+/// The documents of `document_type` holding `value` at `property` that were created in a
+/// block below `created_before_height`, oldest first (by `$createdAtBlockHeight`, then by
+/// id), at most `limit`: the competitors a `refersTo` `firstAmong` reads for the commitment
+/// its `findBy` found, through the type's index over exactly (`property`,
+/// `$createdAtBlockHeight`), which registration demands. Expired documents the cleanup has not
+/// reached yet are among them, as the index still holds them.
+///
+/// The query is billed as a lookup's is: its processing cost is added to
+/// `execution_context`. Only reached from the document reference validation, which exists from
+/// protocol version 14, so it carries no version of its own.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_documents_holding_before(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    property: &str,
+    value: Value,
+    created_before_height: u64,
+    limit: u16,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<Document>, Error> {
+    let drive_query = DriveDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clauses: Vec::new(),
+            range_clause: Some(WhereClause {
+                field: CREATED_AT_BLOCK_HEIGHT.to_string(),
+                operator: WhereOperator::LessThan,
+                value: Value::U64(created_before_height),
+            }),
+            equal_clauses: BTreeMap::from([(
+                property.to_string(),
+                WhereClause {
+                    field: property.to_string(),
+                    operator: WhereOperator::Equal,
+                    value,
+                },
+            )]),
+        },
+        offset: None,
+        limit: Some(limit),
+        order_by: IndexMap::from([(
+            CREATED_AT_BLOCK_HEIGHT.to_string(),
+            OrderClause {
+                field: CREATED_AT_BLOCK_HEIGHT.to_string(),
+                ascending: true,
+            },
+        )]),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        Some(epoch),
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
+        storage_fee: 0,
+        processing_fee: documents_outcome.cost(),
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
+    }));
+
+    Ok(documents_outcome.documents_owned())
 }
 
 // ============================================================================

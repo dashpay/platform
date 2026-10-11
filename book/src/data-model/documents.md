@@ -563,7 +563,7 @@ The preimage is the bytes of the params joined in order with nothing between the
 - `{ "const": text }`: fixed UTF-8 text, 1 to 64 bytes;
 - `"."`: the value carrying the reference, where it has no path, read the same way.
 
-1 to 16 params. System values such as `"$ownerId"` are not params. Plain concatenation is ambiguous when two variable-length params meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length param (a string, or a byte array whose size is not fixed) with another variable-length param anywhere after it must be followed directly by a one-byte `const`, its separator, and a create whose value for that param holds the separator byte is refused. Each preimage then splits into its params one way only. Integers and other kinds are not params. A path that passes through a map holding a key more than once is refused, as for `generatedFrom`.
+1 to 16 params, `"$ownerId"` among them for the writer's 32-byte id; no other system value is a param. Plain concatenation is ambiguous when two variable-length params meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length param (a string, or a byte array whose size is not fixed) with another variable-length param anywhere after it must be followed directly by a one-byte `const`, its separator, and a create whose value for that param holds the separator byte is refused. Each preimage then splits into its params one way only. Integers and other kinds are not params. A path that passes through a map holding a key more than once is refused, as for `generatedFrom`.
 
 The document such a key finds is judged once, when the document is created:
 
@@ -582,7 +582,44 @@ What is refused, and where:
 - A create signed by a contract-bound key whose bounds leave out a document type the created type may consume: batch advanced structure validation 1, as a direct delete of that type would be (`ContractBoundedKeyOutOfBoundsError`, 20014, paid).
 - A batch in which a create consumes a document that another create of the batch consumes too, or that another transition of the batch deletes, replaces, transfers, reprices or buys, refuses that create with 40120 (`ConsumedDocuments` in the batch state validation). Today a batch holds one transition, so this only guards the day that cap is raised.
 
-In Rust the parser holds the function entry in the `DocumentReferenceLookup` as the source of the property it names: `LookupKeySource::Hash(LookupHashKey)`, appended to the key sources, with its `function` a `HashFunction` (the `SystemFunction::Hash` namespace, beside the string transformations `generatedFrom` takes) and its `params` `LookupKeyParam`s. The parsed `property_agreement` holds the `where` entries alone. A string or byte array property's declaration is `DocumentProperty::revealed_reference`, listed by `reference_declarations` as `PropertyReference::Revealed`. `DocumentReferenceLookup::is_checked_on_create_only` tells a lookup holding a computed key, and the parser holds the reference's `minimumAgeBlocks` and `consume` on the lookup as `minimum_age_blocks` and `consume`. `first_unrevealable_lookup_key` is the structure check. A create that consumes carries its commitments in `DocumentCreateTransitionAction::consumed_documents`, turned into delete operations with the create's own.
+#### First among commitments (`firstAmong`)
+
+A commitment hides its values until a create reveals them, and then anyone reading the pending create learns them. Where blocks are full and the mempool orders by fee, an identity that learns a name from someone else's pending reveal could commit to the name itself, outbid the reveal, and reveal first. `firstAmong`, on the `refersTo` beside `findBy`, refuses that create:
+
+```json
+"findBy": {
+  "$ownerId": "$ownerId",
+  "ownerNameHash": {
+    "function": "sys.hash.sha256d",
+    "params": ["$ownerId", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+  }
+},
+"firstAmong": {
+  "nameHash": {
+    "function": "sys.hash.sha256d",
+    "params": ["normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+  }
+}
+```
+
+Each preorder holds two hashes: `ownerNameHash`, of its owner's id and the name, under a unique index over (`$ownerId`, `ownerNameHash`), and `nameHash`, of the name alone, under a non-unique index over (`nameHash`, `$createdAtBlockHeight`). When the document is created, once `findBy` has found the writer's commitment and `minimumAgeBlocks` holds, document reference validation 0:
+
+1. hashes the `firstAmong` function over the create's values, billed as a `DoubleSha256`, and refuses the create when the found document does not hold that hash at `nameHash` (`ReferencedEntityNotFoundError`, 40120);
+2. reads, in one query billed as its cost, the documents of the referenced type holding the same hash from a block below the found one's, oldest first (by `$createdAtBlockHeight`, then by id), at most `SystemLimits::max_first_among_candidates` (1,000 at protocol version 14);
+3. skips the writer's own and those past the type's `ttl` at the block time, which the cleanup, deleting at most 128 a block, may not have reached;
+4. computes, once for each owner left, the `findBy` function with that owner as `"$ownerId"` and the create's other values (a `DoubleSha256`), and refuses the create at the first competitor holding the result at `ownerNameHash` (`ReferencedDocumentPrecededError`, 40148, naming the found document, the competitor and `nameHash`).
+
+A competitor is valid only when its `ownerNameHash` matches, which its owner can compute only knowing the name: a copy of someone's `nameHash` commits to nothing and never refuses. A competitor from the found document's own block does not count (the name's unique index then decides between the two creates), nor does a consumed one, which is gone. When none of the documents read refuses, the create stands. The documents ordered before the first valid commitment hold its hash from before it landed: a copy made once it is in state is ordered after it, so hiding it takes `max_first_among_candidates` copies landed ahead of it while it was pending. A cap that refused the create once reached would instead let copies of a guessable name's hash keep anyone from registering it.
+
+Registration:
+
+- On every parse (`DocumentReferenceLookup::referring_side_error`, 10231): `firstAmong` sits beside a `findBy` function reading `"$ownerId"`, with the `findBy` entry `"$ownerId": "$ownerId"`, so the reference is judged on the create alone, and that function reads no `"."`. It holds one entry, whose function reads neither `"$ownerId"` nor `"."`, follows a `findBy` function's param rules, and reads every property the `findBy` function reads (a value read elsewhere, a salt, would make every competitor look like a copy); its property is not one `findBy` names. Never beside `inList`.
+- Against the referenced type (`DocumentReferenceLookup::referenced_side_error`, 10231 for a type of the same contract, `ReferencedDocumentLookupInvalidError`, 40137, for one of another contract): the property is a stored byte array of exactly 32 bytes, fixed once written, under an index over exactly (that property, `$createdAtBlockHeight`), in that order, that is not unique (a copy landing first would keep the commitment out), does not bucket its first property and keeps no entry past a delete; the type requires `$createdAtBlockHeight`.
+- On update, adding, removing or changing it is an incompatible schema change, like the rest of a `refersTo`.
+
+A create missing a param of the function is refused before any read, as for `findBy` (`DocumentReferencePreimageInvalidError`, 10423).
+
+In Rust the parser holds the function entry in the `DocumentReferenceLookup` as the source of the property it names: `LookupKeySource::Hash(LookupHashKey)`, appended to the key sources, with its `function` a `HashFunction` (the `SystemFunction::Hash` namespace, beside the string transformations `generatedFrom` takes) and its `params` `LookupKeyParam`s. The parsed `property_agreement` holds the `where` entries alone. A string or byte array property's declaration is `DocumentProperty::revealed_reference`, listed by `reference_declarations` as `PropertyReference::Revealed`. `DocumentReferenceLookup::is_checked_on_create_only` tells a lookup holding a computed key, and the parser holds the reference's `minimumAgeBlocks`, `consume` and `firstAmong` on the lookup as `minimum_age_blocks`, `consume` and `first_among`, a `LookupFirstAmong` (`property` and its `key`, a `LookupHashKey`); a `"$ownerId"` param is `LookupKeyParam::Writer`. `first_unrevealable_lookup_key` is the structure check. A create that consumes carries its commitments in `DocumentCreateTransitionAction::consumed_documents`, turned into delete operations with the create's own.
 
 ## Immutable Properties on Mutable Document Types
 
