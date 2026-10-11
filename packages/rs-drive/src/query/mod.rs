@@ -1260,6 +1260,11 @@ pub struct SkipIfAbsentBinding<'a> {
     /// which sorts first, so an ordering, a range with no lower bound and a
     /// null equality all reach it on an index that does not skip.
     pub excludes_missing: bool,
+    /// Whether the field is constrained to values the index keys (a where
+    /// clause, a ranking pin or the grouped property) rather than only
+    /// ordered by. The elements of a typed array are bound by any such
+    /// constraint (see [`index_admissible_for_skip_if_absent`]).
+    pub constrains: bool,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1270,6 +1275,7 @@ impl<'a> SkipIfAbsentBinding<'a> {
         Self {
             field,
             excludes_missing: false,
+            constrains: false,
         }
     }
 
@@ -1314,6 +1320,7 @@ impl<'a> SkipIfAbsentBinding<'a> {
         Self {
             field: clause.field.as_str(),
             excludes_missing,
+            constrains: true,
         }
     }
 
@@ -1375,13 +1382,16 @@ pub fn index_admissible_for_skip_if_absent(
         // An index naming a typed array (protocol version 14) has it in its
         // skip set without declaring the keyword: it holds a document once
         // per element, so a query reads it only with the elements bound. A
-        // typed array admits no clause but `contains` and `containsAny`, so
-        // a binding of the field is one of them. Before protocol version 14
-        // the set is empty whenever the keyword is not declared.
+        // typed array admits no clause but `contains` and `containsAny`
+        // (keyed as an equality and an `in` on the aggregate surfaces), so a
+        // constraint on the field is one of them, an empty string included:
+        // an element is never missing. An ordering alone binds nothing.
+        // Before protocol version 14 the set is empty whenever the keyword is
+        // not declared.
         return index.skip_if_absent_properties.iter().all(|array| {
             bindings
                 .iter()
-                .any(|binding| binding.field == array.as_str() && binding.excludes_missing)
+                .any(|binding| binding.field == array.as_str() && binding.constrains)
         });
     }
     // Every protocol version reaches this; `is_index_only`'s counter term is

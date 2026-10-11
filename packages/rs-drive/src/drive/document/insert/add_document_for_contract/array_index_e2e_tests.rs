@@ -875,6 +875,20 @@ fn should_count_the_posts_holding_each_element() {
         format!("{error:?}").contains("only answered per element"),
         "{error:?}"
     );
+    // An empty string is an element like any other.
+    insert(&drive, &contract, &post_created(6, CREATED_AT + 6, &[""]));
+    match count(
+        &drive,
+        &contract,
+        element_clause(WhereOperator::Contains, Value::Text(String::new())),
+        CountMode::Aggregate,
+        false,
+    )
+    .expect("an empty string element counts")
+    {
+        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 1),
+        other => panic!("expected an aggregate, got {other:?}"),
+    }
     // And a raw equality on the array is no element read.
     let error = count(
         &drive,

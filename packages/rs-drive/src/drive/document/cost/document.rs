@@ -161,6 +161,12 @@ pub(crate) fn value_of(
     }
 }
 
+/// The 94 printable ASCII characters other than the space: more symbols than
+/// an indexed typed array holds elements, so a one-character string element
+/// keeps every ordinal apart, and each is one UTF-8 byte.
+const PRINTABLE_ASCII: &[u8] =
+    b"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
 /// `element`, a value `value_of` built, made the `ordinal`th of a list of
 /// distinct values of the same size: an integer or a number counts up from it
 /// (wrapping within its width), a string or byte array takes the ordinal in its
@@ -200,7 +206,7 @@ fn distinct_element(element: Value, ordinal: u32) -> Value {
         Value::Bool(_) => Value::Bool(ordinal.is_multiple_of(2)),
         Value::Text(text) => {
             let mut bytes = text.into_bytes();
-            stamp(&mut bytes, ordinal, Some(b"abcdefghijklmnopqrstuvwxyz"));
+            stamp(&mut bytes, ordinal, Some(PRINTABLE_ASCII));
             Value::Text(String::from_utf8(bytes).unwrap_or_default())
         }
         Value::Bytes(mut bytes) => {
