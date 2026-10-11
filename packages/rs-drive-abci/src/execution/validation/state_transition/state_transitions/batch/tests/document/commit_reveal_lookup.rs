@@ -22,6 +22,7 @@
 use super::*;
 
 mod commit_reveal_lookup_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::*;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
@@ -1046,12 +1047,14 @@ mod commit_reveal_lookup_tests {
                     &data,
                     alice,
                     Some(alice),
+                    &DocumentSystemValues::default(),
                     changed_fields,
                     None,
                     &platform_ref,
                     &block(REVEAL_HEIGHT),
                     &mut consumed,
                     None,
+                    &mut BTreeMap::new(),
                     None,
                     &mut execution_context,
                     platform_version,

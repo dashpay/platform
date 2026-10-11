@@ -1047,6 +1047,46 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         }
     }
 
+    /// Judges a document being created or replaced against the rules of the document
+    /// type's `propertyConstraints` that read a document one of its references points at
+    /// (`{ "referenced": [reference, field] }`), in name order: the first rule it breaks
+    /// fails with `DocumentPropertyConstraintViolatedError` (10422), as
+    /// [`Self::validate_property_constraints`] would. `data` holds the document's
+    /// properties and `referenced`, by reference property, the values those rules read of
+    /// the documents the references point at, which consensus reads with the references it
+    /// checks; `system` holds the rest, the totals included. Every other rule of the type
+    /// was judged before the references were checked, and is not judged again. A type with
+    /// no such rule costs nothing, the data not even copied.
+    ///
+    /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
+    /// version 14, where no parsed document type carries a rule.
+    fn validate_referencing_property_constraints(
+        &self,
+        data: &BTreeMap<String, Value>,
+        referenced: BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => self.validate_referencing_property_constraints_v0(data, referenced, system),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_referencing_property_constraints".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     /// Judges a stored document's properties, `data`, against the rules of the document
     /// type's `propertyConstraints` that `change` can break, with `system` the document's
     /// system values after it, in name order. A transfer or a purchase gives the document a
