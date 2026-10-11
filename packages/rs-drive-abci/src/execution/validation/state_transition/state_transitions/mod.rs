@@ -126,7 +126,7 @@ pub(crate) mod test_helpers;
 #[cfg(test)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::dpns::dpns_salted_domain_hash;
+    use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -1352,24 +1352,24 @@ pub(in crate::execution) mod tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            document_1.owner_id(),
+        let preorder_owner = document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             &convert_to_homograph_safe_chars(name),
             "dash",
             platform_version,
         );
-
-        let salted_domain_hash_2 = dpns_salted_domain_hash(
-            document_2.owner_id(),
+        let preorder_owner = document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
             &salt_2,
             &convert_to_homograph_safe_chars(name),
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -1987,15 +1987,15 @@ pub(in crate::execution) mod tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            document_1.owner_id(),
+        let preorder_owner = document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             &convert_to_homograph_safe_chars(name),
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
         document_1.set("preorderSalt", salt_1.into());
 

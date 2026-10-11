@@ -1156,3 +1156,140 @@ mod moderation_charters_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod dpns_v3_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::{
+        DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupHashKey, LookupKeyParam,
+        LookupKeySource,
+    };
+    use crate::util::hash::hash_double;
+    use platform_value::{Identifier, Value};
+    use std::collections::BTreeMap;
+
+    /// DPNS v3, registered as the chain registers it, under full validation.
+    fn dpns() -> DataContract {
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("DPNS v3 registers under full validation")
+    }
+
+    fn document_type<'a>(contract: &'a DataContract, name: &str) -> DocumentTypeRef<'a> {
+        contract
+            .document_type_for_name(name)
+            .unwrap_or_else(|_| panic!("the {name} type"))
+    }
+
+    /// A domain finds its creator's own preorder by the creator's id and the hash of the
+    /// creator's id and the normalized name, made in an earlier block, and deletes it. The salt
+    /// stays declared, unused, so domains written under v1 and v2 decode
+    #[test]
+    fn should_find_the_creators_own_preorder_by_the_hash_of_the_creator_and_the_name() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let declaration = domain
+            .creator_reference()
+            .and_then(|target| target.as_any_document_reference())
+            .expect("the domain's creatorRefersTo is a document reference");
+        assert_eq!(declaration.document_type_name, "preorder");
+        assert_eq!(declaration.kind, DocumentReferenceKind::Deletable);
+        let lookup = declaration.lookup.expect("found by findBy");
+        assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
+        assert_eq!(
+            lookup.keys.get("ownerNameHash"),
+            Some(&LookupKeySource::Hash(LookupHashKey {
+                function: HashFunction::Sha256d,
+                params: vec![
+                    LookupKeyParam::Writer,
+                    LookupKeyParam::Property("normalizedLabel".to_string()),
+                    LookupKeyParam::Const(".".to_string()),
+                    LookupKeyParam::Property("normalizedParentDomainName".to_string()),
+                ],
+            }))
+        );
+        assert_eq!(lookup.minimum_age_blocks, Some(1));
+        assert!(lookup.consume);
+
+        let salt = domain
+            .flattened_properties()
+            .get("preorderSalt")
+            .expect("preorderSalt stays declared");
+        assert!(salt.transient);
+        assert!(salt.property_type.reference().is_none());
+        assert!(salt.revealed_reference.is_none());
+        assert!(!domain.required_fields().contains("preorderSalt"));
+    }
+
+    /// The preorder of `b0b.dash` by an identity commits to the double SHA-256 of that
+    /// identity's id, the normalized label, "." and the normalized parent
+    #[test]
+    fn should_hash_the_creator_and_the_normalized_name() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let key = domain
+            .creator_reference()
+            .and_then(|target| target.lookup_hash_key())
+            .expect("the creator reference holds a findBy function");
+        let creator = Identifier::from([3; 32]);
+        let data = BTreeMap::from([
+            (
+                "normalizedLabel".to_string(),
+                Value::Text("b0b".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+        ]);
+
+        let (digest, _) = key
+            .key_value(domain, None, creator, &data)
+            .expect("the preimage assembles");
+
+        let mut preimage = creator.to_buffer().to_vec();
+        preimage.extend(b"b0b.dash");
+        assert_eq!(digest, hash_double(preimage));
+    }
+
+    /// A preorder lives an hour, is unique per owner and owner-and-name hash, and is
+    /// indexed by its name hash and creation height
+    #[test]
+    fn should_expire_preorders_after_an_hour_and_index_them_by_name_hash() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        assert_eq!(preorder.documents_ttl_seconds(), Some(3600));
+
+        let index_properties = |name: &str| {
+            let index = preorder
+                .indexes()
+                .get(name)
+                .unwrap_or_else(|| panic!("the {name} index"));
+            (
+                index
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect::<Vec<_>>(),
+                index.unique,
+            )
+        };
+        assert_eq!(
+            index_properties("ownerAndNameHash"),
+            (
+                vec!["$ownerId".to_string(), "ownerNameHash".to_string()],
+                true
+            )
+        );
+        assert_eq!(
+            index_properties("nameHashAndHeight"),
+            (
+                vec!["nameHash".to_string(), "$createdAtBlockHeight".to_string()],
+                false
+            )
+        );
+    }
+}

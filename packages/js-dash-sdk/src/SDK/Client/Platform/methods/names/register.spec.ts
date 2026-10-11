@@ -14,9 +14,9 @@ const sha256d = (data: Buffer): Buffer => {
   return sha256(sha256(data));
 };
 
-// The `domain` schema of DPNS v3: the salt reveals the hash of the writer's id,
-// the salt, the normalized label, '.' and the parent domain name, and a new
-// name's records.identity is its owner
+// The `domain` schema of DPNS v3: the creator reference finds the creator's own
+// preorder by the hash of the creator's id, the normalized label, '.' and the
+// normalized parent domain name, and a new name's records.identity is its owner
 const dpnsV3DomainSchema = () => ({
   propertyConstraints: {
     recordsIdentityIsOwner: {
@@ -26,18 +26,25 @@ const dpnsV3DomainSchema = () => ({
       ],
     },
   },
-  properties: {
-    preorderSalt: {
-      refersTo: {
-        findBy: {
-          saltedDomainHash: {
-            function: 'sys.hash.sha256d',
-            params: ['$ownerId', 'preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
-          },
-        },
+  creatorRefersTo: {
+    findBy: {
+      $ownerId: '$ownerId',
+      ownerNameHash: {
+        function: 'sys.hash.sha256d',
+        params: ['$ownerId', 'normalizedLabel', { const: '.' }, 'normalizedParentDomainName'],
       },
     },
   },
+  properties: {
+    preorderSalt: {},
+  },
+});
+
+// The preorder DPNS v3 expects of `identityId` for 'user.dash': the hash of the
+// creator and the name, and of the name alone
+const dpnsV3Preorder = (identityId) => ({
+  ownerNameHash: sha256d(Buffer.concat([identityId.toBuffer(), Buffer.from('user.dash')])),
+  nameHash: sha256d(Buffer.from('user.dash')),
 });
 
 describe('Platform', () => {
@@ -192,19 +199,15 @@ describe('Platform', () => {
           getDocumentSchema: dpnsV3DomainSchema,
         });
 
-        await register.call(platformMock, 'User.dash', {
+        await register.call(platformMock, 'User.DASH', {
           identity: identityId,
         }, identityMock);
 
-        // sha256d(owner id ++ salt ++ 'user' ++ '.' ++ 'dash')
-        const expected = sha256d(Buffer.concat([
-          identityId.toBuffer(),
-          Buffer.alloc(32),
-          Buffer.from('user.dash'),
-        ]));
-        expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.equal(
-          expected.toString('hex'),
+        // Of the normalized names, without a salt, which the domain no longer sends
+        expect(platformMock.documents.create.getCall(0).args[2]).to.deep.equal(
+          dpnsV3Preorder(identityId),
         );
+        expect(platformMock.documents.create.getCall(1).args[2]).to.not.have.property('preorderSalt');
       });
 
       it('should hash with the DPNS contract the network stores, not a cached one', async () => {
@@ -241,14 +244,8 @@ describe('Platform', () => {
           identity: identityId,
         }, identityMock);
 
-        // sha256d(owner id ++ salt ++ 'user' ++ '.' ++ 'dash')
-        const expected = sha256d(Buffer.concat([
-          identityId.toBuffer(),
-          Buffer.alloc(32),
-          Buffer.from('user.dash'),
-        ]));
-        expect(platformMock.documents.create.getCall(0).args[2].saltedDomainHash.toString('hex')).to.equal(
-          expected.toString('hex'),
+        expect(platformMock.documents.create.getCall(0).args[2]).to.deep.equal(
+          dpnsV3Preorder(identityId),
         );
         // The documents are created against the contract the hash was taken from
         expect(apps.get('dpns').contract).to.equal(storedContract);

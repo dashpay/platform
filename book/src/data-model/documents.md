@@ -511,53 +511,51 @@ A document type whose documents can be transferred or traded declares `creatorRe
 
 ### Commit and reveal (a `findBy` function)
 
-One `findBy` entry may hold a function instead of a source: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds a hash of values the document being created reveals. The platform fills that property of the key with the hash to find the referenced document, so the function computes a key part. The document it finds is a commitment made earlier, so the reference is a commit and reveal: the document may be created only while a commitment to values it carries exists. The function is a system function, as in [`generatedFrom`](#generated-properties-generatedfrom), from the `sys.hash` namespace; `sys.hash.sha256d`, the SHA-256 of the SHA-256, is the one there is. DPNS name registration is a commit and reveal of this kind: a `preorder` holds `saltedDomainHash` under a unique index. Before protocol version 14 the `domain` create trigger hashed what the domain reveals and looked for it; from 14, DPNS contract v3 declares it on the salt the domain reveals, its preorders unique per owner:
+One `findBy` entry may hold a function instead of a source: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds a hash of values the document being created reveals. The platform fills that property of the key with the hash to find the referenced document, so the function computes a key part. The document it finds is a commitment made earlier, so the reference is a commit and reveal: the document may be created only while a commitment to values it carries exists. The function is a system function, as in [`generatedFrom`](#generated-properties-generatedfrom), from the `sys.hash` namespace; `sys.hash.sha256d`, the SHA-256 of the SHA-256, is the one there is. DPNS name registration is a commit and reveal of this kind. Before protocol version 14 a `preorder` held `saltedDomainHash` under a unique index, and the `domain` create trigger hashed the salt and the name the domain revealed and looked for it; from 14, DPNS contract v3 declares it on the domain's creator, its preorders unique per owner and holding no salt:
 
 ```json
 "preorder": {
   "type": "object",
   "documentsMutable": false,
   "canBeDeleted": true,
+  "ttl": 3600,
   "properties": {
-    "saltedDomainHash": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0
-    }
+    "ownerNameHash": { "type": "bytes", "size": 32, "position": 0 },
+    "nameHash": { "type": "bytes", "size": 32, "position": 1 }
   },
   "indices": [
     {
-      "name": "ownerAndSaltedHash",
-      "properties": [{ "$ownerId": "asc" }, { "saltedDomainHash": "asc" }],
+      "name": "ownerAndNameHash",
+      "properties": [{ "$ownerId": "asc" }, { "ownerNameHash": "asc" }],
       "unique": true
+    },
+    {
+      "name": "nameHashAndHeight",
+      "properties": [{ "nameHash": "asc" }, { "$createdAtBlockHeight": "asc" }]
     }
   ],
-  "required": ["$createdAtBlockHeight", "saltedDomainHash"],
+  "required": ["$createdAt", "$createdAtBlockHeight", "ownerNameHash", "nameHash"],
   "additionalProperties": false
 },
 "domain": {
   "type": "object",
-  "properties": {
-    "preorderSalt": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4,
-      "refersTo": {
-        "type": "deletableDocument",
-        "documentType": "preorder",
-        "findBy": {
-          "$ownerId": "$ownerId",
-          "saltedDomainHash": {
-            "function": "sys.hash.sha256d",
-            "params": ["$ownerId", "preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
-          }
-        },
-        "minimumAgeBlocks": 1,
-        "consume": true
+  "creatorRefersTo": {
+    "type": "deletableDocument",
+    "documentType": "preorder",
+    "findBy": {
+      "$ownerId": "$ownerId",
+      "ownerNameHash": {
+        "function": "sys.hash.sha256d",
+        "params": ["$ownerId", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
       }
-    }
-  },
-  "transient": ["preorderSalt"]
+    },
+    "minimumAgeBlocks": 1,
+    "consume": true
+  }
 }
 ```
 
-reads: the salt refers to the writer's own `preorder` (the `$ownerId` entry, the writer), found by its owner and `saltedDomainHash` (the whole of its unique `ownerAndSaltedHash` index), created in an earlier block, whose `saltedDomainHash` is the sha256d of the writer's id, the salt, the normalized label, a dot and the parent; creating the domain deletes that preorder. Keying by the owner keeps a copy of someone's preorder from colliding with theirs, and hashing the owner keeps the copier from revealing the name with it once the salt is public. The trigger before protocol version 14 hashed the salt with the normalized label, a dot and the parent, or with the label as sent for a top-level name; the preorders made before it are deleted when the version activates. On an index of several properties, `findBy` maps the others beside the function entry as usual.
+reads: the domain refers to its creator's own `preorder` (the `$ownerId` entry, the writer, who creates it), found by its owner and `ownerNameHash` (the whole of its unique `ownerAndNameHash` index), created in an earlier block, whose `ownerNameHash` is the sha256d of the creator's id, the normalized label, a dot and the normalized parent; creating the domain deletes that preorder. Keying by the owner keeps a copy of someone's preorder from colliding with theirs, and hashing the owner keeps the copier from revealing the name with it once the reveal makes the name public. Without a salt an owner holds one pending preorder of a name: a second one shares its key and is refused (`DuplicateUniqueIndexError`), and the first reveals the name. The preorder also holds `nameHash`, the hash without the owner, and lives an hour (`ttl`), refunding nothing when consumed. The domain keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode. The trigger before protocol version 14 hashed the salt with the normalized label, a dot and the parent, or with the label as sent for a top-level name; the preorders made before it are deleted when the version activates. On an index of several properties, `findBy` maps the others beside the function entry as usual.
 
 A string or byte array property may carry a `refersTo` this way, or with its value read as `"."` (see [Found by a unique index](#found-by-a-unique-index-findby)): its value is not an id, so its declaration must be a `permanentDocument` or `deletableDocument` reference found by a `findBy` reading it, and the property keeps its type (the meta-schema admits a `refersTo` with `findBy` on a string or byte array). The value carrying the reference must fill the key exactly once: as a `"."` entry or as a param of the function. A param names a single property carrying the reference by its path, as the salt above; `"."` in the params stands only for a value without a path of its own: each element of a typed array, the writer of an `ownerRefersTo`, the creator of a `creatorRefersTo`. The writer and the creator may also be left out beside a function, since the declaration applies to every create.
 
@@ -628,7 +626,7 @@ In Rust the properties frozen at creation are `DocumentTypeV2Getters::immutable_
 
 ## Transient Properties
 
-The doctype-level `transient` keyword lists top-level properties whose values are validated on the transition but never stored. DPNS uses it for the `domain`'s `preorderSalt`: the write proves the salted preorder, and the salt is then dropped.
+The doctype-level `transient` keyword lists top-level properties whose values are validated on the transition but never stored. DPNS v1 and v2 use it for the `domain`'s `preorderSalt`: the write proves the salted preorder, and the salt is then dropped (v3 keeps the property declared and transient, unused).
 
 ```json
 "transient": ["preorderSalt"]

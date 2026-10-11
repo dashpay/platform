@@ -2301,21 +2301,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     generates `normalizedLabel` and `normalizedParentDomainName` with
 ///     `sys.stringTransformations.homographSafeASCII` (53; a value sent that
 ///     differs is `DocumentPropertyNotGeneratedError`, 10424). Its
-///     `preorderSalt` reveals the writer's own `preorder` from an earlier block
-///     and deletes it, the storage refunded to the writer (61: `findBy`
-///     `$ownerId` and the sha256d of the writer's id, the salt, the normalized
-///     label, `"."` and the parent, `minimumAgeBlocks: 1`, `consume`; refused
-///     with 40120 or 40142). Preorders are unique per owner (`ownerAndSaltedHash`
-///     over `$ownerId` and `saltedDomainHash`, replacing `saltedHash`), so a
-///     copy of a pending preorder neither blocks it nor, its hash binding the
-///     owner, lets the copier reveal the name once the salt is public. The rule
+///     `creatorRefersTo` finds the creator's own `preorder` of the name from an
+///     earlier block and deletes it (61: `findBy` `$ownerId` and `ownerNameHash`,
+///     the sha256d of the creator's id, the normalized label, `"."` and the
+///     normalized parent, `minimumAgeBlocks: 1`, `consume`; refused with 40120 or
+///     40142). A preorder carries no salt: it holds `ownerNameHash`, unique per
+///     owner (`ownerAndNameHash` over `$ownerId` and `ownerNameHash`, replacing
+///     `saltedHash`), and `nameHash`, the same hash without the owner, indexed
+///     with the creation height (`nameHashAndHeight`), and lives an hour (`ttl`
+///     3600, so it refunds nothing when consumed). A copy of a pending preorder
+///     neither blocks it nor, its hash binding the owner, lets the copier reveal
+///     the name. The `domain` keeps `preorderSalt` declared, transient and no
+///     longer required, so domains written under v1 and v2 decode. The rule
 ///     `recordsIdentityIsOwner` (`$transferredAt` equal to `$createdAt` implies
 ///     `records.identity` equal to `$ownerId`) holds a new name's identity
 ///     record to its owner (10422); a transfer or a purchase in a later block,
 ///     judged with its own time, no longer reads the record, and one in the
 ///     block that created the name is refused. The `domain` sets
-///     `canBeDeleted: false` and the `preorder` requires
-///     `$createdAtBlockHeight`; the `domain`'s property positions, transient
+///     `canBeDeleted: false` and the `preorder` requires `$createdAt` (for its
+///     `ttl`) and `$createdAtBlockHeight`; the `domain`'s property positions, transient
 ///     list and stored encoding are v2's, so stored domains decode unchanged.
 ///     `transition_to_version_14` re-stores DPNS through
 ///     `Drive::apply_contract_rebuilding_document_types`: every preorder made

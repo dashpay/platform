@@ -44,28 +44,30 @@ export async function register(
   const [label] = nameLabels;
   const normalizedLabel = convertToHomographSafeChars(label);
 
-  const preorderSalt = crypto.randomBytes(32);
-
   const isSecondLevelDomain = normalizedParentDomainName.length > 0;
 
   if (!this.client.getApps().has('dpns')) {
     throw new Error('DPNS is required to register a new name.');
   }
 
-  // The preorder commits to the hash the platform checks the domain's
-  // preorderSalt against. From DPNS v3 the contract declares it: the params of
-  // the salt's findBy function (the writer's id, the salt, the normalized label,
-  // '.' and the parent domain name as sent). Before it, the salt and
-  // `${normalizedLabel}.${parentDomainName}`, or the label as sent for a
-  // top-level name. The contract is the one the
+  // The preorder holds the hashes the platform finds it by. From DPNS v3 the
+  // contract declares them: the domain's creatorRefersTo finds the creator's own
+  // preorder by a findBy function over the creator's id, the normalized label,
+  // '.' and the normalized parent, which the preorder holds under the property
+  // the function fills, and the same params without the creator's id give its
+  // nameHash. Before it, the domain reveals a salt: the preorder holds
+  // saltedDomainHash, of the salt and `${normalizedLabel}.${parentDomainName}`,
+  // or the label as sent for a top-level name. The contract is the one the
   // network stores now, not one cached before an upgrade changed it, whose hash
   // the domain could not reveal; fetching it also replaces the cached one, so
   // both documents are created against it.
   const { contractId } = this.client.getApps().get('dpns');
   const dpnsContract = await this.contracts.get(contractId, { skipCache: true });
   const domainSchema = dpnsContract ? dpnsContract.getDocumentSchema('domain') : undefined;
-  const hashParams = domainSchema?.properties?.preorderSalt?.refersTo
-    ?.findBy?.saltedDomainHash?.params;
+  const [hashProperty, hashFunction] = Object.entries(
+    domainSchema?.creatorRefersTo?.findBy ?? {},
+  ).find(([, source]: [string, any]) => Array.isArray(source?.params)) ?? [];
+  const hashParams: any[] | undefined = (hashFunction as any)?.params;
 
   // From DPNS v3 a new name's records.identity must be its owner
   // (recordsIdentityIsOwner): refuse another before the preorder is paid
@@ -82,8 +84,6 @@ export async function register(
     switch (param) {
       case '$ownerId':
         return Buffer.from(identity.getId().toBuffer());
-      case 'preorderSalt':
-        return preorderSalt;
       case 'label':
         return Buffer.from(label);
       case 'normalizedLabel':
@@ -97,22 +97,26 @@ export async function register(
     }
   };
 
-  const saltedDomainHash = hash(
-    Array.isArray(hashParams)
-      ? Buffer.concat(hashParams.map(paramBytes))
-      : Buffer.concat([
+  const preorderSalt = crypto.randomBytes(32);
+  const preorderProperties = Array.isArray(hashParams)
+    ? {
+      [hashProperty as string]: hash(Buffer.concat(hashParams.map(paramBytes))),
+      nameHash: hash(Buffer.concat(
+        hashParams.filter((param) => param !== '$ownerId').map(paramBytes),
+      )),
+    }
+    : {
+      saltedDomainHash: hash(Buffer.concat([
         preorderSalt,
         Buffer.from(isSecondLevelDomain ? `${normalizedLabel}.${parentDomainName}` : label),
-      ]),
-  );
+      ])),
+    };
 
   // 1. Create preorder document
   const preorderDocument = await this.documents.create(
     'dpns.preorder',
     identity,
-    {
-      saltedDomainHash,
-    },
+    preorderProperties,
   );
 
   await this.documents.broadcast(
@@ -131,7 +135,7 @@ export async function register(
       normalizedLabel,
       parentDomainName,
       normalizedParentDomainName,
-      preorderSalt,
+      ...(Array.isArray(hashParams) ? {} : { preorderSalt }),
       records,
       subdomainRules: {
         allowSubdomains: !isSecondLevelDomain,

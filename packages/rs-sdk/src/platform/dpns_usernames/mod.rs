@@ -15,8 +15,10 @@ use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::{
+    DocumentType, DocumentTypeRef, LookupHashKey, LookupKeyParam,
+};
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -25,6 +27,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dpp::system_data_contracts::dpns_contract::v3::document_types::preorder::properties as preorder_properties;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -60,24 +63,22 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
     hash.to_byte_array()
 }
 
-/// The `saltedDomainHash` a preorder by `owner_id` commits to, for a domain
-/// carrying `domain_properties` (its `preorderSalt`, labels and parent), as the
-/// DPNS contract the network runs declares it. From DPNS v3 the domain's
-/// `preorderSalt` reveals the hash of the writer's id, the salt, the normalized
-/// label, `"."` and the parent, and the declaration computes it, as the platform
-/// does; before it the salt carries no reference and the hash is of the salt and
-/// `<normalizedLabel>.dash`. A reference without a `findBy` function is an error,
-/// never the older hash, which such a contract could not reveal.
-fn salted_domain_hash(
+/// The hash properties a preorder by `owner_id` holds for a domain carrying
+/// `domain_properties`, as the DPNS contract the network runs declares them. From DPNS v3
+/// the domain's `creatorRefersTo` finds the creator's own preorder through a `findBy`
+/// function over the creator's id, the normalized label, `"."` and the normalized parent:
+/// the preorder holds that hash under the property the function fills (`ownerNameHash`),
+/// and the same hash without the creator's id under `nameHash`, both computed by the
+/// declaration as the platform computes them. Before it the domain declares no such
+/// reference, and the preorder holds `saltedDomainHash`, the hash of the domain's
+/// `preorderSalt` and `<normalizedLabel>.dash`. A creator reference without a `findBy`
+/// function is an error, never the older hash, which such a contract could not reveal.
+fn preorder_hash_properties(
     domain_document_type: DocumentTypeRef,
     owner_id: Identifier,
     domain_properties: &BTreeMap<String, Value>,
-) -> Result<[u8; 32], Error> {
-    let Some(reference) = domain_document_type
-        .flattened_properties()
-        .get("preorderSalt")
-        .and_then(|property| property.revealed_reference.as_ref())
-    else {
+) -> Result<BTreeMap<String, Value>, Error> {
+    let Some(reference) = domain_document_type.creator_reference() else {
         let (Some(Value::Bytes32(salt)), Some(Value::Text(normalized_label))) = (
             domain_properties.get("preorderSalt"),
             domain_properties.get("normalizedLabel"),
@@ -88,21 +89,43 @@ fn salted_domain_hash(
         };
         let mut salted_domain_buffer = salt.to_vec();
         salted_domain_buffer.extend(format!("{normalized_label}.dash").as_bytes());
-        return Ok(hash_double(salted_domain_buffer));
+        return Ok(BTreeMap::from([(
+            "saltedDomainHash".to_string(),
+            Value::Bytes32(hash_double(salted_domain_buffer)),
+        )]));
     };
-    let key = reference.lookup_hash_key().ok_or_else(|| {
-        Error::Generic(
-            "the DPNS domain's preorderSalt reference declares no findBy function".to_string(),
-        )
-    })?;
-    key.key_value(domain_document_type, None, owner_id, domain_properties)
-        .map(|(hash, _)| hash)
-        .map_err(|error| {
-            Error::Generic(format!(
-                "cannot compute the DPNS preorder hash: {} {}",
-                error.param, error.reason
-            ))
-        })
+    let (owner_name_hash_property, key) = reference
+        .as_any_document_reference()
+        .and_then(|declaration| declaration.lookup)
+        .and_then(|lookup| lookup.hash_key())
+        .ok_or_else(|| {
+            Error::Generic(
+                "the DPNS domain's creatorRefersTo declares no findBy function".to_string(),
+            )
+        })?;
+    let hash = |key: &LookupHashKey| {
+        key.key_value(domain_document_type, None, owner_id, domain_properties)
+            .map(|(hash, _)| Value::Bytes32(hash))
+            .map_err(|error| {
+                Error::Generic(format!(
+                    "cannot compute the DPNS preorder hash: {} {}",
+                    error.param, error.reason
+                ))
+            })
+    };
+    let name_key = LookupHashKey {
+        function: key.function,
+        params: key
+            .params
+            .iter()
+            .filter(|param| !matches!(param, LookupKeyParam::Writer))
+            .cloned()
+            .collect(),
+    };
+    Ok(BTreeMap::from([
+        (owner_name_hash_property.to_string(), hash(key)?),
+        (preorder_properties::NAME_HASH.to_string(), hash(&name_key)?),
+    ]))
 }
 
 /// Callback type for preorder document
@@ -141,6 +164,8 @@ pub struct RegisterDpnsNameResult {
 
 /// The documents a DPNS registration submits, built against one DPNS contract.
 struct DpnsRegistrationDocuments {
+    /// The DPNS contract the network stores now, which the documents were built against.
+    dpns_contract: DataContract,
     preorder_document_type: DocumentType,
     preorder_document: Document,
     domain_document_type: DocumentType,
@@ -254,20 +279,17 @@ impl Sdk {
             .document_type_for_name("domain")
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
 
-        // Generate the preorder salt
-        let mut rng = StdRng::from_entropy();
-        let salt: [u8; 32] = rng.gen();
-
         // The id of a new document commits to the identity contract nonce of
         // its create transition, so it only exists once `put_to_platform` has
         // fetched that nonce. The documents are built with a placeholder id;
         // the confirmed documents carry the real one. Nothing here needs the
-        // ids up front: the domain is tied to its preorder by the salt.
+        // ids up front: the domain finds its preorder by the hash of its creator
+        // and its name (by the salt before DPNS v3).
         let preorder_id = Identifier::default();
         let domain_id = Identifier::default();
 
         let normalized_label = convert_to_homograph_safe_chars(label);
-        let domain_properties = BTreeMap::from([
+        let mut domain_properties = BTreeMap::from([
             (
                 "parentDomainName".to_string(),
                 Value::Text("dash".to_string()),
@@ -281,7 +303,6 @@ impl Sdk {
                 "normalizedLabel".to_string(),
                 Value::Text(normalized_label.clone()),
             ),
-            ("preorderSalt".to_string(), Value::Bytes32(salt)),
             (
                 "records".to_string(),
                 Value::Map(vec![(
@@ -298,19 +319,22 @@ impl Sdk {
             ),
         ]);
 
-        // The salted domain hash the preorder commits to
-        let salted_domain_hash =
-            salted_domain_hash(domain_document_type, identity_id, &domain_properties)?;
+        // Before DPNS v3 the domain reveals the salt its preorder hashed
+        if domain_document_type.creator_reference().is_none() {
+            let salt: [u8; 32] = StdRng::from_entropy().gen();
+            domain_properties.insert("preorderSalt".to_string(), Value::Bytes32(salt));
+        }
+
+        // The hashes the preorder holds
+        let preorder_properties =
+            preorder_hash_properties(domain_document_type, identity_id, &domain_properties)?;
 
         // Create preorder document
         let preorder_document = Document::V0(DocumentV0 {
             contract_version: None,
             id: preorder_id,
             owner_id: identity_id,
-            properties: BTreeMap::from([(
-                "saltedDomainHash".to_string(),
-                Value::Bytes32(salted_domain_hash),
-            )]),
+            properties: preorder_properties,
             revision: None,
             created_at: None,
             updated_at: None,
@@ -349,6 +373,7 @@ impl Sdk {
 
         Ok(DpnsRegistrationDocuments {
             preorder_document_type: preorder_document_type.to_owned_document_type(),
+            dpns_contract: dpns_contract.clone(),
             preorder_document,
             domain_document_type: domain_document_type.to_owned_document_type(),
             domain_document,
@@ -381,6 +406,7 @@ impl Sdk {
     ) -> Result<RegisterDpnsNameResult, Error> {
         let identity_id = input.identity.id().to_owned();
         let DpnsRegistrationDocuments {
+            dpns_contract,
             preorder_document_type,
             preorder_document,
             domain_document_type,
@@ -390,23 +416,35 @@ impl Sdk {
             .dpns_registration_documents(&input.label, identity_id)
             .await?;
 
-        // Submit preorder document first
-        debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
-        let platform_preorder_document = preorder_document
-            .put_to_platform_and_wait_for_response(
-                self,
-                preorder_document_type,
-                None, // entropy: generated together with the id once the nonce is known
-                input.identity_public_key.clone(),
-                None, // token payment info
-                &input.signer,
-                None, // settings
-            )
-            .await
-            .inspect_err(|error| {
-                warn!(%identity_id, stage = "preorder", %error, "DPNS registration: document failed");
-            })?;
-        debug!(%identity_id, document_id = %platform_preorder_document.id(), stage = "preorder", "DPNS registration: document confirmed");
+        // From DPNS v3 an identity holds one pending preorder of a name: one an earlier
+        // registration left behind, whose domain create failed, is revealed again rather
+        // than preordered anew, which the platform would refuse as a duplicate
+        let pending_preorder = self
+            .pending_dpns_preorder(dpns_contract, identity_id, &preorder_document)
+            .await?;
+        let platform_preorder_document = if let Some(pending_preorder) = pending_preorder {
+            debug!(%identity_id, document_id = %pending_preorder.id(), stage = "preorder", "DPNS registration: revealing a pending preorder");
+            pending_preorder
+        } else {
+            // Submit preorder document first
+            debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
+            let platform_preorder_document = preorder_document
+                .put_to_platform_and_wait_for_response(
+                    self,
+                    preorder_document_type,
+                    None, // entropy: generated together with the id once the nonce is known
+                    input.identity_public_key.clone(),
+                    None, // token payment info
+                    &input.signer,
+                    None, // settings
+                )
+                .await
+                .inspect_err(|error| {
+                    warn!(%identity_id, stage = "preorder", %error, "DPNS registration: document failed");
+                })?;
+            debug!(%identity_id, document_id = %platform_preorder_document.id(), stage = "preorder", "DPNS registration: document confirmed");
+            platform_preorder_document
+        };
 
         // Call the preorder callback if provided
         if let Some(callback) = input.preorder_callback {
@@ -443,6 +481,60 @@ impl Sdk {
             domain_document: platform_domain_document,
             full_domain_name: format!("{}.dash", normalized_label),
         })
+    }
+
+    /// The preorder `owner_id` already holds of the name `preorder_document` commits to,
+    /// found by its owner and its `ownerNameHash` (the `ownerAndNameHash` index), when
+    /// `dpns_contract` is DPNS v3 or later; `None` when there is none, and before v3,
+    /// whose preorders hash a fresh salt and so never repeat.
+    async fn pending_dpns_preorder(
+        &self,
+        dpns_contract: DataContract,
+        owner_id: Identifier,
+        preorder_document: &Document,
+    ) -> Result<Option<Document>, Error> {
+        use crate::platform::documents::document_query::DocumentQuery;
+        use drive::query::{WhereClause, WhereOperator};
+
+        let Some(owner_name_hash) = preorder_document
+            .properties()
+            .get(preorder_properties::OWNER_NAME_HASH)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let query = DocumentQuery {
+            select: drive::query::SelectProjection::documents(),
+            data_contract: Arc::new(dpns_contract),
+            document_type_name: "preorder".to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(owner_id.to_buffer()),
+                },
+                WhereClause {
+                    field: preorder_properties::OWNER_NAME_HASH.to_string(),
+                    operator: WhereOperator::Equal,
+                    value: owner_name_hash,
+                },
+            ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: 1,
+            offset: None,
+            start: None,
+        };
+        // A proven absence comes back as entries holding `None`
+        Ok(Document::fetch_many(self, query)
+            .await?
+            .into_values()
+            .flatten()
+            .next())
     }
 
     /// Check if a DPNS name is available
@@ -692,7 +784,8 @@ mod tests {
 
     const SALT: [u8; 32] = [9u8; 32];
 
-    /// The properties of a domain `Bob.dash` the preorder hash may read.
+    /// The properties of a domain `Bob.dash` the preorder hashes may read (the salt, read
+    /// under DPNS v2 only).
     fn bob_domain_properties() -> BTreeMap<String, Value> {
         BTreeMap::from([
             ("label".to_string(), Value::Text("Bob".to_string())),
@@ -712,19 +805,19 @@ mod tests {
         ])
     }
 
-    /// The preorder hash the SDK computes for `owner_id` and `properties` against the DPNS
-    /// contract of `platform_version`.
-    fn preorder_hash(
+    /// The preorder hash properties the SDK computes for `owner_id` and `properties`
+    /// against the DPNS contract of `platform_version`.
+    fn preorder_hashes(
         platform_version: &PlatformVersion,
         owner_id: Identifier,
         properties: &BTreeMap<String, Value>,
-    ) -> Result<[u8; 32], Error> {
+    ) -> Result<BTreeMap<String, Value>, Error> {
         let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("the DPNS contract loads");
         let domain = contract
             .document_type_for_name("domain")
             .expect("the DPNS contract has a domain type");
-        salted_domain_hash(domain, owner_id, properties)
+        preorder_hash_properties(domain, owner_id, properties)
     }
 
     fn sha256d(parts: &[&[u8]]) -> [u8; 32] {
@@ -735,25 +828,44 @@ mod tests {
     #[test]
     fn should_hash_the_salt_and_name_whoever_the_owner_for_dpns_v2() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13");
-        let expected = sha256d(&[&SALT, b"b0b.dash"]);
+        let expected = BTreeMap::from([(
+            "saltedDomainHash".to_string(),
+            Value::Bytes32(sha256d(&[&SALT, b"b0b.dash"])),
+        )]);
         for owner_id in [Identifier::new([1u8; 32]), Identifier::new([2u8; 32])] {
             assert_eq!(
-                preorder_hash(platform_version, owner_id, &bob_domain_properties())
+                preorder_hashes(platform_version, owner_id, &bob_domain_properties())
                     .expect("DPNS v2 hashes the salt and the name"),
                 expected
             );
         }
     }
 
+    /// DPNS v3 hashes the owner and the name its creator reference declares, and the same
+    /// name without the owner, which is alike for every owner; the salt is not read
     #[test]
-    fn should_hash_the_owner_salt_and_name_the_dpns_v3_contract_declares() {
+    fn should_hash_the_owner_and_name_the_dpns_v3_contract_declares() {
         let platform_version = PlatformVersion::latest();
+        let mut without_salt = bob_domain_properties();
+        without_salt.remove("preorderSalt");
         for owner_id in [Identifier::new([1u8; 32]), Identifier::new([2u8; 32])] {
-            assert_eq!(
-                preorder_hash(platform_version, owner_id, &bob_domain_properties())
-                    .expect("DPNS v3 hashes the declared params"),
-                sha256d(&[owner_id.as_slice(), &SALT, b"b0b", b".", b"dash"]),
-            );
+            let expected = BTreeMap::from([
+                (
+                    "ownerNameHash".to_string(),
+                    Value::Bytes32(sha256d(&[owner_id.as_slice(), b"b0b", b".", b"dash"])),
+                ),
+                (
+                    "nameHash".to_string(),
+                    Value::Bytes32(sha256d(&[b"b0b", b".", b"dash"])),
+                ),
+            ]);
+            for properties in [&bob_domain_properties(), &without_salt] {
+                assert_eq!(
+                    preorder_hashes(platform_version, owner_id, properties)
+                        .expect("DPNS v3 hashes the declared params"),
+                    expected
+                );
+            }
         }
     }
 
@@ -761,7 +873,7 @@ mod tests {
     fn should_refuse_a_dpns_v3_domain_missing_a_hashed_property() {
         let mut properties = bob_domain_properties();
         properties.remove("normalizedLabel");
-        assert!(preorder_hash(
+        assert!(preorder_hashes(
             PlatformVersion::latest(),
             Identifier::new([1u8; 32]),
             &properties
@@ -832,23 +944,27 @@ mod tests {
             .expect("the registration documents are built");
 
         assert_eq!(sdk.protocol_version_number(), LATEST_VERSION);
-        let Some(Value::Bytes32(salt)) = documents.domain_document.properties().get("preorderSalt")
-        else {
-            panic!("the domain carries a 32-byte preorderSalt");
-        };
+        assert!(
+            documents
+                .domain_document
+                .properties()
+                .get("preorderSalt")
+                .is_none(),
+            "a DPNS v3 domain reveals no salt"
+        );
         assert_eq!(documents.preorder_document.owner_id(), owner_id);
         assert_eq!(
-            documents
-                .preorder_document
-                .properties()
-                .get("saltedDomainHash"),
-            Some(&Value::Bytes32(sha256d(&[
-                owner_id.as_slice(),
-                salt,
-                b"b0b",
-                b".",
-                b"dash"
-            ]))),
+            documents.preorder_document.properties(),
+            &BTreeMap::from([
+                (
+                    "ownerNameHash".to_string(),
+                    Value::Bytes32(sha256d(&[owner_id.as_slice(), b"b0b", b".", b"dash"])),
+                ),
+                (
+                    "nameHash".to_string(),
+                    Value::Bytes32(sha256d(&[b"b0b", b".", b"dash"])),
+                ),
+            ]),
         );
     }
 
@@ -882,9 +998,9 @@ mod tests {
         dpns_contract
             .document_type_for_name("domain")
             .expect("the DPNS contract has a domain type")
-            .flattened_properties()
-            .get("preorderSalt")
-            .is_some_and(|property| property.revealed_reference.is_some())
+            .creator_reference()
+            .and_then(|reference| reference.lookup_hash_key())
+            .is_some()
     }
 
     #[tokio::test]

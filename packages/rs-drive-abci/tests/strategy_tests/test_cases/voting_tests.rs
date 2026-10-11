@@ -31,7 +31,7 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::Identifier;
     use dpp::state_transition::StateTransition;
-    use drive_abci::test::helpers::dpns::dpns_salted_domain_hash;
+    use drive_abci::test::helpers::dpns::dpns_preorder_properties;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
@@ -67,13 +67,15 @@ mod tests {
                 BTreeMap::from([("identity", Value::from(owner_id))]).into(),
             ),
         ]);
-        let salted_domain_hash =
-            dpns_salted_domain_hash(owner_id, &salt, &normalized_label, "dash", platform_version);
+        let preorder_values: BTreeMap<String, Value> =
+            dpns_preorder_properties(owner_id, &salt, &normalized_label, "dash", platform_version)
+                .into_iter()
+                .collect();
 
         let preorder_op = DocumentOp {
             contract: dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
-                BTreeMap::from([("saltedDomainHash".into(), salted_domain_hash.into())]),
+                preorder_values,
                 Some(owner_id),
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,

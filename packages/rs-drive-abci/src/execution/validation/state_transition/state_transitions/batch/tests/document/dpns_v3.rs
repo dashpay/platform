@@ -1,9 +1,11 @@
 //! The DPNS contract v3 (protocol version 14) through the full ABCI pipeline. A
 //! domain create is checked by schema keywords where the create data trigger
 //! checked it before: `normalizedLabel` and `normalizedParentDomainName` are
-//! generated from their counterparts, `preorderSalt` reveals the writer's own
-//! preorder from an earlier block and deletes it, and the
-//! `recordsIdentityIsOwner` rule holds a new name's identity record to its owner.
+//! generated from their counterparts, `creatorRefersTo` finds the creator's own
+//! preorder of the name (by the hash of the creator's id and the normalized name)
+//! from an earlier block and deletes it, and the `recordsIdentityIsOwner` rule
+//! holds a new name's identity record to its owner. A preorder carries no salt
+//! from v3 and lives an hour (`ttl`).
 //! The trigger keeps only the parent domain checks. Protocol version 13 keeps
 //! DPNS v2 and the whole trigger, pinned beside each case.
 
@@ -15,7 +17,7 @@ mod dpns_v3_tests {
         create_dpns_name_contest_give_key_info, perform_votes_multi,
     };
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::dpns::dpns_salted_domain_hash;
+    use crate::test::helpers::dpns::dpns_preorder_properties;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::BasicError;
@@ -259,8 +261,9 @@ mod dpns_v3_tests {
             (document, result)
         }
 
-        /// A preorder by `who` in block `height` of `label` under `parent`,
-        /// salted with `salt`.
+        /// A preorder by `who` in block `height` of `label` under `parent`, with
+        /// the hashes the DPNS contract of the fixture's protocol version declares
+        /// (`salt` is read under DPNS v2 only).
         async fn preorder(
             &mut self,
             who: Who,
@@ -269,25 +272,18 @@ mod dpns_v3_tests {
             parent: &str,
             height: u64,
         ) -> Document {
-            let (preorder, result) = self
-                .create(
-                    who,
-                    "preorder",
-                    &[(
-                        "saltedDomainHash",
-                        dpns_salted_domain_hash(
-                            self.id(who),
-                            &salt,
-                            &convert_to_homograph_safe_chars(label),
-                            parent,
-                            self.platform_version,
-                        )
-                        .into(),
-                    )],
-                    &[],
-                    height,
-                )
-                .await;
+            let hashes = dpns_preorder_properties(
+                self.id(who),
+                &salt,
+                &convert_to_homograph_safe_chars(label),
+                parent,
+                self.platform_version,
+            );
+            let values: Vec<(&str, Value)> = hashes
+                .iter()
+                .map(|(property, value)| (property.as_str(), value.clone()))
+                .collect();
+            let (preorder, result) = self.create(who, "preorder", &values, &[], height).await;
             assert_matches!(
                 result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. },
@@ -296,9 +292,9 @@ mod dpns_v3_tests {
             preorder
         }
 
-        /// A domain by `who` in block `height` of `label` under `parent`,
-        /// revealing `salt`, as a client builds it, with `values` set over it
-        /// and `absent` removed.
+        /// A domain by `who` in block `height` of `label` under `parent`, as a
+        /// client builds it (revealing `salt` under DPNS v2 only), with `values`
+        /// set over it and `absent` removed.
         async fn domain(
             &mut self,
             who: Who,
@@ -320,10 +316,12 @@ mod dpns_v3_tests {
                     "normalizedParentDomainName",
                     Value::Text(convert_to_homograph_safe_chars(parent)),
                 ),
-                ("preorderSalt", salt.into()),
                 ("records.identity", self.id(who).into()),
                 ("subdomainRules.allowSubdomains", false.into()),
             ];
+            if self.platform_version.system_data_contracts.dpns < 3 {
+                all_values.push(("preorderSalt", salt.into()));
+            }
             all_values.extend(values.iter().cloned());
             self.create(who, "domain", &all_values, absent, height)
                 .await
@@ -493,12 +491,12 @@ mod dpns_v3_tests {
     }
 
     /// The elements laying out the DPNS `preorder` type: its tree, its primary key
-    /// tree, its `ownerAndSaltedHash` index tree, and whatever its v2 `saltedHash`
-    /// index left under `saltedDomainHash`.
+    /// tree, its `ownerAndNameHash` and `nameHashAndHeight` index trees, and
+    /// whatever its v2 `saltedHash` index left under `saltedDomainHash`.
     fn preorder_type_layout(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_version: &PlatformVersion,
-    ) -> (Element, Element, Element, Option<Element>) {
+    ) -> (Element, Element, Element, Element, Option<Element>) {
         let dpns_id = SystemDataContract::DPNS.id().to_buffer();
         let documents_root: &[u8] = Into::<&[u8; 1]>::into(RootTree::DataContractDocuments);
         let documents_path: [&[u8]; 3] = [documents_root, &dpns_id, &[1]];
@@ -516,6 +514,7 @@ mod dpns_v3_tests {
             get(&documents_path, b"preorder").expect("expected the preorder type tree"),
             get(&type_path, &[0]).expect("expected the primary key tree"),
             get(&type_path, b"$ownerId").expect("expected the owner index tree"),
+            get(&type_path, b"nameHash").expect("expected the name hash index tree"),
             get(&type_path, b"saltedDomainHash"),
         )
     }
@@ -629,7 +628,7 @@ mod dpns_v3_tests {
             .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
             .await;
 
-        // Bob read Alice's salt off her domain create and races it: his reveal hashes his
+        // Bob read the name off Alice's domain create and races it: his reveal hashes his
         // own id and looks among his own preorders, so it finds nothing
         let (_, result) = fixture
             .domain(Who::Bob, salt, "quantum7", "dash", &[], &[], REVEAL_HEIGHT)
@@ -644,25 +643,23 @@ mod dpns_v3_tests {
 
     /// Preorders are unique per owner and their hash binds the owner, so a copy of
     /// someone's preorder is harmless: stored first, it does not stop the owner's own
-    /// preorder, and the copier, who learns the salt from the owner's reveal, cannot
-    /// reveal the name with it.
+    /// preorder, and the copier, who learns the name from the owner's reveal, cannot
+    /// reveal it with the copy.
     #[tokio::test]
     async fn should_neither_block_nor_reveal_a_name_with_a_copied_preorder() {
         let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
         let alice = fixture.id(Who::Alice);
         let salt: [u8; 32] = fixture.rng.gen();
-        let alice_hash =
-            dpns_salted_domain_hash(alice, &salt, "quantum7", "dash", fixture.platform_version);
+        let alice_hashes =
+            dpns_preorder_properties(alice, &salt, "quantum7", "dash", fixture.platform_version);
+        let copied: Vec<(&str, Value)> = alice_hashes
+            .iter()
+            .map(|(property, value)| (property.as_str(), value.clone()))
+            .collect();
 
         // Bob copies Alice's pending commitment, and his copy lands first
         let (copy, result) = fixture
-            .create(
-                Who::Bob,
-                "preorder",
-                &[("saltedDomainHash", alice_hash.into())],
-                &[],
-                PREORDER_HEIGHT,
-            )
+            .create(Who::Bob, "preorder", &copied, &[], PREORDER_HEIGHT)
             .await;
         assert_matches!(
             result,
@@ -672,7 +669,7 @@ mod dpns_v3_tests {
             .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
             .await;
 
-        // Bob races Alice's reveal with her salt and his copy
+        // Bob races Alice's reveal with the name and his copy
         let (_, result) = fixture
             .domain(Who::Bob, salt, "quantum7", "dash", &[], &[], REVEAL_HEIGHT)
             .await;
@@ -708,6 +705,51 @@ mod dpns_v3_tests {
             fixture.stored_preorder(&copy).is_some(),
             "the copy is Bob's, untouched"
         );
+    }
+
+    /// Without a salt, an owner's preorders of one name share their `ownerNameHash`, so
+    /// an owner holds one pending preorder per name: a second is refused while the first
+    /// stands, and the first reveals the name
+    #[tokio::test]
+    async fn should_hold_one_pending_preorder_per_name_and_owner() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let salt: [u8; 32] = fixture.rng.gen();
+        let preorder = fixture
+            .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
+            .await;
+
+        let alice = fixture.id(Who::Alice);
+        let hashes =
+            dpns_preorder_properties(alice, &salt, "quantum7", "dash", fixture.platform_version);
+        let values: Vec<(&str, Value)> = hashes
+            .iter()
+            .map(|(property, value)| (property.as_str(), value.clone()))
+            .collect();
+        let (_, result) = fixture
+            .create(Who::Alice, "preorder", &values, &[], REVEAL_HEIGHT)
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::StateError(StateError::DuplicateUniqueIndexError(e))
+                if e.duplicating_properties() == &vec!["$ownerId".to_string(), "ownerNameHash".to_string()]
+        );
+
+        let (_, result) = fixture
+            .domain(
+                Who::Alice,
+                salt,
+                "quantum7",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.stored_preorder(&preorder).is_none());
     }
 
     #[tokio::test]
@@ -1113,7 +1155,19 @@ mod dpns_v3_tests {
         );
         assert!(fixture.stored_preorder(&preorder).is_some());
 
-        let (preorder, _, result) = fixture.register(Who::Alice, "quantum", &[], &[]).await;
+        // The refused create left the preorder, which reveals the name again
+        let salt: [u8; 32] = fixture.rng.gen();
+        let (_, result) = fixture
+            .domain(
+                Who::Alice,
+                salt,
+                "quantum",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT + 1,
+            )
+            .await;
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
@@ -1152,10 +1206,10 @@ mod dpns_v3_tests {
         )
         .await;
         for preorder in [&preorder_1, &preorder_2] {
-            let salted_domain_hash = preorder
+            let owner_name_hash = preorder
                 .properties()
-                .get("saltedDomainHash")
-                .expect("expected the preorder's salted hash")
+                .get("ownerNameHash")
+                .expect("expected the preorder's owner and name hash")
                 .clone();
             assert!(
                 query_dpns(
@@ -1166,7 +1220,7 @@ mod dpns_v3_tests {
                             "$ownerId",
                             Value::Identifier(preorder.owner_id().to_buffer())
                         ),
-                        ("saltedDomainHash", salted_domain_hash),
+                        ("ownerNameHash", owner_name_hash),
                     ],
                     platform_version,
                 )
@@ -1237,37 +1291,66 @@ mod dpns_v3_tests {
         );
     }
 
-    /// What a client pays for a name: the domain create at protocol version 13
-    /// (create trigger, preorder kept) and at 14 (keywords, preorder consumed
-    /// and its storage refunded to the writer). Printed for the record and
-    /// pinned.
+    /// What a client pays for a name: the preorder and the domain create at protocol
+    /// version 13 (create trigger, preorder kept, stored for good) and at 14 (keywords, a
+    /// preorder living an hour and priced for that time, consumed by the create without a
+    /// refund). Printed for the record and pinned.
     #[tokio::test]
-    async fn should_charge_a_domain_create_at_protocol_versions_13_and_14() {
+    async fn should_charge_a_name_at_protocol_versions_13_and_14() {
         let mut measured = vec![];
         for protocol_version in [13, 14] {
             let mut fixture = DpnsFixture::new(protocol_version);
             let alice = fixture.id(Who::Alice);
-            let (_, _, result) = fixture.register(Who::Alice, "quantum7", &[], &[]).await;
-            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
-            else {
-                panic!("expected the domain create to succeed, got {result:?}");
-            };
-            let refund = fee_result
-                .fee_refunds
-                .calculate_refunds_amount_for_identity(alice)
-                .unwrap_or_default();
-            println!(
-                "protocol version {protocol_version}: processing fee {}, storage fee {}, \
-                 refund {refund}",
-                fee_result.processing_fee, fee_result.storage_fee
+            let salt: [u8; 32] = fixture.rng.gen();
+            let hashes = dpns_preorder_properties(
+                alice,
+                &salt,
+                "quantum7",
+                "dash",
+                fixture.platform_version,
             );
-            measured.push((fee_result.processing_fee, fee_result.storage_fee, refund));
+            let values: Vec<(&str, Value)> = hashes
+                .iter()
+                .map(|(property, value)| (property.as_str(), value.clone()))
+                .collect();
+            let (_, preorder_result) = fixture
+                .create(Who::Alice, "preorder", &values, &[], PREORDER_HEIGHT)
+                .await;
+            let (_, domain_result) = fixture
+                .domain(
+                    Who::Alice,
+                    salt,
+                    "quantum7",
+                    "dash",
+                    &[],
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            for (document, result) in [("preorder", preorder_result), ("domain", domain_result)] {
+                let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+                else {
+                    panic!("expected the {document} create to succeed, got {result:?}");
+                };
+                let refund = fee_result
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(alice)
+                    .unwrap_or_default();
+                println!(
+                    "protocol version {protocol_version} {document}: processing fee {}, \
+                     storage fee {}, refund {refund}",
+                    fee_result.processing_fee, fee_result.storage_fee
+                );
+                measured.push((fee_result.processing_fee, fee_result.storage_fee, refund));
+            }
         }
         assert_eq!(
             measured,
             vec![
+                (1_194_500, 31_131_000, 0),
                 (1_876_280, 42_660_000, 0),
-                (2_525_540, 42_687_000, 15_181_239)
+                (4_914_640, 11_558_163, 0),
+                (3_394_500, 42_687_000, 0)
             ]
         );
     }

@@ -41,6 +41,26 @@
         ]
       }
     ],
+    "creatorRefersTo": {
+      "type": "deletableDocument",
+      "documentType": "preorder",
+      "findBy": {
+        "$ownerId": "$ownerId",
+        "ownerNameHash": {
+          "function": "sys.hash.sha256d",
+          "params": [
+            "$ownerId",
+            "normalizedLabel",
+            {
+              "const": "."
+            },
+            "normalizedParentDomainName"
+          ]
+        }
+      },
+      "minimumAgeBlocks": 1,
+      "consume": true
+    },
     "properties": {
       "label": {
         "type": "string",
@@ -86,28 +106,7 @@
         "type": "bytes",
         "size": 32,
         "position": 4,
-        "description": "Salt of the writer's preorder, made in an earlier block; the create deletes it",
-        "refersTo": {
-          "type": "deletableDocument",
-          "documentType": "preorder",
-          "findBy": {
-            "$ownerId": "$ownerId",
-            "saltedDomainHash": {
-              "function": "sys.hash.sha256d",
-              "params": [
-                "$ownerId",
-                "preorderSalt",
-                "normalizedLabel",
-                {
-                  "const": "."
-                },
-                "parentDomainName"
-              ]
-            }
-          },
-          "minimumAgeBlocks": 1,
-          "consume": true
-        }
+        "description": "Unused from v3; kept so domains written under v1 and v2 decode"
       },
       "records": {
         "type": "object",
@@ -146,7 +145,6 @@
       "label",
       "normalizedLabel",
       "normalizedParentDomainName",
-      "preorderSalt",
       "records",
       "subdomainRules"
     ],
@@ -176,32 +174,52 @@
   "preorder": {
     "documentsMutable": false,
     "canBeDeleted": true,
+    "ttl": 3600,
     "type": "object",
     "indices": [
       {
-        "name": "ownerAndSaltedHash",
+        "name": "ownerAndNameHash",
         "properties": [
           {
             "$ownerId": "asc"
           },
           {
-            "saltedDomainHash": "asc"
+            "ownerNameHash": "asc"
           }
         ],
         "unique": true
+      },
+      {
+        "name": "nameHashAndHeight",
+        "properties": [
+          {
+            "nameHash": "asc"
+          },
+          {
+            "$createdAtBlockHeight": "asc"
+          }
+        ]
       }
     ],
     "properties": {
-      "saltedDomainHash": {
+      "ownerNameHash": {
         "type": "bytes",
         "size": 32,
         "position": 0,
-        "description": "sha256d of owner id, salt, normalized label, '.' and parent domain name"
+        "description": "sha256d of owner id, normalized label, '.' and normalized parent domain name"
+      },
+      "nameHash": {
+        "type": "bytes",
+        "size": 32,
+        "position": 1,
+        "description": "sha256d of normalized label, '.' and normalized parent domain name"
       }
     },
     "required": [
+      "$createdAt",
       "$createdAtBlockHeight",
-      "saltedDomainHash"
+      "ownerNameHash",
+      "nameHash"
     ],
     "additionalProperties": false
   }

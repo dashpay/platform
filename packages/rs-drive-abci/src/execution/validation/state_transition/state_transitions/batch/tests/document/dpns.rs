@@ -1029,7 +1029,7 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
-    use crate::test::helpers::dpns::dpns_salted_domain_hash;
+    use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
@@ -1130,15 +1130,15 @@ mod dpns_username_transfer_tests {
 
         let salt: [u8; 32] = rng.gen();
 
-        let salted_domain_hash = dpns_salted_domain_hash(
-            document.owner_id(),
+        let preorder_owner = document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document,
+            preorder_owner,
             &salt,
             &normalized_label,
             "dash",
             platform_version,
         );
-
-        preorder_document.set("saltedDomainHash", salted_domain_hash.into());
         document.set("preorderSalt", salt.into());
 
         let documents_batch_create_preorder_transition =

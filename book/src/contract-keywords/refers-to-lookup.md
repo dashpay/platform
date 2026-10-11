@@ -138,39 +138,36 @@ The value of a reference found by `findBy` is a key part, not a document id. So 
 
 ## Commit and reveal
 
-One `findBy` entry may hold a function: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds the SHA-256 of the SHA-256 of the params' bytes, joined in order. The platform fills that property of the key with the hash to find the document, like any other entry. The document it finds is a commitment made earlier, one that stored that hash, so the document being created may exist only while a commitment to values it carries exists. This is how the DPNS `domain` type registers a name from protocol version 14 (DPNS contract v3), a declaration on the salt:
+One `findBy` entry may hold a function: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds the SHA-256 of the SHA-256 of the params' bytes, joined in order. The platform fills that property of the key with the hash to find the document, like any other entry. The document it finds is a commitment made earlier, one that stored that hash, so the document being created may exist only while a commitment to values it carries exists. This is how the DPNS `domain` type registers a name from protocol version 14 (DPNS contract v3), a declaration on the domain's creator:
 
 ```json
-"preorderSalt": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4,
-  "refersTo": {
-    "type": "deletableDocument",
-    "documentType": "preorder",
-    "findBy": {
-      "$ownerId": "$ownerId",
-      "saltedDomainHash": {
-        "function": "sys.hash.sha256d",
-        "params": ["$ownerId", "preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
-      }
-    },
-    "minimumAgeBlocks": 1,
-    "consume": true
-  }
+"creatorRefersTo": {
+  "type": "deletableDocument",
+  "documentType": "preorder",
+  "findBy": {
+    "$ownerId": "$ownerId",
+    "ownerNameHash": {
+      "function": "sys.hash.sha256d",
+      "params": ["$ownerId", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+    }
+  },
+  "minimumAgeBlocks": 1,
+  "consume": true
 }
 ```
 
-The salt must reveal the writer's own `preorder` whose `saltedDomainHash` is the sha256d of the writer's id, the salt, the normalized label, a dot and the parent. `findBy` names `$ownerId` and `saltedDomainHash`, the whole of the `preorder` type's unique `ownerAndSaltedHash` index, so every identity has its own preorders and a copy of someone else's never collides with theirs. `minimumAgeBlocks: 1` asks for one created in an earlier block, and `consume: true` deletes it with the create. As SQL:
+The creator must hold a `preorder` of the name, whose `ownerNameHash` is the sha256d of the creator's id, the normalized label, a dot and the normalized parent. `findBy` names `$ownerId` and `ownerNameHash`, the whole of the `preorder` type's unique `ownerAndNameHash` index, so every identity has its own preorders, a copy of someone else's never collides with theirs, and an identity holds one pending preorder of a name. `minimumAgeBlocks: 1` asks for one created in an earlier block, and `consume: true` deletes it with the create. As SQL:
 
 ```sql
 SELECT * FROM preorder
-WHERE $ownerId = :writer                                     -- findBy
-  AND saltedDomainHash =                                     -- findBy
-      sha256d(:writer || :preorderSalt || :normalizedLabel || '.' || :parentDomainName)
+WHERE $ownerId = :creator                                    -- findBy
+  AND ownerNameHash =                                        -- findBy
+      sha256d(:creator || :normalizedLabel || '.' || :normalizedParentDomainName)
   AND $createdAtBlockHeight <= :createHeight - 1             -- minimumAgeBlocks
 -- then the create deletes the row found                     -- consume
 ```
 
-Hashing the writer matters as much as keying by it. A copy of a pending preorder, stored under the copier's own key, commits to the identity that made it, so the copier, who learns the salt from that identity's reveal, still finds nothing when revealing the same name.
+Hashing the creator matters as much as keying by it. A copy of a pending preorder, stored under the copier's own key, commits to the identity that made it, so the copier, who learns the name from that identity's reveal, still finds nothing when revealing it. The params hold no salt: the hash commits to the name itself. A DPNS preorder also holds `nameHash`, the same hash without the creator, indexed with its creation height, and lives an hour (`ttl`). A contract that wants the name hidden until the reveal puts a salt, a transient property of the referring type, among the params instead.
 
 - **Params.** A property path reads the document being created, the property carrying the reference included; `{ "const": text }` is fixed text of 1 to 64 bytes; `"."` is the value carrying the reference where it has no path (each element of a typed array, the writer, the creator); `"$ownerId"` is the writer's id; 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
 - **One function.** `findBy` holds at most one function, and the property it fills must be a byte array of exactly 32 bytes.
@@ -180,7 +177,7 @@ Hashing the writer matters as much as keying by it. A copy of a pending preorder
 `minimumAgeBlocks` and `consume` sit on the `refersTo`, beside `findBy`: they describe the document `findBy` finds when the referring document is created, so the reference must be judged on the create alone. A function in `findBy` makes it so, and so does a referring type whose documents are never replaced (`documentsMutable: false`): a replace is the one write that checks a reference again. Any other `findBy` declaring either is refused at registration (10231), and so is either beside [`inList`](refers-to-list-element.md), which checks that a list holds the value rather than finding a document by a key.
 
 - **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`.
-- **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only on a `deletableDocument` reference that makes the writer the commitment's owner, by the `where` entry `"$ownerId": "$ownerId"` or the `findBy` entry `"$ownerId": "$ownerId"`, into a type of the same contract whose owner may delete its documents (`canBeDeleted: true`) or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, see [Deletion](deletion.md#canbedeleted)), that declares no delete token cost or delete action fee and no [`deleteConstraints`](deletion.md#deleteconstraints) (no delete transition charges or judges them), and that requires no stricter signature security level than the revealing type. A contract-bound key signing the create must be allowed to act on the consumed type too (`ContractBoundedKeyOutOfBoundsError`, 20014).
+- **`consume: true`**: the create deletes the commitment, its storage refunded to its owner (a commitment type with a [`ttl`](ttl.md) refunds nothing, as DPNS v3's preorder). Only on a `deletableDocument` reference that makes the writer the commitment's owner, by the `where` entry `"$ownerId": "$ownerId"` or the `findBy` entry `"$ownerId": "$ownerId"`, into a type of the same contract whose owner may delete its documents (`canBeDeleted: true`) or whose documents only a consume deletes (`canBeDeleted: "onlyWhenConsumed"`, see [Deletion](deletion.md#canbedeleted)), that declares no delete token cost or delete action fee and no [`deleteConstraints`](deletion.md#deleteconstraints) (no delete transition charges or judges them), and that requires no stricter signature security level than the revealing type. A contract-bound key signing the create must be allowed to act on the consumed type too (`ContractBoundedKeyOutOfBoundsError`, 20014).
 
 A create missing a param, or with a value holding its separator, is refused before any read (`DocumentReferencePreimageInvalidError`, 10423). No commitment is `ReferencedEntityNotFoundError` (40120), another identity's `ReferencedDocumentPropertyMismatchError` (40127) with the owner entry in `where` and 40120 with it in `findBy` (as in DPNS, whose key then finds none of the writer's), and one too young `ReferencedDocumentRequirementNotMetError` (40142). The [Documents chapter](../data-model/documents.md#commit-and-reveal-a-findby-function) has the full rules.
 

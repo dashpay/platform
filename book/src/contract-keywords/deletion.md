@@ -67,22 +67,20 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
   "canBeDeleted": "onlyWhenConsumed",
   "indices": [
     {
-      "name": "ownerAndSaltedHash",
-      "properties": [{ "$ownerId": "asc" }, { "saltedDomainHash": "asc" }],
+      "name": "ownerAndNameHash",
+      "properties": [{ "$ownerId": "asc" }, { "ownerNameHash": "asc" }],
       "unique": true
     }
   ],
   "properties": {
-    "saltedDomainHash": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0
-    }
+    "ownerNameHash": { "type": "bytes", "size": 32, "position": 0 }
   },
-  "required": ["$createdAtBlockHeight", "saltedDomainHash"],
+  "required": ["$createdAtBlockHeight", "ownerNameHash"],
   "additionalProperties": false
 }
 ```
 
-A preorder of this type stays until the name registration that reveals it consumes it (the `preorderSalt` declaration in [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). Its owner can not take it back with a delete. DPNS v3's own `preorder` declares the same index but `canBeDeleted: true`, so its owner may still delete a preorder it no longer wants; this example is the stricter variant.
+A preorder of this type stays until the name registration that reveals it consumes it (the domain's `creatorRefersTo` in [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). Its owner can not take it back with a delete. DPNS v3's own `preorder` declares the same index but `canBeDeleted: true`, so its owner may still delete a preorder it no longer wants, and a `ttl` of an hour, after which the platform deletes it; this example is the stricter variant.
 
 - A delete transition of such a document is refused (`InvalidDocumentTransitionActionError`, 10404), as for `false`.
 - A consume deletes it as a delete by its owner would, its storage refunded to the owner.

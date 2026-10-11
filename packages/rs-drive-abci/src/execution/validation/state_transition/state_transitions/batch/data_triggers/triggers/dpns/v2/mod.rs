@@ -29,9 +29,9 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 /// The DPNS `domain` create trigger from protocol version 14, when DPNS v3's
 /// schema keywords check the rest of a create: the normalized names are
 /// generated from their counterparts (`generatedFrom`), the preorder is the
-/// writer's own from an earlier block and the create deletes it (`refersTo` on
-/// `preorderSalt`), and the identity record is the owner (`propertyConstraints`
-/// rule `recordsIdentityIsOwner`).
+/// creator's own from an earlier block and the create deletes it
+/// (`creatorRefersTo`), and the identity record is the owner
+/// (`propertyConstraints` rule `recordsIdentityIsOwner`).
 ///
 /// What stays here is the domain's place in the name hierarchy:
 ///
