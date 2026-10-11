@@ -307,8 +307,10 @@ export type DocumentPropertyReferenceOperand =
  * type, by its name there (`$ownerId` among the system ones), mapped to where
  * its value comes from: a property path of the referring document type,
  * `'$ownerId'` for the referring document's owner, `'.'` for the value of the
- * property that carries the reference (exactly once), or a function computing
- * it (see {@link DocumentReferenceFindByFunction}). The index is the unique one
+ * property that carries the reference (exactly once; a string or byte array
+ * property's value fills an index property of the same kind, byte for byte),
+ * or a function computing it (see {@link DocumentReferenceFindByFunction}).
+ * The index is the unique one
  * whose properties are exactly these, and the reference holds if the document
  * it finds exists (code 40120 when it does not). To resolve a reference
  * yourself, query the referenced type by those values: at most one document

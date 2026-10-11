@@ -322,21 +322,35 @@ fn validate_document_type_references_v0(
             }
             PropertyReference::Value(target) => (target, false),
             PropertyReference::Elements { target, .. } => (target, true),
-            // A string or byte array revealed into a computed `findBy` key, a
-            // commitment judged when the document is created only; an unset
-            // one is not validated. The key's hash stands for the value in the
-            // errors, the value being no id. In place in generation 0: only the
-            // protocol version 14 parser produces one
+            // A string or byte array property whose value its `findBy` reads in
+            // place of an id: as `"."`, filling an index property holding the same
+            // kind of value, or revealed into a computed key, a commitment judged
+            // when the document is created only. An unset one is not validated. In
+            // place in generation 0: only the protocol version 14 parser produces
+            // one
             PropertyReference::Revealed(target) => {
                 let ReferenceHolder::Property(property_path) = holder else {
                     continue;
                 };
-                if !is_create {
-                    continue;
+                let hash_key = target
+                    .as_any_document_reference()
+                    .and_then(|declaration| declaration.lookup)
+                    .and_then(|lookup| lookup.hash_key());
+                // A replace re-validates a value read as is when it would an
+                // identifier's reference (see `binds_a_changed_property`), and a
+                // computed key never
+                if let Some(changed) = changed_fields {
+                    if hash_key.is_some()
+                        || (!is_changed_field(changed, path)
+                            && !binds_a_changed_property(target, changed, writer_can_change))
+                    {
+                        continue;
+                    }
                 }
                 // Read as the stored document keeps it: a map on the way holding the
                 // property's key more than once is refused (the create's structure
-                // validation already refused it), never taken for an unset property
+                // validation already refused it for a computed key), never taken for
+                // an unset property
                 let preimage_invalid = || {
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         DocumentReferencePreimageInvalidError::new(
@@ -348,29 +362,31 @@ fn validate_document_type_references_v0(
                         .into(),
                     ))
                 };
-                match read_data_at_path(document_data, property_path) {
-                    Ok(Some(_)) => {}
+                let value = match read_data_at_path(document_data, property_path) {
+                    Ok(Some(value)) => value,
                     Ok(None) => continue,
                     Err(RepeatedKey) => return preimage_invalid(),
-                }
-                let Some((_, key)) = target
-                    .as_any_document_reference()
-                    .and_then(|declaration| declaration.lookup)
-                    .and_then(|lookup| lookup.hash_key())
-                else {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "a revealed reference carries a lookup with a computed key, which the \
-                         parser enforces",
-                    )));
                 };
-                // Hashed and billed once here, the property named by its path in
-                // the key's params, and handed to the lookup as its key. The create's
-                // structure validation refused a value it could not reveal, before
-                // any read
-                let Some(billed_key) =
-                    hash_lookup_key(key, document_type, None, document_data, execution_context)
-                else {
-                    return preimage_invalid();
+                // The value is no id. A computed key is hashed and billed once here,
+                // the property named by its path in the key's params, and its hash
+                // stands for the value in the errors; the create's structure
+                // validation refused a value it could not reveal, before any read. A
+                // value read as is has no hash to stand for it, so the errors carry
+                // an all-zero id beside its path
+                let (referenced_id, billed_key) = match hash_key {
+                    Some((_, key)) => {
+                        let Some(billed_key) = hash_lookup_key(
+                            key,
+                            document_type,
+                            None,
+                            document_data,
+                            execution_context,
+                        ) else {
+                            return preimage_invalid();
+                        };
+                        (billed_key.digest(), Some(billed_key))
+                    }
+                    None => ([0; 32], None),
                 };
                 let result = validate_reference_v0(
                     contract,
@@ -378,8 +394,8 @@ fn validate_document_type_references_v0(
                     document_data,
                     owner_id,
                     target,
-                    billed_key.digest(),
-                    Some(billed_key),
+                    referenced_id,
+                    Some(RevealedValue { value, billed_key }),
                     path,
                     None,
                     &mut BTreeMap::new(),
@@ -835,10 +851,21 @@ fn binds_a_changed_property(
     }
 }
 
+/// What a string or byte array property carrying a reference hands its lookup
+/// in place of an id: its `value`, which `"."` reads, and, when a `findBy`
+/// function computes the key, the hash already computed and billed.
+#[derive(Clone, Copy)]
+struct RevealedValue<'a> {
+    value: &'a Value,
+    billed_key: Option<BilledLookupKey>,
+}
+
 /// Checks one referenced value against its declaration `reference_target`:
 /// the value `referenced_id` is an identifier property's value or one
-/// element of a typed array of them, and `path` is how the errors name it
-/// (the property path, or the element's list path). A single target (a leaf)
+/// element of a typed array of them, or stands for the value of a string or
+/// byte array property, `revealed`, which its lookup reads instead, and
+/// `path` is how the errors name it (the property path, or the element's list
+/// path). A single target (a leaf)
 /// is checked by [`validate_reference_target_v0`]. A reference expression is
 /// evaluated operand by operand in declared order, each operand a leaf or a
 /// nested expression evaluated the same way: an `anyOf` stops at the first
@@ -862,7 +889,7 @@ fn validate_reference_v0(
     owner_id: Identifier,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
-    billed_key: Option<BilledLookupKey>,
+    revealed: Option<RevealedValue<'_>>,
     path: &str,
     kept_value_changed_fields: Option<&BTreeSet<String>>,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
@@ -883,7 +910,7 @@ fn validate_reference_v0(
             owner_id,
             reference_target,
             referenced_id,
-            billed_key,
+            revealed,
             path,
             kept_value_changed_fields,
             referenced_contracts,
@@ -918,7 +945,7 @@ fn validate_reference_v0(
             owner_id,
             operand,
             referenced_id,
-            billed_key,
+            revealed,
             path,
             kept_value_changed_fields,
             referenced_contracts,
@@ -954,9 +981,10 @@ fn validate_reference_v0(
 
 /// Checks one reference against platform state for a single target: the
 /// referenced id `referenced_id`, declared by `reference_target`, is an
-/// identifier property's value or one element of a typed array of them, and
-/// `path` is how the errors name it (the property path, or the element's list
-/// path). The target must exist and meet the declaration's contract
+/// identifier property's value or one element of a typed array of them, or
+/// stands for the value of a string or byte array property, `revealed`, which
+/// the lookup reads instead (see [`RevealedValue`]), and `path` is how the
+/// errors name it (the property path, or the element's list path). The target must exist and meet the declaration's contract
 /// requirements, a referenced document's type must be deletable or not as
 /// declared, and each `where` entry must hold between
 /// `document_data` (or the writer `owner_id`) and the referenced document.
@@ -987,7 +1015,7 @@ fn validate_reference_target_v0(
     owner_id: Identifier,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
-    billed_key: Option<BilledLookupKey>,
+    revealed: Option<RevealedValue<'_>>,
     path: &str,
     kept_value_changed_fields: Option<&BTreeSet<String>>,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
@@ -1242,18 +1270,27 @@ fn validate_reference_target_v0(
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
-                    // `"."` reads the id; a revealed value's key was hashed and billed
-                    // already, and its id is that hash
+                    // `"."` reads the id, or the value of the string or byte array
+                    // property carrying the reference, whose computed key was hashed
+                    // and billed already
+                    let id_value;
+                    let reference_value = match revealed {
+                        Some(revealed) => revealed.value,
+                        None => {
+                            id_value = Value::Identifier(document_id);
+                            &id_value
+                        }
+                    };
                     looked_up_document = fetch_document_through_lookup(
                         platform.drive,
                         referenced_contract,
                         referenced_document_type,
                         document_type,
                         lookup,
-                        Identifier::from(document_id),
+                        reference_value,
                         document_data,
                         owner_id,
-                        billed_key,
+                        revealed.and_then(|revealed| revealed.billed_key),
                         &block_info.epoch,
                         execution_context,
                         transaction,

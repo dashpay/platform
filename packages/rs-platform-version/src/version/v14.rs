@@ -1606,9 +1606,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
 ///     `sys.hash` namespace beside the string transformations of
 ///     `generatedFrom`, which refuses it. A string or byte array property may
-///     now carry a `refersTo` whose function reads its value
-///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
-///     the property keeps its type. The document such a key finds is a
+///     now carry a `refersTo` whose `findBy` reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`):
+///     through a function, or as `"."`, which fills an index property holding
+///     the same kind of value (`DocumentReferenceLookup::referenced_side_error`,
+///     told the property carrying the reference) and is judged as an
+///     identifier's value is, on a create and on the replaces that re-validate
+///     it (`key_values` and the write-time fetch read `"."` as a `Value`; a
+///     refusal carries an all-zero entity id, the value being no id, and a
+///     `deletableDocument` one may not sit under an `immutable` property). The
+///     document an index finds must hold each string or byte array part of the
+///     key exactly, since the key encoding reads the empty string as `"\0"` and
+///     an empty byte array as no value, and a key part no index entry can hold
+///     (longer than 255 bytes) finds nothing without a read, for a property
+///     source of those kinds too (`fetch_document_through_lookup`); the
+///     property keeps its type. The document a function's key finds is a
 ///     commitment made earlier, so the reference is judged when the document is
 ///     created only: its params may be transient or optional, every stored value
 ///     it reads must be fixed once written, and a replace leaves it alone.
@@ -2059,8 +2071,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
 ///     of its complete fee) uses versioned allowances of 400 effective bytes
 ///     per action and 500 flat bytes, covering the complete execution-event
-///     admission estimate. Actual fees remain metered. Nullifiers revealed by
-///     shields before this version are not added.
+///     admission estimate. Actual fees remain metered. Before the first PV14
+///     candidate's transitions, the activation transaction adds the rho of
+///     every retained CREDIT note to the permanent nullifier set, including
+///     historical shielding outputs. Existing entries and their flags remain
+///     unchanged. The protocol upgrade ladder runs this one-time migration
+///     when crossing into PV14, with 2048 notes per page and 2048 inserts per
+///     batch; token pools are not backfilled.
 ///
 /// 77. **Owner identities for shared and extended-address masternodes**: from
 ///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
@@ -2418,7 +2435,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
