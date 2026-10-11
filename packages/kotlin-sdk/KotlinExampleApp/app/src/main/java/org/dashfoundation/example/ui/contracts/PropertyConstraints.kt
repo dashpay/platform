@@ -148,7 +148,26 @@ internal fun propertyConstraintSystemReadsText(rule: DocumentPropertyConstraint)
  */
 internal const val PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE =
     "A price update is judged against the rules reading \$updatedAt or its block heights, " +
-        "and a transfer or purchase against those reading \$transferredAt or its block heights."
+        "a transfer or purchase against those reading \$transferredAt or its block heights, " +
+        "and each of them against those reading \$revision."
+
+/**
+ * The line shown under a rule reading the stored version of the document
+ * through `$old.` ([DocumentPropertyConstraint.readsStored]), `null` for a
+ * rule reading none of it. The SwiftExampleApp shows the same text.
+ */
+internal fun propertyConstraintStoredReadsText(rule: DocumentPropertyConstraint): String? =
+    if (rule.readsStored) "Reads the stored version (\$old.), the one a write replaces" else null
+
+/**
+ * The note under a rule reading the stored version
+ * ([propertyConstraintStoredReadsText] not `null`): a create has none, so
+ * consensus and the check before sending both read every `$old.` value as
+ * absent. The same text as the SwiftExampleApp's, for cross-platform UAT.
+ */
+internal const val PROPERTY_CONSTRAINT_STORED_READS_NOTE =
+    "A create has no stored version: there, and in the check before sending, every \$old. " +
+        "read is absent."
 
 /**
  * The line naming the `countOf` and `sumOf` totals [rule] reads, each once:

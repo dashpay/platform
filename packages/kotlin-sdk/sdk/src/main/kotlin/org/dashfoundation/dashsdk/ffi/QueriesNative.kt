@@ -75,10 +75,13 @@ internal object QueriesNative {
     /**
      * The `propertyConstraints` rules (protocol version 14) of [documentType]
      * as a JSON array in name order, each
-     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsTotals"}`:
-     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`
-     * or `elements`, `readsSystem` names the system times and heights the
-     * rule reads (`$createdAt`, `$updatedAtBlockHeight`, ...), and
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsStored", "readsTotals"}`:
+     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`,
+     * `elements` or `bytes`, a property of the stored version listed under
+     * its `$old.` path, `readsSystem` names the system values the rule reads
+     * (`$createdAt`, `$updatedAtBlockHeight`, `$revision`, `$old.$updatedAt`,
+     * ...), `readsStored` says whether it reads the stored version through
+     * `$old.` (missing from a library built before it), and
      * `readsTotals` lists its `countOf` and `sumOf` totals as
      * `{"kind", "documentType", "property" (a sumOf only), "filter"}`.
      * [serializedContract] is the contract's platform serialization (what
@@ -97,8 +100,10 @@ internal object QueriesNative {
      * as `{"rule", "violation", "message"}`, or the JSON text `null` when it
      * meets every rule. [propertiesJson] is what the create would send and
      * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
-     * for [dataContractGetPropertyConstraints]. The device clock stands in for
-     * the block time the create records (`$createdAt`, `$updatedAt`,
+     * for [dataContractGetPropertyConstraints]. A create has no stored
+     * version, so every `$old.` read is absent and `$revision` reads 1, as
+     * consensus reads them on a create. The device clock stands in for the
+     * block time the create records (`$createdAt`, `$updatedAt`,
      * `$transferredAt`), and a rule reading a block height is not judged, the
      * height being unknown until the block, nor is one reading a `countOf` or
      * `sumOf` total, which only the platform reads from state. No network call. Throws on

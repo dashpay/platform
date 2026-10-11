@@ -669,9 +669,11 @@ class Contracts internal constructor(private val sdk: Sdk) {
      *
      * Each rule lists the properties it reads and how
      * ([DocumentPropertyConstraint.reads]), whether it reads the owner
-     * ([DocumentPropertyConstraint.readsOwner]), the system times and
-     * heights it reads ([DocumentPropertyConstraint.readsSystem]) and the
-     * `countOf` and `sumOf` totals it reads ([DocumentPropertyConstraint.readsTotals]).
+     * ([DocumentPropertyConstraint.readsOwner]), the system times, heights
+     * and revisions it reads ([DocumentPropertyConstraint.readsSystem]),
+     * whether it reads the stored version of the document through `$old.`
+     * ([DocumentPropertyConstraint.readsStored]) and the `countOf` and
+     * `sumOf` totals it reads ([DocumentPropertyConstraint.readsTotals]).
      *
      * [serializedContract] is the contract's platform serialization, the bytes
      * kept beside a fetched contract ([ContractWithSerialization.binarySerialization],
@@ -706,9 +708,14 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * with (what `DocumentTransactions.create` takes) and [ownerId] the 32-byte
      * identity that would own it, which `$ownerId` reads. Rust builds the
      * document the create path builds and judges it with the check consensus
-     * runs; nothing but the rules is checked. The device clock stands in for
-     * the block time the create records (`$createdAt`, `$updatedAt`,
-     * `$transferredAt`), so a rule comparing one is judged as of now; a rule
+     * runs; nothing but the rules is checked. A create has no stored version,
+     * so a rule reading one through `$old.`
+     * ([DocumentPropertyConstraint.readsStored]) is judged as consensus judges
+     * it on a create, every such read absent (a stored time, height or
+     * revision reads 0), and `$revision` reads 1, the revision a created
+     * document starts at. The device clock stands in for the block time the
+     * create records (`$createdAt`, `$updatedAt`, `$transferredAt`), so a
+     * rule comparing one is judged as of now; a rule
      * reading a block height (`$createdAtBlockHeight`, ...) is not judged,
      * since the height is unknown until the block, nor is a rule reading a
      * `countOf` or `sumOf` total ([DocumentPropertyConstraint.readsTotals]),

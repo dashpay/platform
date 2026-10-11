@@ -37,6 +37,7 @@ use platform_value::btreemap_extensions::{
 };
 use platform_value::{Identifier, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBasicMethods {
@@ -878,8 +879,13 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 
     /// `validate_property_constraints` version 0: every rule of the document type's
     /// `propertyConstraints` is evaluated against `data` in name order, and the first one
-    /// broken is reported. A type without rules costs nothing. A rule reading a total
-    /// consensus did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
+    /// broken is reported; for a write changing only some fields of a stored document
+    /// (`system.changed_fields`), only the rules reading what it changes. A rule reading the
+    /// stored version is judged with its properties under `$old` ([`DocumentSystemValues::judged_data`]),
+    /// built once, for the first such rule. A type without rules costs nothing. A rule
+    /// reading a total or a stored version consensus did not read
+    /// ([`PropertyConstraint::unread_aggregate`], [`PropertyConstraint::unread_stored_version`])
+    /// is an error.
     fn validate_property_constraints_v0(
         &self,
         data: &Value,
@@ -888,9 +894,20 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     where
         Self: DocumentTypeV2Getters,
     {
+        let mut with_stored: Option<Cow<Value>> = None;
         for (name, constraint) in self.property_constraints() {
-            self.expect_every_aggregate_read(name, constraint, system)?;
-            if let Some(violation) = constraint.violation(data, system) {
+            if let Some(fields) = &system.changed_fields {
+                if !constraint.reads_changed_fields(fields) {
+                    continue;
+                }
+            }
+            self.expect_every_read(name, constraint, system)?;
+            let judged = if constraint.reads_stored() {
+                &**with_stored.get_or_insert_with(|| system.judged_data(data))
+            } else {
+                data
+            };
+            if let Some(violation) = constraint.violation(judged, system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
@@ -918,7 +935,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         Self: DocumentTypeV2Getters,
     {
         for (name, constraint) in self.delete_constraints() {
-            self.expect_every_aggregate_read(name, constraint, system)?;
+            self.expect_every_read(name, constraint, system)?;
             if let Some(violation) = constraint.violation(data, system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentDeleteConstraintViolatedError::new(
@@ -935,29 +952,38 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// An error when `system` holds consensus's totals and lacks one the rule `name`
-    /// reads, which would otherwise leave the rule unjudged.
-    fn expect_every_aggregate_read(
+    /// reads, or the stored version it reads, which would otherwise leave the rule
+    /// unjudged.
+    fn expect_every_read(
         &self,
         name: &str,
         constraint: &PropertyConstraint,
         system: &DocumentSystemValues,
     ) -> Result<(), ProtocolError> {
-        match constraint.unread_aggregate(system) {
-            None => Ok(()),
-            Some(read) => Err(ProtocolError::CorruptedCodeExecution(format!(
+        if let Some(read) = constraint.unread_aggregate(system) {
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "rule {name} of document type {} reads a {} of {} that consensus did not read: \
                  {read:?}",
                 self.name(),
                 read.wire_name(),
                 read.document_type
-            ))),
+            )));
         }
+        if constraint.unread_stored_version(system) {
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "rule {name} of document type {} reads the stored version through $old., which \
+                 consensus did not give",
+                self.name()
+            )));
+        }
+        Ok(())
     }
 
     /// `validate_property_constraints_for_system_change` version 0: every rule of the
     /// document type's `propertyConstraints` that `change` can break is evaluated against
     /// `data` with `system`, in name order, and the first one broken is reported. The data
-    /// is copied into a map value only when such a rule exists.
+    /// is copied into a map value only when such a rule exists, and with the stored
+    /// version's properties under `$old` only when such a rule reads them.
     fn validate_property_constraints_for_system_change_v0(
         &self,
         data: &BTreeMap<String, Value>,
@@ -976,9 +1002,15 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             return Ok(SimpleConsensusValidationResult::default());
         }
         let data = Value::from(data.clone());
+        let mut with_stored: Option<Cow<Value>> = None;
         for (name, constraint) in changed_rules {
-            self.expect_every_aggregate_read(name, constraint, system)?;
-            if let Some(violation) = constraint.violation(&data, system) {
+            self.expect_every_read(name, constraint, system)?;
+            let judged = if constraint.reads_stored() {
+                &**with_stored.get_or_insert_with(|| system.judged_data(&data))
+            } else {
+                &data
+            };
+            if let Some(violation) = constraint.violation(judged, system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),

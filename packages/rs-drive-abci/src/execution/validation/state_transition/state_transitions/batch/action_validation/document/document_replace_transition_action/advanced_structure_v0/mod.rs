@@ -10,6 +10,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v1::ReplaceConditionInputs;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentReplaceTransitionActionStructureValidationV0 {
     fn validate_structure_v0(
@@ -49,8 +50,14 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
 
         // Validate user defined properties. The rules read the writer, the times and
         // heights the replace keeps (creation, last transfer) and the ones it sets (the
-        // update), as the stored document will hold them, and the `countOf` and `sumOf`
-        // totals the action read from state as they will be once it is stored.
+        // update), as the stored document will hold them, its revision, the `countOf` and
+        // `sumOf` totals the action read from state as they will be once it is stored, and,
+        // through `$old.`, the document it replaces: its properties, rebuilt from the
+        // written ones and the stored value of each changed one, and its owner, times,
+        // heights and revision, which the transformer attached when a rule reads them.
+        // The revision and the stored version were added in place at protocol version 14,
+        // inert for every earlier version this generation serves: rules exist from 14
+        // (`validate_property_constraints` is `None` before it), so nothing reads them.
         let system = DocumentSystemValues {
             owner_id: Some(owner_id),
             created_at: self.created_at(),
@@ -62,7 +69,12 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             created_at_core_block_height: self.created_at_core_block_height(),
             updated_at_core_block_height: self.updated_at_core_block_height(),
             transferred_at_core_block_height: self.transferred_at_core_block_height(),
+            revision: Some(self.revision()),
             aggregates: Some(self.property_constraint_aggregates().clone()),
+            stored: self
+                .stored_system_values()
+                .map(|system| self.stored_version(owner_id, Some(system))),
+            changed_fields: None,
         };
         let result = data_contract
             .validate_document_properties(

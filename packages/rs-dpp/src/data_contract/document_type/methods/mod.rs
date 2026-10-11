@@ -1011,10 +1011,14 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the rule
     /// does not hold, or evaluating it overflowed, divided by zero, raised to a negative
     /// power or read a value that is not an integer). A property the document
-    /// leaves out counts as 0, or as its `ifAbsent` value; `$ownerId` and the system
-    /// times and heights read `system`, the values of the document version being written
-    /// (an owner the caller does not know equals no identifier, and a rule reading a time
-    /// or height it does not know is not judged). Reads the properties and `system` alone:
+    /// leaves out counts as 0, or as its `ifAbsent` value; `$ownerId`, the system
+    /// times and heights and `$revision` read `system`, the values of the document version
+    /// being written (an owner the caller does not know equals no identifier, and a rule
+    /// reading a time, a height or a revision it does not know is not judged), and a read
+    /// through `$old.` the stored version `system` gives (a rule reading one it does not give
+    /// is not judged). A write changing only some fields of a stored document
+    /// (`system.changed_fields`, a moderator's change) is judged only against the rules
+    /// reading what it changes. Reads the properties and `system` alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,
     /// so document create and replace, and every client validating a document, apply it.
     ///
@@ -1050,12 +1054,15 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// Judges a stored document's properties, `data`, against the rules of the document
     /// type's `propertyConstraints` that `change` can break, with `system` the document's
     /// system values after it, in name order. A transfer or a purchase gives the document a
-    /// new owner and a new transfer time and heights, and a price update a new update time
-    /// and heights; neither changes a property, so the rules reading what it changes are
-    /// the only ones it can break ([`PropertyConstraint::reads_change`]), and the first
-    /// broken fails with `DocumentPropertyConstraintViolatedError` (10422) as it would on a
-    /// write. The document type's other rules held when the document was written and still
-    /// do. A type with no such rule costs nothing, and its data is not copied.
+    /// new owner, a new transfer time and heights and the next revision, a price update a
+    /// new update time and heights and the next revision, and a moderator's restore brings
+    /// it back as it was while the totals around it may have moved; none changes a property,
+    /// so the rules reading what it changes, of the document or, through `$old.`, of the
+    /// stored version `system` gives, are the only ones it can break
+    /// ([`PropertyConstraint::reads_change`]), and the first broken fails with
+    /// `DocumentPropertyConstraintViolatedError` (10422) as it would on a write. The document
+    /// type's other rules held when the document was last written and still do. A type with
+    /// no such rule costs nothing, and its data is not copied.
     ///
     /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
     /// version 14, where no parsed document type carries a rule.

@@ -120,6 +120,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -131,6 +132,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -142,6 +144,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -153,6 +156,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: true,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -161,6 +165,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'fee', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
       ]);
@@ -216,6 +221,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'tags', kind: 'count' }, { path: 'maxTags', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -224,6 +230,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'title', kind: 'length' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
       ]);
@@ -237,13 +244,16 @@ describe('DataContract: propertyConstraints (v14)', () => {
       });
       expect(contract.checkDocumentPropertyConstraints(
         listing({ title: 'Café', tags: ['a', 'b'], maxTags: 2 }),
+        null,
       )).to.equal(undefined);
       expect(contract.checkDocumentPropertyConstraints(
         listing({ title: 'Café', tags: ['a', 'b', 'c'], maxTags: 2 }),
+        null,
       )).to.deep.include({ rule: 'tagsWithinLimit', violation: 'NotMet' });
       // 8 characters, 16 bytes
       expect(contract.checkDocumentPropertyConstraints(
         listing({ title: 'éééééééé' }),
+        null,
       )).to.deep.include({ rule: 'titleBytes', violation: 'NotMet' });
     });
 
@@ -271,6 +281,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'endsAt', kind: 'value' }],
           readsOwner: false,
           readsSystem: ['$createdAt'],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -279,6 +290,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [],
           readsOwner: false,
           readsSystem: ['$createdAtBlockHeight'],
+          readsStored: false,
           readsTotals: [],
         },
       ]);
@@ -291,11 +303,11 @@ describe('DataContract: propertyConstraints (v14)', () => {
         revision: BigInt(1),
       });
       // Ended in 1970: before a create today, by the device clock
-      expect(contract.checkDocumentPropertyConstraints(listing(1)))
+      expect(contract.checkDocumentPropertyConstraints(listing(1), null))
         .to.deep.include({ rule: 'endsAfterCreation', violation: 'NotMet' });
       // Ends in 2100; the block height a create records is unknown before its
       // block, so the height rule is not judged
-      expect(contract.checkDocumentPropertyConstraints(listing(4102444800000)))
+      expect(contract.checkDocumentPropertyConstraints(listing(4102444800000), null))
         .to.equal(undefined);
     });
 
@@ -326,6 +338,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'labels', kind: 'elements' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
       ]);
@@ -337,8 +350,8 @@ describe('DataContract: propertyConstraints (v14)', () => {
         ownerId,
         revision: BigInt(1),
       });
-      expect(contract.checkDocumentPropertyConstraints(listing(['new']))).to.equal(undefined);
-      expect(contract.checkDocumentPropertyConstraints(listing(['new', 'used'])))
+      expect(contract.checkDocumentPropertyConstraints(listing(['new']), null)).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(listing(['new', 'used']), null))
         .to.deep.include({ rule: 'notUsed', violation: 'NotMet' });
     });
 
@@ -369,11 +382,11 @@ describe('DataContract: propertyConstraints (v14)', () => {
         ownerId,
         revision: BigInt(1),
       });
-      expect(contract.checkDocumentPropertyConstraints(link('https://pay.dash'))).to.equal(undefined);
-      expect(contract.checkDocumentPropertyConstraints(link('https://pay.com')))
+      expect(contract.checkDocumentPropertyConstraints(link('https://pay.dash'), null)).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(link('https://pay.com'), null))
         .to.deep.include({ rule: 'dashDomain', violation: 'NotMet' });
       // No case folding
-      expect(contract.checkDocumentPropertyConstraints(link('HTTPS://pay.dash')))
+      expect(contract.checkDocumentPropertyConstraints(link('HTTPS://pay.dash'), null))
         .to.deep.include({ rule: 'secureUrl', violation: 'NotMet' });
     });
 
@@ -416,7 +429,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
         revision: BigInt(1),
       });
       const violationOf = (properties: Record<string, unknown>) => (
-        contract.checkDocumentPropertyConstraints(profile(properties))
+        contract.checkDocumentPropertyConstraints(profile(properties), null)
       );
 
       expect(violationOf({ corePaymentAddress: address(1) })).to.equal(undefined);
@@ -466,7 +479,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
         revision: BigInt(1),
       });
       const violationOf = (properties: Record<string, number>) => (
-        contract.checkDocumentPropertyConstraints(order(properties))
+        contract.checkDocumentPropertyConstraints(order(properties), null)
       );
 
       expect(violationOf({ price: 100, fee: 10 })).to.equal(undefined);
@@ -529,6 +542,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [{ kind: 'countOf', documentType: 'listing', filter: [] }],
         },
         {
@@ -537,6 +551,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [],
           readsOwner: true,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [{ kind: 'countOf', documentType: 'listing', filter: ['$ownerId'] }],
         },
         {
@@ -545,6 +560,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'category', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [{
             kind: 'sumOf', documentType: 'listing', property: 'price', filter: ['category'],
           }],
@@ -560,7 +576,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
         ownerId,
         revision: BigInt(1),
       });
-      expect(contract.checkDocumentPropertyConstraints(listing)).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(listing, null)).to.equal(undefined);
     });
 
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
@@ -587,6 +603,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'balance', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
         {
@@ -595,6 +612,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'tier', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsStored: false,
           readsTotals: [],
         },
       ];
@@ -617,8 +635,105 @@ describe('DataContract: propertyConstraints (v14)', () => {
       const contract = buildContract(schemas, 13, false);
 
       expect(contract.documentTypePropertyConstraints('offer')).to.deep.equal([]);
-      expect(contract.checkDocumentPropertyConstraints(offer(contract, { discount: 200 })))
+      expect(contract.checkDocumentPropertyConstraints(offer(contract, { discount: 200 }), null))
         .to.equal(undefined);
+    });
+  });
+
+  describe('rules reading the stored version ($old.)', () => {
+    const rules = {
+      atMostThreeWrites: { lessThanOrEqual: ['$revision', 3] },
+      priceNeverRises: { lessThanOrEqual: ['price', { ifAbsent: ['$old.price', 1000000] }] },
+    };
+    const listingSchemas = {
+      listing: {
+        type: 'object',
+        documentsMutable: true,
+        properties: {
+          price: { type: 'integer', minimum: 0, position: 0 },
+        },
+        required: ['price'],
+        additionalProperties: false,
+        propertyConstraints: rules,
+      },
+    };
+    // A fixed id, so that a stored and a written version are the same document
+    const listingId = otherId;
+
+    function listing(
+      contract: InstanceType<typeof wasm.DataContract>,
+      price: number,
+      revision: number,
+    ) {
+      return new wasm.Document({
+        id: listingId,
+        properties: { price },
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(revision),
+      });
+    }
+
+    it('should report the stored reads and $revision a rule reads', () => {
+      const contract = buildContract(listingSchemas);
+
+      expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'atMostThreeWrites',
+          rule: rules.atMostThreeWrites,
+          reads: [],
+          readsOwner: false,
+          readsSystem: ['$revision'],
+          readsStored: false,
+          readsTotals: [],
+        },
+        {
+          name: 'priceNeverRises',
+          rule: rules.priceNeverRises,
+          reads: [
+            { path: 'price', kind: 'value' },
+            { path: '$old.price', kind: 'value' },
+          ],
+          readsOwner: false,
+          readsSystem: [],
+          readsStored: true,
+          readsTotals: [],
+        },
+      ]);
+    });
+
+    it('should judge them against the stored document, a create, or not at all', () => {
+      const contract = buildContract(listingSchemas);
+      const stored = listing(contract, 100, 1);
+
+      // A replace: the price may only drop
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 90, 2), stored))
+        .to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 2), stored))
+        .to.deep.include({ rule: 'priceNeverRises', violation: 'NotMet' });
+      // A create has no stored version: the default stands in for the stored price
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 1), null))
+        .to.equal(undefined);
+      // Without the stored version the rule reading it is not judged, the rest are
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 2), undefined))
+        .to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 4), undefined))
+        .to.deep.include({ rule: 'atMostThreeWrites', violation: 'NotMet' });
+    });
+
+    it('should throw for a stored document that is another document', () => {
+      const contract = buildContract(listingSchemas);
+      const other = new wasm.Document({
+        properties: { price: 100 },
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+
+      expect(() => contract.checkDocumentPropertyConstraints(listing(contract, 90, 2), other))
+        .to.throw(/another document/);
     });
   });
 
@@ -626,16 +741,16 @@ describe('DataContract: propertyConstraints (v14)', () => {
     it('should report nothing for a document meeting every rule', () => {
       const contract = buildContract(schemas);
 
-      expect(contract.checkDocumentPropertyConstraints(offer(contract, {}))).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(offer(contract, {}), null)).to.equal(undefined);
       expect(contract.checkDocumentPropertyConstraints(offer(contract, {
         status: 'closed', closedAt: 1000, sellerId: ownerId, discount: 5,
-      }))).to.equal(undefined);
+      }), null)).to.equal(undefined);
     });
 
     it('should report the first rule broken, in name order, as consensus would', () => {
       const contract = buildContract(schemas);
       const violationOf = (properties: Record<string, unknown>, owner = ownerId) => (
-        contract.checkDocumentPropertyConstraints(offer(contract, properties, owner))
+        contract.checkDocumentPropertyConstraints(offer(contract, properties, owner), null)
       );
 
       expect(violationOf({ status: 'closed' })).to.deep.include({
@@ -657,10 +772,11 @@ describe('DataContract: propertyConstraints (v14)', () => {
     it('should read the document owner for $ownerId', () => {
       const contract = buildContract(schemas);
 
-      expect(contract.checkDocumentPropertyConstraints(offer(contract, { sellerId: otherId })))
+      expect(contract.checkDocumentPropertyConstraints(offer(contract, { sellerId: otherId }), null))
         .to.deep.include({ rule: 'sellerIsOwner', violation: 'NotMet' });
       expect(contract.checkDocumentPropertyConstraints(
         offer(contract, { sellerId: otherId }, otherId),
+        null,
       )).to.equal(undefined);
     });
 
@@ -674,7 +790,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
         revision: BigInt(1),
       });
 
-      expect(contract.checkDocumentPropertyConstraints(document)).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(document, null)).to.equal(undefined);
     });
 
     it('should throw for a document of another contract or an unknown type', () => {
@@ -694,8 +810,8 @@ describe('DataContract: propertyConstraints (v14)', () => {
         revision: BigInt(1),
       });
 
-      expect(() => contract.checkDocumentPropertyConstraints(foreign)).to.throw(/another contract|not this one/);
-      expect(() => contract.checkDocumentPropertyConstraints(unknownType)).to.throw(/not found/);
+      expect(() => contract.checkDocumentPropertyConstraints(foreign, null)).to.throw(/another contract|not this one/);
+      expect(() => contract.checkDocumentPropertyConstraints(unknownType, null)).to.throw(/not found/);
     });
   });
 

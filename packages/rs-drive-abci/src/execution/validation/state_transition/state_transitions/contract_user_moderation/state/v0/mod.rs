@@ -53,7 +53,9 @@ use dpp::data_contract::config::moderation::{
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
-use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, StoredVersion, SystemChange,
+};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
@@ -1573,8 +1575,11 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
     changed.set_moderated_by(Some(moderator_id));
 
     // The changed document is judged as a replace judges one: the owner is the document's, the
-    // times and heights are the ones it keeps, and the `countOf` and `sumOf` totals are read as
-    // they will be once it is stored in place of the one read.
+    // times and heights are the ones it keeps, its revision the next, the `countOf` and `sumOf`
+    // totals are read as they will be once it is stored in place of the one read, and a path
+    // through `$old.` reads the one read. Only the rules reading a field the change writes,
+    // `$revision` or a total are judged: every other rule reads what the document held when its
+    // owner last wrote it, and gave its verdict then, as rules never change once registered.
     let aggregates = read_property_constraint_aggregates_for_moderator_change(
         platform.drive,
         contract,
@@ -1587,17 +1592,10 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         platform_version,
     )?;
     let system = DocumentSystemValues {
-        owner_id: Some(changed.owner_id()),
-        created_at: changed.created_at(),
-        updated_at: changed.updated_at(),
-        transferred_at: changed.transferred_at(),
-        created_at_block_height: changed.created_at_block_height(),
-        updated_at_block_height: changed.updated_at_block_height(),
-        transferred_at_block_height: changed.transferred_at_block_height(),
-        created_at_core_block_height: changed.created_at_core_block_height(),
-        updated_at_core_block_height: changed.updated_at_core_block_height(),
-        transferred_at_core_block_height: changed.transferred_at_core_block_height(),
         aggregates: Some(aggregates),
+        stored: Some(StoredVersion::of_document(&stored)),
+        changed_fields: Some(changed_fields.clone()),
+        ..DocumentSystemValues::of_document(&changed)
     };
     // Each check runs only on a document the previous ones passed, as a replace's do: the later
     // two read values the schema check makes well formed.
@@ -1925,7 +1923,10 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
 
     // Contract moderation is inactive before protocol version 14, so this check cannot
     // alter earlier blocks. The hash pins the document's retained values, but other writes
-    // may have changed the totals its rules read while it was absent from the live trees.
+    // may have changed the totals its rules read while it was absent from the live trees: the
+    // rules reading one are judged again, a path through `$old.` reading the document as it
+    // comes back. Every other rule reads only what the document held when it was last written,
+    // and gave its verdict then, as rules never change once registered.
     if !document_type.property_constraints().is_empty() {
         let aggregates = read_property_constraint_aggregates_for_restore(
             platform.drive,
@@ -1939,11 +1940,13 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
         )?;
         let system = DocumentSystemValues {
             aggregates: Some(aggregates),
+            stored: Some(StoredVersion::of_document(&document)),
             ..DocumentSystemValues::of_document(&document)
         };
-        let result = document_type.validate_property_constraints(
-            &Value::from(document.properties()),
+        let result = document_type.validate_property_constraints_for_system_change(
+            document.properties(),
             &system,
+            SystemChange::Restore,
             platform_version,
         )?;
         if !result.is_valid() {

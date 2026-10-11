@@ -1,6 +1,6 @@
 # propertyConstraints
 
-`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner, a payment address whose first byte names a known type. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)).
+`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner, a payment address whose first byte names a known type. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)), and compare a write with the stored version it replaces, through `$old.` (see [The stored version](#the-stored-version-old)).
 
 | | |
 |---|---|
@@ -47,14 +47,15 @@
 
 ## How it works
 
-- **Create and replace.** The rules run after the JSON schema validation of the document's properties (and after [maxBytes](max-bytes.md)), so every value a rule reads has passed its property's schema. A replace is judged on the whole new document, not only on what changed.
+- **Create and replace.** The rules run after the JSON schema validation of the document's properties (and after [maxBytes](max-bytes.md)), so every value a rule reads has passed its property's schema. A replace is judged on the whole new document, not only on what changed, with the document it replaces under `$old.`; a create has none.
 - **Name order, first failure.** Rules are checked in the order of their names, and the first rule the document breaks refuses the transition with `DocumentPropertyConstraintViolatedError` (10422). The error names the document type, the rule, and why it failed (below).
-- **Transfer and purchase.** These change only the owner and the transfer's time and heights. Rules that read `$ownerId`, `$transferredAt…` or a total that depends on the owner are judged again, against the stored document with its new owner and transfer values; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
-- **Price updates** change only the update's time and heights, so the rules that read `$updatedAt…` are judged again the same way; other rules are not.
-- **Moderator restores.** Every rule of the restored type is judged on the retained document, with its original owner, times and heights. Totals include the restored document as an insertion into the live trees; its removal record is not counted. Another write while it was deleted may make a cap, lower bound or cross-type prerequisite fail. Uniqueness is checked first. A refusal in a block charges the moderator and consumes its nonce, while the document stays deleted and its removal record stays unrestored. Mempool admission refuses the same invalid restore without persisting fees or a nonce change. Restore does not revalidate the full property schema or judge `deleteConstraints`.
-- **Immutable properties.** The same grammar is the condition of an [`immutable`](mutability.md#immutable) entry, which freezes a property while it holds. Only such a condition may read the stored document, through `$old.<path>`; a rule judges creates too, which have none.
-- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height. What may be deleted is the job of [`deleteConstraints`](deletion.md#deleteconstraints), rules in this grammar the stored document must meet for its owner to delete it.
-- **State and fees.** A rule reads the document, its owner and its times and heights, and a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total, which they cannot read.
+- **Transfer and purchase.** These change only the owner, the transfer's time and heights, and `$revision`. Rules that read `$ownerId`, `$transferredAt…`, `$revision` or a total that depends on the owner, of the document or of the stored version under `$old.`, are judged again, against the stored document with its new owner and transfer values, `$old.` reading it as it was before; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
+- **Price updates** change only the update's time and heights and `$revision`, so the rules that read `$updatedAt…` or `$revision`, of either version, are judged again the same way; other rules are not.
+- **Moderator field changes.** A moderator's change of the fields the type keeps for its moderators (see [moderatorAbilities.changeFields](moderator-abilities.md#changefields)) is judged as a replace is, with the document it changes under `$old.`, but only against the rules that read a field it changes, of either version, `$revision`, which it moves, or a total. It keeps the document's owner, times and heights. The other rules read only what the owner last wrote, and gave their verdict then.
+- **Moderator restores.** The rules of the restored type that read a total are judged on the retained document, with its original owner, times, heights and revision, and `$old.` reading the retained document itself. Totals include the restored document as an insertion into the live trees; its removal record is not counted. Another write while it was deleted may make a cap, lower bound or cross-type prerequisite fail. The other rules read only what the document held when it was last written, and gave their verdict then: a type's rules never change once it is registered. Uniqueness is checked first. A refusal in a block charges the moderator and consumes its nonce, while the document stays deleted and its removal record stays unrestored. Mempool admission refuses the same invalid restore without persisting fees or a nonce change. Restore does not revalidate the full property schema or judge `deleteConstraints`.
+- **Immutable properties.** The same grammar is the condition of an [`immutable`](mutability.md#immutable) entry, which freezes a property while it holds. It reads the stored document through `$old.` as a rule does.
+- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time, height or revision, which is why an index-only type may not have a rule reading `$ownerId`, a system time or height, `$revision` or `$old.`. What may be deleted is the job of [`deleteConstraints`](deletion.md#deleteconstraints), rules in this grammar the stored document must meet for its owner to delete it, which read it by their plain paths.
+- **State and fees.** A rule reads the document, its owner, its times, heights and revision, and the stored version the write replaces, which the write has already fetched; a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total, which they cannot read, and those reading the stored version when they are not given it (see [The stored version](#the-stored-version-old)).
 
 Why a rule fails, as the error reports it:
 
@@ -181,7 +182,7 @@ The index is a literal integer from 0 to 65535, never an expression, and a byte 
 
 When the property declares `maxItems`, an index at or past it, or a constant longer than it, is refused at registration, since the byte or the bytes are never there.
 
-A rule reading bytes is judged on create and replace like any other; the `$old.` paths of an [`immutable`](mutability.md#immutable) condition or `retractedWhen` read the stored array's bytes (`{ "byteAt": ["$old.address", 0] }`), and a [`deleteConstraints`](deletion.md#deleteconstraints) rule the stored document's. Reading bytes does not make a transfer, a purchase or a price update judge a rule, since none of them changes a byte array.
+A rule reading bytes is judged on create and replace like any other; a path through `$old.` reads the stored array's bytes (`{ "byteAt": ["$old.address", 0] }`), and a [`deleteConstraints`](deletion.md#deleteconstraints) rule the stored document's by the plain path. Reading bytes does not make a transfer, a purchase or a price update judge a rule, since none of them changes a byte array.
 
 ## Times and heights
 
@@ -200,6 +201,65 @@ A rule can read when the document was created, last updated and last transferred
 A rule may read one only when the document type records it by listing it in `required`, so every stored document holds it. None takes an `ifAbsent` default, `present` and `absent` refuse them, and an [index-only](index-only.md) type reads none. Each write is judged with the values the stored document ends up with: a create with its block's time and heights for all three events; a replace with the stored creation and transfer values and its block's as the update; a price update with its block's as the update; a transfer or a purchase with its block's as the transfer.
 
 SDK pre-checks run before the block exists: they use the device clock for the times a write records, and do not judge a rule reading a block height, which is unknown until the block.
+
+`$revision` is an integer operand too, on a type that keeps a revision: one whose documents are mutable, transferable, sold at a price their owner sets, or keep fields for their moderators. It is 1 on a create and one more for each later write: a replace, a transfer, a purchase, a price update or a moderator's change of fields; a moderator's restore keeps it. `{ "lessThanOrEqual": ["$revision", 6] }` allows five writes after the create. It counts every write, not only the owner's edits, so a transfer and a price update are judged against a rule reading it. To count edits alone, keep a counter (see [The stored version](#the-stored-version-old)).
+
+## The stored version (`$old.`)
+
+A path under `$old.` reads the stored version of the document a write replaces instead of the version it writes. A rule can then compare the two. On an `order` type that is mutable and transferable, requires `edits`, `$updatedAt` and `$transferredAt`, and whose `dispute` type keeps a countable index by `orderId`:
+
+```json
+"propertyConstraints": {
+  "counterNeverDrops": {
+    "greaterThanOrEqual": ["counter", { "ifAbsent": ["$old.counter", 0] }]
+  },
+  "closedStaysClosed": {
+    "ifThen": [
+      { "equal": ["$old.status", { "const": "closed" }] },
+      { "equal": ["status", { "const": "closed" }] }
+    ]
+  },
+  "editsAnHourApart": {
+    "greaterThanOrEqual": [{ "subtract": ["$updatedAt", "$old.$updatedAt"] }, 3600000]
+  },
+  "noResaleWithinADay": {
+    "ifThen": [
+      { "notEqual": ["$ownerId", "$old.$ownerId"] },
+      { "greaterThanOrEqual": [{ "subtract": ["$transferredAt", "$old.$transferredAt"] }, 86400000] }
+    ]
+  },
+  "statusChangesOnlyWithoutDisputes": {
+    "ifThen": [
+      { "notEqual": ["status", "$old.status"] },
+      { "equal": [{ "countOf": ["dispute", { "orderId": "$id" }] }, 0] }
+    ]
+  },
+  "editsCounted": {
+    "equal": ["edits", { "add": [{ "ifAbsent": ["$old.edits", -1] }, 1] }]
+  }
+}
+```
+
+`counterNeverDrops` lets a counter rise or stay, from any value at or above 0 on a create. `closedStaysClosed` keeps a closed order closed. `editsAnHourApart` spaces a document's replaces, and its price updates, an hour apart. `noResaleWithinADay` refuses a transfer or a purchase less than a day after the last one. `statusChangesOnlyWithoutDisputes` lets the status change only while no dispute points at the document. `editsCounted` starts `edits` at 0 and moves it by one on each replace, a count of edits that, unlike `$revision`, transfers and price updates leave alone. Unlike an [`immutable`](mutability.md#immutable) condition, each of these refuses the write with 10422 naming the rule, can read a total, and can read a stored owner, time, height or revision.
+
+What `$old.` reads on each write, and which rules the write is judged against:
+
+| Write | `$old.<property>` | `$old.$ownerId`, a stored time, height or `$old.$revision` | Rules judged |
+|---|---|---|---|
+| Create | Nothing: it reads as a property the document leaves out does (0 or its `ifAbsent` value in an integer expression, absent to `present`, equal to no string or identifier) | No owner, which equals no identifier; 0 | Every rule |
+| Replace | The stored document's | The stored document's: its owner (the writer), the previous update's time and heights, the previous revision | Every rule |
+| Transfer, purchase | The stored document's, which are the document's | The previous owner, the previous transfer's time and heights, the previous revision | Those reading the owner, a transfer time or height, `$revision`, or a total depending on the owner, of either version |
+| Price update | The stored document's, which are the document's | The previous update's time and heights, the previous revision | Those reading an update time or height or `$revision`, of either version |
+| Moderator field change | The stored document's | The stored document's | Those reading a field it changes, of either version, `$revision`, or a total |
+| Moderator restore | The restored document's own | The restored document's own | Those reading a total |
+
+A write that changes no property is not judged against a rule that compares properties alone: it would compare each with itself, and a rule demanding a change, such as `{ "greaterThan": ["counter", "$old.counter"] }`, would refuse every transfer.
+
+- `$old.` goes in front of any path a rule reads: in an integer expression, an `ifAbsent`, a size, a `byteAt` or a `countPresent`, in `present` and `absent`, in a comparison of strings, identifiers or byte arrays, in an `in`, and in a `contains`, on either side. The path after it is checked as any path is. `$old.$ownerId` compares as `$ownerId` does, and a stored time, height or revision is an integer operand, read only on a type that records it.
+- A create reads every `$old.` value as absent, so a rule a create must pass guards it: `{ "ifAbsent": ["$old.counter", 0] }`, `{ "absent": "$old.status" }` in an `anyOf`, or `$old.$revision` reading 0. `{ "lessThanOrEqual": ["price", "$old.price"] }` alone refuses every create with a price above 0.
+- A rule demanding a change is judged on every replace: `{ "greaterThan": ["counter", "$old.counter"] }` refuses a replace that leaves the counter alone.
+- A moderator's change of fields keeps `$updatedAt`, so `editsAnHourApart` is not judged against it.
+- SDK pre-checks read no state. Each rule's descriptor reports `readsStored` when it reads `$old.`. The create pre-check (`dash_sdk_data_contract_check_property_constraints`, under Swift and Kotlin) judges such a rule as a create, with nothing under `$old.`. The JavaScript `checkDocumentPropertyConstraints(document, storedDocument)` takes the stored document for a replace, `null` for a create, and with `undefined` does not judge such a rule.
 
 ## Totals of other documents
 
@@ -281,7 +341,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - every condition and every operator object has exactly one key;
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings; a `countPresent` two or more distinct paths;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
-- a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused;
+- a path matches `$ownerId`, `$revision`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, any of them optionally after `$old.`, so `$id` and other system properties are refused;
 - a `byteAt` lists a path and an integer index from 0 to 65535;
 - a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer or a `{ "const": ... }` string.
 
@@ -293,8 +353,10 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a byte array is tested only by `startsWith` and `endsWith`, against hex constants (an even number of hex digits) and other byte arrays, never a string or an identifier, and takes no default; a property is never compared with itself;
 - string constants and `ifAbsent` defaults are in the property's `enum` when it has one; identifier constants are base58 identifiers of 32 bytes;
 - no literal divisor is 0 and no literal exponent is negative;
-- every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
-- `present`, `absent` and `countPresent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
+- every time or height a rule reads, of either version, is one the type lists in `required`, and takes no `ifAbsent` default, nor does `$revision`;
+- `present`, `absent` and `countPresent` do not name `$ownerId`, a time, a height or `$revision`, of either version, and an index-only type has no rule reading any of them or anything under `$old.`;
+- a rule reads `$revision`, or anything under `$old.`, only on a type that keeps a revision: its documents are mutable, transferable, sold at a price their owner sets, or keep fields for their moderators. On any other a create is the only write a rule judges, with no stored version and the first revision;
+- no `countOf` or `sumOf` filter takes a value under `$old.`;
 - no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
 - no condition or operand nests more than 64 levels deep;
 - once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, and not its own type when that has a contested index, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range, integer-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;

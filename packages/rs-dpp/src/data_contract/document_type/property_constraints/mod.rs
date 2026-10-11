@@ -66,7 +66,15 @@
 //! transfer are integer operands too (`"$createdAt"`, `"$updatedAtBlockHeight"`,
 //! [`SystemProperty`]), on a document type that records them, so a price update
 //! and a transfer or a purchase, which change some of them, are judged against
-//! the rules reading those.
+//! the rules reading those; and so is `$revision` ([`SystemValue::Revision`]),
+//! on a document type that keeps a revision.
+//! Under `$old.` ([`STORED_DOCUMENT_PREFIX`]) a path, `$ownerId`, a time, a
+//! height or `$revision` reads the stored version of the document a write
+//! replaces instead ([`DocumentSystemValues::stored`]), so a rule compares a
+//! replace with what it replaces:
+//! `{ "greaterThanOrEqual": ["counter", { "ifAbsent": ["$old.counter", 0] }] }`
+//! keeps a counter from going down. A create has none, so every such read is
+//! absent there ([`StoredVersion::Absent`]).
 //! `countOf` and `sumOf` are integer operands read from state, [`AggregateRead`]:
 //! how many documents of a type of the same contract match, or the total of an
 //! integer property over them, from the count and sum trees their indexes keep
@@ -102,11 +110,11 @@ use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, ID as DOCUMENT_ID, OWNER_ID,
-    TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
-    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+    REVISION, TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT,
+    UPDATED_AT, UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
-use crate::document::{Document, DocumentV0Getters};
-use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision, TimestampMillis};
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use std::borrow::Cow;
@@ -165,17 +173,29 @@ const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min,
 /// no change to a limit can make a stored contract unparseable.
 pub const MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH: usize = 64;
 
-/// The prefix through which the condition of an `immutable` entry reads the
-/// stored document instead of the one a replace writes: `$old.status` is the
-/// stored `status`. Only such a condition may read it, and only a schema
-/// property through it; the condition is judged against the written document's
-/// properties with the stored ones under [`STORED_DOCUMENT_KEY`].
+/// The prefix through which a rule, or the condition of an `immutable` entry or
+/// of `retractedWhen`, reads the stored version of the document a write
+/// replaces instead of the version it writes: `$old.status` is the stored
+/// `status`, `$old.$ownerId` ([`STORED_OWNER_ID`]) the stored owner, and
+/// `$old.$updatedAt` or `$old.$revision` ([`SystemRead`]) a stored system
+/// value. A rule is judged against the written document's properties with the
+/// stored ones under [`STORED_DOCUMENT_KEY`] ([`DocumentSystemValues::judged_data`]),
+/// and the stored owner, times, heights and revision in
+/// [`DocumentSystemValues::stored`]. A create has no stored version, so there
+/// every such read is absent ([`StoredVersion::Absent`]). A `deleteConstraints`
+/// rule, judged on the stored document itself, reads none.
 pub const STORED_DOCUMENT_PREFIX: &str = "$old.";
 
-/// The key the stored document's properties sit under in the data the
-/// condition of an `immutable` entry is judged against, so that a path through
-/// [`STORED_DOCUMENT_PREFIX`] reads them.
+/// The key the stored document's properties sit under in the data a rule or a
+/// condition is judged against, so that a path through
+/// [`STORED_DOCUMENT_PREFIX`] reads them. No property can take the name: a
+/// property name is letters, digits and underscores.
 pub const STORED_DOCUMENT_KEY: &str = "$old";
+
+/// `$old.$ownerId`: the owner of the stored version of the document, which a
+/// comparison of identifiers reads as it reads `$ownerId`. It differs from
+/// `$ownerId` only on a transfer or a purchase, where it is the previous owner.
+pub const STORED_OWNER_ID: &str = "$old.$ownerId";
 
 /// How the two sides of a comparison must compare.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,28 +330,125 @@ impl SystemProperty {
                     | SystemProperty::UpdatedAtBlockHeight
                     | SystemProperty::UpdatedAtCoreBlockHeight
             ),
+            SystemChange::Restore => false,
         }
     }
 }
 
-/// A write that changes a stored document's system values and none of its
-/// properties, so only the rules reading what it changes can break.
+/// A write that changes none of a stored document's properties, so only the
+/// rules reading what it does change can break: the others held when the
+/// document was last written and still do, since a type's rules never change
+/// once it is registered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemChange {
-    /// A transfer or a purchase: a new owner, and the time and heights of the
-    /// last transfer.
+    /// A transfer or a purchase: a new owner, the time and heights of the last
+    /// transfer, and the next revision.
     Transfer,
-    /// A price update: the time and heights of the last update.
+    /// A price update: the time and heights of the last update, and the next
+    /// revision.
     PriceUpdate,
+    /// A moderator's restore of a document its moderators deleted: the document
+    /// comes back as it was, owner, times, heights and revision included, but
+    /// the `countOf` and `sumOf` totals around it may have moved while it was
+    /// gone.
+    Restore,
+}
+
+/// A system value of a document a rule may read as an integer operand: one of
+/// the times and heights [`SystemProperty`] names, or `$revision`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SystemValue {
+    /// A time or a height, on a document type that records it.
+    Property(SystemProperty),
+    /// `$revision`: 1 for a created document, and one more for each later write
+    /// of it (a replace, a transfer, a purchase, a price update, a moderator's
+    /// change of its fields), on a document type that keeps a revision: one
+    /// whose documents are mutable, transferable, sold at a price their owner
+    /// sets, or keep fields for their moderators.
+    Revision,
+}
+
+impl SystemValue {
+    /// Its name, as a rule writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            SystemValue::Property(property) => property.name(),
+            SystemValue::Revision => REVISION,
+        }
+    }
+
+    /// The system value a rule names `name`, if any.
+    pub fn from_name(name: &str) -> Option<SystemValue> {
+        if name == REVISION {
+            return Some(SystemValue::Revision);
+        }
+        SystemProperty::from_name(name).map(SystemValue::Property)
+    }
+
+    /// Whether `change` sets it.
+    pub fn changed_by(self, change: SystemChange) -> bool {
+        match self {
+            SystemValue::Property(property) => property.changed_by(change),
+            SystemValue::Revision => {
+                matches!(change, SystemChange::Transfer | SystemChange::PriceUpdate)
+            }
+        }
+    }
+}
+
+/// A system value a rule reads: of the document version the write stores
+/// (`"$updatedAt"`), or, with `stored`, of the stored version it replaces,
+/// through [`STORED_DOCUMENT_PREFIX`] (`"$old.$updatedAt"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SystemRead {
+    pub value: SystemValue,
+    pub stored: bool,
+}
+
+impl From<SystemProperty> for SystemRead {
+    /// `property` of the document version written.
+    fn from(property: SystemProperty) -> Self {
+        SystemRead {
+            value: SystemValue::Property(property),
+            stored: false,
+        }
+    }
+}
+
+impl SystemRead {
+    /// Its name, as a rule writes it: `$updatedAt`, `$old.$revision`.
+    pub fn name(self) -> String {
+        if self.stored {
+            format!("{STORED_DOCUMENT_PREFIX}{}", self.value.name())
+        } else {
+            self.value.name().to_string()
+        }
+    }
+
+    /// The system value a rule names `name`, of either version, if any.
+    pub fn from_name(name: &str) -> Option<SystemRead> {
+        match name.strip_prefix(STORED_DOCUMENT_PREFIX) {
+            Some(stored) => SystemValue::from_name(stored).map(|value| SystemRead {
+                value,
+                stored: true,
+            }),
+            None => SystemValue::from_name(name).map(|value| SystemRead {
+                value,
+                stored: false,
+            }),
+        }
+    }
 }
 
 /// The system values of the document version a rule is judged against: its
-/// owner, which `$ownerId` reads, and the times and heights [`SystemProperty`]
-/// names. Consensus passes every one the document type records; a client
-/// passes those it knows. `$ownerId` equals no identifier when the owner is
-/// unknown, and [`PropertyConstraint::violation`] does not judge a rule reading
-/// a time, a height or an aggregate it is not given.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// owner, which `$ownerId` reads, the times and heights [`SystemProperty`]
+/// names and its revision, and what a rule reads beyond the document: the
+/// totals of other documents and the stored version the write replaces.
+/// Consensus passes every one the document type records; a client passes
+/// those it knows. `$ownerId` equals no identifier when the owner is unknown,
+/// and [`PropertyConstraint::violation`] does not judge a rule reading a time,
+/// a height, a revision, an aggregate or a stored version it is not given.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct DocumentSystemValues {
     pub owner_id: Option<Identifier>,
     pub created_at: Option<TimestampMillis>,
@@ -343,6 +460,8 @@ pub struct DocumentSystemValues {
     pub created_at_core_block_height: Option<CoreBlockHeight>,
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
+    /// `$revision` ([`SystemValue::Revision`]).
+    pub revision: Option<Revision>,
     /// The `countOf` and `sumOf` totals the rules read, each as it will be once
     /// the write is done ([`AggregateRead`]). `None` for a client, which reads
     /// no state: a rule reading a total is then not judged. `Some` for
@@ -351,10 +470,68 @@ pub struct DocumentSystemValues {
     /// `validate_property_constraints` reports as an error rather than skip the
     /// rule ([`PropertyConstraint::unread_aggregate`]).
     pub aggregates: Option<BTreeMap<AggregateRead, i128>>,
+    /// The version of the document the write replaces, which a rule reads
+    /// through [`STORED_DOCUMENT_PREFIX`]: [`StoredVersion::Absent`] for a
+    /// create, the stored version for any other write. `None` for a client not
+    /// given it: a rule reading it is then not judged. Consensus gives it
+    /// whenever a rule judging the write reads it, so that one missing there
+    /// is a fault in the code building the write, reported as an error
+    /// ([`PropertyConstraint::unread_stored_version`]).
+    pub stored: Option<StoredVersion>,
+    /// `Some` for a write that changes only these top-level properties of a
+    /// stored document and nothing else a rule reads but `$revision`: a
+    /// moderator's change of a document's fields. It is judged only against
+    /// the rules reading one of them, directly or through `$old.`, `$revision`
+    /// or a total ([`PropertyConstraint::reads_changed_fields`]); every other
+    /// rule reads what the document held when it was last written, and gave
+    /// its verdict then. `None` for every other write, judged against every
+    /// rule.
+    pub changed_fields: Option<BTreeSet<String>>,
+}
+
+/// The stored version of the document a write replaces, as a rule reads it
+/// through [`STORED_DOCUMENT_PREFIX`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum StoredVersion {
+    /// There is none: the write is a create. A path through `$old.` reads as a
+    /// property the document leaves out does (0, or its `ifAbsent` value;
+    /// absent to `present`; equal to no string or identifier), `$old.$ownerId`
+    /// equals no identifier, and a stored time, height or revision reads 0.
+    Absent,
+    /// The version the write replaces.
+    Present(Box<StoredDocument>),
+}
+
+impl StoredVersion {
+    /// `document`, the version a write replaces.
+    pub fn of_document(document: &Document) -> Self {
+        StoredVersion::Present(Box::new(StoredDocument::of_document(document)))
+    }
+}
+
+/// A stored version of a document, as a rule reads it through `$old.`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredDocument {
+    /// Its properties, which `$old.<path>` reads.
+    pub properties: BTreeMap<String, Value>,
+    /// Its owner, times, heights and revision, which `$old.$ownerId`,
+    /// `$old.$createdAt` and the rest read. Its own `aggregates`, `stored` and
+    /// `changed_fields` are unused.
+    pub system: DocumentSystemValues,
+}
+
+impl StoredDocument {
+    /// What `document` holds.
+    pub fn of_document(document: &Document) -> Self {
+        StoredDocument {
+            properties: document.properties().clone(),
+            system: DocumentSystemValues::of_document(document),
+        }
+    }
 }
 
 impl DocumentSystemValues {
-    /// The owner alone, no time or height.
+    /// The owner alone, no time, height or revision.
     pub fn owned_by(owner_id: Identifier) -> Self {
         DocumentSystemValues {
             owner_id: Some(owner_id),
@@ -364,7 +541,8 @@ impl DocumentSystemValues {
 
     /// A document created by `owner_id` in the block `block_info` describes:
     /// its creation, last update and last transfer all at that block, as a
-    /// create records every one its type requires.
+    /// create records every one its type requires, its first revision, which
+    /// a rule reads only on a type keeping one, and no stored version.
     pub fn created_in_block(owner_id: Identifier, block_info: &BlockInfo) -> Self {
         DocumentSystemValues {
             owner_id: Some(owner_id),
@@ -377,11 +555,14 @@ impl DocumentSystemValues {
             created_at_core_block_height: Some(block_info.core_height),
             updated_at_core_block_height: Some(block_info.core_height),
             transferred_at_core_block_height: Some(block_info.core_height),
+            revision: Some(INITIAL_REVISION),
             aggregates: None,
+            stored: Some(StoredVersion::Absent),
+            changed_fields: None,
         }
     }
 
-    /// The values `document` holds.
+    /// The values `document` holds; no stored version.
     pub fn of_document(document: &Document) -> Self {
         DocumentSystemValues {
             owner_id: Some(document.owner_id()),
@@ -394,8 +575,73 @@ impl DocumentSystemValues {
             created_at_core_block_height: document.created_at_core_block_height(),
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
+            revision: document.revision(),
             aggregates: None,
+            stored: None,
+            changed_fields: None,
         }
+    }
+
+    /// The value `read` reads, `None` when not given: one of the stored
+    /// version is 0 on a create, and not given when the stored version is not.
+    pub fn read(&self, read: SystemRead) -> Option<i128> {
+        if read.stored {
+            return match &self.stored {
+                Some(StoredVersion::Present(stored)) => stored.system.read(SystemRead {
+                    value: read.value,
+                    stored: false,
+                }),
+                Some(StoredVersion::Absent) => Some(0),
+                None => None,
+            };
+        }
+        match read.value {
+            SystemValue::Property(property) => self.value(property),
+            SystemValue::Revision => self.revision.map(i128::from),
+        }
+    }
+
+    /// The owner of the stored version, which `$old.$ownerId` reads: `None` on
+    /// a create, and when the stored version is not given.
+    pub fn stored_owner_id(&self) -> Option<Identifier> {
+        match &self.stored {
+            Some(StoredVersion::Present(stored)) => stored.system.owner_id,
+            Some(StoredVersion::Absent) | None => None,
+        }
+    }
+
+    /// The data a rule is judged against for a document whose properties are
+    /// `data` (a map): `data`, with the stored version's properties under
+    /// [`STORED_DOCUMENT_KEY`] when there is one, so that a path through
+    /// `$old.` reads them, and with nothing there otherwise. A `$old` key
+    /// `data` carries itself, which no document holds (no property takes the
+    /// name, and the schema validation refuses one it does not declare), is
+    /// dropped, so that it is never read as the stored version. `data` itself
+    /// when there is nothing to add or drop.
+    pub fn judged_data<'a>(&self, data: &'a Value) -> Cow<'a, Value> {
+        let stored = match &self.stored {
+            Some(StoredVersion::Present(stored)) => Some(stored),
+            Some(StoredVersion::Absent) | None => None,
+        };
+        let Value::Map(entries) = data else {
+            return Cow::Borrowed(data);
+        };
+        let is_stored_key = |key: &Value| key.as_text() == Some(STORED_DOCUMENT_KEY);
+        if stored.is_none() && !entries.iter().any(|(key, _)| is_stored_key(key)) {
+            return Cow::Borrowed(data);
+        }
+        let mut judged: Vec<(Value, Value)> = entries
+            .iter()
+            .filter(|(key, _)| !is_stored_key(key))
+            .cloned()
+            .collect();
+        if let Some(stored) = stored {
+            judged.push((
+                Value::Text(STORED_DOCUMENT_KEY.to_string()),
+                Value::from(stored.properties.clone()),
+            ));
+        }
+        Cow::Owned(Value::Map(judged))
     }
 
     /// The value of `property`, `None` when not given.
@@ -554,9 +800,10 @@ pub enum ConstraintExpression {
     /// array property at the dotted `path`, `{ "byteAt": ["address", 0] }`, or
     /// 0 when the array does not hold that byte or the document leaves it out.
     ByteAt { path: String, index: u16 },
-    /// A system property, `"$createdAt"` say: its value in the
-    /// [`DocumentSystemValues`] the rule is judged with.
-    System(SystemProperty),
+    /// A system value, `"$createdAt"` or `"$revision"` say, of the document
+    /// version written or, through `$old.`, of the stored version it replaces:
+    /// its value in the [`DocumentSystemValues`] the rule is judged with.
+    System(SystemRead),
     /// `add`: the sum of two or more operands.
     Add(Vec<ConstraintExpression>),
     /// `multiply`: the product of two or more operands.
@@ -626,7 +873,7 @@ impl ConstraintExpression {
     ) -> Result<i128, PropertyConstraintViolation> {
         match self {
             ConstraintExpression::Value(value) => Ok(*value),
-            ConstraintExpression::System(property) => Ok(system.value(*property).unwrap_or(0)),
+            ConstraintExpression::System(read) => Ok(system.read(*read).unwrap_or(0)),
             ConstraintExpression::Aggregate(read) => Ok(system
                 .aggregates
                 .as_ref()
@@ -821,11 +1068,11 @@ impl ConstraintExpression {
         }
     }
 
-    /// Appends the system properties the expression reads to `reads`, in the
+    /// Appends the system values the expression reads to `reads`, in the
     /// order it reads them.
-    fn collect_system_reads(&self, reads: &mut Vec<SystemProperty>) {
+    fn collect_system_reads(&self, reads: &mut Vec<SystemRead>) {
         match self {
-            ConstraintExpression::System(property) => reads.push(*property),
+            ConstraintExpression::System(read) => reads.push(*read),
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
@@ -1227,8 +1474,11 @@ pub enum PropertyConstraint {
 impl PropertyConstraint {
     /// Whether a document whose properties are `data` and whose system values
     /// are `system` meets the condition. `$ownerId` reads `system.owner_id`,
-    /// equalling no identifier when it is `None`, and a system property reads
-    /// its value there, 0 when not given.
+    /// equalling no identifier when it is `None`, and a system value reads its
+    /// value there, 0 when not given. A path through `$old.` reads the stored
+    /// version's properties `data` holds under [`STORED_DOCUMENT_KEY`]
+    /// ([`DocumentSystemValues::judged_data`]), and `$old.$ownerId` and a
+    /// stored system value read [`DocumentSystemValues::stored`].
     ///
     /// Evaluated left to right, and no further than the outcome needs: a
     /// comparison evaluates its left side, then its right one; `anyOf` checks
@@ -1248,7 +1498,6 @@ impl PropertyConstraint {
         data: &Value,
         system: &DocumentSystemValues,
     ) -> Result<bool, PropertyConstraintViolation> {
-        let owner_id = system.owner_id;
         match self {
             PropertyConstraint::Compare {
                 comparison,
@@ -1288,7 +1537,7 @@ impl PropertyConstraint {
                 path,
                 value,
             } => {
-                let equal = identifier_value(data, owner_id, path) == Some(*value);
+                let equal = identifier_value(data, system, path) == Some(*value);
                 Ok(equal == (*comparison == ConstraintComparison::Equal))
             }
             PropertyConstraint::IdentifierCompareProperties {
@@ -1298,15 +1547,15 @@ impl PropertyConstraint {
             } => {
                 let equal = matches!(
                     (
-                        identifier_value(data, owner_id, left),
-                        identifier_value(data, owner_id, right)
+                        identifier_value(data, system, left),
+                        identifier_value(data, system, right)
                     ),
                     (Some(left), Some(right)) if left == right
                 );
                 Ok(equal == (*comparison == ConstraintComparison::Equal))
             }
             PropertyConstraint::IdentifierIn { path, values } => {
-                Ok(identifier_value(data, owner_id, path)
+                Ok(identifier_value(data, system, path)
                     .is_some_and(|value| values.contains(&value)))
             }
             PropertyConstraint::TextAffix {
@@ -1351,7 +1600,7 @@ impl PropertyConstraint {
                         .iter()
                         .any(|element| element.to_identifier().ok() == Some(*value)),
                     ContainsNeedle::IdentifierProperty(path) => {
-                        identifier_value(data, owner_id, path).is_some_and(|value| {
+                        identifier_value(data, system, path).is_some_and(|value| {
                             elements
                                 .iter()
                                 .any(|element| element.to_identifier().ok() == Some(value))
@@ -1398,12 +1647,16 @@ impl PropertyConstraint {
     /// Why a document whose properties are `data` and whose system values are
     /// `system` breaks the rule, `None` when it meets it: the first fault met
     /// on the way ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`]
-    /// when the rule evaluates to false. A rule reading a system property
+    /// when the rule evaluates to false. A rule reading a system value
     /// `system` does not give is not judged: consensus gives every one the
     /// document type records, the only ones a rule may read, so only a client
-    /// that does not know one skips the rule. So is a rule reading an aggregate
+    /// that does not know one skips the rule. So is a rule reading the stored
+    /// version when `system` does not say what it is
+    /// ([`DocumentSystemValues::stored`]), and a rule reading an aggregate
     /// `system` does not give: consensus reads every one before judging the
-    /// write, and a client, which cannot read state here, gives none.
+    /// write, and a client, which cannot read state here, gives none. `data`
+    /// holds the stored version's properties under [`STORED_DOCUMENT_KEY`]
+    /// when there is one ([`DocumentSystemValues::judged_data`]).
     pub fn violation(
         &self,
         data: &Value,
@@ -1412,7 +1665,8 @@ impl PropertyConstraint {
         if self
             .system_reads()
             .into_iter()
-            .any(|property| system.value(property).is_none())
+            .any(|read| system.read(read).is_none())
+            || (system.stored.is_none() && self.reads_stored())
             || self
                 .find_aggregate(&|read| {
                     !system
@@ -1502,34 +1756,46 @@ impl PropertyConstraint {
         reads
     }
 
-    /// Whether the rule compares the document's owner, `$ownerId`, or reads an
-    /// aggregate depending on it ([`AggregateRead::reads_owner`]): then a
-    /// transfer or a purchase, which changes the owner and nothing else, is
-    /// judged against it too.
+    /// Whether the rule compares the document's owner, `$ownerId`, or the
+    /// stored version's, `$old.$ownerId`, or reads an aggregate depending on it
+    /// ([`AggregateRead::reads_owner`]): then a transfer or a purchase, which
+    /// changes the owner and no property, is judged against it too.
     pub fn reads_owner(&self) -> bool {
+        self.compares_identifier(&is_owner_path)
+            || self.find_aggregate(&AggregateRead::reads_owner).is_some()
+    }
+
+    /// Whether the rule reads the stored version of the document the write
+    /// replaces, through [`STORED_DOCUMENT_PREFIX`]: one of its properties, its
+    /// owner or one of its system values.
+    pub fn reads_stored(&self) -> bool {
+        self.property_reads()
+            .into_iter()
+            .any(|(path, _)| path.starts_with(STORED_DOCUMENT_PREFIX))
+            || self.compares_identifier(&|path| path == STORED_OWNER_ID)
+            || self.system_reads().into_iter().any(|read| read.stored)
+    }
+
+    /// Whether the rule compares an identifier, or looks for one among an
+    /// array's elements, at a path `matches` accepts.
+    fn compares_identifier(&self, matches: &dyn Fn(&str) -> bool) -> bool {
         match self {
-            PropertyConstraint::Compare { left, right, .. } => {
-                left.reads_owner() || right.reads_owner()
-            }
-            PropertyConstraint::In { operand, .. } => operand.reads_owner(),
-            PropertyConstraint::Contains {
-                needle: ContainsNeedle::Integer(expression),
-                ..
-            } => expression.reads_owner(),
-            PropertyConstraint::Contains {
+            PropertyConstraint::IdentifierCompare { path, .. }
+            | PropertyConstraint::IdentifierIn { path, .. }
+            | PropertyConstraint::Contains {
                 needle: ContainsNeedle::IdentifierProperty(path),
                 ..
-            } => path == OWNER_ID,
-            PropertyConstraint::IdentifierCompare { path, .. }
-            | PropertyConstraint::IdentifierIn { path, .. } => path == OWNER_ID,
+            } => matches(path),
             PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
-                left == OWNER_ID || right == OWNER_ID
+                matches(left) || matches(right)
             }
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
-                conditions.iter().any(PropertyConstraint::reads_owner)
+                conditions
+                    .iter()
+                    .any(|condition| condition.compares_identifier(matches))
             }
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
-                condition.reads_owner()
+                condition.compares_identifier(matches)
             }
             PropertyConstraint::IfThen {
                 condition,
@@ -1538,8 +1804,10 @@ impl PropertyConstraint {
             } => [Some(condition), Some(then), otherwise.as_ref()]
                 .into_iter()
                 .flatten()
-                .any(|part| part.reads_owner()),
-            PropertyConstraint::TextCompare { .. }
+                .any(|part| part.compares_identifier(matches)),
+            PropertyConstraint::Compare { .. }
+            | PropertyConstraint::In { .. }
+            | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
@@ -1548,6 +1816,33 @@ impl PropertyConstraint {
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
         }
+    }
+
+    /// Whether `system` holds consensus's totals (`Some`), which marks a write
+    /// consensus judges, but does not say what the stored version is, while
+    /// the rule reads it. Every write consensus judges gives the stored version
+    /// to the rules reading it, so one missing is a fault in the code building
+    /// the write, not a rule to skip.
+    pub fn unread_stored_version(&self, system: &DocumentSystemValues) -> bool {
+        system.aggregates.is_some() && system.stored.is_none() && self.reads_stored()
+    }
+
+    /// Whether a write changing the top-level properties `fields` of a stored
+    /// document, `$revision`, and nothing else a rule reads (a moderator's
+    /// change of its fields) can break the rule: it reads one of `fields`,
+    /// directly or through `$old.`, `$revision` of either version, or a total,
+    /// which may have moved since the document was last written.
+    pub fn reads_changed_fields(&self, fields: &BTreeSet<String>) -> bool {
+        self.find_aggregate(&|_| true).is_some()
+            || self
+                .system_reads()
+                .into_iter()
+                .any(|read| read.value == SystemValue::Revision)
+            || self.property_reads().into_iter().any(|(path, _)| {
+                let path = path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path);
+                let top_level = path.split('.').next().unwrap_or(path);
+                fields.contains(top_level)
+            })
     }
 
     /// A total the rule reads that consensus did not read: `None` unless
@@ -1661,29 +1956,38 @@ impl PropertyConstraint {
         }
     }
 
-    /// The system properties the rule reads (`"$createdAt"`, ...), in
-    /// declared order, one read twice listed twice. `$ownerId` is
-    /// [`Self::reads_owner`]'s.
-    pub fn system_reads(&self) -> Vec<SystemProperty> {
+    /// The system values the rule reads (`"$createdAt"`, `"$revision"`,
+    /// `"$old.$updatedAt"`, ...), in declared order, one read twice listed
+    /// twice. `$ownerId` and `$old.$ownerId` are [`Self::reads_owner`]'s.
+    pub fn system_reads(&self) -> Vec<SystemRead> {
         let mut reads = Vec::new();
         self.collect_system_reads(&mut reads);
         reads
     }
 
-    /// Whether `change` can break the rule: it reads the owner, or the time
-    /// and heights of the last transfer, for a transfer or a purchase; the
-    /// time and heights of the last update for a price update. Such a write
-    /// changes those and no property, so a rule reading neither held when the
-    /// document was written and still does.
+    /// Whether `change` can break the rule: for a transfer or a purchase, it
+    /// reads the owner, the time and heights of the last transfer or
+    /// `$revision`; for a price update, the time and heights of the last update
+    /// or `$revision`; either of the document written or, through `$old.`, of
+    /// the stored version, which the change makes the version before it. For a
+    /// restore, it reads a total. Such a write changes those and no property,
+    /// so a rule reading none of them held when the document was last written
+    /// and still does: one comparing properties with their stored values only
+    /// would compare each with itself.
     pub fn reads_change(&self, change: SystemChange) -> bool {
-        (change == SystemChange::Transfer && self.reads_owner())
-            || self
-                .system_reads()
-                .into_iter()
-                .any(|property| property.changed_by(change))
+        match change {
+            SystemChange::Restore => self.find_aggregate(&|_| true).is_some(),
+            SystemChange::Transfer | SystemChange::PriceUpdate => {
+                (change == SystemChange::Transfer && self.reads_owner())
+                    || self
+                        .system_reads()
+                        .into_iter()
+                        .any(|read| read.value.changed_by(change))
+            }
+        }
     }
 
-    fn collect_system_reads(&self, reads: &mut Vec<SystemProperty>) {
+    fn collect_system_reads(&self, reads: &mut Vec<SystemRead>) {
         match self {
             PropertyConstraint::Compare { left, right, .. } => {
                 left.collect_system_reads(reads);
@@ -2009,16 +2313,16 @@ impl PropertyConstraint {
                 reads.push((&left.path, PropertyRead::Text));
                 reads.push((&right.path, PropertyRead::Text));
             }
-            // `$ownerId` is the document's owner, no property of it
+            // `$ownerId` and `$old.$ownerId` are owners, no properties
             PropertyConstraint::IdentifierCompare { path, .. }
             | PropertyConstraint::IdentifierIn { path, .. } => {
-                if path != OWNER_ID {
+                if !is_owner_path(path) {
                     reads.push((path, PropertyRead::Identifier))
                 }
             }
             PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
                 for path in [left, right] {
-                    if path != OWNER_ID {
+                    if !is_owner_path(path) {
                         reads.push((path, PropertyRead::Identifier));
                     }
                 }
@@ -2061,8 +2365,8 @@ impl PropertyConstraint {
                 }
                 ContainsNeedle::IdentifierProperty(path) => {
                     reads.push((array, PropertyRead::Elements(ElementKind::Identifier)));
-                    // `$ownerId` is the document's owner, no property of it
-                    if path != OWNER_ID {
+                    // `$ownerId` and `$old.$ownerId` are owners, no properties
+                    if !is_owner_path(path) {
                         reads.push((path, PropertyRead::Identifier));
                     }
                 }
@@ -2100,6 +2404,18 @@ impl PropertyConstraint {
 struct ParseContext<'a> {
     document_type_name: &'a str,
     property_kind: &'a dyn Fn(&str) -> Option<EqualityKind>,
+}
+
+impl ParseContext<'_> {
+    /// How a bare path compares: `$ownerId` and `$old.$ownerId` as
+    /// identifiers, and a property, of either version, as `property_kind`
+    /// says of its path in the type.
+    fn kind_of(&self, path: &str) -> Option<EqualityKind> {
+        if is_owner_path(path) {
+            return Some(EqualityKind::Identifier);
+        }
+        (self.property_kind)(path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path))
+    }
 }
 
 /// Reads the `propertyConstraints` keyword of a document type's `schema`:
@@ -2325,14 +2641,7 @@ fn parse_condition(
         ));
     };
     let parent = enter(at, key);
-    // `$ownerId`, the document's owner, compares as an identifier property
-    let kind_of = |path: &str| {
-        if path == OWNER_ID {
-            Some(EqualityKind::Identifier)
-        } else {
-            (context.property_kind)(path)
-        }
-    };
+    let kind_of = |path: &str| context.kind_of(path);
     let condition = match key {
         ANY_OF => PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1, context)?),
         ALL_OF => PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1, context)?),
@@ -2525,15 +2834,21 @@ fn parse_condition(
                      its elements"
                 ));
             };
-            // `$ownerId` and the system times are values, never arrays
-            let Some(array) = array.as_text().filter(|path| !path.starts_with('$')) else {
+            // `$ownerId` and the system values are values, never arrays; an
+            // array of the stored version is named through `$old.`
+            let Some(array) = array.as_text().filter(|path| {
+                !path
+                    .strip_prefix(STORED_DOCUMENT_PREFIX)
+                    .unwrap_or(path)
+                    .starts_with('$')
+            }) else {
                 return Err(format!("at {at}[0] must name an array property path"));
             };
             let base = at.len();
             at.push_str("[1]");
             // The kind of the array's elements decides what a const spells, and
             // what is checked against the parsed document type
-            let needle = match (context.property_kind)(array) {
+            let needle = match context.kind_of(array) {
                 Some(EqualityKind::Text) => match text_side(needle, at)? {
                     TextSide::Constant(value) => ContainsNeedle::TextConstant(value),
                     TextSide::Property(property) => ContainsNeedle::TextProperty(property),
@@ -3009,8 +3324,8 @@ fn parse_expression(
         ));
     }
     if let Some(path) = value.as_text() {
-        if let Some(property) = SystemProperty::from_name(path) {
-            return Ok(ConstraintExpression::System(property));
+        if let Some(read) = SystemRead::from_name(path) {
+            return Ok(ConstraintExpression::System(read));
         }
         return Ok(ConstraintExpression::Property {
             path: path.to_string(),
@@ -3040,11 +3355,21 @@ fn parse_expression(
             let Some(path) = path.as_text() else {
                 return Err(format!("at {at} must name a property path first"));
             };
-            if SystemProperty::from_name(path).is_some() {
-                return Err(format!(
-                    "at {at} gives {path} a default, but a system property a rule reads is \
-                     always set: name it on its own"
-                ));
+            match SystemRead::from_name(path) {
+                Some(SystemRead { stored: false, .. }) => {
+                    return Err(format!(
+                        "at {at} gives {path} a default, but a system property a rule reads is \
+                         always set: name it on its own"
+                    ));
+                }
+                Some(SystemRead { stored: true, .. }) => {
+                    return Err(format!(
+                        "at {at} gives {path} a default, but a system value of the stored \
+                         version is always set, and reads 0 on a create, which has none: name \
+                         it on its own"
+                    ));
+                }
+                None => {}
             }
             if if_absent.as_text().is_some() {
                 return Err(format!(
@@ -3134,7 +3459,7 @@ fn parse_expression(
             let Some(path) = path.as_text() else {
                 return Err(format!("at {at} must name a property path first"));
             };
-            if path == OWNER_ID || SystemProperty::from_name(path).is_some() {
+            if is_owner_path(path) || SystemRead::from_name(path).is_some() {
                 return Err(format!(
                     "at {at} names {path}, but byteAt reads a byte array property"
                 ));
@@ -3286,6 +3611,12 @@ fn parse_aggregate(
             let binding = match binding {
                 Value::Text(path) if path == OWNER_ID => AggregateBinding::Owner,
                 Value::Text(path) if path == DOCUMENT_ID => AggregateBinding::Id,
+                Value::Text(path) if path.starts_with(STORED_DOCUMENT_PREFIX) => {
+                    return Err(format!(
+                        "at {at}.{key} takes {path}, but a total matches its documents by the \
+                         document being written, never the stored version it replaces"
+                    ))
+                }
                 Value::Text(path) if path.starts_with('$') => {
                     return Err(format!(
                         "at {at}.{key} takes {path}, but the system values a key takes are \
@@ -3398,14 +3729,23 @@ fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
     })
 }
 
+/// Whether `path` names an owner rather than a property: `$ownerId`, or the
+/// stored version's, `$old.$ownerId`.
+fn is_owner_path(path: &str) -> bool {
+    path == OWNER_ID || path == STORED_OWNER_ID
+}
+
 /// The identifier `data` holds at `path`, in any of the forms a document's
-/// identifier takes, or `owner_id` for `$ownerId`; `None` when the document
-/// leaves the property out or holds something that is no identifier there,
-/// which the schema validation running first refuses for an identifier
-/// property.
-fn identifier_value(data: &Value, owner_id: Option<Identifier>, path: &str) -> Option<Identifier> {
+/// identifier takes, or the owner `system` gives for `$ownerId`, and the
+/// stored version's for `$old.$ownerId`; `None` when the document leaves the
+/// property out or holds something that is no identifier there, which the
+/// schema validation running first refuses for an identifier property.
+fn identifier_value(data: &Value, system: &DocumentSystemValues, path: &str) -> Option<Identifier> {
     if path == OWNER_ID {
-        return owner_id;
+        return system.owner_id;
+    }
+    if path == STORED_OWNER_ID {
+        return system.stored_owner_id();
     }
     match data.get_optional_value_at_path(path) {
         Ok(Some(value)) => value.to_identifier().ok(),

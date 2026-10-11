@@ -1164,6 +1164,38 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
 ///     charter-specific check, whose error 11001 keeps its place in
 ///     `BasicError` but is never produced.
+///     A rule reads `$revision`, an integer operand (`SystemValue::Revision`),
+///     1 on a create and one more for each later write, on a type keeping a
+///     revision (`requires_revision`); a transfer, a purchase and a price
+///     update, which move it, are judged against the rules reading it. A rule
+///     reads the stored version of the document a write replaces through
+///     `$old.` (`STORED_DOCUMENT_PREFIX`), as the condition of item 66 does: a
+///     property (`$old.status`, in any read a bare path takes, checked as the
+///     path after it), `$old.$ownerId`, and a time, a height or `$revision`
+///     (`SystemRead::stored`); only on a type keeping a revision and not
+///     indexOnly, never in a `countOf` or `sumOf` filter, and never in a rule
+///     of `deleteConstraints`, which reads the stored document by its plain
+///     paths (parser generation 3; `validate_stored_version_reads` once the
+///     moderator abilities are parsed). `DocumentSystemValues::stored` gives
+///     it: `StoredVersion::Absent` on a create, where a property under it is
+///     absent, `$old.$ownerId` equals no identifier and a stored time, height
+///     or revision reads 0; on a replace the document replaced, its properties
+///     rebuilt from the written ones and `stored_changed_values`, its owner,
+///     times, heights and revision taken from the fetched document by the batch
+///     transformer and kept on the action beside the totals
+///     (`PropertyConstraintReads`, which replaces the boxed totals) when a
+///     rule or a condition reads them; on a transfer, a purchase or a price
+///     update the document before it, the write judged only against the rules
+///     reading what it changes, of either version. A moderator's change of a
+///     document's fields (`DocumentSystemValues::changed_fields`) is judged
+///     against the rules reading a field it writes, of either version,
+///     `$revision` or a total, and a moderator's restore (`SystemChange::Restore`,
+///     through `validate_property_constraints_for_system_change`) against the
+///     rules reading a total, with `$old.` reading the restored document: rules
+///     never change once registered, so no other rule could give another
+///     verdict than at the document's last write. A rule reading a stored
+///     version a client does not give is not judged, and one consensus does
+///     not give is an error, as for a total.
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
@@ -1394,7 +1426,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     given as a `$ref` to the contract's `$defs` from the definition, as the
 ///     core parse does, when it checks a rule's string constants and defaults
 ///     against the property's `enum` and an `encryptedFor` key id's bounds; it
-///     refused every such contract with a decoding error before.
+///     refused every such contract with a decoding error before. The stored
+///     version a rule reads through `$old.` (item 39) is judged as stored too,
+///     and a `$old` key the written data carries itself, which no property can
+///     name, is dropped before a rule reads it
+///     (`DocumentSystemValues::judged_data`).
 ///
 /// 53. **Properties the platform generates (`generatedFrom`)**: the property
 ///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
@@ -1778,8 +1814,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `sumOf`, and is judged on the document the replace writes (its
 ///     `$updatedAt` the replace's block time, so `$updatedAt - $createdAt`
 ///     is the document's age), with the stored document's properties read
-///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), which only such a
-///     condition may read. Document replace state validation 1, extended in
+///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), and its owner, times,
+///     heights and revision through `$old.$ownerId`, `$old.$updatedAt` and the
+///     rest, which a `propertyConstraints` rule reads too (item 39), as it
+///     reads `$revision`. Document replace state validation 1, extended in
 ///     place, refuses a replace changing, adding or removing a property whose
 ///     condition holds, or faults, with `DocumentImmutablePropertyChangedError`
 ///     (40128); the stored properties are rebuilt from the written ones and

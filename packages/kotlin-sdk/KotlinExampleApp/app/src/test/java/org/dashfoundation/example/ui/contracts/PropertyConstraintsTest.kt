@@ -306,12 +306,42 @@ class PropertyConstraintsTest {
 
     /** The note under a rule reading a system value; the SwiftExampleApp shows the same text. */
     @Test
-    fun `should say which writes the update and transfer times answer to`() {
+    fun `should say which writes the update and transfer times and the revision answer to`() {
         assertEquals(
             "A price update is judged against the rules reading ${'$'}updatedAt or its block " +
-                "heights, and a transfer or purchase against those reading ${'$'}transferredAt or " +
-                "its block heights.",
+                "heights, a transfer or purchase against those reading ${'$'}transferredAt or " +
+                "its block heights, and each of them against those reading ${'$'}revision.",
             PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE,
+        )
+    }
+
+    /** A rule comparing a property with its stored value, as Rust lists it. */
+    private val storedRule = DocumentPropertyConstraint(
+        name = "closedOnlyFromOpen",
+        ruleJson = """{"equal":["${'$'}old.status",{"const":"open"}]}""",
+        reads = listOf(PropertyConstraintRead("${'$'}old.status", PropertyConstraintRead.Kind.Text)),
+        readsOwner = false,
+        readsStored = true,
+    )
+
+    /** The line under a rule reading the stored version; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should show the stored version line only for a rule reading it`() {
+        assertEquals(
+            "Reads the stored version (${'$'}old.), the one a write replaces",
+            propertyConstraintStoredReadsText(storedRule),
+        )
+        assertNull(propertyConstraintStoredReadsText(rule))
+        assertNull(propertyConstraintStoredReadsText(timedRule))
+    }
+
+    /** The note under a rule reading the stored version; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say a create reads every stored value as absent`() {
+        assertEquals(
+            "A create has no stored version: there, and in the check before sending, every " +
+                "${'$'}old. read is absent.",
+            PROPERTY_CONSTRAINT_STORED_READS_NOTE,
         )
     }
 

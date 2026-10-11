@@ -1806,7 +1806,7 @@ mod property_constraints_tests {
             creator_id: None,
             moderated_at: None,
             moderated_by: None,
-            property_constraint_aggregates: Default::default(),
+            property_constraint_reads: Default::default(),
         });
 
         let before = action
@@ -2823,6 +2823,236 @@ mod property_constraints_tests {
             PropertyConstraintViolation::NotMet,
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    const HOUR_MS: u64 = 3_600_000;
+
+    /// A mutable, transferable and purchasable `offer` type recording its
+    /// creation, update and transfer times, with the integers
+    /// [`set_valid_offer`] fills and `doctype` added at its top level: its
+    /// `propertyConstraints`, which read the stored version through `$old.`,
+    /// or its `immutable` entries.
+    fn stored_offer_schema(doctype: Value) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 }
+            },
+            "required": [
+                "price",
+                "fee",
+                "quantity",
+                "deposit",
+                "$createdAt",
+                "$updatedAt",
+                "$transferredAt"
+            ],
+            "additionalProperties": false
+        });
+        let Value::Map(entries) = doctype else {
+            panic!("the doctype keys are an object");
+        };
+        for (key, value) in entries {
+            schema
+                .set_value(key.as_text().expect("a text key"), value)
+                .expect("the doctype key applies");
+        }
+        schema
+    }
+
+    /// The fixture over [`stored_offer_schema`] with an offer created at
+    /// [`NOW`], block 20.
+    async fn stored_offer(doctype: Value) -> OfferFixture {
+        let mut fixture = OfferFixture::with_schema(stored_offer_schema(doctype));
+        fixture.block_info = at_block(NOW, 20);
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture
+    }
+
+    /// A replace is judged with the document it replaces under `$old.`: its
+    /// properties, and the update time the replace overwrites, which the
+    /// transformer keeps beside the action.
+    #[tokio::test]
+    async fn should_judge_a_replace_against_the_document_it_replaces() {
+        let mut fixture = stored_offer(platform_value!({
+            "propertyConstraints": {
+                "depositNeverDrops": {
+                    "greaterThanOrEqual": ["deposit", { "ifAbsent": ["$old.deposit", 0] }]
+                },
+                "editsAnHourApart": {
+                    "greaterThanOrEqual": [
+                        { "subtract": ["$updatedAt", "$old.$updatedAt"] },
+                        HOUR_MS
+                    ]
+                }
+            }
+        }))
+        .await;
+
+        fixture.block_info = at_block(NOW + 2 * HOUR_MS, 21);
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("deposit", Value::U64(300)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Ten minutes after the last update
+        fixture.block_info = at_block(NOW + 2 * HOUR_MS + 600_000, 22);
+        let result = fixture
+            .replace(|document| document.set("deposit", Value::U64(400)))
+            .await;
+        expect_violated(
+            result,
+            "editsAnHourApart",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW + 4 * HOUR_MS, 23);
+        let result = fixture
+            .replace(|document| document.set("deposit", Value::U64(250)))
+            .await;
+        expect_violated(
+            result,
+            "depositNeverDrops",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("deposit", Value::U64(500)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(integer(&fixture.stored_offers()[0], "deposit"), Some(500));
+    }
+
+    /// A transfer and a purchase are judged with the document before them under
+    /// `$old.`: its owner and its transfer time, which the write overwrites. A
+    /// rule comparing properties alone is not judged by them, nor by a price
+    /// update: none changes a property, so it would compare each with itself.
+    #[tokio::test]
+    async fn should_judge_a_transfer_and_a_purchase_against_the_document_before_them() {
+        let rules = platform_value!({
+            "propertyConstraints": {
+                "heldADay": {
+                    "ifThen": [
+                        { "notEqual": ["$ownerId", "$old.$ownerId"] },
+                        {
+                            "greaterThanOrEqual": [
+                                { "subtract": ["$transferredAt", "$old.$transferredAt"] },
+                                DAY_MS
+                            ]
+                        }
+                    ]
+                },
+                "quantityRisesOnEveryEdit": { "greaterThan": ["quantity", "$old.quantity"] }
+            }
+        });
+
+        let mut fixture = stored_offer(rules.clone()).await;
+        let recipient = Identifier::new([9; 32]);
+        fixture.block_info = at_block(NOW + HOUR_MS, 21);
+        expect_violated(
+            fixture.transfer(recipient).await,
+            "heldADay",
+            PropertyConstraintViolation::NotMet,
+        );
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 22);
+        assert_matches!(
+            fixture.transfer(recipient).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers()[0].owner_id(), recipient);
+
+        let mut fixture = stored_offer(rules).await;
+        fixture.block_info = at_block(NOW + 60_000, 21);
+        fixture.set_price(500).await;
+        let early_buyer = fixture.other_identity(960);
+        fixture.block_info = at_block(NOW + HOUR_MS, 22);
+        expect_violated(
+            fixture.purchase_by(&early_buyer, 500).await,
+            "heldADay",
+            PropertyConstraintViolation::NotMet,
+        );
+        let buyer = fixture.other_identity(961);
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 23);
+        assert_matches!(
+            fixture.purchase_by(&buyer, 500).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers()[0].owner_id(), buyer.0.id());
+    }
+
+    /// `$revision` counts every write: a replace, a price update and a
+    /// transfer each move it, and each is judged against a rule reading it.
+    #[tokio::test]
+    async fn should_judge_every_write_moving_the_revision() {
+        let rules = platform_value!({
+            "propertyConstraints": { "atMostThreeWrites": { "lessThanOrEqual": ["$revision", 3] } }
+        });
+        let mut fixture = stored_offer(rules.clone()).await;
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("deposit", Value::U64(300)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture.set_price(500).await;
+        expect_violated(
+            fixture.transfer(Identifier::new([9; 32])).await,
+            "atMostThreeWrites",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let mut fixture = stored_offer(rules).await;
+        fixture.set_price(500).await;
+        fixture.set_price(400).await;
+        expect_violated(
+            fixture.try_set_price(300).await,
+            "atMostThreeWrites",
+            PropertyConstraintViolation::NotMet,
+        );
+    }
+
+    /// An `immutable` condition reads the stored update time too: `fee` is
+    /// frozen for an hour after each update.
+    #[tokio::test]
+    async fn should_freeze_a_property_by_the_stored_update_time() {
+        let mut fixture = stored_offer(platform_value!({
+            "immutable": [{
+                "property": "fee",
+                "when": {
+                    "lessThan": [{ "subtract": ["$updatedAt", "$old.$updatedAt"] }, HOUR_MS]
+                }
+            }]
+        }))
+        .await;
+
+        fixture.block_info = at_block(NOW + 2 * HOUR_MS, 21);
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("fee", Value::U64(20)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture.block_info = at_block(NOW + 2 * HOUR_MS + 600_000, 22);
+        let result = fixture
+            .replace(|document| document.set("fee", Value::U64(30)))
+            .await;
+        let StateTransitionExecutionResult::PaidConsensusError { error, .. } = result else {
+            panic!("expected a paid consensus error, got {result:?}");
+        };
+        assert_eq!(error.code(), 40128, "{error:?}");
+        assert_eq!(integer(&fixture.stored_offers()[0], "fee"), Some(20));
     }
 
     /// The totals a rule reads leave out the other writes of its batch, which is

@@ -22,7 +22,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::property_constraints::{
-    AggregateKind, DocumentSystemValues, PropertyRead,
+    AggregateKind, DocumentSystemValues, PropertyRead, StoredVersion,
 };
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
@@ -182,13 +182,20 @@ export type PropertyConstraintReadKind =
   | 'bytes';
 
 /**
- * A system time or height a rule reads: the block time in milliseconds
- * (`At`), the Platform block height (`AtBlockHeight`) or the Core block height
+ * A system value a rule reads: the block time in milliseconds (`At`), the
+ * Platform block height (`AtBlockHeight`) or the Core block height
  * (`AtCoreBlockHeight`) of the document's creation, its last update (a create,
  * a replace or a price update) and its last transfer (a create, a transfer or
- * a purchase).
+ * a purchase); or `$revision`, 1 on a create and one more for each later
+ * write. Under `$old.` it is the stored version's, the document a write
+ * replaces (0 on a create, which has none).
  */
 export type PropertyConstraintSystemProperty =
+  | PropertyConstraintSystemValue
+  | `$old.${PropertyConstraintSystemValue}`;
+
+/** A system value of one version of the document. */
+export type PropertyConstraintSystemValue =
   | '$createdAt'
   | '$updatedAt'
   | '$transferredAt'
@@ -197,7 +204,8 @@ export type PropertyConstraintSystemProperty =
   | '$transferredAtBlockHeight'
   | '$createdAtCoreBlockHeight'
   | '$updatedAtCoreBlockHeight'
-  | '$transferredAtCoreBlockHeight';
+  | '$transferredAtCoreBlockHeight'
+  | '$revision';
 
 /**
  * A `countOf` or `sumOf` total a rule reads: how many documents of
@@ -223,19 +231,31 @@ export type DocumentPropertyConstraint = {
   name: string;
   /** The rule as the schema declares it. */
   rule: PropertyConstraintCondition;
-  /** Every property the rule reads, in declared order; `$ownerId` is no property and is not listed. */
+  /**
+   * Every property the rule reads, in declared order, one of the stored
+   * version under its `$old.` path; `$ownerId` and `$old.$ownerId` are no
+   * properties and are not listed.
+   */
   reads: Array<{ path: string; kind: PropertyConstraintReadKind }>;
   /**
-   * Whether the rule reads `$ownerId`, or a total that depends on the owner:
-   * then a transfer or a purchase is judged against it too.
+   * Whether the rule reads `$ownerId` or `$old.$ownerId`, or a total that
+   * depends on the owner: then a transfer or a purchase is judged against it
+   * too.
    */
   readsOwner: boolean;
   /**
-   * The system times and heights the rule reads, in declared order. A price
-   * update is judged against a rule reading the update's, and a transfer or a
-   * purchase against one reading the transfer's.
+   * The system values the rule reads, in declared order, of either version. A
+   * price update is judged against a rule reading the update's, a transfer or
+   * a purchase against one reading the transfer's, and each against one
+   * reading `$revision`.
    */
   readsSystem: PropertyConstraintSystemProperty[];
+  /**
+   * Whether the rule reads the stored version of the document through
+   * `$old.`. `checkDocumentPropertyConstraints` judges it only when told what
+   * the stored version is: none for a create, or the stored document.
+   */
+  readsStored: boolean;
   /**
    * The `countOf` and `sumOf` totals the rule reads, in declared order, one
    * read twice listed twice. The pre-check does not judge a rule reading one.
@@ -429,10 +449,16 @@ pub(crate) fn property_constraints_for_document_type(
             name,
         )?;
         let reads_system = Array::new();
-        for property in constraint.system_reads() {
-            reads_system.push(&JsValue::from_str(property.name()));
+        for read in constraint.system_reads() {
+            reads_system.push(&JsValue::from_str(&read.name()));
         }
         set_field(&object, "readsSystem", &reads_system, name)?;
+        set_field(
+            &object,
+            "readsStored",
+            &JsValue::from_bool(constraint.reads_stored()),
+            name,
+        )?;
         let reads_totals = Array::new();
         for read in constraint.aggregate_reads() {
             let entry = Object::new();
@@ -461,35 +487,42 @@ pub(crate) fn property_constraints_for_document_type(
 }
 
 /// The system values a create or a replace of `document` will have, as far as
-/// a client can tell before its block: the owner, and the stored times and
-/// heights the write keeps, with the device clock standing in for the block
-/// time it records (its update, and its creation and transfer when the
-/// document has none yet). The block heights it records are unknown until the
-/// block, so a rule reading one is not judged, and so is a rule reading a
-/// `countOf` or `sumOf` total, which no client reads from state here.
-fn system_values_for_write(document: &Document) -> DocumentSystemValues {
+/// a client can tell before its block: the owner, the revision, and the stored
+/// times and heights the write keeps, with the device clock standing in for
+/// the block time it records (its update, and its creation and transfer when
+/// the document has none yet), and `stored`, the version it replaces. The
+/// block heights it records are unknown until the block, so a rule reading one
+/// is not judged, and so is a rule reading a `countOf` or `sumOf` total, which
+/// no client reads from state here, or a stored version it is not given.
+fn system_values_for_write(
+    document: &Document,
+    stored: Option<StoredVersion>,
+) -> DocumentSystemValues {
     // Milliseconds since the epoch, a whole number well inside a `u64`
     let now = js_sys::Date::now() as u64;
-    let stored = DocumentSystemValues::of_document(document);
+    let values = DocumentSystemValues::of_document(document);
     DocumentSystemValues {
-        created_at: stored.created_at.or(Some(now)),
+        created_at: values.created_at.or(Some(now)),
         updated_at: Some(now),
-        transferred_at: stored.transferred_at.or(Some(now)),
+        transferred_at: values.transferred_at.or(Some(now)),
         updated_at_block_height: None,
         updated_at_core_block_height: None,
-        ..stored
+        stored,
+        ..values
     }
 }
 
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
 /// breaks, in name order, as consensus judges a create or replace: its
 /// properties with every `generatedFrom` property generated from its params,
-/// as the transition builders send them, its owner for `$ownerId`, and its
-/// system times and heights as [`system_values_for_write`] estimates them.
+/// as the transition builders send them, its owner for `$ownerId`, its system
+/// times and heights as [`system_values_for_write`] estimates them, and
+/// `stored`, the version it replaces, for the paths through `$old.`.
 /// `undefined` when it meets them all.
 pub(crate) fn check_property_constraints(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
+    stored: Option<StoredVersion>,
 ) -> WasmDppResult<JsValue> {
     let constraints = document_type.property_constraints();
     if constraints.is_empty() {
@@ -498,9 +531,10 @@ pub(crate) fn check_property_constraints(
     let mut properties = document.properties().clone();
     document_type.regenerate_generated_properties(&mut properties, PlatformVersion::desired())?;
     let data = Value::from(properties);
-    let system = system_values_for_write(document);
+    let system = system_values_for_write(document, stored);
+    let judged = system.judged_data(&data);
     for (name, constraint) in constraints {
-        if let Some(violation) = constraint.violation(&data, &system) {
+        if let Some(violation) = constraint.violation(&judged, &system) {
             let object = Object::new();
             set_field(&object, "rule", &JsValue::from_str(name), name)?;
             set_field(

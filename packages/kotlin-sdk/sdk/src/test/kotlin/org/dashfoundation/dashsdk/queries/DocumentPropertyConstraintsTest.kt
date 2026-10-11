@@ -3,6 +3,8 @@ package org.dashfoundation.dashsdk.queries
 import kotlinx.serialization.json.Json
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -604,6 +606,142 @@ class DocumentPropertyConstraintsTest {
         for (readsTotals in malformed) {
             val json =
                 """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":$readsTotals,"rule":{"present":"a"}}]"""
+            assertThrows(json, DashSdkError.SerializationError::class.java) {
+                DocumentPropertyConstraint.listFromJson(json)
+            }
+        }
+    }
+
+    /**
+     * Rules reading the stored version of the document through `$old.`, as
+     * the FFI reports them: a stored property, the stored update time beside
+     * `$revision`, and the stored owner, in name order beside a rule reading
+     * none of it.
+     */
+    private val storedRulesJson = """
+        [
+          {
+            "name": "closedOnlyFromOpen",
+            "readsOwner": false,
+            "reads": [
+              { "kind": "text", "path": "status" },
+              { "kind": "text", "path": "${'$'}old.status" }
+            ],
+            "readsSystem": [],
+            "readsStored": true,
+            "readsTotals": [],
+            "rule": {
+              "ifThen": [
+                { "equal": ["status", { "const": "closed" }] },
+                { "equal": ["${'$'}old.status", { "const": "open" }] }
+              ]
+            }
+          },
+          {
+            "name": "priceCap",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "price" }],
+            "readsSystem": [],
+            "readsStored": false,
+            "readsTotals": [],
+            "rule": { "lessThanOrEqual": ["price", 1000] }
+          },
+          {
+            "name": "revisedAfterUpdate",
+            "readsOwner": false,
+            "reads": [],
+            "readsSystem": ["${'$'}revision", "${'$'}updatedAt", "${'$'}old.${'$'}updatedAt"],
+            "readsStored": true,
+            "readsTotals": [],
+            "rule": {
+              "allOf": [
+                { "lessThanOrEqual": ["${'$'}revision", 100] },
+                { "greaterThanOrEqual": ["${'$'}updatedAt", "${'$'}old.${'$'}updatedAt"] }
+              ]
+            }
+          },
+          {
+            "name": "sellerUnchanged",
+            "readsOwner": true,
+            "reads": [{ "kind": "identifier", "path": "sellerId" }],
+            "readsSystem": [],
+            "readsStored": true,
+            "readsTotals": [],
+            "rule": { "equal": ["sellerId", "${'$'}old.${'$'}ownerId"] }
+          }
+        ]
+    """.trimIndent()
+
+    // Stored version
+
+    /**
+     * A stored property is listed under its `$old.` path, a stored system
+     * value under its `$old.` name beside `$revision`, and the stored owner
+     * only as an owner read, never as a property.
+     */
+    @Test
+    fun `should decode the rules reading the stored version through old`() {
+        val rules = DocumentPropertyConstraint.listFromJson(storedRulesJson)
+
+        assertEquals(
+            listOf("closedOnlyFromOpen", "priceCap", "revisedAfterUpdate", "sellerUnchanged"),
+            rules.map { it.name },
+        )
+        assertEquals(listOf(true, false, true, true), rules.map { it.readsStored })
+        assertEquals(
+            listOf(
+                PropertyConstraintRead("status", PropertyConstraintRead.Kind.Text),
+                PropertyConstraintRead("${'$'}old.status", PropertyConstraintRead.Kind.Text),
+            ),
+            rules[0].reads,
+        )
+        assertEquals(
+            listOf("${'$'}revision", "${'$'}updatedAt", "${'$'}old.${'$'}updatedAt"),
+            rules[2].readsSystem,
+        )
+        assertEquals(emptyList<PropertyConstraintRead>(), rules[2].reads)
+        // `$old.$ownerId` is an owner read, not a property
+        assertEquals(
+            listOf(PropertyConstraintRead("sellerId", PropertyConstraintRead.Kind.Identifier)),
+            rules[3].reads,
+        )
+        assertEquals(listOf(false, false, false, true), rules.map { it.readsOwner })
+        assertEquals(
+            """{"equal":["sellerId","${'$'}old.${'$'}ownerId"]}""",
+            rules[3].ruleJson,
+        )
+    }
+
+    /** A native library built before `readsStored` leaves the key out. */
+    @Test
+    fun `should read a rule without readsStored as not reading the stored version`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":[],"rule":{"present":"a"}}]""",
+        )
+
+        assertFalse(rules.single().readsStored)
+        assertEquals(
+            DocumentPropertyConstraint("r", """{"present":"a"}""", emptyList(), readsOwner = false),
+            rules.single(),
+        )
+        assertNotEquals(
+            DocumentPropertyConstraint(
+                "r",
+                """{"present":"a"}""",
+                emptyList(),
+                readsOwner = false,
+                readsStored = true,
+            ),
+            rules.single(),
+        )
+    }
+
+    /** Present, `readsStored` must be a JSON boolean; only a missing key means false. */
+    @Test
+    fun `should refuse a malformed readsStored`() {
+        for (readsStored in listOf("1", "0", "\"true\"", "null", "[]", "{}")) {
+            val json =
+                """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsStored":$readsStored,"rule":{"present":"a"}}]"""
             assertThrows(json, DashSdkError.SerializationError::class.java) {
                 DocumentPropertyConstraint.listFromJson(json)
             }

@@ -7,7 +7,10 @@ use crate::execution::types::state_transition_execution_context::{
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use dpp::data_contract::document_type::property_constraints::{AggregateRead, SystemChange};
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateRead, DocumentSystemValues, SystemChange,
+};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::{Identifier, Value};
@@ -59,9 +62,18 @@ struct VersionData<'a> {
 /// create or a replace of a document of `writer`'s, stored as `stored` before
 /// (`None` for a create), or a transfer, a purchase or a price update of `stored`,
 /// judged by the rules the change can break. Any other action, a refused write
-/// included, reads nothing.
+/// included, reads nothing. To the action of a write replacing `stored` it also
+/// hands the owner, times, heights and revision `stored` holds, when a rule or a
+/// condition of the document type reads the stored version through `$old.`
+/// ([`reads_stored_version`]): the action keeps only some of them (a replace
+/// overwrites the update's, a transfer the owner and the transfer's). Taken from
+/// the document already fetched, so nothing more is read or billed. Added in place
+/// to the shipped transformer at protocol version 14 and inert before it: no rule or
+/// condition exists there (`parse_property_constraints` is `None`, and meta-schemas
+/// before v3 refuse a condition), so nothing reads the stored version and none is
+/// attached.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn attach_property_constraint_aggregates(
+pub(super) fn attach_property_constraint_reads(
     drive: &Drive,
     contract: &DataContract,
     result: &mut ConsensusValidationResult<BatchedTransitionAction>,
@@ -74,6 +86,16 @@ pub(super) fn attach_property_constraint_aggregates(
 ) -> Result<(), Error> {
     let Some(BatchedTransitionAction::DocumentAction(action)) = result.data.as_mut() else {
         return Ok(());
+    };
+    let stored_document = stored;
+    let stored_system_values = |document_type_name: &str| {
+        stored_document
+            .filter(|_| {
+                contract
+                    .document_type_for_name(document_type_name)
+                    .is_ok_and(reads_stored_version)
+            })
+            .map(DocumentSystemValues::of_document)
     };
     let stored = stored.map(DocumentVersion::of);
     let mut read = |document_type_name: &str, written: DocumentVersion, change| {
@@ -108,6 +130,9 @@ pub(super) fn attach_property_constraint_aggregates(
             };
             let aggregates = read(action.base().document_type_name(), written, None)?;
             action.set_property_constraint_aggregates(aggregates);
+            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+                action.set_stored_system_values(values);
+            }
         }
         // The action's document carries its new owner
         DocumentTransitionAction::TransferAction(action) => {
@@ -117,6 +142,9 @@ pub(super) fn attach_property_constraint_aggregates(
                 Some(SystemChange::Transfer),
             )?;
             action.set_property_constraint_aggregates(aggregates);
+            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+                action.set_stored_system_values(values);
+            }
         }
         DocumentTransitionAction::PurchaseAction(action) => {
             let aggregates = read(
@@ -125,6 +153,9 @@ pub(super) fn attach_property_constraint_aggregates(
                 Some(SystemChange::Transfer),
             )?;
             action.set_property_constraint_aggregates(aggregates);
+            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+                action.set_stored_system_values(values);
+            }
         }
         DocumentTransitionAction::UpdatePriceAction(action) => {
             let aggregates = read(
@@ -133,6 +164,9 @@ pub(super) fn attach_property_constraint_aggregates(
                 Some(SystemChange::PriceUpdate),
             )?;
             action.set_property_constraint_aggregates(aggregates);
+            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+                action.set_stored_system_values(values);
+            }
         }
         DocumentTransitionAction::DeleteAction(_)
         | DocumentTransitionAction::IndexOnlyDeleteAction(_) => {}
@@ -140,9 +174,22 @@ pub(super) fn attach_property_constraint_aggregates(
     Ok(())
 }
 
+/// Whether a `propertyConstraints` rule or an `immutable` entry's condition of `document_type`
+/// reads the stored version of a document through `$old.`, so that a write replacing one needs
+/// its owner, times, heights and revision. A `retractedWhen` condition is judged on the stored
+/// document itself, before they are attached.
+pub(crate) fn reads_stored_version(document_type: DocumentTypeRef) -> bool {
+    document_type
+        .property_constraints()
+        .values()
+        .chain(document_type.immutable_field_conditions().values())
+        .any(|rule| rule.reads_stored())
+}
+
 /// Reads the `countOf` and `sumOf` totals the `propertyConstraints` rules of the document type
 /// `document_type_name` read for a moderator's field change, which stores `written` in place of
-/// `stored`, the same document under the same owner: judged as a replace is, by every rule.
+/// `stored`, the same document under the same owner: judged by every rule reading a total, as a
+/// replace is.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn read_property_constraint_aggregates_for_moderator_change(
     drive: &Drive,
