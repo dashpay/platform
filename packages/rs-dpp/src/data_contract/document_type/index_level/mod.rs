@@ -979,6 +979,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1024,6 +1025,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![
@@ -1054,6 +1056,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -1082,6 +1085,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
         ];
 
@@ -1136,6 +1140,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -1164,6 +1169,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
         ];
 
@@ -1194,6 +1200,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1246,6 +1253,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1281,6 +1289,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1339,6 +1348,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1368,6 +1378,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1420,6 +1431,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1449,6 +1461,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1501,6 +1514,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1530,6 +1544,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1582,6 +1597,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1634,6 +1650,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1663,6 +1680,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1715,6 +1733,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1744,6 +1763,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1802,6 +1822,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1837,6 +1858,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1895,6 +1917,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1930,6 +1953,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1996,6 +2020,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -2068,6 +2093,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -2147,6 +2173,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -2590,6 +2617,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2649,6 +2677,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {
@@ -2710,6 +2739,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

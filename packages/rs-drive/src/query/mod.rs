@@ -1382,27 +1382,31 @@ pub fn index_admissible_for_skip_if_absent(
     index: &Index,
     bindings: &[SkipIfAbsentBinding<'_>],
 ) -> bool {
+    // An index naming a typed array (protocol version 14) has it in its skip
+    // set, declared or not: it holds a document once per element, so a query
+    // reads it only with the elements bound. A typed array admits no clause
+    // but `contains` and `containsAny` (keyed as an equality and an `in` on
+    // the aggregate surfaces), so a constraint on the field is one of them,
+    // an empty string included: an element is never missing. An ordering
+    // alone binds nothing. The declared skip properties beside it keep the
+    // keyword's rule below. Before protocol version 14 no index names a
+    // typed array.
+    let array_bound = |array: &str| {
+        bindings
+            .iter()
+            .any(|binding| binding.field == array && binding.constrains)
+    };
     if !index.skip_if_absent {
-        // An index naming a typed array (protocol version 14) has it in its
-        // skip set without declaring the keyword: it holds a document once
-        // per element, so a query reads it only with the elements bound. A
-        // typed array admits no clause but `contains` and `containsAny`
-        // (keyed as an equality and an `in` on the aggregate surfaces), so a
-        // constraint on the field is one of them, an empty string included:
-        // an element is never missing. An ordering alone binds nothing.
-        // Before protocol version 14 the set is empty whenever the keyword is
-        // not declared.
-        return index.skip_if_absent_properties.iter().all(|array| {
-            bindings
-                .iter()
-                .any(|binding| binding.field == array.as_str() && binding.constrains)
-        });
+        return index.indexed_array.as_deref().is_none_or(array_bound);
     }
     // Every protocol version reaches this; `is_index_only`'s counter term is
     // inert before protocol version 14, the only one whose grammar admits the
     // keyword.
     let index_only = index.is_index_only();
     index.skip_if_absent_properties.iter().all(|skip_property| {
+        if index.indexed_array.as_ref() == Some(skip_property) {
+            return array_bound(skip_property);
+        }
         bindings.iter().any(|binding| {
             binding.field == skip_property.as_str() && (index_only || binding.excludes_missing)
         })

@@ -97,6 +97,18 @@ fn should_index_a_typed_array_at_any_position_and_skip_documents_without_element
         skip_set("byHashtagLanguage"),
         (true, vec!["hashtags".to_string(), "language".to_string()])
     );
+    // Each index names which member of its skip set the array is.
+    for name in ["byHashtagTime", "byAuthorHashtag", "byHashtagLanguage"] {
+        assert_eq!(
+            indexes
+                .get(name)
+                .expect("the index")
+                .indexed_array
+                .as_deref(),
+            Some("hashtags"),
+            "{name}"
+        );
+    }
 
     // The levels named after the array carry its maxItems, wherever an index
     // reaches them; no other level does.
@@ -388,5 +400,86 @@ fn should_let_an_update_raise_an_indexed_array_within_the_limits() {
     assert_eq!(
         expect_constraint_error(parse(post_schema(hashtags(33), indices()))),
         "hashtags.maxItems"
+    );
+}
+
+/// The key codec by protocol version, through its dispatchers: generation 1
+/// (protocol version 14) keys a scalar exactly as generation 0 does, so no
+/// stored key moves, and keys a typed array property as one element, which
+/// generation 0 refuses. A document names its element keys only from
+/// protocol version 14.
+#[test]
+fn should_key_scalars_alike_and_elements_only_from_protocol_version_14() {
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use crate::document::document_methods::DocumentMethodsV0;
+    use crate::document::{Document, DocumentV0};
+    use platform_value::Identifier;
+
+    let document_type = parse(post_schema(
+        hashtags(10),
+        platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]),
+    ))
+    .expect("the post type");
+    let document_type = document_type.as_ref();
+    let protocol_version_13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+    let latest = PlatformVersion::latest();
+
+    let author = [5u8; 32];
+    for (key, value, frozen) in [
+        ("language", platform_value!("en"), b"en".to_vec()),
+        ("author", Value::Identifier(author), author.to_vec()),
+    ] {
+        for platform_version in [protocol_version_13, latest] {
+            let encoded = document_type
+                .serialize_value_for_key(key, &value, platform_version)
+                .expect("a scalar keys at every version");
+            assert_eq!(
+                encoded, frozen,
+                "{key} at {}",
+                platform_version.protocol_version
+            );
+            assert_eq!(
+                document_type
+                    .deserialize_value_for_key(key, &encoded, platform_version)
+                    .expect("the key decodes"),
+                document_type
+                    .deserialize_value_for_key(key, &encoded, latest)
+                    .expect("the key decodes"),
+                "{key} decodes alike at {}",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    let element = platform_value!("dash");
+    document_type
+        .serialize_value_for_key("hashtags", &element, protocol_version_13)
+        .expect_err("generation 0 keys no typed array");
+    assert_eq!(
+        document_type
+            .serialize_value_for_key("hashtags", &element, latest)
+            .expect("generation 1 keys an element"),
+        b"dash".to_vec()
+    );
+
+    let document = Document::V0(DocumentV0 {
+        id: Identifier::from([1; 32]),
+        owner_id: Identifier::from([2; 32]),
+        properties: [(
+            "hashtags".to_string(),
+            platform_value!(["news", "dash", "news"]),
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    });
+    document
+        .get_raw_array_elements_for_document_type("hashtags", document_type, protocol_version_13)
+        .expect_err("no document names its elements before protocol version 14");
+    assert_eq!(
+        document
+            .get_raw_array_elements_for_document_type("hashtags", document_type, latest)
+            .expect("the elements, sorted and distinct"),
+        vec![b"dash".to_vec(), b"news".to_vec()]
     );
 }

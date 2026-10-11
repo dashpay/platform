@@ -1037,6 +1037,21 @@ pub struct Index {
     // `serde(default)`: see `skip_if_absent`.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub summable_off_count_index: Option<String>,
+    /// The typed array this index keys a document by the elements of
+    /// (protocol version 14), stamped by the document type parser on every
+    /// parse, which alone knows the property types. The array is also in
+    /// [`Self::skip_if_absent_properties`], declared or not; this says which
+    /// member of that set it is, since an element binds the array while a
+    /// declared skip property is bound only by a value no missing one can
+    /// meet (`index_admissible_for_skip_if_absent`). `None` on every index
+    /// that names no typed array.
+    //
+    // `serde(default)`: see `skip_if_absent`.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub indexed_array: Option<String>,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -3304,6 +3319,7 @@ impl Index {
             skip_if_absent,
             skip_if_absent_properties,
             summable_off_count_index,
+            indexed_array: None,
         })
     }
 }
@@ -3385,6 +3401,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -7264,6 +7281,7 @@ mod json_convertible_tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 

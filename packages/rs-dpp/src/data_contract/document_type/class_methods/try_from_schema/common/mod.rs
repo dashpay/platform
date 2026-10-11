@@ -1019,12 +1019,16 @@ fn parse_indices(
                     // every parse (validating or not), because the write walkers read the skip
                     // set. `skip_if_absent` keeps what the contract declared, so the keyword's
                     // query rules do not apply: an indexed array is read through `contains`.
-                    if ctx.generation.admit_indexed_arrays
-                        && index
+                    // `indexed_array` says which member of the set the array is, for the query
+                    // gate (a second array is refused below, under full validation).
+                    if ctx.generation.admit_indexed_arrays {
+                        let indexed_array = index
                             .typed_arrays(flattened_document_properties)
                             .next()
-                            .is_some()
-                    {
+                            .map(|(_, name, _)| name.to_string());
+                        index.indexed_array = indexed_array;
+                    }
+                    if index.indexed_array.is_some() {
                         let declared = std::mem::take(&mut index.skip_if_absent_properties);
                         index.skip_if_absent_properties = index
                             .properties

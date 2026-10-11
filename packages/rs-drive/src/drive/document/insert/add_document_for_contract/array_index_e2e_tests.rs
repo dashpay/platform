@@ -7,7 +7,16 @@ use crate::config::DriveConfig;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::drive_document_average_query::{
+    AverageEntry, AverageMode, DocumentAverageRequest, DocumentAverageResponse,
+};
 use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+use crate::query::drive_document_sum_query::index_picker::{
+    find_summable_index_for_where_clauses, find_summable_index_with_counts_for_where_clauses,
+};
+use crate::query::drive_document_sum_query::{
+    DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumEntry, SumMode,
+};
 use crate::query::{
     answers_per_element, key_array_element_clauses, BindingSource, CountMode, DocumentCountRequest,
     DocumentCountResponse, DocumentRankedRequest, DocumentRankedResponse, DriveDocumentCountQuery,
@@ -29,6 +38,7 @@ use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
+use grovedb::Error as GroveError;
 use std::collections::BTreeMap;
 
 const OWNER: [u8; 32] = [7; 32];
@@ -114,9 +124,28 @@ fn post(id: u8, hashtags: Option<&[&str]>, mentions: Option<&[[u8; 32]]>) -> Doc
 }
 
 fn setup() -> (Drive, DataContract) {
+    setup_with(post_contract())
+}
+
+/// A contract whose one document type is a `post` of `schema`.
+fn post_contract_with(schema: Value) -> DataContract {
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(
+            Identifier::from([1; 32]),
+            0,
+            platform_value!({ "post": schema }),
+            None,
+            None,
+        )
+        .expect("contract")
+        .data_contract_owned()
+}
+
+/// A drive holding `contract`.
+fn setup_with(contract: DataContract) -> (Drive, DataContract) {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = post_contract();
     drive
         .apply_contract(
             &contract,
@@ -193,26 +222,19 @@ fn text(value: &str) -> Vec<u8> {
 /// Whether the index path `segments` (below the document type) holds the
 /// non-unique entry of document `id`: `…/<segments>/0/<id>`.
 fn has_entry(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], id: u8) -> bool {
-    let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
-    path.extend(segments.iter().cloned());
-    path.push(vec![0]);
-    drive
-        .grove
-        .has_raw(
-            path.as_slice(),
-            &[id; 32],
-            None,
-            &PlatformVersion::latest().drive.grove_version,
-        )
-        .unwrap()
-        .unwrap_or(false)
+    let mut segments = segments.to_vec();
+    segments.push(vec![0]);
+    has_key(drive, contract, &segments, &[id; 32])
 }
 
-/// Whether the tree at `segments` (below the document type) holds `key`.
+/// Whether the tree at `segments` (below the document type) holds `key`. A
+/// missing tree or ancestor holds nothing, since a delete prunes the trees it
+/// empties; any other read error fails the test, so an absence is never an
+/// unreadable tree.
 fn has_key(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], key: &[u8]) -> bool {
     let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
     path.extend(segments.iter().cloned());
-    drive
+    match drive
         .grove
         .has_raw(
             path.as_slice(),
@@ -221,7 +243,15 @@ fn has_key(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], key: &[
             &PlatformVersion::latest().drive.grove_version,
         )
         .unwrap()
-        .unwrap_or(false)
+    {
+        Ok(holds) => holds,
+        Err(
+            GroveError::PathNotFound(_)
+            | GroveError::PathParentLayerNotFound(_)
+            | GroveError::PathKeyNotFound(_),
+        ) => false,
+        Err(error) => panic!("reading {key:?} under {path:?}: {error}"),
+    }
 }
 
 fn created_at_key() -> Vec<u8> {
@@ -1315,4 +1345,341 @@ fn should_read_an_identifier_element_given_as_bytes_or_base58_text() {
     );
     assert_eq!(as_identifier, vec![1]);
     assert_eq!(as_text, as_identifier);
+}
+
+/// The `hashtags` schema the summing and skipping contracts share: strings,
+/// the empty one included.
+fn hashtags_schema() -> Value {
+    platform_value!({
+        "type": "array",
+        "maxItems": 10,
+        "items": {"type": "string", "minLength": 0, "maxLength": 61},
+        "position": 0
+    })
+}
+
+/// An index naming the array beside a declared skip property: any element
+/// binds the array, an empty string included, on the aggregate surfaces as on
+/// the documents one, while the declared property keeps the keyword's rule.
+#[test]
+fn should_bind_an_empty_string_element_beside_a_declared_skip_property() {
+    let (drive, contract) = setup_with(post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": hashtags_schema(),
+            "language": {"type": "string", "maxLength": 2, "position": 1}
+        },
+        "required": ["$createdAt"],
+        "indices": [{
+            "name": "byHashtagLanguage",
+            "properties": [{"hashtags": "asc"}, {"language": "asc"}],
+            "countable": "countable",
+            "skipIfAbsent": ["language"]
+        }],
+        "additionalProperties": false
+    })));
+    insert(&drive, &contract, &post(1, Some(&["", "dash"]), None));
+    let mut unlabelled = post(2, Some(&[""]), None);
+    unlabelled.properties_mut().remove("language");
+    insert(&drive, &contract, &unlabelled);
+
+    let empty_in_english = vec![
+        WhereClause {
+            field: "hashtags".to_string(),
+            operator: WhereOperator::Contains,
+            value: Value::Text(String::new()),
+        },
+        WhereClause {
+            field: "language".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("en".to_string()),
+        },
+    ];
+    match count(
+        &drive,
+        &contract,
+        empty_in_english.clone(),
+        CountMode::Aggregate,
+        false,
+    )
+    .expect("the index counts the empty-string element")
+    {
+        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 1),
+        other => panic!("expected an aggregate, got {other:?}"),
+    }
+    assert_eq!(
+        proved_counts(&drive, &contract, empty_in_english, CountMode::Aggregate)
+            .values()
+            .sum::<u64>(),
+        1
+    );
+    assert_eq!(
+        query_ids(
+            &drive,
+            &contract,
+            platform_value!({"where": [["hashtags", "contains", ""], ["language", "==", "en"]]})
+        ),
+        vec![1]
+    );
+}
+
+/// The per-element `(count, sum)` of `amount` over `elements`, through the
+/// sum and the average surfaces, unproved and proved alike (the proofs
+/// verified against the live root hash).
+fn element_totals(
+    drive: &Drive,
+    contract: &DataContract,
+    elements: &[&str],
+) -> BTreeMap<String, (u64, i64)> {
+    let platform_version = PlatformVersion::latest();
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let drive_config = DriveConfig::default();
+    let where_clauses = element_clause(
+        WhereOperator::ContainsAny,
+        Value::Array(
+            elements
+                .iter()
+                .map(|element| Value::Text(element.to_string()))
+                .collect(),
+        ),
+    );
+    let keyed = key_array_element_clauses(
+        where_clauses.clone(),
+        document_type,
+        answers_per_element(true, &where_clauses),
+        platform_version,
+    )
+    .expect("keyed");
+    let live_root_hash = drive
+        .grove
+        .root_hash(None, &platform_version.drive.grove_version)
+        .unwrap()
+        .expect("root hash");
+    let element = |in_key: Option<Vec<u8>>, key: Vec<u8>| {
+        String::from_utf8(in_key.unwrap_or(key)).expect("a hashtag")
+    };
+    let sum_query = |index| DriveDocumentSumQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "post".to_string(),
+        index,
+        where_clauses: keyed.clone(),
+        sum_property: "amount".to_string(),
+    };
+    let sum_request = |prove| DocumentSumRequest {
+        contract,
+        document_type,
+        sum_property: "amount".to_string(),
+        where_clauses: where_clauses.clone(),
+        resolved_time_ranges: vec![],
+        order_clauses: vec![],
+        mode: SumMode::GroupByIn,
+        limit: None,
+        prove,
+        drive_config: &drive_config,
+    };
+    let average_request = |prove| DocumentAverageRequest {
+        contract,
+        document_type,
+        sum_property: "amount".to_string(),
+        where_clauses: where_clauses.clone(),
+        resolved_time_ranges: vec![],
+        order_clauses: vec![],
+        mode: AverageMode::GroupByIn,
+        limit: None,
+        prove,
+        drive_config: &drive_config,
+    };
+
+    let sums = |entries: Vec<SumEntry>| -> BTreeMap<String, i64> {
+        entries
+            .into_iter()
+            .map(|entry| {
+                (
+                    element(entry.in_key, entry.key),
+                    entry.sum.expect("a summed element"),
+                )
+            })
+            .collect()
+    };
+    let DocumentSumResponse::Entries(unproved) = drive
+        .execute_document_sum_request(sum_request(false), None, platform_version)
+        .expect("the sums execute")
+    else {
+        panic!("expected sum entries");
+    };
+    let DocumentSumResponse::Proof(proof) = drive
+        .execute_document_sum_request(sum_request(true), None, platform_version)
+        .expect("the sums prove")
+    else {
+        panic!("expected a sum proof");
+    };
+    let index =
+        find_summable_index_for_where_clauses(document_type.indexes(), &keyed, "amount", &[])
+            .expect("byHashtag sums the elements");
+    let (root_hash, proved) = sum_query(index)
+        .verify_point_lookup_sum_proof(&proof, platform_version)
+        .expect("the sum proof verifies");
+    assert_eq!(root_hash, live_root_hash);
+    let sums_by_element = sums(unproved);
+    assert_eq!(
+        sums(proved),
+        sums_by_element,
+        "proved and unproved sums agree"
+    );
+
+    let totals = |entries: Vec<AverageEntry>| -> BTreeMap<String, (u64, i64)> {
+        entries
+            .into_iter()
+            .map(|entry| {
+                (
+                    element(entry.in_key, entry.key),
+                    (
+                        entry.count.expect("a counted element"),
+                        entry.sum.expect("a summed element"),
+                    ),
+                )
+            })
+            .collect()
+    };
+    let DocumentAverageResponse::Entries(unproved) = drive
+        .execute_document_average_request(average_request(false), None, platform_version)
+        .expect("the averages execute")
+    else {
+        panic!("expected average entries");
+    };
+    let DocumentAverageResponse::Proof(proof) = drive
+        .execute_document_average_request(average_request(true), None, platform_version)
+        .expect("the averages prove")
+    else {
+        panic!("expected an average proof");
+    };
+    let index = find_summable_index_with_counts_for_where_clauses(
+        document_type.indexes(),
+        &keyed,
+        "amount",
+        &[],
+    )
+    .expect("byHashtag counts and sums the elements");
+    let (root_hash, proved) = sum_query(index)
+        .verify_point_lookup_count_and_sum_proof(&proof, platform_version)
+        .expect("the average proof verifies");
+    assert_eq!(root_hash, live_root_hash);
+    let totals_by_element = totals(unproved);
+    assert_eq!(
+        totals(proved),
+        totals_by_element,
+        "proved and unproved averages agree"
+    );
+    assert_eq!(
+        totals_by_element
+            .iter()
+            .map(|(element, (_, sum))| (element.clone(), *sum))
+            .collect::<BTreeMap<_, _>>(),
+        sums_by_element,
+        "the sum and the average surfaces agree"
+    );
+    totals_by_element
+}
+
+/// A summable index naming the array: each element's sum and average are
+/// those of the posts holding it, through a replace that keeps the elements
+/// and changes the amount (every element's entry refreshes its sum), one that
+/// changes the elements, and a delete. A total over several elements is
+/// refused.
+#[test]
+fn should_sum_and_average_each_element_through_updates() {
+    let (drive, contract) = setup_with(post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": hashtags_schema(),
+            "amount": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 1}
+        },
+        "required": ["$createdAt", "amount"],
+        "indices": [{
+            "name": "byHashtag",
+            "properties": [{"hashtags": "asc"}],
+            "countable": "countable",
+            "summable": "amount"
+        }],
+        "additionalProperties": false
+    })));
+    let tip = |id: u8, hashtags: &[&str], amount: u64| {
+        let mut document = post(id, Some(hashtags), None);
+        document.properties_mut().remove("language");
+        document.set("amount", Value::U64(amount));
+        document
+    };
+    let all = ["crypto", "dash", "news"];
+    let totals = |expected: [(&str, (u64, i64)); 3]| {
+        BTreeMap::from(expected.map(|(element, total)| (element.to_string(), total)))
+    };
+
+    insert(&drive, &contract, &tip(1, &["dash", "news"], 10));
+    insert(&drive, &contract, &tip(2, &["dash"], 5));
+    insert(&drive, &contract, &tip(3, &["news", "crypto"], 7));
+    assert_eq!(
+        element_totals(&drive, &contract, &all),
+        totals([("crypto", (1, 7)), ("dash", (2, 15)), ("news", (2, 17))])
+    );
+
+    update(&drive, &contract, &tip(1, &["dash", "news"], 20));
+    assert_eq!(
+        element_totals(&drive, &contract, &all),
+        totals([("crypto", (1, 7)), ("dash", (2, 25)), ("news", (2, 27))])
+    );
+
+    update(&drive, &contract, &tip(3, &["crypto", "dash"], 7));
+    assert_eq!(
+        element_totals(&drive, &contract, &all),
+        totals([("crypto", (1, 7)), ("dash", (3, 32)), ("news", (1, 20))])
+    );
+
+    delete(&drive, &contract, 2);
+    assert_eq!(
+        element_totals(&drive, &contract, &all),
+        totals([("crypto", (1, 7)), ("dash", (2, 27)), ("news", (1, 20))])
+    );
+
+    // One element is a total of its own; several are not.
+    let platform_version = PlatformVersion::latest();
+    let drive_config = DriveConfig::default();
+    let sum = |where_clauses: Vec<WhereClause>| {
+        drive.execute_document_sum_request(
+            DocumentSumRequest {
+                contract: &contract,
+                document_type: contract.document_type_for_name("post").expect("post"),
+                sum_property: "amount".to_string(),
+                where_clauses,
+                resolved_time_ranges: vec![],
+                order_clauses: vec![],
+                mode: SumMode::Aggregate,
+                limit: None,
+                prove: false,
+                drive_config: &drive_config,
+            },
+            None,
+            platform_version,
+        )
+    };
+    match sum(element_clause(
+        WhereOperator::Contains,
+        Value::Text("dash".to_string()),
+    ))
+    .expect("one element sums")
+    {
+        DocumentSumResponse::Aggregate(total) => assert_eq!(total, 27),
+        other => panic!("expected an aggregate, got {other:?}"),
+    }
+    let error = sum(element_clause(
+        WhereOperator::ContainsAny,
+        platform_value!(["dash", "news"]),
+    ))
+    .expect_err("a sum over several elements is refused");
+    assert!(
+        format!("{error:?}").contains("only answered grouped by"),
+        "{error:?}"
+    );
 }

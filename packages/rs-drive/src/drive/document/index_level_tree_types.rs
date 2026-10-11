@@ -763,6 +763,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         let index_structure =
@@ -856,6 +857,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
         let mut ranked = base("byAuthorPost", &["postAuthor", "postId"]);
         ranked.countable = IndexCountability::Countable;
@@ -955,6 +957,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
         let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
         prefix_ranked.ranked_countable_at = vec!["hashtag".to_string()];
@@ -1040,6 +1043,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -1074,6 +1078,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         let index_structure =
