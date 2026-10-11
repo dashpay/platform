@@ -166,11 +166,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
     //
-    // The following responses are excluded as they need custom proof handling:
-    // - "GetIdentityByNonUniquePublicKeyHashResponse"
-    //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 66] = [
+    const VERSIONED_RESPONSES: [&str; 67] = [
+        "GetIdentityByNonUniquePublicKeyHashResponse",
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
