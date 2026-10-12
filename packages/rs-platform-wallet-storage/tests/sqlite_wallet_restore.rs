@@ -1334,3 +1334,185 @@ fn should_refill_the_gap_window_past_a_used_address_restored_from_its_pool_row()
         );
     });
 }
+
+/// Startup repair rebuilds the wallet a second time. What the load reports
+/// is what the wallet it returns is missing, not that twice — for the pool
+/// sites and for a site of the used-address projection alike.
+#[tokio::test]
+async fn should_count_an_unrestored_reservation_once_when_startup_repair_rebuilds_the_wallet() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use platform_wallet_storage::LoadSite;
+
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    let invitation = AccountType::IdentityInvitation;
+    let source = account_key_source(&wallet, invitation);
+    with_pool(&mut info, invitation, AddressPoolType::Absent, |pool| {
+        pool.next_unused_and_reserve(&source, 12345).unwrap();
+    });
+    let (persister, _tmp, path) = common::fresh_persister();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+
+    // Two unconfirmed spends of one coin, and an instant lock that settles
+    // them: the load removes the loser and rebuilds the wallet from the result.
+    let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+    let address = info
+        .accounts
+        .standard_bip44_accounts
+        .get_mut(&0)
+        .unwrap()
+        .next_receive_address(Some(&xpub), true)
+        .unwrap();
+    let funding = transaction(
+        OutPoint::new(Txid::from_byte_array([71; 32]), 0),
+        [100_000, 20_000]
+            .into_iter()
+            .map(|value| TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            })
+            .collect(),
+    );
+    let coins: Vec<_> = funding
+        .output
+        .iter()
+        .enumerate()
+        .map(|(vout, output)| {
+            key_wallet::Utxo::new(
+                OutPoint::new(funding.txid(), vout as u32),
+                output.clone(),
+                address.clone(),
+                100,
+                false,
+            )
+        })
+        .collect();
+    let mut loser = transaction(
+        coins[0].outpoint,
+        vec![TxOut {
+            value: 119_000,
+            script_pubkey: address.script_pubkey(),
+        }],
+    );
+    loser.input.push(TxIn {
+        previous_output: coins[1].outpoint,
+        ..Default::default()
+    });
+    let winner = transaction(
+        coins[0].outpoint,
+        vec![TxOut {
+            value: 99_000,
+            script_pubkey: dashcore::ScriptBuf::new(),
+        }],
+    );
+    let confirmed = TransactionContext::InBlock(BlockInfo::new(
+        100,
+        BlockHash::from_byte_array([100; 32]),
+        100,
+    ));
+    let mut records = info
+        .check_core_transaction(&funding, confirmed, &mut wallet, true, true)
+        .await
+        .new_records;
+    let mut competing = info.clone();
+    for (view, spend) in [(&mut info, &loser), (&mut competing, &winner)] {
+        records.extend(
+            view.check_core_transaction(
+                spend,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+    }
+    assert_eq!(records.len(), 3);
+    let foreign = dashcore::Address::new(
+        Network::Testnet,
+        dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([0xF0; 20])),
+    );
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records,
+                    new_utxos: coins
+                        .iter()
+                        .cloned()
+                        .chain([
+                            key_wallet::Utxo::new(
+                                OutPoint::new(loser.txid(), 0),
+                                loser.output[0].clone(),
+                                address,
+                                0,
+                                false,
+                            ),
+                            // A coin on an address no account derives.
+                            key_wallet::Utxo::new(
+                                OutPoint::new(Txid::from_byte_array([0xF1; 32]), 0),
+                                TxOut {
+                                    value: 7_000,
+                                    script_pubkey: foreign.script_pubkey(),
+                                },
+                                foreign.clone(),
+                                100,
+                                false,
+                            ),
+                        ])
+                        .collect(),
+                    spent_utxos: coins.clone(),
+                    instant_locks_for_non_final_records: [(
+                        winner.txid(),
+                        dashcore::ephemerealdata::instant_lock::InstantLock {
+                            inputs: vec![coins[0].outpoint],
+                            txid: winner.txid(),
+                            ..Default::default()
+                        },
+                    )]
+                    .into_iter()
+                    .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // The invitation account's key class is always zero.
+    let rewritten = persister
+        .lock_conn_for_test()
+        .execute(
+            "UPDATE core_address_pool SET key_class = 1 \
+             WHERE account_type = 'identity_invitation' AND reserved_at IS NOT NULL",
+            [],
+        )
+        .unwrap();
+    assert_eq!(rewritten, 1);
+    drop(persister);
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
+    persister.load().unwrap();
+    assert!(
+        persister
+            .get_core_tx_record(wallet.wallet_id, &loser.txid())
+            .unwrap()
+            .is_none(),
+        "the fixture must have gone through startup repair"
+    );
+    let degradation = persister.last_load_degradation();
+    for site in [
+        LoadSite::UnrestoredPoolReservation,
+        LoadSite::UnresolvedUtxoAddress,
+    ] {
+        assert_eq!(
+            degradation.by_site.get(&site),
+            Some(&1),
+            "{site}: one incident is one count, however often the wallet was rebuilt"
+        );
+    }
+}

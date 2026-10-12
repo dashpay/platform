@@ -320,6 +320,10 @@ pub(crate) struct SiteCoords<'a> {
     pub detail: Option<&'a dyn fmt::Debug>,
 }
 
+/// The per-site counts of a [`LoadCtx`] at one moment; see
+/// [`LoadCtx::counts_checkpoint`].
+pub(crate) struct CountsCheckpoint(BTreeMap<LoadSite, u32>);
+
 /// Per-`load()` policy + counters, created on the loading thread's stack.
 ///
 /// Not stored on the persister (which keeps only the resulting
@@ -451,6 +455,22 @@ impl LoadCtx {
             self.unimplemented_rows.get(),
             self.wallets_degraded.borrow().clone(),
         )
+    }
+
+    /// The per-site counts as they stand, to come back to with
+    /// [`rewind_counts`](Self::rewind_counts).
+    pub(crate) fn counts_checkpoint(&self) -> CountsCheckpoint {
+        CountsCheckpoint(self.counts.borrow().clone())
+    }
+
+    /// Forget what was counted since `checkpoint`.
+    ///
+    /// For a reader whose result is thrown away and built again: the second
+    /// pass meets the same rows, and what the first tolerated is not in the
+    /// state the load returns, so keeping both would report every incident
+    /// twice. Only the counts go back; the log keeps both passes.
+    pub(crate) fn rewind_counts(&self, checkpoint: CountsCheckpoint) {
+        *self.counts.borrow_mut() = checkpoint.0;
     }
 
     /// Attribute a whole-wallet loss to the wallet it belongs to.

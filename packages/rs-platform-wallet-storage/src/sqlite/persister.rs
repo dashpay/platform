@@ -1690,10 +1690,15 @@ fn load_one_wallet(
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
+    let counted_before = ctx.counts_checkpoint();
     let (mut state, sweeps) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
     if !sweeps.is_empty() {
         schema::core_state::apply_replay_sweeps(&tx, &wallet_id, sweeps)
             .map_err(PersistenceError::from)?;
+        // The snapshot above is thrown away, and what it tolerated with it:
+        // the rebuild meets the same rows and counts them for the state that
+        // is returned.
+        ctx.rewind_counts(counted_before);
         // Rebuild from the repaired projection, including released materialized inputs.
         let (repaired, remaining) = load_wallet_snapshot(&tx, wallet_id, ctx)?;
         if !remaining.is_empty() {
