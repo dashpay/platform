@@ -1768,4 +1768,31 @@ mod tests {
             other => panic!("unexpected response: {:?}", other),
         }
     }
+
+    /// A block Core v24 mined (its coinbase is a version 4 CbTx) is sent as
+    /// a merkle block of its transactions, not as the raw block.
+    #[tokio::test]
+    async fn should_build_a_merkle_block_from_a_core_v24_block() {
+        let raw_block = hex::decode(
+            include_str!("../../../tests/vectors/core_v24_devnet/block_15146.hex").trim(),
+        )
+        .expect("vector is hex");
+        let header: BlockHeader = deserialize(&raw_block[..80]).expect("header");
+
+        let response = StreamingServiceImpl::build_transaction_merkle_response(
+            &FilterType::CoreAllTxs,
+            &raw_block,
+            "handle",
+            None,
+        )
+        .await
+        .expect("response should build");
+
+        let Some(Responses::RawMerkleBlock(bytes)) = response.responses else {
+            panic!("unexpected response: {:?}", response.responses);
+        };
+        assert_ne!(bytes, raw_block, "the raw block was sent");
+        let merkle_block: MerkleBlock = deserialize(&bytes).expect("a merkle block");
+        assert_eq!(merkle_block.header, header);
+    }
 }

@@ -4671,8 +4671,12 @@ mod tests {
             version: 1,
             mn_type: None,
             pro_tx_hash: Txid::from_byte_array([7u8; 32]),
-            ip_address: 42,
-            port: 19_999,
+            service_address: dashcore::sml::masternode_list_entry::MasternodeNetInfo::Legacy(
+                std::net::SocketAddr::new(
+                    std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                    19_999,
+                ),
+            ),
             script_payout: ScriptBuf::new(),
             inputs_hash: [3u8; 32].into(),
             platform_node_id: None,
