@@ -812,7 +812,7 @@ fn query_ids(drive: &Drive, contract: &DataContract, query: Value) -> Vec<u8> {
         .expect("the proof verifies");
     assert_eq!(
         root_hash,
-        live_root_hash(&drive),
+        live_root_hash(drive),
         "the proof reaches the live root hash"
     );
     let proved: Vec<u8> = proved
@@ -1182,7 +1182,7 @@ fn proved_counts(
     }
     .verify_point_lookup_count_proof(&proof, platform_version)
     .expect("the count proof verifies");
-    assert_eq!(root_hash, live_root_hash(&drive));
+    assert_eq!(root_hash, live_root_hash(drive));
     entries
         .into_iter()
         .map(|entry| {
@@ -1571,7 +1571,7 @@ fn element_totals(
     let keyed =
         key_array_element_clauses(where_clauses.clone(), document_type, true, platform_version)
             .expect("keyed");
-    let live = live_root_hash(&drive);
+    let live = live_root_hash(drive);
     let element = |in_key: Option<Vec<u8>>, key: Vec<u8>| {
         String::from_utf8(in_key.unwrap_or(key)).expect("a hashtag")
     };
