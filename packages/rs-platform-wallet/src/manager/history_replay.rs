@@ -1276,6 +1276,75 @@ mod tests {
         );
     }
 
+    /// A host that keeps the coin of an unconfirmed spend as unspent, as the
+    /// SwiftData store does for mempool and InstantSend-locked spends, needs
+    /// no claim: the replay spends the restored coin and the account's own
+    /// mark keeps a later funding delivery from crediting it again.
+    #[tokio::test]
+    async fn should_guard_restored_coin_of_unconfirmed_spend_without_owned_inputs() {
+        use dashcore::bls_sig_utils::BLSSignature;
+        use dashcore::ephemerealdata::chain_lock::ChainLock;
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, restored, funding, records, spent) = confirmed_spend_fixture().await;
+        let spender = records
+            .into_iter()
+            .find(|record| record.txid != funding.txid())
+            .map(StoredTransaction::from)
+            .unwrap();
+        let mut info = restored;
+        let address = info.accounts.standard_bip44_accounts[&0]
+            .utxos
+            .values()
+            .next()
+            .unwrap()
+            .address
+            .clone();
+        info.accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .utxos
+            .insert(
+                spent,
+                Utxo::new(spent, funding.output[0].clone(), address, 100, false),
+            );
+        let history = RecordedHistory {
+            transactions: vec![StoredTransaction {
+                context: TransactionContext::Mempool,
+                owned_inputs: Vec::new(),
+                ..spender
+            }],
+            instant_locks: BTreeMap::new(),
+        };
+        replay_recorded_history(&mut info, &mut wallet, history).await;
+        info.apply_chain_lock(ChainLock {
+            block_height: 300,
+            block_hash: BlockHash::from_byte_array([30; 32]),
+            signature: BLSSignature::from([0; 96]),
+        });
+        info.update_synced_height(300);
+
+        let block = BlockInfo::new(100, BlockHash::from_byte_array([100; 32]), 100);
+        info.check_core_transaction(
+            &funding,
+            TransactionContext::InBlock(block),
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+
+        assert!(
+            !info.accounts.standard_bip44_accounts[&0]
+                .utxos
+                .contains_key(&spent),
+            "the unconfirmed spend still holds the coin"
+        );
+    }
+
     #[tokio::test]
     async fn should_rebuild_guards_for_raw_restored_records() {
         for mempool in [false, true] {

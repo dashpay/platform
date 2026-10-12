@@ -63,6 +63,10 @@ pub struct StoredTransaction {
     /// per-input ownership: the replay then only keeps the coin of a
     /// chain-locked or InstantSend-locked spend from being credited again,
     /// without attributing the spend.
+    ///
+    /// A store that drops the coin of an unconfirmed spend from the load
+    /// projection must record that spend's owned inputs here: the replay
+    /// guards an unconfirmed spend only through a coin it can spend.
     pub owned_inputs: Vec<InputDetail>,
 }
 
