@@ -351,10 +351,11 @@ pub async fn replay_recorded_history(
             }
         }
     }
-    let claims: Vec<(OutPoint, Option<Txid>)> = claims
+    let mut claims: Vec<(OutPoint, Option<Txid>)> = claims
         .into_iter()
         .map(|(coin, claimant)| (coin, Some(claimant)))
         .collect();
+    claims.extend(settled_spend_claims(&replay));
     wallet_info.restore_spent_outpoints(&claims);
     wallet_info.update_balance();
     swept.extend(set_aside.iter().map(|stored| stored.txid));
@@ -644,6 +645,34 @@ fn drop_fallback_copies(
     }
 }
 
+/// Spend claims for the inputs of every settled record in `replay` whose
+/// funding the replay did not see.
+///
+/// Such a spend marks no coin spent: the coin is not in the projection and,
+/// unless the store recorded the owned inputs, cannot be staged. Only the
+/// observed spend guards it, and finality prunes that, so a funding delivered
+/// later would credit the coin again. A claim outlives the pruning.
+///
+/// The claim is safe because the spend is settled, in a block or under an
+/// InstantSend lock: the coin is gone, and no later funding may credit it. A
+/// plain mempool spend can still be evicted and is not claimed. Inputs that
+/// are not the wallet's are claimed as well; such a claim guards nothing.
+fn settled_spend_claims(replay: &[StoredTransaction]) -> Vec<(OutPoint, Option<Txid>)> {
+    let replayed: HashSet<Txid> = replay.iter().map(|stored| stored.txid).collect();
+    replay
+        .iter()
+        .filter(|stored| !matches!(stored.context, TransactionContext::Mempool))
+        .flat_map(|stored| {
+            stored
+                .transaction
+                .input
+                .iter()
+                .map(|input| (input.previous_output, Some(stored.txid)))
+        })
+        .filter(|(outpoint, _)| !replayed.contains(&outpoint.txid))
+        .collect()
+}
+
 /// Give a coin the replay kept the state persistence stored on it.
 ///
 /// The replay rebuilds a coin from its stored funding record, and the record
@@ -669,12 +698,13 @@ fn restore_persisted_coin_state(coin: &mut Utxo, persisted: &Utxo) {
 /// Park every owned input a record spends whose funding no replayed record credits.
 ///
 /// Persistence excludes spent outputs from the load projection, so without
-/// this a spender of a height-only funding row replays with no owned input and
-/// rebuilds no spent mark; a redelivered funding transaction would then
-/// re-credit the coin once finality prunes the observed spend. The stored
-/// [`StoredTransaction::owned_inputs`] are the evidence. Staged coins are
-/// never in `placed`, so the retention pass drops whatever replay leaves
-/// behind.
+/// this a spender of a height-only funding row replays with no owned input:
+/// it marks no coin spent, its sent amount is missing, and it gets no record
+/// at all when it pays nothing to the wallet. The stored
+/// [`StoredTransaction::owned_inputs`] are the evidence. Without them only
+/// [`settled_spend_claims`] keeps a redelivered funding from re-crediting the
+/// coin. Staged coins are never in `placed`, so the retention pass drops
+/// whatever replay leaves behind.
 fn stage_recorded_spent_inputs(
     wallet_info: &mut ManagedWalletInfo,
     records: &[StoredTransaction],
@@ -983,10 +1013,8 @@ mod tests {
     /// A spend whose funding survives only as a height row (no record to
     /// replay, spent output excluded from the projection) still rebuilds its
     /// spent mark from the stored owned inputs, and the staged coin does not
-    /// outlive the replay. Finality then prunes the observed spend, so only
-    /// the account spent mark guards the redelivery. The control half pins the
-    /// gap a persister without per-input ownership leaves: the redelivery
-    /// resurrects the output.
+    /// outlive the replay. Finality then prunes the observed spend, and the
+    /// redelivery is still not credited.
     #[tokio::test]
     async fn should_rebuild_spent_mark_for_height_only_funding_from_owned_inputs() {
         use dashcore::bls_sig_utils::BLSSignature;
@@ -1042,26 +1070,96 @@ mod tests {
             "a redelivered height-only funding must not re-credit a spent output"
         );
         assert_eq!(replayed.balance.total(), 20_000);
+    }
 
-        let mut unguarded = restored;
-        let without_ownership = spender
+    /// A persister that stores no per-input ownership leaves the replay
+    /// nothing to stage, so a spend whose funding is not in the history marks
+    /// no coin spent. A settled spend, in a block or under an InstantSend
+    /// lock, must still keep its inputs from being credited once finality has
+    /// pruned the observed spend. A plain mempool spend can still be evicted
+    /// and guards nothing, and a coin no stored record spends is credited as
+    /// ever.
+    #[tokio::test]
+    async fn should_guard_unreplayed_funding_against_settled_spends_only() {
+        use dashcore::bls_sig_utils::BLSSignature;
+        use dashcore::ephemerealdata::chain_lock::ChainLock;
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, restored, funding, records, spent) = confirmed_spend_fixture().await;
+        let spender = records
             .into_iter()
-            .map(|stored| StoredTransaction {
+            .find(|record| record.txid != funding.txid())
+            .map(StoredTransaction::from)
+            .unwrap();
+        let block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        let locked = TransactionContext::InstantSend(InstantLock {
+            txid: spender.txid,
+            inputs: vec![spent],
+            ..Default::default()
+        });
+        // A payment the stored history knows nothing about.
+        let unrelated = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([32; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 5_000,
+                script_pubkey: funding.output[0].script_pubkey.clone(),
+            }],
+            special_transaction_payload: None,
+        };
+
+        for (case, context, guarded) in [
+            ("in a block", spender.context.clone(), true),
+            ("InstantSend-locked", locked, true),
+            ("mempool", TransactionContext::Mempool, false),
+        ] {
+            let mut info = restored.clone();
+            let without_ownership = StoredTransaction {
+                context,
                 owned_inputs: Vec::new(),
-                ..stored
-            })
-            .collect();
-        replay_recorded_history(&mut unguarded, &mut wallet, replay(without_ownership)).await;
-        finalize(&mut unguarded);
-        unguarded
-            .check_core_transaction(&funding, redelivery, &mut wallet, true, true)
-            .await;
-        assert!(
-            unguarded.accounts.standard_bip44_accounts[&0]
-                .utxos
-                .contains_key(&spent),
-            "control: without owned inputs the redelivery resurrects the output"
-        );
+                ..spender.clone()
+            };
+            let history = RecordedHistory {
+                transactions: vec![without_ownership],
+                instant_locks: BTreeMap::new(),
+            };
+            replay_recorded_history(&mut info, &mut wallet, history).await;
+            info.apply_chain_lock(ChainLock {
+                block_height: 300,
+                block_hash: BlockHash::from_byte_array([30; 32]),
+                signature: BLSSignature::from([0; 96]),
+            });
+            info.update_synced_height(300);
+            assert!(info.observed_spent_outpoints().is_empty(), "{case}");
+
+            for (transaction, height) in [(&funding, 100), (&unrelated, 301)] {
+                info.check_core_transaction(transaction, block(height), &mut wallet, true, true)
+                    .await;
+            }
+
+            let coins = &info.accounts.standard_bip44_accounts[&0].utxos;
+            assert_eq!(
+                coins.contains_key(&spent),
+                !guarded,
+                "{case}: only a settled spend keeps its input from being credited"
+            );
+            assert!(
+                coins.contains_key(&OutPoint::new(unrelated.txid(), 0)),
+                "{case}: a coin no stored record spends must be credited"
+            );
+        }
     }
 
     #[tokio::test]
