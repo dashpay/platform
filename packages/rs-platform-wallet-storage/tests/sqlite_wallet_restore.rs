@@ -926,3 +926,25 @@ async fn should_not_hand_out_a_funded_address_restored_beyond_the_derived_window
     drop(wm);
     assert!(manager.shutdown().await.all_clean());
 }
+
+/// A row filed under a pool its account does not have is read by no pool, so
+/// the reservation it carries would vanish from a load that reports success.
+#[test]
+fn should_reject_a_pool_row_filed_under_a_pool_its_account_does_not_have() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    assert_pool_corruption_is_typed_and_isolated(
+        |wallet, info| {
+            let account_type = AccountType::IdentityInvitation;
+            let source = account_key_source(wallet, account_type);
+            with_pool(info, account_type, AddressPoolType::Absent, |pool| {
+                pool.next_unused_and_reserve(&source, 12345).unwrap();
+            });
+            "UPDATE core_address_pool SET pool_type = 0 \
+             WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
+               AND reserved_at IS NOT NULL"
+                .to_string()
+        },
+        "core pool row names a pool its account does not have",
+    );
+}

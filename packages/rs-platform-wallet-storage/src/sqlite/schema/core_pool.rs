@@ -564,12 +564,43 @@ pub(crate) fn restore_pools(
         let label = accounts::account_type_db_label(&account_type);
         let (user, friend) = accounts::account_dashpay_ids(&account_type);
         let key_source = public_key_source(wallet, account_type);
+        let account_index = i64::from(accounts::account_index(&account_type));
+        let key_class = i64::from(accounts::account_key_class(&account_type));
+        // A row filed under a pool this account does not have is read by no
+        // pool below, so whatever it reserves would be dropped by a load that
+        // reports success.
+        let pool_types: Vec<i64> = account
+            .managed_account_type()
+            .address_pools()
+            .iter()
+            .map(|pool| pool_type_to_i64(pool.pool_type))
+            .collect();
+        let mut stored_pool_types = conn.prepare(
+            "SELECT DISTINCT pool_type FROM core_address_pool \
+             WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+               AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
+        )?;
+        let mut stored = stored_pool_types.query(params![
+            wallet_id.as_slice(),
+            label,
+            account_index,
+            key_class,
+            user.as_slice(),
+            friend.as_slice(),
+        ])?;
+        while let Some(row) = stored.next()? {
+            if !pool_types.contains(&row.get(0)?) {
+                return Err(WalletStorageError::blob_decode(
+                    "core pool row names a pool its account does not have",
+                ));
+            }
+        }
         for pool in account.managed_account_type_mut().address_pools_mut() {
             let pool_rows = params![
                 wallet_id.as_slice(),
                 label,
-                i64::from(accounts::account_index(&account_type)),
-                i64::from(accounts::account_key_class(&account_type)),
+                account_index,
+                key_class,
                 user.as_slice(),
                 friend.as_slice(),
                 pool_type_to_i64(pool.pool_type)
