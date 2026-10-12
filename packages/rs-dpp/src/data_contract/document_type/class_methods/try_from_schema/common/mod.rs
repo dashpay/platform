@@ -1427,6 +1427,13 @@ fn parse_indices(
             let Some(transform) = &index.integer_range else {
                 continue;
             };
+            // A signed source keeps its signed keys either way
+            let unsigned_source = flattened_document_properties
+                .get(transform.source.as_str())
+                .is_some_and(|source| source.property_type.has_unsigned_integer_tree_key());
+            if !unsigned_source {
+                continue;
+            }
             if let Some((summing, _)) = indices.iter().find(|(_, other)| {
                 other.ends_with_range_sum_of_signed_values(
                     transform.source.as_str(),

@@ -266,9 +266,18 @@ pub(crate) fn query_values(
         .clone()
         .execute_with_proof(drive, None, None, platform_version)
         .expect("expected the query to prove");
-    let (_, proved) = query
+    let (root_hash, proved) = query
         .verify_proof(&proof, platform_version)
         .expect("expected the proof to verify");
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected the root hash"),
+        "the proof authenticates the stored state"
+    );
     assert_eq!(
         proved.iter().map(value_of).collect::<Vec<u64>>(),
         values,

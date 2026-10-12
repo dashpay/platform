@@ -8427,13 +8427,16 @@ mod tests {
         );
     }
 
-    /// A `score` type whose u8 `amount` ends a `rangeSummable` index over
+    /// A `score` type whose `amount` ends a `rangeSummable` index over
     /// `weight` and is bucketed by a unique `integerRange` index.
-    fn range_summed_and_bucketed_schema(weight: serde_json::Value) -> serde_json::Value {
+    fn range_summed_and_bucketed_schema(
+        amount: serde_json::Value,
+        weight: serde_json::Value,
+    ) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "amount": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "amount": amount,
                 "weight": weight,
                 "author": { "type": "string", "maxLength": 63, "position": 2 }
             },
@@ -8458,20 +8461,30 @@ mod tests {
 
     #[test]
     fn should_refuse_an_integer_range_on_a_property_range_summing_signed_values() {
-        let error =
-            try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
-                json!({ "type": "integer", "minimum": -10, "maximum": 10, "position": 1 }),
-            ))
-            .expect_err("the amount keeps its earlier keys, which the grid does not read");
+        let unsigned_amount =
+            || json!({ "type": "integer", "minimum": 0, "maximum": 255, "position": 0 });
+        let signed_weight =
+            || json!({ "type": "integer", "minimum": -10, "maximum": 10, "position": 1 });
+        let error = try_document_type_from_schema_full_validation(
+            range_summed_and_bucketed_schema(unsigned_amount(), signed_weight()),
+        )
+        .expect_err("the amount keeps its earlier keys, which the grid does not read");
         assert!(
             error.to_string().contains("keeps its earlier key encoding"),
             "unexpected error: {error}"
         );
 
         try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
+            unsigned_amount(),
             json!({ "type": "integer", "minimum": 0, "maximum": 10, "position": 1 }),
         ))
         .expect("range-summed values that are never negative leave the amount in value order");
+
+        try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
+            json!({ "type": "integer", "minimum": -128, "maximum": 127, "position": 0 }),
+            signed_weight(),
+        ))
+        .expect("a signed amount keeps its signed keys whatever the index sums");
     }
 
     /// A `listing` type with a required integer `price` (inferred from its
