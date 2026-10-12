@@ -53,14 +53,14 @@ use jni::sys::jstring;
 use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
-    AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
-    IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
-    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
-    WalletChangeSetFFI, WalletRestoreEntryFFI,
+    AssetLockEntryFFI, ChainTruncationFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI,
+    ContactRequestFFI, ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI,
+    IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI,
+    IdentityRestoreEntryFFI, InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI,
+    PersistenceCallbacks, PersistenceCallbacksExtension, PlatformAddressFFI,
+    ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -205,9 +205,19 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 /// sync watermark with it, and the round is refused one layer up instead of
 /// advancing past a removal that never happened. Wiring the slot for every
 /// subclass would make "slot present" prove nothing.
+///
+/// The truncation slot follows the same rule for
+/// `onWalletChangesetChainTruncated` and `CORE_CHAIN_TRUNCATION`; without
+/// the slot the wallet-event adapter withholds the truncation.
 pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> PersistenceCallbacksExtension {
     let sweeps_overridden = bridge_overrides(env, bridge, "onWalletChangesetTransactionsSwept");
+    let truncations_overridden = bridge_overrides(env, bridge, "onWalletChangesetChainTruncated");
     PersistenceCallbacksExtension {
+        on_persist_wallet_changeset_truncations_fn: if truncations_overridden {
+            Some(tramp_persist_wallet_changeset_truncations)
+        } else {
+            None
+        },
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
         on_persist_wallet_changeset_sweeps_fn: if sweeps_overridden {
             Some(tramp_persist_wallet_changeset_sweeps)
@@ -822,6 +832,77 @@ unsafe fn persist_changeset_sweep_batch(
             } else {
                 0
             }),
+        ],
+    )?
+    .i()
+}
+
+/// Extension-callback trampoline for the round's chain truncations, fired
+/// before every other core callback of the round (see
+/// `PersistWalletChangesetTruncationsFn`). One bridge call per truncation,
+/// in order, each in its own local frame like the sweep batches.
+unsafe extern "C" fn tramp_persist_wallet_changeset_truncations(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    truncations: *const ChainTruncationFFI,
+    truncations_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for truncation in slice_or_empty(truncations, truncations_count) {
+            let code = env.with_local_frame(8, |env| {
+                persist_changeset_truncation(env, bridge, &wid, truncation)
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+/// Descriptor of `NativePersistenceBridge.onWalletChangesetChainTruncated`:
+/// `(walletId, height, txids, txidCount, unconfirmedTxids,
+/// unconfirmedTxidCount, restoredOutpoints, restoredOutpointCount)`. Txids
+/// and outpoints ride as one flat `byte[]` each (32·N and 36·N bytes) plus
+/// a count, the packing the sweep descriptor uses.
+const WALLET_CHANGESET_TRUNCATION_DESCRIPTOR: &str = "([BI[BI[BI[BI)I";
+
+unsafe fn persist_changeset_truncation(
+    env: &mut JNIEnv,
+    bridge: &JObject,
+    wid: &JByteArray,
+    truncation: &ChainTruncationFFI,
+) -> Result<i32, jni::errors::Error> {
+    let txids = slice_or_empty(truncation.txids, truncation.txids_count);
+    let txids_arr = env.byte_array_from_slice(txids.as_flattened())?;
+    let unconfirmed = slice_or_empty(
+        truncation.unconfirmed_txids,
+        truncation.unconfirmed_txids_count,
+    );
+    let unconfirmed_arr = env.byte_array_from_slice(unconfirmed.as_flattened())?;
+    let restored = slice_or_empty(
+        truncation.restored_outpoints,
+        truncation.restored_outpoints_count,
+    );
+    let mut packed_restored = Vec::with_capacity(restored.len() * 36);
+    for outpoint in restored {
+        packed_restored.extend_from_slice(&pack_outpoint_key(outpoint));
+    }
+    let restored_arr = env.byte_array_from_slice(&packed_restored)?;
+    env.call_method(
+        bridge,
+        "onWalletChangesetChainTruncated",
+        WALLET_CHANGESET_TRUNCATION_DESCRIPTOR,
+        &[
+            wid.into(),
+            JValue::Int(jint_height(truncation.height)?),
+            (&txids_arr).into(),
+            JValue::Int(txids.len() as i32),
+            (&unconfirmed_arr).into(),
+            JValue::Int(unconfirmed.len() as i32),
+            (&restored_arr).into(),
+            JValue::Int(restored.len() as i32),
         ],
     )?
     .i()
@@ -4542,6 +4623,13 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onWalletChangesetTransactionsSwept",
         WALLET_CHANGESET_SWEEPS_DESCRIPTOR,
     ),
+    // Fires only on a reorg, so a drifted descriptor would otherwise
+    // surface on the first real one. Bound to the same constant as the
+    // `call_method` site in `persist_changeset_truncation`.
+    (
+        "onWalletChangesetChainTruncated",
+        WALLET_CHANGESET_TRUNCATION_DESCRIPTOR,
+    ),
     // Same drift risk as the sweeps descriptor above: this slot fires on
     // chainlock-advancing rounds only, so a stale descriptor would surface
     // exactly when the first real chainlock crossed. Must track the
@@ -4737,6 +4825,18 @@ mod tests {
         // + count, (hasWinnerMinedHeight, winnerMinedHeight) — must match
         // `NativePersistenceBridge.onWalletChangesetTransactionsSwept`.
         assert_eq!(WALLET_CHANGESET_SWEEPS_DESCRIPTOR, "([B[BI[B[BIZI)I");
+    }
+
+    #[test]
+    fn should_ship_a_truncation_as_a_height_and_three_counted_flat_arrays() {
+        // walletId, height, then (packed bytes, count) for removed txids,
+        // kept-unconfirmed txids and restored outpoints — must match
+        // `NativePersistenceBridge.onWalletChangesetChainTruncated`.
+        assert_eq!(WALLET_CHANGESET_TRUNCATION_DESCRIPTOR, "([BI[BI[BI[BI)I");
+        assert!(BRIDGE_METHOD_TABLE.contains(&(
+            "onWalletChangesetChainTruncated",
+            WALLET_CHANGESET_TRUNCATION_DESCRIPTOR
+        )));
     }
 
     #[test]
