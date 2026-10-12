@@ -31,6 +31,31 @@ use key_wallet::Utxo;
 
 use crate::changeset::{RecordedHistory, StoredTransaction};
 
+/// What [`replay_recorded_history`] made of the stored history.
+#[derive(Debug, Default)]
+pub struct HistoryReplay {
+    /// How many records went through the wallet checker.
+    pub replayed: usize,
+    /// Stored transactions the replay removed or left out: the losers of a
+    /// settled conflict with their descendants, and the records with unsafe
+    /// amounts.
+    pub retired: HashSet<Txid>,
+}
+
+impl HistoryReplay {
+    /// The unconfirmed sends of `sends` still worth dispatching again.
+    ///
+    /// A dispatch hands the transaction back to the wallet as a mempool
+    /// sighting: a retired loser would be recorded again, and a record with
+    /// unsafe amounts would reach the checker the replay kept it from.
+    pub fn resendable(&self, sends: Vec<Transaction>) -> Vec<Transaction> {
+        sends
+            .into_iter()
+            .filter(|send| !self.retired.contains(&send.txid()))
+            .collect()
+    }
+}
+
 /// Restore spend reservations and finality guards without re-crediting outputs excluded by persistence.
 ///
 /// The persisted UTXO set already restored onto `wallet_info` stays
@@ -57,18 +82,19 @@ use crate::changeset::{RecordedHistory, StoredTransaction};
 /// unconfirmed one stays on record, unchecked, so that a settled conflict
 /// still sweeps it and releases them.
 ///
-/// Returns how many records were replayed.
+/// Returns how many records were replayed and which stored transactions were
+/// retired instead.
 pub async fn replay_recorded_history(
     wallet_info: &mut ManagedWalletInfo,
     wallet: &mut Wallet,
     history: RecordedHistory,
-) -> usize {
+) -> HistoryReplay {
     let RecordedHistory {
         transactions,
         instant_locks,
     } = history;
     if transactions.is_empty() {
-        return 0;
+        return HistoryReplay::default();
     }
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
@@ -286,7 +312,8 @@ pub async fn replay_recorded_history(
         if !matches!(stored.context, TransactionContext::Mempool)
             && is_contested(stored, &competitors)
         {
-            wallet_info.sweep_conflicts(&stored.transaction, &stored.context);
+            let sweep = wallet_info.sweep_conflicts(&stored.transaction, &stored.context);
+            swept.extend(sweep.txids);
         }
     }
     // Finalize replayed records before a sync checkpoint can prune their spend guards.
@@ -296,7 +323,11 @@ pub async fn replay_recorded_history(
     // A claim guards a coin only once it has left the UTXO set.
     wallet_info.restore_spent_outpoints(&reserved);
     wallet_info.update_balance();
-    replay.len()
+    swept.extend(set_aside.iter().map(|stored| stored.txid));
+    HistoryReplay {
+        replayed: replay.len(),
+        retired: swept,
+    }
 }
 
 /// One stored transaction as [`unsafe_replay_amounts`] reads it: its txid, its
@@ -856,7 +887,8 @@ mod tests {
             &mut wallet,
             history(records, BTreeMap::new()),
         )
-        .await;
+        .await
+        .replayed;
         assert_eq!(count, 2);
         replayed
             .check_core_transaction(&funding, redelivery.clone(), &mut wallet, true, true)
@@ -990,7 +1022,8 @@ mod tests {
                 &mut wallet,
                 history(records.clone(), BTreeMap::new()),
             )
-            .await;
+            .await
+            .replayed;
             restored
                 .check_core_transaction(
                     &funding,
@@ -1526,7 +1559,8 @@ mod tests {
                     instant_locks: BTreeMap::new(),
                 },
             )
-            .await;
+            .await
+            .replayed;
             restored
                 .check_core_transaction(&funding, block(100), &mut wallet, true, true)
                 .await;
@@ -1825,6 +1859,108 @@ mod tests {
         assert_eq!(
             plan.examined, SPENDERS as usize,
             "each sweep looks at its own competitor, never at the bystanders"
+        );
+    }
+
+    /// The host lists its unconfirmed sends for re-dispatch from its own rows,
+    /// so the list can name transactions the replay retired. Those must not
+    /// go out again; every other send must, stored or not.
+    #[tokio::test]
+    async fn should_withhold_retired_sends_from_re_dispatch() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, _, address) = wallet_with_receive_address();
+        let coin = |byte: u8| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+        let spend = |spends: &[OutPoint], value: u64| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: spends
+                .iter()
+                .map(|previous_output| TxIn {
+                    previous_output: *previous_output,
+                    ..Default::default()
+                })
+                .collect(),
+            output: vec![TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        // The winner took coin 1 in a block; the loser wanted coins 1 and 2.
+        let winner = spend(&[coin(1)], 9_000);
+        let loser = spend(&[coin(1), coin(2)], 29_000);
+        let descendant = spend(&[OutPoint::new(loser.txid(), 0)], 28_000);
+        let survivor = spend(&[coin(3)], 39_000);
+        let unsafe_send = spend(&[coin(4)], 1 << 63);
+        let unrecorded = spend(&[coin(5)], 59_000);
+        let stored = |transaction: &Transaction, context| StoredTransaction {
+            txid: transaction.txid(),
+            transaction: transaction.clone(),
+            context,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+        let block = BlockInfo::new(101, BlockHash::from_byte_array([101; 32]), 101);
+        let history = RecordedHistory {
+            transactions: vec![
+                stored(&winner, TransactionContext::InBlock(block)),
+                stored(&loser, TransactionContext::Mempool),
+                stored(&descendant, TransactionContext::Mempool),
+                stored(&survivor, TransactionContext::Mempool),
+                stored(&unsafe_send, TransactionContext::Mempool),
+            ],
+            instant_locks: BTreeMap::new(),
+        };
+        let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap();
+        // Persisted as unspent: every coin but the one the block spent.
+        for (byte, value) in [(2, 20_000), (3, 40_000), (4, 50_000), (5, 60_000)] {
+            let txout = TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            };
+            account.utxos.insert(
+                coin(byte),
+                Utxo::new(coin(byte), txout, address.clone(), 99, false),
+            );
+        }
+
+        let outcome = replay_recorded_history(&mut restored, &mut wallet, history).await;
+
+        for (retired, why) in [
+            (&loser, "the loser of a settled conflict"),
+            (&descendant, "a descendant of that loser"),
+        ] {
+            assert!(outcome.retired.contains(&retired.txid()), "{why}");
+        }
+        assert!(
+            outcome.retired.contains(&unsafe_send.txid()),
+            "a record with unsafe amounts must not reach the checker by re-dispatch either"
+        );
+        let sends = vec![
+            loser.clone(),
+            descendant.clone(),
+            survivor.clone(),
+            unsafe_send.clone(),
+            unrecorded.clone(),
+        ];
+        let resendable: Vec<Txid> = outcome
+            .resendable(sends)
+            .iter()
+            .map(Transaction::txid)
+            .collect();
+        assert_eq!(
+            resendable,
+            vec![survivor.txid(), unrecorded.txid()],
+            "a surviving stored send and one the history never held still go out"
         );
     }
 
@@ -2199,8 +2335,9 @@ mod tests {
     async fn should_leave_projection_untouched_without_history() {
         let (mut wallet, restored, _, _, _) = confirmed_spend_fixture().await;
         let mut info = restored.clone();
-        let count =
-            replay_recorded_history(&mut info, &mut wallet, RecordedHistory::default()).await;
+        let count = replay_recorded_history(&mut info, &mut wallet, RecordedHistory::default())
+            .await
+            .replayed;
         assert_eq!(count, 0);
         assert_eq!(info.balance.total(), restored.balance.total());
         assert_eq!(

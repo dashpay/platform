@@ -150,7 +150,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 mut wallet_info,
                 identity_manager,
                 unused_asset_locks,
-                unconfirmed_outgoing_txs,
+                mut unconfirmed_outgoing_txs,
                 recorded_history,
             } = wallet_state;
 
@@ -172,14 +172,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .collect();
             if !recorded_history.is_empty() {
                 let offered = recorded_history.transactions.len();
-                let replayed =
+                let outcome =
                     replay_recorded_history(&mut wallet_info, &mut wallet, recorded_history).await;
                 tracing::info!(
                     wallet_id = %hex::encode(expected_wallet_id),
                     offered,
-                    replayed,
+                    replayed = outcome.replayed,
+                    retired = outcome.retired.len(),
                     "load: replayed stored transaction history"
                 );
+                // A send the replay retired is not dispatched again below.
+                unconfirmed_outgoing_txs = outcome.resendable(unconfirmed_outgoing_txs);
             }
 
             // Replay the sends the host still holds as unconfirmed, before
