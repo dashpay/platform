@@ -1236,41 +1236,29 @@ mod tests {
     }
 
     /// A truncation hands back a coin whose spend was mined once and may be
-    /// mined again, so the fence that spend retired has to stand again until
-    /// the spend is seen a second time.
+    /// mined again, so the coin has to be fenced until the spend is seen a
+    /// second time — and from the moment the wallet lock is released, not
+    /// from the delivery of an event: a fork recovery truncates between two
+    /// runs of the SPV client, when nothing listens for one.
     #[tokio::test]
     async fn should_fence_a_coin_again_when_a_truncation_undoes_its_spend() {
         use dashcore::hashes::Hash as _;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        use key_wallet_manager::WalletInterface;
 
-        let mgr = make_manager();
+        const FORK_HEIGHT: u32 = 4;
         let (wallet_manager, wallet_id, generation, _signer) =
             crate::test_support::funded_wallet_manager(
                 key_wallet::account::account_type::StandardAccountType::BIP44Account,
             )
             .await;
-        let spv = Arc::new(SpvRuntime::new(
-            Arc::clone(&wallet_manager),
-            Arc::new(PlatformEventManager::new(Vec::new())),
-        ));
-        let wallet = Arc::new(PlatformWallet::new(
-            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
-            wallet_id,
-            wallet_manager,
-            Arc::clone(&generation),
-            Arc::new(Notify::new()),
-            Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
-            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
-        ));
-        mgr.wallets.rcu(|wallets| {
-            let mut next = std::collections::BTreeMap::clone(wallets);
-            next.insert(wallet_id, Arc::clone(&wallet));
-            next
-        });
-        let coin = dashcore::OutPoint {
-            txid: dashcore::Txid::from_slice(&[9u8; 32]).expect("txid"),
-            vout: 0,
+        let coin = {
+            let wm = wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("the funded wallet");
+            let utxos = info.core_wallet.utxos();
+            utxos.first().expect("the funded coin").outpoint
         };
-        let tx = dashcore::Transaction {
+        let spend = dashcore::Transaction {
             version: 2,
             lock_time: 0,
             input: vec![dashcore::TxIn {
@@ -1280,29 +1268,48 @@ mod tests {
             output: Vec::new(),
             special_transaction_payload: None,
         };
-        let spend_observed = crate::test_support::observed_spend_event(wallet_id, &tx);
-        mgr.event_manager.on_wallet_event(&spend_observed);
-        assert!(generation.in_broadcast_conflict(&tx).is_none());
+        let block = dashcore::Block {
+            header: dashcore::block::Header {
+                version: dashcore::block::Version::default(),
+                prev_blockhash: dashcore::BlockHash::all_zeros(),
+                merkle_root: dashcore::TxMerkleNode::all_zeros(),
+                time: 0,
+                bits: dashcore::CompactTarget::from_consensus(0x1d00ffff),
+                nonce: 0,
+            },
+            txdata: vec![spend.clone()],
+        };
+        wallet_manager
+            .write()
+            .await
+            .process_block_for_wallets(
+                &block,
+                block.block_hash(),
+                FORK_HEIGHT + 1,
+                &std::collections::BTreeSet::from([wallet_id]),
+            )
+            .await;
+        assert!(
+            generation.in_broadcast_conflict(&spend).is_none(),
+            "a coin the wallet holds as spent needs no fence"
+        );
 
-        mgr.event_manager
-            .on_wallet_event(&key_wallet_manager::WalletEvent::ChainTruncated {
-                wallet_id,
-                height: 999,
-                txids: vec![tx.txid()],
-                unconfirmed_txids: Vec::new(),
-                restored_outpoints: vec![coin],
-                balance: key_wallet::WalletCoreBalance::default(),
-                account_balances: std::collections::BTreeMap::new(),
-            });
+        // No event is delivered to any handler from here on.
+        wallet_manager
+            .write()
+            .await
+            .truncate_above(FORK_HEIGHT)
+            .expect("no chain lock is applied above the fork");
+
         assert_eq!(
-            generation.in_broadcast_conflict(&tx),
+            generation.in_broadcast_conflict(&spend),
             Some(coin),
             "the undone spend may be mined again; the coin must not be re-selected"
         );
 
-        mgr.event_manager.on_wallet_event(&spend_observed);
+        generation.observe_spent([coin]);
         assert!(
-            generation.in_broadcast_conflict(&tx).is_none(),
+            generation.in_broadcast_conflict(&spend).is_none(),
             "seeing the spend again is what ends the fence"
         );
     }

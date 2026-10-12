@@ -115,20 +115,6 @@ impl SpendObservationHandler {
 
 impl EventHandler for SpendObservationHandler {
     fn on_wallet_event(&self, event: &WalletEvent) {
-        // The one event that undoes observations instead of adding one.
-        if let WalletEvent::ChainTruncated {
-            wallet_id,
-            restored_outpoints,
-            ..
-        } = event
-        {
-            if let Some(wallet) = self.wallets.load().get(wallet_id) {
-                wallet
-                    .generation()
-                    .fence_restored(restored_outpoints.iter().copied());
-            }
-            return;
-        }
         let Some(wallet_id) = observing_wallet(event) else {
             return;
         };
@@ -199,8 +185,9 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         // without the loser's inputs travelling on the event.
         WalletEvent::TransactionsSwept { .. } => Vec::new(),
         // A truncation reports coins that became unspent again
-        // (`restored_outpoints`), the opposite of a spend. The handler
-        // fences those instead — see `WalletGeneration::fence_restored`.
+        // (`restored_outpoints`), the opposite of a spend. Those are fenced
+        // where the wallet is truncated — see
+        // `WalletGeneration::fence_restored`.
         WalletEvent::ChainTruncated { .. } => Vec::new(),
     }
 }

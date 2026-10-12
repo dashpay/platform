@@ -162,7 +162,16 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
-        self.core_wallet.truncate_above(height)
+        let truncation = self.core_wallet.truncate_above(height)?;
+        // Fenced here, not on the `ChainTruncated` event: the caller holds
+        // the wallet-manager write lock, so no build can select a restored
+        // coin before its fence stands, and a fork recovery truncates
+        // between two runs of the SPV client, when no handler is listening.
+        // Lock order: wallet manager, then the fence mutex — a leaf, which
+        // nothing holds while it takes another lock.
+        self.generation
+            .fence_restored(truncation.restored_outpoints.iter().copied());
+        Ok(truncation)
     }
 
     fn matured_coinbase_records(
