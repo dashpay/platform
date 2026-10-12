@@ -206,7 +206,7 @@ pub(crate) fn remove_swept(
 ) -> Result<(), WalletStorageError> {
     let mut changes = AssetLockChangeSet::default();
     {
-        let mut stmt = tx.prepare(
+        let mut stmt = tx.prepare_cached(
             "SELECT length(outpoint), outpoint FROM asset_locks WHERE wallet_id = ?1 AND status != 'consumed'",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;

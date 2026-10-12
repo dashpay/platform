@@ -440,7 +440,7 @@ pub(crate) fn restore_recorded_transactions(
     records: Vec<TransactionRecord>,
     instant_locks: &BTreeMap<Txid, InstantLock>,
 ) -> Result<Vec<SweepBatch>, WalletStorageError> {
-    validate_replay_amounts(wallet_info, &records)?;
+    let unreplayable = validate_replay_amounts(wallet_info, &records)?;
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
     let placed: HashMap<OutPoint, AccountType> = wallet_info
@@ -464,6 +464,15 @@ pub(crate) fn restore_recorded_transactions(
     // IS-locked or confirmed spend releases it. Sibling of
     // TODO(release-repair-spends-after-reorg) in `core_history`.
     let mut replay = replay_order(records);
+    if !unreplayable.is_empty() {
+        // Count only: the skipped txids are peer-supplied.
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_info.wallet_id),
+            skipped = unreplayable.len(),
+            "unconfirmed transaction records with unsafe amounts left out of load replay; their stored spend claims still apply"
+        );
+        replay.retain(|record| !unreplayable.contains(&record.txid));
+    }
     for record in &mut replay {
         record.context = match &record.context {
             TransactionContext::InBlock(block)
@@ -585,10 +594,14 @@ pub(crate) fn restore_recorded_transactions(
 /// The upstream checker casts each unsigned operand before signed subtraction.
 /// A fitting net does not make an overflowing operand safe. Include every source
 /// of replay inputs: durable coins, parent outputs, and staged input details.
+///
+/// Returns the unconfirmed records that must be left out of the replay. Nothing
+/// authenticates a mempool transaction, so its amounts are peer-supplied data,
+/// not corruption; only a network-final record fails the load.
 fn validate_replay_amounts(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
-) -> Result<(), WalletStorageError> {
+) -> Result<HashSet<Txid>, WalletStorageError> {
     fn total(
         field: &'static str,
         values: impl IntoIterator<Item = u64>,
@@ -603,20 +616,8 @@ fn validate_replay_amounts(
         Ok(())
     }
 
-    let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
-    let mut remember = |outpoint, value| {
-        amounts
-            .entry(outpoint)
-            .and_modify(|known| *known = (*known).max(value))
-            .or_insert(value);
-    };
-    for account in wallet_info.accounts.all_funding_accounts() {
-        for (outpoint, coin) in &account.utxos {
-            safe_cast::u64_to_i64("replay.utxo", coin.txout.value)?;
-            remember(*outpoint, coin.txout.value);
-        }
-    }
-    for record in records {
+    /// The operands `record` alone hands the checker.
+    fn own_amounts(record: &TransactionRecord) -> Result<(), WalletStorageError> {
         total(
             "replay.input_details",
             record.input_details.iter().map(|d| d.value),
@@ -639,7 +640,44 @@ fn validate_replay_amounts(
                 .iter()
                 .chain(credit_outputs)
                 .map(|o| o.value),
-        )?;
+        )
+    }
+
+    /// Whether `record` passed `checked`; an unconfirmed failure is set aside instead.
+    fn replayable(
+        record: &TransactionRecord,
+        checked: Result<(), WalletStorageError>,
+        unreplayable: &mut HashSet<Txid>,
+    ) -> Result<bool, WalletStorageError> {
+        match checked {
+            Ok(()) => Ok(true),
+            Err(_) if matches!(record.context, TransactionContext::Mempool) => {
+                unreplayable.insert(record.txid);
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    let mut unreplayable = HashSet::new();
+    let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
+    let mut remember = |outpoint, value| {
+        amounts
+            .entry(outpoint)
+            .and_modify(|known| *known = (*known).max(value))
+            .or_insert(value);
+    };
+    for account in wallet_info.accounts.all_funding_accounts() {
+        for (outpoint, coin) in &account.utxos {
+            safe_cast::u64_to_i64("replay.utxo", coin.txout.value)?;
+            remember(*outpoint, coin.txout.value);
+        }
+    }
+    for record in records {
+        // A record left out credits nothing, so its outputs are no child's input amount.
+        if !replayable(record, own_amounts(record), &mut unreplayable)? {
+            continue;
+        }
         let txid = record.transaction.txid();
         for (index, output) in record.transaction.output.iter().enumerate() {
             remember(OutPoint::new(txid, index as u32), output.value);
@@ -651,16 +689,17 @@ fn validate_replay_amounts(
         }
     }
     for record in records {
-        total(
+        let inputs = total(
             "replay.inputs",
             record
                 .transaction
                 .input
                 .iter()
                 .filter_map(|input| amounts.get(&input.previous_output).copied()),
-        )?;
+        );
+        replayable(record, inputs, &mut unreplayable)?;
     }
-    Ok(())
+    Ok(unreplayable)
 }
 
 fn replay_sweep(
