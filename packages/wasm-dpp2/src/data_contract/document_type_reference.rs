@@ -116,13 +116,10 @@ export type DocumentPropertyReferenceTarget =
        */
       where?: DocumentReferenceWhere;
       /**
-       * Beside `findBy`, on a reference judged on the create alone (a `findBy`
-       * function, or a document type whose documents are never replaced): how many blocks before the create
-       * the document `findBy` finds must have been created, from its
-       * `$createdAtBlockHeight`, so 1 means an earlier block (code 40142 when
-       * it was not).
+       * Beside `findBy`: what the document `findBy` finds must meet when the
+       * referring document is created. See {@link DocumentReferenceConstraints}.
        */
-      minimumAgeBlocks?: number;
+      constraints?: DocumentReferenceConstraints;
       /**
        * A list the value must be in: the value (on a typed array, every
        * element) must be one of the identifiers the typed array `inList`
@@ -224,13 +221,10 @@ export type DocumentPropertyReferenceTarget =
        */
       where?: DocumentReferenceWhere;
       /**
-       * Beside `findBy`, on a reference judged on the create alone (a `findBy`
-       * function, or a document type whose documents are never replaced): how many blocks before the create
-       * the document `findBy` finds must have been created, from its
-       * `$createdAtBlockHeight`, so 1 means an earlier block (code 40142 when
-       * it was not).
+       * Beside `findBy`: what the document `findBy` finds must meet when the
+       * referring document is created. See {@link DocumentReferenceConstraints}.
        */
-      minimumAgeBlocks?: number;
+      constraints?: DocumentReferenceConstraints;
       /**
        * Beside `findBy`, on a reference judged on the create alone (a `findBy`
        * function, or a document type whose documents are never replaced): the create deletes the document
@@ -381,15 +375,56 @@ export type DocumentReferenceWhereCondition =
  * joined in order with nothing between them. A param is a property path of the
  * document being created (a string's UTF-8, a byte array's bytes, an
  * identifier's 32 bytes), the property carrying the reference included,
- * `{ const }`, fixed UTF-8 text, or `'.'`, the value carrying the reference
+ * `{ const }`, fixed UTF-8 text, `'.'`, the value carrying the reference
  * where it has no path (each element of a typed array, the writer or the
- * creator). The document it finds is a commitment made earlier; the reference
+ * creator), or `'$ownerId'`, the 32 bytes of the writer's identity, the owner
+ * of the document being created. The document it finds is a commitment made
+ * earlier; the reference
  * is checked when the document is created only. To reveal one, compute the
  * same hash over the values you create the document with.
  */
 export type DocumentReferenceFindByFunction = {
   function: 'sys.hash.sha256d';
   params: Array<string | { const: string }>;
+};
+
+/**
+ * A `refersTo`'s `constraints`, beside `findBy`, on a reference judged on the
+ * create alone (a `findBy` function, or a document type whose documents are
+ * never replaced).
+ *
+ * - `minimumAgeBlocks`: how many blocks before the create the document `findBy`
+ *   finds must have been created, from its `$createdAtBlockHeight`, so 1 means
+ *   an earlier block (code 40142 when it was not).
+ * - `chooseFirst`: on a `deletableDocument` reference only, see
+ *   {@link DocumentReferenceChooseFirst}.
+ */
+export type DocumentReferenceConstraints = {
+  minimumAgeBlocks?: number;
+  chooseFirst?: DocumentReferenceChooseFirst;
+};
+
+/**
+ * A `deletableDocument` reference's `constraints.chooseFirst`, beside a
+ * `findBy` holding `$ownerId: '$ownerId'` and a function filling `among` (a
+ * {@link DocumentReferenceFindByFunction} reading neither `'$ownerId'` nor
+ * `'.'`): every commitment to the same values holds that hash, whoever made
+ * it. The found document must be the first valid commitment among those
+ * holding the same value. `validWhen` maps one property to a function reading
+ * `'$ownerId'` (each commitment's owner) and exactly the properties the
+ * `findBy` function reads: a commitment is valid when it holds that function
+ * computed with its owner, which takes knowing the values, so a copied hash
+ * does not count. The commitments are ordered by `by`, each entry one property
+ * and its direction, a last `$id` breaking ties in the direction of the entry
+ * before it (ascending alone). A create is refused when a
+ * valid commitment before the found one is not past its `ttl` (code 40149);
+ * two equal on every `by` property precede neither other. A found commitment
+ * past its own `ttl`, or not valid itself, reveals nothing (code 40120).
+ */
+export type DocumentReferenceChooseFirst = {
+  among: string;
+  validWhen: Record<string, DocumentReferenceFindByFunction>;
+  by: Array<Record<string, 'asc' | 'desc'>>;
 };
 
 /**
@@ -422,7 +457,7 @@ export type DocumentPropertyReference = {
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135,
-   * 40136 and 40142), except that a write error names the failing element by its
+   * 40136, 40142 and 40149), except that a write error names the failing element by its
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
@@ -484,6 +519,7 @@ fn find_by_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsVa
                 set_field(&object, "const", &JsValue::from_str(text), path)?;
                 object.into()
             }
+            LookupKeyParam::Writer => JsValue::from_str("$ownerId"),
         };
         params.push(&param_value);
     }
@@ -647,7 +683,8 @@ fn where_condition_to_js(condition: &WhereCondition, path: &str) -> WasmDppResul
 /// The `findBy` field of a document reference found by it: every property it
 /// names mapped to its source as the schema spells it, `'.'`, `'$ownerId'`, a
 /// property path, or a function as `{ function, params }`, and, beside a
-/// function, `minimumAgeBlocks` and `consume` where declared.
+/// function, `consume` and the `constraints` (`minimumAgeBlocks` and `chooseFirst`)
+/// where declared.
 fn set_find_by_fields(
     object: &Object,
     lookup: &DocumentReferenceLookup,
@@ -662,12 +699,52 @@ fn set_find_by_fields(
         set_schema_field(&find_by, index_property, value, path)?;
     }
     set_field(object, "findBy", &find_by, path)?;
-    if let Some(blocks) = lookup.minimum_age_blocks {
-        set_field(object, "minimumAgeBlocks", &JsValue::from(blocks), path)?;
-    }
     if lookup.consume {
         set_field(object, "consume", &JsValue::TRUE, path)?;
     }
+    if lookup.minimum_age_blocks.is_none() && lookup.choose_first.is_none() {
+        return Ok(());
+    }
+    let constraints = Object::new();
+    if let Some(blocks) = lookup.minimum_age_blocks {
+        set_field(
+            &constraints,
+            "minimumAgeBlocks",
+            &JsValue::from(blocks),
+            path,
+        )?;
+    }
+    if let Some(choose_first) = &lookup.choose_first {
+        let choose_first_object = Object::new();
+        set_field(
+            &choose_first_object,
+            "among",
+            &JsValue::from_str(&choose_first.among),
+            path,
+        )?;
+        let valid_when = Object::new();
+        set_schema_field(
+            &valid_when,
+            &choose_first.valid_when_property,
+            find_by_function_to_js(&choose_first.valid_when, path)?,
+            path,
+        )?;
+        set_field(&choose_first_object, "validWhen", &valid_when, path)?;
+        let by = Array::new();
+        for order in &choose_first.by {
+            let entry = Object::new();
+            set_schema_field(
+                &entry,
+                &order.property,
+                JsValue::from_str(if order.ascending { "asc" } else { "desc" }),
+                path,
+            )?;
+            by.push(&entry);
+        }
+        set_field(&choose_first_object, "by", &by, path)?;
+        set_field(&constraints, "chooseFirst", &choose_first_object, path)?;
+    }
+    set_field(object, "constraints", &constraints, path)?;
     Ok(())
 }
 

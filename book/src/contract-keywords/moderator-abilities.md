@@ -49,11 +49,7 @@ The top-level properties of the type that only the contract's moderators write. 
   ],
   "properties": {
     "postId": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "position": 0,
       "refersTo": { "type": "deletableDocument", "documentType": "post" }
     },
