@@ -539,8 +539,18 @@ pub struct FeeVersion {
     pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    pub document_ttl: FeeDocumentTtlVersion,
+    pub document_reference: FeeDocumentReferenceVersion,
 }
 ```
+
+`document_ttl` and `document_reference` are read from protocol version 14:
+the fees of documents whose type declares a [`ttl`](../data-model/document-ttl.md),
+and the budget of a [`chooseFirst`](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)
+competitor scan (`choose_first_credits_per_candidate`, 100,000 credits a
+candidate, times `SystemLimits::max_choose_first_candidates`), which check tx
+reserves on top of a reveal's estimated fee. Platform states store only
+`fee_version_number`, so neither group touches a stored format.
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor

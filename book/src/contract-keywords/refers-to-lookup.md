@@ -194,8 +194,8 @@ It sits in the `constraints` of a `deletableDocument` `refersTo` whose `findBy` 
   "canBeDeleted": true,
   "ttl": 86400,
   "properties": {
-    "ownerNameHash": { "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0 },
-    "nameHash": { "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 1 }
+    "ownerNameHash": { "type": "bytes", "size": 32, "position": 0 },
+    "nameHash": { "type": "bytes", "size": 32, "position": 1 }
   },
   "indices": [
     {

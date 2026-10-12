@@ -326,6 +326,7 @@ The first three limits come from the meta-schema, the rest from protocol version
 | `max_reference_expression_depth` | 4 | nesting of reference expressions |
 | `max_property_constraints` | 16 | rules in one `propertyConstraints` |
 | `max_property_constraint_nodes` | 32 | nodes in one rule |
+| `max_choose_first_candidates` | 1000 | commitments a create reads for a [`chooseFirst`](contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst) |
 | `min_document_ttl_seconds`, `max_document_ttl_seconds` | 3600, 31536000 | `ttl` |
 | `max_time_range_ttl_seconds` | 604800 | a `timeRange` index's `ttl` |
 | `max_contested_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property on a type with a contested index |
