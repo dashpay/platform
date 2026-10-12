@@ -408,8 +408,10 @@ it:
 - the spend writer (`schema::core_state::apply`), naming the record stored in
   the same round when it turns a row from unspent to spent, mempool spends
   included; a row that is already spent keeps its claim, known or unknown;
-- `apply_sweep`, naming the winner that took an input a swept loser claimed
-  but this store had no released record for;
+- `apply_sweep`, for an input a swept loser claimed that the sweep does not
+  release: the winner when it spends that input or no surviving stored
+  transaction does, otherwise the surviving stored spender (the smallest txid
+  of several), so that removing that spender can release the coin;
 - the runtime history repair (`schema::core_history`), which marks an owned
   output `spent = 1` for each non-mempool stored record that spends it,
   including a record stored before the output itself was known;
@@ -447,7 +449,8 @@ the same way instead of marking it in place.
 
 `winner_mined_height` (V007) stamps that claim with the mined height of the
 winner named in `spent_in_txid`, and decides the placeholder's lifetime
-rather than its existence. A block-context sweep stamps the winner's own
+rather than its existence. A row held for a surviving spender instead of the
+winner is not stamped. A block-context sweep stamps the winner's own
 height and `collect_finalized_tombstones` evicts the row once
 `min(chainlock_height, synced_height)` reaches it — upstream's
 `prune_finalized_observed_spends` boundary verbatim. An InstantSend-locked
@@ -903,4 +906,4 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
-| V019 | `V019__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). A data repair (`legacy_v019::repair_history`) then runs once over every stored record: it backfills the input index, rewrites `core_transactions.record_blob` with corrected input details and direction (archiving the original first), and marks spent the owned outputs that non-mempool records spend, recording the spender in `spent_in_txid` unless another claim stands. A confirmed record whose blob cannot be decoded (or exceeds the blob size limit) is dropped along with its index rows and `core_sync_state.synced_height` is lowered to just below the wallet's birth height, so the next SPV start rescans it; an undecodable unconfirmed record fails the migration instead. |
+| V019 | `V019__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). A data repair (`legacy_v019::repair_history`) then runs once over every stored record: it backfills the input index, rewrites `core_transactions.record_blob` with corrected input details and direction (archiving the original first), and marks spent the owned outputs that non-mempool records spend, recording the spender in `spent_in_txid` unless another claim stands. A confirmed record whose blob cannot be decoded (or exceeds the blob size limit) is dropped along with its index rows and `core_sync_state.synced_height` is lowered to just below the wallet's birth height, so the next SPV start rescans it; an undecodable unconfirmed record fails the migration instead. An unconfirmed record whose net amount does not fit `i64` is indexed but otherwise left as stored, since nothing authenticates a mempool transaction's amounts; a confirmed one fails the migration. |

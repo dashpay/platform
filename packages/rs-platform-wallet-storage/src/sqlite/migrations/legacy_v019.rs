@@ -211,12 +211,15 @@ fn contact_only_script(
     )?)
 }
 
+/// Returns whether the record could be accounted for. An unconfirmed record
+/// with a net past `i64` cannot and stays as stored: nothing authenticates a
+/// mempool transaction, so that is peer-supplied data, and load sets it aside.
 fn repair_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     mut record: TransactionRecord,
     network: dashcore::Network,
-) -> Result<(), WalletStorageError> {
+) -> Result<bool, WalletStorageError> {
     let record_txid = record.txid;
     let txid = &record_txid;
     let original = blob::encode(&record)?;
@@ -296,7 +299,7 @@ fn repair_record(
     }
     // Empty metadata is not accounting evidence (e.g. confirmation-only placeholders).
     if inputs.is_empty() && outputs.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     let received: i128 = outputs
         .values()
@@ -305,11 +308,17 @@ fn repair_record(
         .sum();
     let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
     let net = received - spent;
-    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
-        wallet_id: *wallet_id,
-        txid: *txid,
-        value: net,
-    })?;
+    record.net_amount = match i64::try_from(net) {
+        Ok(net) => net,
+        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(false),
+        Err(_) => {
+            return Err(WalletStorageError::NetAmountOverflow {
+                wallet_id: *wallet_id,
+                txid: *txid,
+                value: net,
+            })
+        }
+    };
     let has_ours = outputs
         .values()
         .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
@@ -357,7 +366,7 @@ fn repair_record(
             ],
         )?;
     }
-    Ok(())
+    Ok(true)
 }
 
 pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageError> {
@@ -378,16 +387,26 @@ pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageEr
             keys.push((wallet_id, Txid::from_slice(&txid)?));
         }
     }
+    let mut unrepaired = 0_usize;
     for (wallet_id, txid) in keys {
         match read_record(tx, &wallet_id, &txid) {
             Ok(Some(record)) => {
                 index_record(tx, &wallet_id, &record)?;
-                repair_record(tx, &wallet_id, record, network(tx, &wallet_id)?)?;
+                if !repair_record(tx, &wallet_id, record, network(tx, &wallet_id)?)? {
+                    unrepaired += 1;
+                }
             }
             Ok(None) => {}
             Err(error) if is_unreadable(&error) => drop_for_resync(tx, &wallet_id, &txid, error)?,
             Err(error) => return Err(error),
         }
+    }
+    if unrepaired > 0 {
+        // Count only: the txids are peer-supplied.
+        tracing::warn!(
+            unrepaired,
+            "unconfirmed transaction records with amounts beyond the accounting range kept as stored by the history repair"
+        );
     }
     Ok(())
 }
@@ -559,6 +578,129 @@ mod tests {
                 "birth height {birth_height}: the failed upgrade must roll back"
             );
         }
+    }
+
+    /// A V018 database holding one record that pays the wallet twice, for a
+    /// net past `i64`, in `context`. Returns the stored blob too.
+    fn seed_unrepresentable_net(
+        context: TransactionContext,
+    ) -> (Connection, WalletId, Txid, Vec<u8>) {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xC3u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let value = (1_u64 << 62) + 1;
+        let body = CoreTransaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([0x73; 32]), 0),
+                ..Default::default()
+            }],
+            output: [address(1), address(2)]
+                .map(|owner| TxOut {
+                    value,
+                    script_pubkey: owner.script_pubkey(),
+                })
+                .to_vec(),
+            special_transaction_payload: None,
+        };
+        let txid = body.txid();
+        let height = context.block_info().map(|block| i64::from(block.height()));
+        let original = TransactionRecord::new(
+            body,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            [address(1), address(2)]
+                .into_iter()
+                .zip(0..)
+                .map(|(owner, index)| OutputDetail {
+                    index,
+                    role: OutputRole::Received,
+                    address: Some(owner),
+                    value,
+                })
+                .collect(),
+            // What the old checker's unsigned-to-signed cast left behind.
+            (2 * value) as i64,
+        );
+        let stored = blob::encode(&original).unwrap();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![
+                    utxo(OutPoint::new(txid, 0), value, address(1)),
+                    utxo(OutPoint::new(txid, 1), value, address(2)),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT OR REPLACE INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+             VALUES (?1, ?2, ?3, 0, ?4)",
+            params![&wallet_id[..], txid.as_byte_array().as_slice(), height, stored],
+        )
+        .unwrap();
+        rewind_to_v018(&tx);
+        tx.commit().unwrap();
+        (conn, wallet_id, txid, stored)
+    }
+
+    /// Nothing authenticates a mempool transaction, so one the wallet cannot
+    /// account for must not keep the store from opening after an upgrade.
+    #[test]
+    fn should_leave_unrepresentable_mempool_record_unrepaired_when_migrating_from_v018() {
+        let (mut conn, wallet_id, txid, stored) =
+            seed_unrepresentable_net(TransactionContext::Mempool);
+
+        migrations::run(&mut conn).unwrap();
+
+        let key = params![&wallet_id[..], txid.as_byte_array().as_slice()];
+        let (record, originals, indexed): (Vec<u8>, i64, i64) = conn
+            .query_row(
+                "SELECT record_blob, \
+                    (SELECT count(*) FROM core_transaction_record_originals WHERE wallet_id = ?1 AND txid = ?2), \
+                    (SELECT count(*) FROM core_transaction_inputs WHERE wallet_id = ?1 AND txid = ?2) \
+                 FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                key,
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(record, stored, "the record stays exactly as stored");
+        assert_eq!(
+            originals, 0,
+            "nothing was rewritten, so nothing is archived"
+        );
+        assert_eq!(
+            indexed, 1,
+            "its input is still indexed for conflict settlement"
+        );
+    }
+
+    #[test]
+    fn should_fail_migration_on_unrepresentable_confirmed_record() {
+        let block = BlockInfo::new(101, BlockHash::all_zeros(), 7);
+        let (mut conn, ..) = seed_unrepresentable_net(TransactionContext::InBlock(block));
+
+        let error = migrations::run(&mut conn).unwrap_err();
+
+        assert!(
+            format!("{error:?}").contains("NetAmountOverflow"),
+            "got {error:?}"
+        );
     }
 
     /// Pins V019's observable result on a V018-shaped database: the repaired
