@@ -182,6 +182,12 @@ Spending only final coins brings these Rust source and behaviour changes:
   it again, so its shortfall stays insufficient funds.
 - `FinalizeOptions` is `#[non_exhaustive]`: build it with
   `FinalizeOptions::default()`, `with_inputs` and `with_reservation_only`.
+- New `CoreWallet::check_chosen_outpoints(sources, source_index, outpoints)`:
+  the finalizers' check of `FinalizeOptions::inputs`, for a host that wants
+  the refusal when the coins are picked. The FFI coin-control setter
+  (`core_wallet_tx_builder_add_inputs_from_outpoints`) goes through it, so an
+  outpoint the named account does not hold is now `ErrorInvalidParameter`
+  (`ChosenInputUnavailable`) there too, where it was `ErrorWalletOperation`.
 - FFI: `core_wallet_tx_builder_set_fee_rate` refuses a rate whose fee
   arithmetic would overflow (`ErrorInvalidParameter`, above about 42.9 DASH
   per kB); `core_wallet_tx_builder_set_current_height` is accepted and ignored

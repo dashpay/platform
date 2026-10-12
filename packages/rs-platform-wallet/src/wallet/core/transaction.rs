@@ -107,9 +107,8 @@ pub(crate) fn is_final(utxo: &Utxo) -> bool {
 /// until it matures — not what the network's confirmation of the coin
 /// cures), then any pinned by an in-flight broadcast (`pinned`; the build
 /// would refuse it after selection anyway), then any not final (code 59, the
-/// only refusal waiting cures). Public for platform-wallet-ffi only.
-#[doc(hidden)]
-pub fn check_chosen_inputs<'a>(
+/// only refusal waiting cures).
+pub(crate) fn check_chosen_inputs<'a>(
     utxos: impl IntoIterator<Item = &'a Utxo> + Clone,
     height: u32,
     pinned: &HashSet<OutPoint>,
@@ -148,11 +147,50 @@ fn unspendable<'a>(
         })
 }
 
-/// The coins in-flight broadcasts of this wallet pin, now — what
-/// [`check_chosen_inputs`] takes. Public for platform-wallet-ffi only.
-#[doc(hidden)]
-pub fn in_broadcast_outpoints(info: &PlatformWalletInfo) -> HashSet<OutPoint> {
-    info.generation.in_broadcast_outpoints()
+/// The wallet's current copies of the coins chosen by outpoint, each looked
+/// up in the funding accounts `resolved` and all of them judged by
+/// [`check_chosen_inputs`] — the one check behind the finalizer and
+/// [`CoreWallet::check_chosen_outpoints`]. Also returns the snapshot of what
+/// in-flight broadcasts pin, taken only when a coin was chosen.
+fn resolve_chosen_inputs(
+    info: &PlatformWalletInfo,
+    resolved: &[AccountType],
+    outpoints: &[OutPoint],
+    height: u32,
+) -> Result<(Vec<Utxo>, Option<HashSet<OutPoint>>), PlatformWalletError> {
+    let mut seeds: Vec<Utxo> = Vec::new();
+    let mut seeded: HashSet<OutPoint> = HashSet::new();
+    for outpoint in outpoints {
+        if !seeded.insert(*outpoint) {
+            continue;
+        }
+        let Some(utxo) = resolved.iter().find_map(|at| {
+            info.core_wallet
+                .accounts
+                .funds_account(at)
+                .and_then(|managed| managed.utxos.get(outpoint))
+        }) else {
+            // Not a coin of the funding accounts (another account's, or
+            // spent since it was chosen): refused by name, in both funding
+            // modes. The caller picked this coin; leaving it out silently —
+            // under a drain, sweeping everything else without it — would be
+            // worse than refusing a seed the build might not have needed.
+            return Err(PlatformWalletError::ChosenInputUnavailable {
+                outpoint: *outpoint,
+                problem: ChosenInputProblem::NotInFundingAccounts,
+            });
+        };
+        seeds.push(utxo.clone());
+    }
+    // An unspendable coin would be dropped by the selector silently: refused
+    // by name, like a pinned or waiting one — across all the chosen coins, in
+    // the shared order.
+    let mut pinned = None;
+    if !seeds.is_empty() {
+        let pinned = pinned.insert(info.generation.in_broadcast_outpoints());
+        check_chosen_inputs(&seeds, height, pinned)?;
+    }
+    Ok((seeds, pinned))
 }
 
 /// Code 59 for a coin the caller chose as an input that is not final: it
@@ -874,6 +912,39 @@ pub(crate) fn resolve_source_accounts(
 const MAX_STANDARD_TX_INPUTS: usize = 500;
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
+    /// Whether the coins named by outpoint can be chosen as inputs of a build
+    /// funded from `sources` at `source_index`, as the wallet holds them now —
+    /// the check the finalizers apply to [`FinalizeOptions::inputs`], for a
+    /// host that wants the refusal when the coins are picked. One the funding
+    /// accounts don't hold is
+    /// [`ChosenInputUnavailable`](PlatformWalletError::ChosenInputUnavailable);
+    /// the others are refused by name in the finalizers' order: unspendable,
+    /// pinned by an in-flight broadcast, not final yet
+    /// ([`CoreFundsAwaitingNetwork`](PlatformWalletError::CoreFundsAwaitingNetwork)).
+    ///
+    /// Advisory: the finalizer checks again, against the coins as they are
+    /// when it runs.
+    pub async fn check_chosen_outpoints(
+        &self,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        outpoints: &[OutPoint],
+    ) -> Result<(), PlatformWalletError> {
+        let manager = self.wallet_manager.read().await;
+        let (wallet, info) = manager
+            .get_wallet_and_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+        let resolved = resolved_funding_accounts(
+            &info.core_wallet.accounts,
+            wallet,
+            sources,
+            source_index,
+            sources.len() == 1,
+        )?;
+        let height = info.core_wallet.last_processed_height();
+        resolve_chosen_inputs(info, &resolved, outpoints, height).map(|_| ())
+    }
+
     /// The balance a pooled build could actually select from — the same
     /// accounts [`Self::finalize_transaction`] funds from, counting only UTXOs
     /// coin selection would accept.
@@ -1237,39 +1308,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // One snapshot of what in-flight broadcasts pin, taken only when
             // inputs were chosen; the waiting-coins trial reuses it, or takes
             // its own on a shortfall.
-            let mut pinned: Option<HashSet<OutPoint>> = None;
-            let mut seeds: Vec<Utxo> = Vec::new();
-            let mut seeded: HashSet<OutPoint> = HashSet::new();
-            for outpoint in &seed_outpoints {
-                if !seeded.insert(*outpoint) {
-                    continue;
-                }
-                let Some(utxo) = resolved.iter().find_map(|at| {
-                    info.core_wallet
-                        .accounts
-                        .funds_account(at)
-                        .and_then(|managed| managed.utxos.get(outpoint))
-                }) else {
-                    // Not a coin of the funding accounts (another account's,
-                    // or spent since it was chosen): refused by name, in both
-                    // funding modes. The caller picked this coin; leaving it
-                    // out silently — under a drain, sweeping everything else
-                    // without it — would be worse than refusing a seed the
-                    // build might not have needed.
-                    return Err(PlatformWalletError::ChosenInputUnavailable {
-                        outpoint: *outpoint,
-                        problem: ChosenInputProblem::NotInFundingAccounts,
-                    });
-                };
-                seeds.push(utxo.clone());
-            }
-            // An unspendable coin would be dropped by the selector silently:
-            // refused by name, like a pinned or waiting one — across all the
-            // chosen coins, in the shared order.
-            if !seeds.is_empty() {
-                let pinned = pinned.insert(in_broadcast_outpoints(info));
-                check_chosen_inputs(&seeds, height, pinned)?;
-            }
+            let (seeds, pinned) = resolve_chosen_inputs(info, &resolved, &seed_outpoints, height)?;
             // The accounts that take on this build's reservation bookkeeping,
             // in funding order — the ones a failure path must release
             // (`resolved_funding_accounts` already dropped anything missing
@@ -3689,6 +3728,53 @@ mod tests {
                 .await
                 .unwrap_or_else(|error| panic!("{case}: {error:?}"));
         }
+    }
+
+    /// The check a host runs when coins are picked is the finalizer's: a coin
+    /// of an account the build does not fund from is refused by name, one not
+    /// final yet as waiting on the network, and a final one passes.
+    #[tokio::test]
+    async fn should_check_chosen_outpoints_as_the_finalizer_does() {
+        let (core, _signer, manager, wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        let bip44 = bip44_coin(&core).await.outpoint;
+        let bip32 = standard_account_coins(&core, StandardAccountType::BIP32Account)
+            .await
+            .first()
+            .expect("bip32 coin")
+            .outpoint;
+        let sources = [preference(StandardAccountType::BIP44Account)];
+
+        core.check_chosen_outpoints(&sources, 0, &[bip44])
+            .await
+            .expect("a final coin of the funding account");
+        core.check_chosen_outpoints(&sources, 0, &[])
+            .await
+            .expect("nothing chosen");
+
+        let foreign = core
+            .check_chosen_outpoints(&sources, 0, &[bip44, bip32])
+            .await;
+        assert!(
+            matches!(
+                foreign,
+                Err(PlatformWalletError::ChosenInputUnavailable {
+                    outpoint,
+                    problem: ChosenInputProblem::NotInFundingAccounts,
+                }) if outpoint == bip32
+            ),
+            "got {foreign:?}"
+        );
+
+        set_bip44_finality(&manager, &wallet_id, false).await;
+        let waiting = core.check_chosen_outpoints(&sources, 0, &[bip44]).await;
+        assert!(
+            matches!(
+                waiting,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { outpoint: Some(outpoint), .. })
+                    if outpoint == bip44
+            ),
+            "got {waiting:?}"
+        );
     }
 
     /// A coin seeded on the builder with `add_inputs` is the caller's copy:

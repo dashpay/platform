@@ -9,19 +9,13 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
 use dashcore::{Address as DashAddress, OutPoint, TxOut, Txid};
-use key_wallet::account::ManagedAccountCollection;
-use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     TransactionBuilder, MAX_STANDARD_OP_RETURN_BYTES,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use platform_wallet::{
-    check_chosen_inputs, check_fee_rate, in_broadcast_outpoints, FinalizeOptions,
-    PlatformWalletError,
-};
+use platform_wallet::{check_fee_rate, FinalizeOptions, PlatformWalletError};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
@@ -630,16 +624,6 @@ impl From<CoreSelectionStrategyFFI> for SelectionStrategy {
     }
 }
 
-fn managed_account(
-    accounts: &ManagedAccountCollection,
-    source: AccountTypePreference,
-    account_index: u32,
-) -> Option<&ManagedCoreFundsAccount> {
-    source
-        .account_type(account_index)
-        .and_then(|at| accounts.funds_account(&at))
-}
-
 /// Create a new transaction builder for `network`. Free with
 /// `core_wallet_tx_builder_destroy` (or the consuming finalizers
 /// `core_wallet_tx_builder_finalize` / `core_wallet_signed_payment_finalize`).
@@ -991,8 +975,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// Add a caller-chosen subset of the account's UTXOs as inputs. `outpoints`
 /// are selected from the account's own UTXO set (the same ones
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
-/// account is an error (`ErrorWalletOperation`); one owned is refused by name,
-/// in the finalizer's order: unspendable — a locked coin, or an immature
+/// account is refused by name (`ErrorInvalidParameter`, "not in the funding
+/// accounts"), as the finalizer refuses it; one owned is refused by name, in
+/// the finalizer's order: unspendable — a locked coin, or an immature
 /// coinbase output (spendable once it matures, 100 blocks after its block;
 /// neither is cured by the InstantSend lock or confirmation code 59 waits for)
 /// — (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
@@ -1038,7 +1023,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
         );
     }
 
-    let wallet_id = wallet.wallet_id();
     let Some(source) = account_type.single_preference() else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -1059,55 +1043,18 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
             .collect()
     };
 
-    let result = runtime().block_on(async {
-        let wm = wallet.wallet_manager().read().await;
-        let info = wm
-            .get_wallet_info(&wallet_id)
-            .ok_or_else(|| SeedError::Other("wallet not found".to_string()))?;
+    // Refused by name as soon as they are named, by the finalizer's own
+    // check and in its order. The finalizers check again against the coins
+    // as they are then.
+    unwrap_result_or_return!(runtime().block_on(wallet.core().check_chosen_outpoints(
+        &[source],
+        account_index,
+        &requested
+    )));
 
-        let managed = managed_account(&info.core_wallet.accounts, source, account_index)
-            .ok_or_else(|| {
-                SeedError::Other(format!(
-                    "managed account {source:?} #{account_index} not found"
-                ))
-            })?;
-
-        let height = info.core_wallet.last_processed_height();
-        let pinned = in_broadcast_outpoints(info);
-        let mut named = Vec::with_capacity(requested.len());
-        for op in &requested {
-            named.push(managed.utxos.get(op).ok_or_else(|| {
-                SeedError::Other(format!("outpoint {}:{} not in account", op.txid, op.vout))
-            })?);
-        }
-        // Refused by name as soon as they are named, by the finalizer's own
-        // check and in its order (unspendable, mid-broadcast, not final). The
-        // finalizers check again against the coins as they are then.
-        check_chosen_inputs(named.iter().copied(), height, &pinned).map_err(SeedError::Refused)?;
-        let selected = requested.clone();
-
-        // Validation succeeded — only now record them.
-        (*builder).state().inputs.extend(selected);
-        Ok::<_, SeedError>(())
-    });
-
-    match result {
-        Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(SeedError::Refused(error)) => PlatformWalletFFIResult::from(error),
-        Err(SeedError::Other(e)) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("add_inputs_from_outpoints failed: {e}"),
-        ),
-    }
-}
-
-/// Why `core_wallet_tx_builder_add_inputs_from_outpoints` refused its outpoints.
-enum SeedError {
-    /// A named coin is refused with the finalizer's typed error: unspendable
-    /// (`ChosenInputUnavailable`, `ErrorInvalidParameter`), mid-broadcast
-    /// (`InputMidBroadcast`) or not final yet (code 59).
-    Refused(PlatformWalletError),
-    Other(String),
+    // Validation succeeded — only now record them.
+    (*builder).state().inputs.extend(requested);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Destroy a transaction builder created by `core_wallet_tx_builder_new`.
@@ -2095,6 +2042,48 @@ mod real_finalizer_tests {
         assert!(message.contains("not spendable"), "{message}");
         assert!(
             message.contains(&Txid::from_byte_array([COIN_TAG; 32]).to_string()),
+            "{message}"
+        );
+        assert!(unsafe { (*builder).state() }.inputs.is_empty());
+        unsafe { core_wallet_tx_builder_destroy(builder) };
+    }
+
+    /// An outpoint the named account does not hold is refused when it is
+    /// named with the finalizer's own refusal
+    /// (`ChosenInputUnavailable::NotInFundingAccounts`,
+    /// `ErrorInvalidParameter`). Not recorded.
+    #[test]
+    fn should_refuse_an_outpoint_the_account_does_not_hold() {
+        let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
+        let platform_wallet = runtime()
+            .block_on(manager.get_wallet(&wallet_id))
+            .expect("wallet present");
+        runtime().block_on(add_bip44_coin(&platform_wallet, 8_999_774, true, COIN_TAG));
+        let wallet = PLATFORM_WALLET_STORAGE.insert(platform_wallet.clone());
+        let builder = app_payment(1_000_000);
+        let foreign = OutPointFFI {
+            txid: [COIN_TAG + 1; 32],
+            vout: 0,
+        };
+        let chosen = [coin_outpoint(), foreign];
+        let added = unsafe {
+            core_wallet_tx_builder_add_inputs_from_outpoints(
+                builder,
+                wallet,
+                CoreAccountTypeFFI::BIP44,
+                0,
+                chosen.as_ptr(),
+                chosen.len(),
+            )
+        };
+        PLATFORM_WALLET_STORAGE.remove(wallet);
+        assert_eq!(
+            added.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        let message = unsafe { CStr::from_ptr(added.message) }.to_string_lossy();
+        assert!(
+            message.contains(&Txid::from_byte_array([COIN_TAG + 1; 32]).to_string()),
             "{message}"
         );
         assert!(unsafe { (*builder).state() }.inputs.is_empty());
