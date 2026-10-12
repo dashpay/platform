@@ -99,8 +99,7 @@ A `deletableDocument` found by `findBy` promises less. Once the document a key f
 
 ```json
 "recipientId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "type": "deletableDocument",
     "contractId": "Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7",

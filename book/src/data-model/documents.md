@@ -325,8 +325,7 @@ A `permanentDocument` reference normally holds the referenced document's id. It 
 "members": {
   "type": "array", "minItems": 0, "maxItems": 15, "uniqueItems": true,
   "items": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier",
+    "type": "identifier",
     "distinctFrom": "$ownerId",
     "refersTo": {
       "type": "permanentDocument",
@@ -373,8 +372,7 @@ A `refersTo` may combine targets in place of naming one. `{ "anyOf": [...] }` ho
 
 ```json
 "memberId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "anyOf": [
       {
@@ -419,14 +417,12 @@ A `permanentDocument` reference with `inList` says the value must be one of the 
   "type": "object",
   "properties": {
     "electedCharterId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "permanentDocument", "documentType": "electedCharter" },
       "position": 0
     },
     "memberId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": {
         "type": "permanentDocument",
         "documentType": "electedCharter",
@@ -559,7 +555,7 @@ One `findBy` entry may hold a function instead of a source: `"<referenced proper
 
 reads: the domain refers to its creator's own `preorder` (the `$ownerId` entry, the writer, who creates it), found by its owner and `ownerNameHash` (the whole of its unique `ownerAndNameHash` index), created in an earlier block, whose `ownerNameHash` is the sha256d of the creator's id, the normalized label, a dot and the normalized parent; creating the domain deletes that preorder. Keying by the owner keeps a copy of someone's preorder from colliding with theirs, and hashing the owner keeps the copier from revealing the name with it once the reveal makes the name public. Without a salt an owner holds one pending preorder of a name: a second one shares its key and is refused (`DuplicateUniqueIndexError`), and the first reveals the name. The preorder also holds `nameHash`, the hash without the owner, and lives an hour (`ttl`), refunding nothing when consumed. The domain keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode. The trigger before protocol version 14 hashed the salt with the normalized label, a dot and the parent, or with the label as sent for a top-level name; the preorders made before it are deleted when the version activates. On an index of several properties, `findBy` maps the others beside the function entry as usual.
 
-A string or byte array property may carry a `refersTo` this way, or with its value read as `"."` (see [Found by a unique index](#found-by-a-unique-index-findby)): its value is not an id, so its declaration must be a `permanentDocument` or `deletableDocument` reference found by a `findBy` reading it, and the property keeps its type (the meta-schema admits a `refersTo` with `findBy` on a string or byte array). The value carrying the reference must fill the key exactly once: as a `"."` entry or as a param of the function. A param names a single property carrying the reference by its path, as the salt above; `"."` in the params stands only for a value without a path of its own: each element of a typed array, the writer of an `ownerRefersTo`, the creator of a `creatorRefersTo`. The writer and the creator may also be left out beside a function, since the declaration applies to every create.
+A string or byte array property may carry a `refersTo` this way, or with its value read as `"."` (see [Found by a unique index](#found-by-a-unique-index-findby)): its value is not an id, so its declaration must be a `permanentDocument` or `deletableDocument` reference found by a `findBy` reading it, and the property keeps its type (the meta-schema admits a `refersTo` with `findBy` on a string or byte array). The value carrying the reference must fill the key exactly once: as a `"."` entry or as a param of the function. A param names a single property carrying the reference by its path (a transient salt, for one); `"."` in the params stands only for a value without a path of its own: each element of a typed array, the writer of an `ownerRefersTo`, the creator of a `creatorRefersTo`. The writer and the creator may also be left out beside a function, since the declaration applies to every create.
 
 The preimage is the bytes of the params joined in order with nothing between them:
 
@@ -656,10 +652,7 @@ Up to protocol version 13 a `type: "array"` property had to be a byte array (`by
   "minItems": 0,
   "maxItems": 64,
   "uniqueItems": true,
-  "items": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier"
-  },
+  "items": { "type": "identifier" },
   "position": 2
 }
 ```
@@ -700,14 +693,12 @@ Protocol version 14 adds the property-level `distinctFrom` keyword, a pure struc
 
 ```json
 "delegateId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "distinctFrom": "$ownerId",
   "position": 0
 },
 "backupId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "distinctFrom": "delegateId",
   "position": 1
 }

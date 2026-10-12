@@ -461,13 +461,7 @@ The `equal` comes first, so an empty batch never reaches the division. Written t
 "profile": {
   "type": "object",
   "properties": {
-    "corePaymentAddress": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 21,
-      "maxItems": 21,
-      "position": 0
-    }
+    "corePaymentAddress": { "type": "bytes", "size": 21, "position": 0 }
   },
   "additionalProperties": false,
   "propertyConstraints": {
@@ -498,8 +492,7 @@ Four nodes: the `in`, the `byteAt` and two values. An address starting with `0x0
   "documentsMutable": false,
   "properties": {
     "pollId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "deletableDocument", "documentType": "poll" },
       "position": 0
     },

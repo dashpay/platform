@@ -22,14 +22,7 @@ Whether a document's owner may delete it. Set it to `false` for records that oth
   "type": "object",
   "canBeDeleted": true,
   "properties": {
-    "postId": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
+    "postId": { "type": "identifier", "position": 0 },
     "text": { "type": "string", "maxLength": 500, "position": 1 }
   },
   "required": ["postId", "text"],
@@ -173,8 +166,7 @@ Rules the stored document must meet for its owner to delete it. `canBeDeleted: t
   "type": "object",
   "properties": {
     "pollId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "deletableDocument", "documentType": "poll" },
       "position": 0
     },
