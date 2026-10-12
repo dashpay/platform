@@ -330,9 +330,11 @@ pub struct CoreChangeSet {
     /// winner and funding transaction were both in a dropped block, a store
     /// applying the merged changeset keeps that coin spent if the funding
     /// transaction is mined again and neither the winner nor any other
-    /// spender of it is. Applied as separate rounds the coin is free. The
-    /// error is on the safe side: the coin is withheld, never handed out
-    /// twice.
+    /// spender of it is. Applied as separate rounds the store follows the
+    /// wallet, which holds the coin again when the winner was a transaction
+    /// it had recorded; a winner it never recorded leaves the coin spent in
+    /// the wallet too, and the two agree. The error is on the safe side: the
+    /// coin is withheld, never handed out twice.
     ///
     /// `serde(default)` for the same backward-compatible reading as
     /// [`Self::sweeps`].

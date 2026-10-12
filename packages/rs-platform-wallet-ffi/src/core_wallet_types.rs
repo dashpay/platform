@@ -434,7 +434,10 @@ pub struct SweepBatchFFI {
 /// in its new block, by the changeset callback that follows.
 ///
 /// Applying one entry means:
-/// - delete each transaction in `txids` and every UTXO it created;
+/// - delete every UTXO a transaction in `txids` created for this wallet,
+///   and the transaction itself unless another wallet of the same store
+///   still has a part in it. Rounds are per wallet, so that wallet may
+///   already have stored the transaction again, in its new block;
 /// - keep each transaction in `unconfirmed_txids` as unconfirmed and
 ///   InstantSend-locked, which is the only kind a truncation keeps: the
 ///   InstantSend context, no block, outputs unconfirmed and

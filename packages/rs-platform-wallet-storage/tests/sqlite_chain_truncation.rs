@@ -763,6 +763,59 @@ async fn should_apply_a_truncation_it_kept_after_dropping_a_later_round() {
     }
 }
 
+/// A second spend of the wallet's own sweeps a payment the store already
+/// holds; then the winner's block and the block that funded the coin are
+/// both dropped, and only the funding transaction is mined again. The
+/// wallet holds the coin once more. Round by round the store follows it.
+/// With the sweep and the fork folded into one round the sweep still holds
+/// the coin for a winner that is gone, so the store may withhold it — and
+/// must never hold a coin the wallet does not.
+#[tokio::test]
+async fn should_hand_out_no_coin_the_wallet_lacks_when_a_sweep_and_a_fork_share_a_round() {
+    for rounds in [Rounds::PerStep, Rounds::Merged] {
+        let mut session = Session::open(rounds).await;
+        let funding = session.chain.receive(250_000);
+        let coin = OutPoint::new(funding.txid(), 0);
+        session.chain.mine(vec![funding.clone()]).await;
+        let payment = session.chain.spend(coin, 250_000);
+        session.chain.relay(&payment, None).await;
+        session.step().await;
+        session.flush().await;
+
+        let winner = transaction(
+            &[coin],
+            &[(&session.chain.ours, 100_000), (&foreign(), 100_000)],
+        );
+        session.chain.mine(vec![winner]).await;
+        session.step().await;
+        session.chain.fork_at(BASE).await;
+        session.step().await;
+        session.chain.mine(vec![funding.clone()]).await;
+        session.chain.sync().await;
+        session.step().await;
+        session.flush().await;
+
+        let memory = session.chain.memory().await;
+        assert!(
+            memory.coins.contains_key(&coin),
+            "{rounds:?}: the wallet holds the coin again"
+        );
+        let restored = view(&session.store.restart(session.chain.wallet_id));
+        for (outpoint, held) in &restored.coins {
+            assert_eq!(
+                memory.coins.get(outpoint),
+                Some(held),
+                "{rounds:?}: the store holds a coin the wallet does not"
+            );
+        }
+        if matches!(rounds, Rounds::PerStep) {
+            if let Err(difference) = restored.follows(&memory) {
+                panic!("{rounds:?}: {difference}");
+            }
+        }
+    }
+}
+
 /// A truncation is several writes: rows deleted, records rewritten, coins
 /// released, heights lowered. One that fails part-way must leave none behind.
 #[tokio::test]
