@@ -5,7 +5,7 @@
 //! and re-deriving private keys.
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,8 +19,9 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::changeset::RecordedHistory;
 use crate::error::PlatformWalletError;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::platform_wallet::{ObservedInputConflict, PlatformWalletInfo};
 
 use super::super::manager::AssetLockManager;
 use super::super::orchestration::UNCONFIRMED_BROADCAST_PROOF_TIMEOUT;
@@ -490,6 +491,63 @@ pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
             );
         }
     }
+}
+
+/// Confirmed spends of pending asset-lock inputs, read from the stored history.
+///
+/// The load replay keeps two kinds of spender out of the wallet history that
+/// [`seed_observed_input_conflicts`] reads: one buried under the restored
+/// chain lock (finalization evicts its record) and one the checker cannot
+/// attribute (it never gets a record). Call before the replay.
+pub(crate) fn recorded_input_conflicts<'a>(
+    locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
+    history: &RecordedHistory,
+) -> BTreeMap<OutPoint, ObservedInputConflict> {
+    let pending: Vec<&TrackedAssetLock> = locks
+        .into_iter()
+        .filter(|lock| {
+            matches!(
+                lock.status,
+                AssetLockStatus::Built | AssetLockStatus::Broadcast
+            )
+        })
+        .collect();
+    let watched: HashSet<OutPoint> = pending
+        .iter()
+        .flat_map(|lock| lock.transaction.input.iter())
+        .map(|input| input.previous_output)
+        .collect();
+    let mut conflicts = BTreeMap::new();
+    if watched.is_empty() {
+        return conflicts;
+    }
+    for stored in &history.transactions {
+        let Some(height) = stored.context.block_info().map(|block| block.height()) else {
+            continue;
+        };
+        for input in stored.transaction.input.iter().map(|i| i.previous_output) {
+            // A lock's own confirmation is not a conflict with itself.
+            let contested = watched.contains(&input)
+                && pending.iter().any(|lock| {
+                    lock.transaction.txid() != stored.txid
+                        && lock
+                            .transaction
+                            .input
+                            .iter()
+                            .any(|i| i.previous_output == input)
+                });
+            if contested {
+                conflicts.insert(
+                    input,
+                    ObservedInputConflict {
+                        spender: stored.txid,
+                        height,
+                    },
+                );
+            }
+        }
+    }
+    conflicts
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -1933,6 +1991,7 @@ mod tests {
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        RecordedHistory, StoredTransaction,
     };
     use crate::error::PlatformWalletError;
     use crate::test_support::{
@@ -1943,7 +2002,7 @@ mod tests {
     use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::persister::WalletPersister;
-    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+    use crate::wallet::platform_wallet::{ObservedInputConflict, PlatformWalletInfo, WalletId};
     use crate::AssetLockFundingType;
 
     /// Persistence stub that records every stored changeset so the test
@@ -3728,6 +3787,66 @@ mod tests {
             }
             other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
+    }
+
+    /// The stored-history evidence names only another transaction's confirmed
+    /// spend of an input a still-pending lock needs.
+    #[test]
+    fn should_report_only_foreign_confirmed_spends_of_pending_lock_inputs() {
+        let outpoint = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+        let spending = |spends, lock_time| Transaction {
+            lock_time,
+            ..transaction_spending(spends)
+        };
+        let lock = |transaction: Transaction, status| TrackedAssetLock {
+            out_point: OutPoint::new(transaction.txid(), 0),
+            transaction,
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 1,
+            status,
+            proof: None,
+        };
+        let stored = |transaction: Transaction, context| StoredTransaction {
+            txid: transaction.txid(),
+            transaction,
+            context,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+
+        let (contested, own, unconfirmed, consumed) =
+            (outpoint(1), outpoint(2), outpoint(3), outpoint(4));
+        let confirmed_lock = spending(own, 0);
+        let locks = [
+            lock(spending(contested, 0), AssetLockStatus::Broadcast),
+            lock(confirmed_lock.clone(), AssetLockStatus::Built),
+            lock(spending(unconfirmed, 0), AssetLockStatus::Broadcast),
+            lock(spending(consumed, 0), AssetLockStatus::Consumed),
+        ];
+        let spender = spending(contested, 1);
+        let history = RecordedHistory {
+            transactions: vec![
+                stored(spender.clone(), chain_locked_at(100)),
+                stored(confirmed_lock, confirmed_at(101)),
+                stored(spending(unconfirmed, 1), TransactionContext::Mempool),
+                stored(spending(consumed, 1), confirmed_at(102)),
+            ],
+            instant_locks: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            super::recorded_input_conflicts(&locks, &history),
+            BTreeMap::from([(
+                contested,
+                ObservedInputConflict {
+                    spender: spender.txid(),
+                    height: 100,
+                },
+            )])
+        );
     }
 
     /// Promotion is eviction: once a chainlock buries the spender's block,
