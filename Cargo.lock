@@ -1742,6 +1742,7 @@ dependencies = [
  "js-sys",
  "lru",
  "platform-encryption",
+ "platform-version",
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
  "sanitize-filename",

@@ -90,6 +90,7 @@ rocksdb = "0.25.0"
 blake3 = "1.5"
 
 [dev-dependencies]
+dapi-grpc = { path = "../dapi-grpc", features = ["serde"] }
 dash-platform-queries = { path = "../dash-platform-queries" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 hyper-util = { version = "0.1", features = ["tokio"] }
