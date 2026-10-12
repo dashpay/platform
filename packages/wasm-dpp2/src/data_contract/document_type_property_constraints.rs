@@ -24,7 +24,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::property_constraints::{
     AggregateKind, DocumentSystemValues, PropertyRead, StoredVersion,
 };
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, INITIAL_REVISION};
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, Reflect};
@@ -556,18 +556,38 @@ pub(crate) fn property_constraints_for_document_type(
 /// a client can tell before its block: the owner, the revision, and the stored
 /// times and heights the write keeps, with the device clock standing in for
 /// the block time it records (its update, and its creation and transfer when
-/// the document has none yet), and `stored`, the version it replaces. The
-/// block heights it records are unknown until the block, so a rule reading one
-/// is not judged, and so is a rule reading a `countOf` or `sumOf` total, or a
-/// value of a referenced document, which no client reads from state here, or
-/// a stored version it is not given.
+/// the document has none yet), and `stored`, the version it replaces. Told
+/// which write it is, they are what consensus judges whatever `document`
+/// holds: on a replace, the stored owner, creation and transfer, which a
+/// replace keeps, and the revision after the stored one, the only one a
+/// replace may write; on a create, the first revision and this block for
+/// every time. The block heights it records are unknown until the block, so a
+/// rule reading one is not judged, and so is a rule reading a `countOf` or
+/// `sumOf` total, or a value of a referenced document, which no client reads
+/// from state here, or a stored version it is not given.
 fn system_values_for_write(
     document: &Document,
     stored: Option<StoredVersion>,
 ) -> DocumentSystemValues {
     // Milliseconds since the epoch, a whole number well inside a `u64`
     let now = js_sys::Date::now() as u64;
-    let values = DocumentSystemValues::of_document(document);
+    let values = match &stored {
+        Some(StoredVersion::Present(stored)) => DocumentSystemValues {
+            revision: stored
+                .system
+                .revision
+                .and_then(|revision| revision.checked_add(1)),
+            ..stored.system.clone()
+        },
+        Some(StoredVersion::Absent) => DocumentSystemValues {
+            owner_id: Some(document.owner_id()),
+            created_at: Some(now),
+            transferred_at: Some(now),
+            revision: Some(INITIAL_REVISION),
+            ..Default::default()
+        },
+        None => DocumentSystemValues::of_document(document),
+    };
     DocumentSystemValues {
         created_at: values.created_at.or(Some(now)),
         updated_at: Some(now),

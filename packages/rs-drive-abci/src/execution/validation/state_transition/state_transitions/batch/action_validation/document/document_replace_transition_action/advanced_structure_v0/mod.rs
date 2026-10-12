@@ -1,7 +1,7 @@
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::identifier::Identifier;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
@@ -55,32 +55,23 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         // through `$old.`, the document it replaces: its properties, rebuilt from the
         // written ones and the stored value of each changed one, and its owner, times,
         // heights and revision, which the transformer attached when a rule reads them.
-        // The revision and the stored version were added in place at protocol version 14,
-        // inert for every earlier version this generation serves: rules exist from 14
-        // (`validate_property_constraints` is `None` before it), so nothing reads them.
+        // The stored version is built only when a rule judged here reads it: the rules
+        // reading a referenced document wait for replace state validation 1, once the
+        // references hold, and an `immutable` condition reading it is judged there too.
+        // The revision, the stored version and the referenced documents were added in
+        // place at protocol version 14, inert for every earlier version this generation
+        // serves: no rule parses before 14 (`parse_property_constraints` is `None`), so
+        // none reads them and `validate_property_constraints` is `None` there.
+        let reads_stored = document_type
+            .property_constraints()
+            .values()
+            .any(|rule| !rule.reads_referenced() && rule.reads_stored());
         let system = DocumentSystemValues {
-            owner_id: Some(owner_id),
-            created_at: self.created_at(),
-            updated_at: self.updated_at(),
-            transferred_at: self.transferred_at(),
-            created_at_block_height: self.created_at_block_height(),
-            updated_at_block_height: self.updated_at_block_height(),
-            transferred_at_block_height: self.transferred_at_block_height(),
-            created_at_core_block_height: self.created_at_core_block_height(),
-            updated_at_core_block_height: self.updated_at_core_block_height(),
-            transferred_at_core_block_height: self.transferred_at_core_block_height(),
-            revision: Some(self.revision()),
             aggregates: Some(self.property_constraint_aggregates().clone()),
-            stored: self
-                .stored_system_values()
-                .map(|system| self.stored_version(owner_id, Some(system))),
-            changed_fields: None,
-            // The rules reading a referenced document wait for replace state
-            // validation 1, once the references hold. Added in place at protocol
-            // version 14, inert for every earlier version this generation serves:
-            // no rule parses before 14 (`parse_property_constraints` is `None`),
-            // so no rule reads a referenced document there
-            referenced_documents: false,
+            ..self.condition_system_values(
+                owner_id,
+                self.stored_system_values().filter(|_| reads_stored),
+            )
         };
         let result = data_contract
             .validate_document_properties(

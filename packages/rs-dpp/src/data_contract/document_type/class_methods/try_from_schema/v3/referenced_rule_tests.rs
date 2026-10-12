@@ -851,6 +851,44 @@ fn should_refuse_a_referenced_read_beside_a_total_moderators_move() {
     .expect("no total the rule reads moves with a moderator's change");
 }
 
+/// A moderator's change writes the fields it changes and the revision, so a
+/// rule reading a referenced document reads neither the stored version of such
+/// a field, through `$old.`, nor `$revision`, of either version. The stored
+/// version of what the change leaves alone stands.
+#[test]
+fn should_refuse_a_referenced_read_beside_a_stored_field_or_revision_moderators_move() {
+    let stored_status = platform_value!({
+        "cap": {
+            "anyOf": [
+                { "absent": "$old.status" },
+                { "lessThan": ["$createdAt", { "referenced": ["pollId", "endsAt"] }] }
+            ]
+        }
+    });
+    expect_structure_error(parse_entry(stored_status), "depends on \"status\"");
+    for revision in ["$revision", "$old.$revision"] {
+        let rules = platform_value!({
+            "cap": {
+                "anyOf": [
+                    { "lessThanOrEqual": [revision, 3] },
+                    { "lessThan": ["$createdAt", { "referenced": ["pollId", "endsAt"] }] }
+                ]
+            }
+        });
+        expect_structure_error(
+            parse_entry(rules),
+            "and $revision, which a moderator's change",
+        );
+    }
+
+    parse_entry(platform_value!({
+        "cap": {
+            "lessThan": ["$old.$createdAt", { "referenced": ["pollId", "endsAt"] }]
+        }
+    }))
+    .expect("a moderator's change leaves the stored creation as it was");
+}
+
 /// An entry on a poll moderators take down, its removal keeping a record a
 /// restore brings it back from when `keeps_record`, the poll's entries
 /// counted, with `rules`.

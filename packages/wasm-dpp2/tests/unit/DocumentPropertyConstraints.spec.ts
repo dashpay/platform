@@ -820,6 +820,75 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'atMostThreeWrites', violation: 'NotMet' });
     });
 
+    it('should judge the revision a replace writes, as the replacement built from the edit sends it', () => {
+      const contract = buildContract(listingSchemas);
+      // Fetched at revision 3 and edited in place, as an app replaces a document
+      const stored = listing(contract, 100, 3);
+      const edited = listing(contract, 90, 3);
+      const replacement = new wasm.DocumentReplaceTransition({
+        document: edited, identityContractNonce: BigInt(1),
+      });
+
+      // The replacement writes revision 4, the only one consensus accepts
+      expect(replacement.revision).to.equal(BigInt(4));
+      expect(contract.checkDocumentPropertyConstraints(edited, stored))
+        .to.deep.include({ rule: 'atMostThreeWrites', violation: 'NotMet' });
+      // Whatever revision the document checked holds
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 90, 4), stored))
+        .to.deep.include({ rule: 'atMostThreeWrites', violation: 'NotMet' });
+      // A replace of revision 2 writes revision 3, within the rule
+      expect(contract.checkDocumentPropertyConstraints(edited, listing(contract, 100, 2)))
+        .to.equal(undefined);
+      // A create writes revision 1
+      expect(contract.checkDocumentPropertyConstraints(listing(contract, 90, 7), null))
+        .to.equal(undefined);
+    });
+
+    it('should judge the creation a replace keeps, not the device clock', () => {
+      const dayMs = 86400000;
+      const contract = buildContract({
+        note: {
+          type: 'object',
+          documentsMutable: true,
+          properties: {
+            text: { type: 'string', maxLength: 63, position: 0 },
+          },
+          required: ['text', '$createdAt', '$updatedAt'],
+          additionalProperties: false,
+          propertyConstraints: {
+            editableForADay: { lessThanOrEqual: [{ subtract: ['$updatedAt', '$createdAt'] }, dayMs] },
+          },
+        },
+      });
+      const note = (text: string, revision: number, createdAt?: number) => {
+        const document = new wasm.Document({
+          id: listingId,
+          properties: { text },
+          documentTypeName: 'note',
+          dataContractId: contract.id,
+          ownerId,
+          revision: BigInt(revision),
+        });
+        if (createdAt !== undefined) {
+          document.createdAt = BigInt(createdAt);
+        }
+        return document;
+      };
+
+      // The edit carries no creation time; the stored document's stands
+      expect(contract.checkDocumentPropertyConstraints(
+        note('edited', 2),
+        note('first', 1, Date.now() - 3 * dayMs),
+      )).to.deep.include({ rule: 'editableForADay', violation: 'NotMet' });
+      expect(contract.checkDocumentPropertyConstraints(
+        note('edited', 2),
+        note('first', 1, Date.now() - dayMs / 24),
+      )).to.equal(undefined);
+      // A create is created now, whatever the document holds
+      expect(contract.checkDocumentPropertyConstraints(note('first', 1, 1), null))
+        .to.equal(undefined);
+    });
+
     it('should throw for a stored document that is another document', () => {
       const contract = buildContract(listingSchemas);
       const other = new wasm.Document({

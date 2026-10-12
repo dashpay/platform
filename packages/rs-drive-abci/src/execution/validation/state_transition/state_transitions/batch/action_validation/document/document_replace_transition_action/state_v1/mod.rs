@@ -141,11 +141,10 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
         }
 
         // The document the replace writes keeps its creation and last transfer and is
-        // updated in this block, for every time and height a `where` entry reads; the values
-        // the type's rules read of the documents its references point at are collected from
-        // those documents, every such reference being checked on every replace; and the
-        // document it replaces, which a rule reads through `$old.`
-        let system = self.condition_system_values(owner_id, self.stored_system_values());
+        // updated in this block, for every time and height a `where` entry reads; and the
+        // values the type's rules read of the documents its references point at are
+        // collected from those documents, every such reference being checked on every replace
+        let system = self.condition_system_values(owner_id, None);
         let mut referenced_documents = BTreeMap::new();
         let reference_result = self.base().validate_document_references(
             self.data(),
@@ -170,13 +169,23 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
 
         // The rules reading a document a reference points at (protocol version 14), judged
         // once the references hold, with the values their checks read, as on a create: every
-        // replace judges every rule, and the structure validation judged the others
+        // replace judges every rule, and the structure validation judged the others. The
+        // document it replaces, which such a rule reads through `$old.`, is built only when
+        // one does
+        let reads_stored = document_type
+            .property_constraints()
+            .values()
+            .any(|rule| rule.reads_referenced() && rule.reads_stored());
         let result = document_type
             .validate_referencing_property_constraints(
                 self.data(),
                 referenced_documents,
                 &DocumentSystemValues {
                     aggregates: Some(self.property_constraint_aggregates().clone()),
+                    stored: self
+                        .stored_system_values()
+                        .filter(|_| reads_stored)
+                        .map(|stored| self.stored_version(owner_id, Some(stored))),
                     ..system
                 },
                 platform_version,

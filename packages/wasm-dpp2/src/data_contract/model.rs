@@ -908,7 +908,11 @@ impl DataContractWasm {
     /// reads through `$old.` (a rule's `readsStored` says it does): the stored
     /// document for a replace, `null` for a create, which has none, so that
     /// every `$old.` read is absent. Left `undefined`, a rule reading it is not
-    /// judged.
+    /// judged. Given either, `$revision`, `$ownerId` and the creation and
+    /// transfer times are what consensus judges, whatever `document` holds: on
+    /// a replace the stored document's owner, creation and transfer and the
+    /// revision after its own, the only one consensus accepts on a replace;
+    /// on a create revision 1 and the device clock.
     ///
     /// A pre-check, so an app can refuse a document before paying for a
     /// transition consensus would refuse with
