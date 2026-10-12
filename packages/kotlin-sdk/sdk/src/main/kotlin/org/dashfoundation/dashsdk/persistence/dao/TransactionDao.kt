@@ -112,6 +112,33 @@ interface TransactionDao {
     suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
+     * Drop [walletId]'s accounts' involvement in [txids] — its part in
+     * transactions a chain truncation removed. Chunked by the caller.
+     */
+    @Query(
+        "DELETE FROM transaction_account_involvements WHERE transactionTxid IN (:txids) " +
+            "AND accountId IN (SELECT id FROM accounts WHERE walletId = :walletId)"
+    )
+    suspend fun deleteWalletInvolvements(txids: List<ByteArray>, walletId: ByteArray)
+
+    /**
+     * Delete those of [txids] nothing references any more — the same test
+     * as [deleteOrphanTransactions], limited to the transactions one chain
+     * truncation removed. A row another wallet still has a coin, a spend,
+     * a claim or an involvement in stays. Chunked by the caller.
+     */
+    @Query(
+        "DELETE FROM transactions WHERE txid IN (:txids) " +
+            "AND txid NOT IN (SELECT txid FROM txos WHERE txid IS NOT NULL) " +
+            "AND txid NOT IN (SELECT spendingTxid FROM txos WHERE spendingTxid IS NOT NULL) " +
+            "AND txid NOT IN " +
+            "(SELECT spendingTransactionTxid FROM pending_inputs " +
+            "WHERE spendingTransactionTxid IS NOT NULL) " +
+            "AND txid NOT IN (SELECT transactionTxid FROM transaction_account_involvements)"
+    )
+    suspend fun deleteUnreferencedByTxids(txids: List<ByteArray>)
+
+    /**
      * Keep [txids] as unconfirmed and InstantSend-locked: a chain
      * truncation dropped their block, and it keeps no other kind. Sets the
      * InstantSend context, clears the block columns and touches nothing

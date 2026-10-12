@@ -167,13 +167,37 @@ interface TxoDao {
     suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
-     * Mark every TXO created by one of [txids] unconfirmed and
-     * InstantSend-locked — the outputs of transactions a chain truncation
-     * kept after dropping their block. Spend state is not touched. Chunked
-     * by the caller.
+     * Delete [walletId]'s TXOs created by one of [txids] — its own coins
+     * from transactions a chain truncation removed. Another wallet's coins
+     * from the same transactions are not this wallet's truncation to take:
+     * that wallet's round may already have stored them again, in their new
+     * block. Chunked by the caller.
      */
-    @Query("UPDATE txos SET isConfirmed = 0, isInstantLocked = 1, height = 0 WHERE txid IN (:txids)")
-    suspend fun unconfirmInstantLockedByTxids(txids: List<ByteArray>)
+    @Query("DELETE FROM txos WHERE txid IN (:txids) AND walletId = :walletId")
+    suspend fun deleteWalletTxosByTxids(txids: List<ByteArray>, walletId: ByteArray)
+
+    /**
+     * Drop [walletId]'s links to one of [spendingTxids] — the wallet-scoped
+     * form of [detachSpenders], for a chain truncation. Chunked by the
+     * caller.
+     */
+    @Query(
+        "UPDATE txos SET spendingTxid = NULL, spendingInputIndex = NULL " +
+            "WHERE spendingTxid IN (:spendingTxids) AND walletId = :walletId",
+    )
+    suspend fun detachWalletSpenders(spendingTxids: List<ByteArray>, walletId: ByteArray)
+
+    /**
+     * Mark [walletId]'s TXOs created by one of [txids] unconfirmed and
+     * InstantSend-locked — its outputs of transactions a chain truncation
+     * kept after dropping their block. Spend state is not touched, nor are
+     * another wallet's outputs. Chunked by the caller.
+     */
+    @Query(
+        "UPDATE txos SET isConfirmed = 0, isInstantLocked = 1, height = 0 " +
+            "WHERE txid IN (:txids) AND walletId = :walletId",
+    )
+    suspend fun unconfirmInstantLockedByTxids(txids: List<ByteArray>, walletId: ByteArray)
 
     /**
      * Delete the rows at [outpoints] outright — outputs of a transaction

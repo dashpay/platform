@@ -1293,25 +1293,34 @@ class PlatformWalletPersistenceHandler(
      * replaced the chain above [ChainTruncation.height] — the Room mirror
      * of the SQLite store's `apply_truncation`.
      *
-     * A removed transaction and the coins it created are chain facts, so
-     * they go for every wallet, like a swept loser's. The restored coins
-     * and the synced height are this wallet's own. A restored coin needs
-     * no veto from stored claims, unlike a sweep's release: its spender was
-     * confirmed, and no block the fork keeps can hold a second spend of it.
+     * Everything but the transaction row is this wallet's own. The row is
+     * shared across wallets and each wallet's round commits on its own, so
+     * another wallet may already have stored a removed transaction again,
+     * in its new block, by the time this truncation arrives: its coins are
+     * not this truncation's to take, and the row goes only once nothing
+     * references it. The row's block columns are the one thing wallets
+     * share; between two wallets' rounds they can show the branch the other
+     * wallet last wrote.
+     *
+     * A restored coin needs no veto from stored claims, unlike a sweep's
+     * release: its spender was confirmed, and no block the fork keeps can
+     * hold a second spend of it.
      */
     private suspend fun applyChainTruncation(db: DashDatabase, walletId: ByteArray, truncation: ChainTruncation) {
         // Drop stale post-deletion callbacks (can't resurrect a wallet).
         if (db.walletDao().getByWalletId(walletId) == null) return
-        // Removed: dead coins and dead links first, then the rows; the FK
-        // cascade takes the pending claims the removed transactions made.
-        chunked(truncation.removedTxids) { db.txoDao().deleteByTxids(it) }
-        chunked(truncation.removedTxids) { db.txoDao().detachSpenders(it) }
-        chunked(truncation.removedTxids) { db.transactionDao().deleteByTxids(it) }
+        // Removed: this wallet's coins, links, claims and involvement
+        // first, then the rows nothing references any more.
+        chunked(truncation.removedTxids) { db.txoDao().deleteWalletTxosByTxids(it, walletId) }
+        chunked(truncation.removedTxids) { db.txoDao().detachWalletSpenders(it, walletId) }
+        chunked(truncation.removedTxids) { db.documentDao().deleteWalletClaimsBySpenders(walletId, it) }
+        chunked(truncation.removedTxids) { db.transactionDao().deleteWalletInvolvements(it, walletId) }
+        chunked(truncation.removedTxids) { db.transactionDao().deleteUnreferencedByTxids(it) }
         // Kept: InstantSend-locked, so mined again. Stored until then the
         // way a locked transaction no block holds yet is; the coins they
         // spent stay spent.
         chunked(truncation.unconfirmedTxids) { db.transactionDao().unconfirmByTxids(it) }
-        chunked(truncation.unconfirmedTxids) { db.txoDao().unconfirmInstantLockedByTxids(it) }
+        chunked(truncation.unconfirmedTxids) { db.txoDao().unconfirmInstantLockedByTxids(it, walletId) }
         // Restored: this wallet's coins the removed transactions spent.
         chunked(truncation.restoredOutpoints) { db.txoDao().releaseByOutpoints(it, walletId) }
         chunked(truncation.restoredOutpoints) {

@@ -444,11 +444,13 @@ abstract class NativePersistenceBridge {
      * truncation and in order: the rest of the round describes the wallet
      * after the last one, so a removed transaction can be stored again, in
      * its new block, by the callbacks that follow. Applying one means
-     * deleting each removed transaction and every UTXO it created, keeping
-     * each unconfirmed one in the InstantSend context with no block and its
-     * outputs unconfirmed and InstantSend-locked, marking each restored
-     * outpoint unspent, and lowering a stored sync height above [height]
-     * to it. A transaction or outpoint never stored is a no-op.
+     * deleting every UTXO a removed transaction created for this wallet,
+     * and the transaction itself unless another wallet of the same store
+     * still has a part in it, keeping each unconfirmed one in the
+     * InstantSend context with no block and this wallet's outputs of it
+     * unconfirmed and InstantSend-locked, marking each restored outpoint
+     * unspent, and lowering a stored sync height above [height] to it. A
+     * transaction or outpoint never stored is a no-op.
      *
      * The JNI layer wires the slot only when the concrete bridge OVERRIDES
      * this method, and Rust attests the capability only for slot present
