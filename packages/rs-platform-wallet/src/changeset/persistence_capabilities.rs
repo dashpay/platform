@@ -130,6 +130,11 @@ impl PersistenceCapabilities {
     /// For the same reason a truncation a `store` rejected is offered again
     /// ahead of the wallet's next round, and so is never skipped: while it
     /// cannot be applied, every later round of that wallet fails with it.
+    /// That includes a rejection whose outcome the backend could not vouch
+    /// for. Over a round that landed in part, the truncation takes away only
+    /// what that round stored above the fork, which the rejection already
+    /// counts as unstored, and the next start scans it back in from the
+    /// height the truncation lowered.
     ///
     /// A backend whose
     /// [`store_transient_is_reissuable`](super::PlatformWalletPersistence::store_transient_is_reissuable)

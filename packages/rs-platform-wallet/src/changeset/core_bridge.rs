@@ -901,6 +901,15 @@ fn commit_wallet<P>(
             // A backend that kept the failed round for its own retry still
             // holds the truncation. A second copy would land after what that
             // round stores behind it, and cut that away.
+            //
+            // Any other failure sets the truncation aside, a round whose
+            // outcome the backend could not vouch for included. Applied over
+            // a round that did land in part, it takes away only what that
+            // round stored above the fork — rows this rejection already
+            // counts as unstored — and it lowers the stored height to the
+            // fork, where the frozen watermark keeps it, so the next start
+            // scans them back in. Withholding it would leave the replaced
+            // branch in the store for good.
             let kept_by_backend =
                 error.is_transient() && !persister.store_transient_is_reissuable();
             if !offered_truncations.is_empty() && !kept_by_backend {
