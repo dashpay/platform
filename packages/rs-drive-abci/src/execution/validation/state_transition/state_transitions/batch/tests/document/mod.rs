@@ -32,6 +32,7 @@ mod property_type_shorthands;
 mod ranked_group_drain;
 mod reference_expression;
 mod reference_test_setup;
+mod referenced_rules;
 mod replacement;
 mod required_since;
 mod system_agreement;

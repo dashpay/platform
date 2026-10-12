@@ -13,6 +13,10 @@ mod should_use_creator_id;
 mod system_properties;
 mod try_from_schema;
 
+pub use try_from_schema::{
+    referenced_peer_kind_error, referenced_peer_kind_mismatch, referenced_reads_error,
+    where_condition_literal_error,
+};
 pub(in crate::data_contract) use try_from_schema::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
     validate_summable_off_count_indexes_lossless,

@@ -35,8 +35,7 @@ A `like` of a social contract whose `post` type cannot be deleted:
   "properties": {
     "hashtag": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
     "postId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": {
         "type": "permanentDocument",
         "documentType": "post",
@@ -180,8 +179,7 @@ Here the like of the [example](#example) also carries its post's author, fixed t
 ```json
 "properties": {
   "postId": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier",
+    "type": "identifier",
     "refersTo": {
       "type": "permanentDocument",
       "documentType": "post",
@@ -190,11 +188,7 @@ Here the like of the [example](#example) also carries its post's author, fixed t
     "position": 0
   },
   "hashtag": { "type": "string", "minLength": 1, "maxLength": 59, "position": 1 },
-  "postAuthor": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier",
-    "position": 2
-  }
+  "postAuthor": { "type": "identifier", "position": 2 }
 },
 "required": ["postId", "postAuthor"]
 ```
