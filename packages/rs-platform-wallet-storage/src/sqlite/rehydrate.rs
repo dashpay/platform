@@ -498,7 +498,8 @@ pub(crate) fn restore_recorded_transactions(
 
     // Kept only to undo a replay the checker suspended part-way through.
     let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
-    let mut sweeps = plan_replay_sweeps(wallet_info, &replay);
+    let spends = unconfirmed_spends(&replay);
+    let mut sweeps = plan_replay_sweeps(wallet_info, &replay, &spends);
     let removed: HashSet<_> = sweeps
         .iter()
         .flat_map(|sweep| sweep.txids.iter().copied())
@@ -512,10 +513,6 @@ pub(crate) fn restore_recorded_transactions(
     let (unreplayed, replay): (Vec<_>, Vec<_>) = replay
         .into_iter()
         .partition(|record| unreplayable.contains_key(&record.txid));
-    let restorable = unreplayed
-        .into_iter()
-        .filter(|record| unreplayable.get(&record.txid) == Some(&true));
-    restore_unreplayed_records(wallet_info, restorable);
     stage_recorded_spent_inputs(wallet_info, &replay, &placed);
     let completed = poll_ready(async {
         for record in &replay {
@@ -549,9 +546,18 @@ pub(crate) fn restore_recorded_transactions(
         *wallet = wallet_before;
         return Ok(Vec::new());
     }
+    // After the replay, so each replayed final record does not scan their inputs:
+    // planning has settled them, and the pass below sees them again.
+    let restorable = unreplayed
+        .into_iter()
+        .filter(|record| unreplayable.get(&record.txid) == Some(&true));
+    restore_unreplayed_records(wallet_info, restorable);
     // A settled spend's first sweep cannot reach competitors replayed later.
     // The upstream sweep preserves ChainLock/InstantSend precedence.
     for record in &replay {
+        if !shares_unconfirmed_input(record, &spends) {
+            continue;
+        }
         let result = wallet_info.sweep_conflicts(&record.transaction, &record.context);
         if !result.txids.is_empty() {
             sweeps.push(replay_sweep(
@@ -729,10 +735,36 @@ fn replay_sweep(
     }
 }
 
+/// How many unconfirmed records spend each outpoint.
+fn unconfirmed_spends(records: &[TransactionRecord]) -> HashMap<OutPoint, u32> {
+    let mut spends = HashMap::new();
+    for record in records.iter().filter(|record| !record.is_confirmed()) {
+        for input in &record.transaction.input {
+            *spends.entry(input.previous_output).or_default() += 1;
+        }
+    }
+    spends
+}
+
+/// Whether another unconfirmed record spends one of `record`'s inputs.
+///
+/// Only then can the upstream sweep find a loser; asked anyway, it scans every
+/// unconfirmed record's inputs to say no, once per final record. Records only
+/// ever leave the history `spends` was built from, so it never under-counts.
+fn shares_unconfirmed_input(record: &TransactionRecord, spends: &HashMap<OutPoint, u32>) -> bool {
+    let own = u32::from(!record.is_confirmed());
+    record.transaction.input.iter().any(|input| {
+        spends
+            .get(&input.previous_output)
+            .is_some_and(|count| *count > own)
+    })
+}
+
 /// Resolve the full history before a defeated lock can sweep another spender.
 fn plan_replay_sweeps(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
+    spends: &HashMap<OutPoint, u32>,
 ) -> Vec<SweepBatch> {
     let mut conflicts = wallet_info.clone();
     // A scratch account lets the upstream sweep see descendants across account boundaries.
@@ -762,7 +794,7 @@ fn plan_replay_sweeps(
     let mut removed = HashSet::new();
     let mut sweeps = Vec::new();
     for record in winners {
-        if removed.contains(&record.txid) {
+        if removed.contains(&record.txid) || !shares_unconfirmed_input(record, spends) {
             continue;
         }
         let result = conflicts.sweep_conflicts(&record.transaction, &record.context);
@@ -4527,6 +4559,104 @@ mod tests {
 
         let block = BlockInfo::new(height, dashcore::BlockHash::all_zeros(), height);
         TransactionContext::InBlock(position.map_or(block, |p| block.with_position(p)))
+    }
+
+    /// A history from `shape`: per record, which coins it spends (a small shared
+    /// pool, or output 0 of an earlier record), and its context.
+    fn generated_history(shape: &[(Vec<u8>, u8, u32)]) -> Vec<TransactionRecord> {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let mut records: Vec<TransactionRecord> = Vec::new();
+        for (position, (coins, kind, height)) in shape.iter().enumerate() {
+            let parents: Vec<Txid> = coins
+                .iter()
+                .map(|coin| match (records.is_empty(), *coin < 6) {
+                    (false, false) => records[*coin as usize % records.len()].txid,
+                    _ => Txid::from_byte_array([*coin + 1; 32]),
+                })
+                .collect();
+            let mut record =
+                replay_record(&parents, position as u64 + 1, TransactionContext::Mempool);
+            let block = BlockInfo::new(100 + height, dashcore::BlockHash::all_zeros(), 0);
+            record.context = match kind {
+                0 | 1 => TransactionContext::Mempool,
+                2 => TransactionContext::InstantSend(InstantLock {
+                    txid: record.txid,
+                    ..Default::default()
+                }),
+                3 => TransactionContext::InBlock(block),
+                _ => TransactionContext::InChainLockedBlock(block),
+            };
+            records.push(record);
+        }
+        records
+    }
+
+    proptest::proptest! {
+        /// The shared-input filter only skips sweeps that find nothing: an index
+        /// claiming every input is shared makes the planner ask upstream every time.
+        #[test]
+        fn should_plan_the_same_sweeps_with_and_without_the_shared_input_filter(
+            shape in proptest::collection::vec(
+                (proptest::collection::vec(0u8..12, 1..4), 0u8..5, 0u32..4),
+                1..14,
+            )
+        ) {
+            static INFO: std::sync::OnceLock<ManagedWalletInfo> = std::sync::OnceLock::new();
+            let info = INFO.get_or_init(|| wallet_with_receive_address().1);
+            let records = generated_history(&shape);
+            let unfiltered: HashMap<OutPoint, u32> = records
+                .iter()
+                .flat_map(|record| &record.transaction.input)
+                .map(|input| (input.previous_output, u32::MAX))
+                .collect();
+
+            let filtered = plan_replay_sweeps(info, &records, &unconfirmed_spends(&records));
+
+            proptest::prop_assert_eq!(filtered, plan_replay_sweeps(info, &records, &unfiltered));
+        }
+    }
+
+    /// Counts the records the planner hands to the upstream sweep, which is
+    /// the number of sweeps it runs: none for a history without shared inputs.
+    #[test]
+    fn should_ask_for_a_sweep_only_where_an_unconfirmed_record_shares_an_input() {
+        use dashcore::hashes::Hash;
+
+        let coin = |byte| Txid::from_byte_array([byte; 32]);
+        let candidates = |records: &[TransactionRecord]| {
+            let spends = unconfirmed_spends(records);
+            records
+                .iter()
+                .filter(|record| shares_unconfirmed_input(record, &spends))
+                .map(|record| record.txid)
+                .collect::<Vec<_>>()
+        };
+        let mut history: Vec<_> = (0..50u8)
+            .map(|n| replay_record(&[coin(n)], 1, in_block(100 + u32::from(n), Some(0))))
+            .collect();
+        history
+            .extend((50..60u8).map(|n| replay_record(&[coin(n)], 1, TransactionContext::Mempool)));
+        assert_eq!(
+            candidates(&history),
+            Vec::new(),
+            "no final record shares an input with an unconfirmed one"
+        );
+
+        let loser = replay_record(&[coin(7), coin(200)], 2, TransactionContext::Mempool);
+        history.push(loser.clone());
+
+        assert_eq!(
+            candidates(&history),
+            vec![history[7].txid],
+            "only the final record spending the loser's coin is swept for"
+        );
+        let (_, info, _) = wallet_with_receive_address();
+        let sweeps = plan_replay_sweeps(&info, &history, &unconfirmed_spends(&history));
+        assert_eq!(sweeps.len(), 1);
+        assert_eq!(sweeps[0].txids, vec![loser.txid]);
     }
 
     fn replayed_txids(records: Vec<TransactionRecord>) -> Vec<Txid> {

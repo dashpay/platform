@@ -2238,7 +2238,8 @@ struct UnrepresentableReceipt {
 }
 
 impl UnrepresentableReceipt {
-    async fn stored() -> Self {
+    /// `with_winner` stores the confirmed competitor in the same round.
+    async fn stored(with_winner: bool) -> Self {
         let (mut wallet, mut info, address) = wallet_with_receive_address();
         let owned = |value| TxOut {
             value,
@@ -2290,15 +2291,20 @@ impl UnrepresentableReceipt {
             "the running wallet removes the forged receipt"
         );
         let coin = stored_utxo(&funding, 0, address.clone());
+        let mut new_utxos = vec![
+            coin.clone(),
+            stored_utxo(&forged, 0, address.clone()),
+            stored_utxo(&forged, 1, address.clone()),
+        ];
+        if with_winner {
+            records.extend(running.new_records);
+            new_utxos.push(stored_utxo(&winner, 0, address.clone()));
+        }
         let (persister, _dir) = store_then_reopen(
             &wallet,
             CoreChangeSet {
                 records,
-                new_utxos: vec![
-                    coin.clone(),
-                    stored_utxo(&forged, 0, address.clone()),
-                    stored_utxo(&forged, 1, address.clone()),
-                ],
+                new_utxos,
                 spent_utxos: vec![coin],
                 ..Default::default()
             },
@@ -2317,7 +2323,7 @@ impl UnrepresentableReceipt {
 
 #[tokio::test]
 async fn should_settle_unrepresentable_mempool_receipt_against_final_winner_after_restart() {
-    let stored = UnrepresentableReceipt::stored().await;
+    let stored = UnrepresentableReceipt::stored(false).await;
     let mut state = stored.persister.load().unwrap();
     let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
 
@@ -2351,9 +2357,42 @@ async fn should_settle_unrepresentable_mempool_receipt_against_final_winner_afte
 }
 
 #[tokio::test]
+async fn should_settle_unrepresentable_mempool_receipt_against_persisted_final_winner_on_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = UnrepresentableReceipt::stored(true).await;
+
+    let mut state = stored.persister.load().unwrap();
+
+    let info = state
+        .wallets
+        .remove(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert!(
+        !info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&stored.forged.txid()),
+        "the forged receipt lost to the stored competitor at load"
+    );
+    assert!(stored
+        .persister
+        .get_core_tx_record(stored.wallet.wallet_id, &stored.forged.txid())
+        .unwrap()
+        .is_none());
+    let mut expected = vec![stored.extra, OutPoint::new(stored.winner.txid(), 0)];
+    expected.sort();
+    assert_eq!(
+        coin_set(&info),
+        expected,
+        "the forged outputs are gone and the coin only it claimed is released"
+    );
+    assert_eq!(info.balance.total(), 21_000);
+}
+
+#[tokio::test]
 async fn should_keep_stored_owned_outputs_when_a_record_restored_without_them_is_stored_again() {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    let stored = UnrepresentableReceipt::stored().await;
+    let stored = UnrepresentableReceipt::stored(false).await;
     let txid = stored.forged.txid();
     let mut state = stored.persister.load().unwrap();
     let info = &state
