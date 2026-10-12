@@ -15,6 +15,7 @@ use dashcore::{OutPoint, Txid};
 use dpp::prelude::{AssetLockProof, CoreBlockHeight};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -555,6 +556,40 @@ pub(crate) fn add_tracked_instant_locks<'a>(
                 .or_insert_with(|| proof.instant_lock.clone());
         }
     }
+}
+
+/// Take out of `history` the unconfirmed record of every funding a tracked
+/// asset lock holds as chain-final and no lock in `history` settles.
+///
+/// What a tracked asset lock proves about its funding outranks the funding's
+/// stored context, and the replay's verdict outranks the lock's status. A lock
+/// with an Instant proof makes its funding replay as InstantSend-locked; a
+/// chain-final lock proves a height and no block, so its funding stays out of
+/// the replay, with its coins as stored and its inputs under
+/// [`final_lock_input_claims`]. A funding the replay still defeats gets no
+/// claim.
+pub(crate) fn withhold_chain_final_fundings<'a>(
+    history: &mut RecordedHistory,
+    locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
+) {
+    let chain_final: HashSet<Txid> = locks
+        .into_iter()
+        .filter(|lock| match lock.status {
+            AssetLockStatus::Built
+            | AssetLockStatus::Broadcast
+            | AssetLockStatus::InstantSendLocked => false,
+            AssetLockStatus::ChainLocked
+            | AssetLockStatus::Consumed
+            | AssetLockStatus::RecoveredFromChain => true,
+        })
+        .map(|lock| lock.transaction.txid())
+        .collect();
+    let locked = &history.instant_locks;
+    history.transactions.retain(|stored| {
+        !matches!(stored.context, TransactionContext::Mempool)
+            || locked.contains_key(&stored.txid)
+            || !chain_final.contains(&stored.txid)
+    });
 }
 
 /// Confirmed spends of pending asset-lock inputs, read from the stored history.
@@ -4023,6 +4058,84 @@ mod tests {
                 (matching.txid(), instant_lock(matching.txid(), outpoint(1))),
                 (supplied.txid(), kept),
             ])
+        );
+    }
+
+    /// Only the unconfirmed record of a funding that a tracked lock holds as
+    /// chain-final leaves the history, and only when no lock in the history
+    /// settles it. A pending or InstantSend-locked lock, a record already in
+    /// a block and a record no lock tracks all stay.
+    #[test]
+    fn should_withhold_only_unsettled_chain_final_fundings() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+
+        let outpoint = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+        let tracked = |funding: &Transaction, status| TrackedAssetLock {
+            out_point: OutPoint::new(funding.txid(), 0),
+            transaction: funding.clone(),
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 1,
+            status,
+            proof: None,
+        };
+        let stored = |transaction: &Transaction, context| StoredTransaction {
+            txid: transaction.txid(),
+            transaction: transaction.clone(),
+            context,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked] =
+            [1, 2, 3, 4, 5, 6, 7, 8, 9].map(|byte| transaction_spending(outpoint(byte)));
+        let locks = [
+            tracked(&chain_locked, AssetLockStatus::ChainLocked),
+            tracked(&consumed, AssetLockStatus::Consumed),
+            tracked(&recovered, AssetLockStatus::RecoveredFromChain),
+            tracked(&built, AssetLockStatus::Built),
+            tracked(&broadcast, AssetLockStatus::Broadcast),
+            tracked(&instant, AssetLockStatus::InstantSendLocked),
+            tracked(&in_block, AssetLockStatus::ChainLocked),
+            tracked(&settled, AssetLockStatus::Consumed),
+        ];
+        let unconfirmed = [
+            &chain_locked,
+            &consumed,
+            &recovered,
+            &built,
+            &broadcast,
+            &instant,
+            &settled,
+            &untracked,
+        ];
+        let mut history = RecordedHistory {
+            transactions: unconfirmed
+                .map(|transaction| stored(transaction, TransactionContext::Mempool))
+                .into_iter()
+                .chain([stored(&in_block, confirmed_at(101))])
+                .collect(),
+            instant_locks: BTreeMap::from([(
+                settled.txid(),
+                InstantLock {
+                    txid: settled.txid(),
+                    ..Default::default()
+                },
+            )]),
+        };
+
+        super::withhold_chain_final_fundings(&mut history, &locks);
+
+        let kept: Vec<Txid> = history
+            .transactions
+            .iter()
+            .map(|stored| stored.txid)
+            .collect();
+        assert_eq!(
+            kept,
+            [&built, &broadcast, &instant, &settled, &untracked, &in_block]
+                .map(|transaction| transaction.txid())
         );
     }
 

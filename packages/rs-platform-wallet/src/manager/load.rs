@@ -10,7 +10,7 @@ use crate::error::PlatformWalletError;
 use crate::manager::history_replay::replay_recorded_history;
 use crate::wallet::asset_lock::sync::recovery::{
     add_tracked_instant_locks, final_lock_input_claims, recorded_input_conflicts,
-    seed_observed_input_conflicts,
+    seed_observed_input_conflicts, withhold_chain_final_fundings,
 };
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -174,6 +174,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             add_tracked_instant_locks(
                 &mut recorded_history,
                 &history_txids,
+                unused_asset_locks.values().flat_map(BTreeMap::values),
+            );
+            withhold_chain_final_fundings(
+                &mut recorded_history,
                 unused_asset_locks.values().flat_map(BTreeMap::values),
             );
             let mut defeated = HashSet::new();
@@ -1575,19 +1579,24 @@ mod idempotent_load_tests {
         }
     }
 
-    /// A tracked asset lock can hold the InstantSend lock of its funding while
-    /// the funding's stored record still reads as unconfirmed and the history
-    /// carries no lock. The load must settle stored conflicts with that
-    /// lock: an unconfirmed competitor and its change do not survive, and a
-    /// competitor in a plain block does not retire the locked funding, which
-    /// only a ChainLock overrules.
+    /// What a tracked asset lock proves about its funding outranks the
+    /// funding's stored context, and the replay's verdict outranks the lock's
+    /// status. Each row restores a funding stored as unconfirmed, with change,
+    /// against one competitor for its contested input:
     ///
-    /// A lock that names another transaction settles nothing, and the record
-    /// stays as stored. Neither does a chain proof: it carries a height and
-    /// no block, so a funding stored as unconfirmed cannot be placed in its
-    /// chain-locked block and still falls to a competitor in a plain block.
+    /// - an Instant proof makes the funding replay as InstantSend-locked: it
+    ///   sweeps an unconfirmed competitor, stands beside a plain block, and
+    ///   falls only to a chain-locked spend, after which its other input is
+    ///   free again;
+    /// - a chain-final lock proves a height and no block, so the funding is
+    ///   kept out of the replay: its coins stay as stored whatever the
+    ///   competitor, and its inputs stay claimed;
+    /// - a chain-final lock whose funding a lock in the history settles
+    ///   replays like any locked funding;
+    /// - a lock that names another transaction settles nothing, and the
+    ///   record replays as stored.
     #[tokio::test]
-    async fn should_settle_stored_conflicts_with_a_tracked_instant_lock() {
+    async fn should_settle_stored_conflicts_by_what_a_tracked_lock_proves() {
         use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -1595,55 +1604,130 @@ mod idempotent_load_tests {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
+        use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
         use key_wallet::transaction_checking::BlockInfo;
         use key_wallet::Utxo;
 
-        enum Proof {
+        #[derive(Debug, Clone, Copy)]
+        enum Evidence {
             Instant,
+            ChainFinal,
+            ChainFinalWithInstant,
             InstantOfAnotherTransaction,
-            Chain,
         }
-        let mut outcomes = Vec::new();
-        for (proof, competitor_in_block) in [
-            (Proof::Instant, false),
-            (Proof::Instant, true),
-            (Proof::InstantOfAnotherTransaction, true),
-            (Proof::Chain, true),
+        #[derive(Debug, Clone, Copy)]
+        enum Competitor {
+            Unconfirmed,
+            PlainBlock,
+            ChainLocked,
+        }
+        let in_block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                dashcore::BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        // (the funding's change stands, the competitor's change stands, the
+        // funding's other input stays guarded)
+        for (evidence, competing, expected) in [
+            (
+                Evidence::Instant,
+                Competitor::Unconfirmed,
+                (true, false, true),
+            ),
+            (
+                Evidence::Instant,
+                Competitor::PlainBlock,
+                (true, true, true),
+            ),
+            (
+                Evidence::Instant,
+                Competitor::ChainLocked,
+                (false, true, false),
+            ),
+            (
+                Evidence::ChainFinal,
+                Competitor::Unconfirmed,
+                (true, true, true),
+            ),
+            (
+                Evidence::ChainFinal,
+                Competitor::PlainBlock,
+                (true, true, true),
+            ),
+            (
+                Evidence::ChainFinal,
+                Competitor::ChainLocked,
+                (true, true, true),
+            ),
+            (
+                Evidence::ChainFinalWithInstant,
+                Competitor::Unconfirmed,
+                (true, false, true),
+            ),
+            (
+                Evidence::InstantOfAnotherTransaction,
+                Competitor::PlainBlock,
+                (false, true, false),
+            ),
         ] {
             let (ctx, funding) = TestWalletContext::new_random()
                 .with_mempool_funding(100_000)
                 .await;
             let wallet_id = ctx.wallet.compute_wallet_id();
-            let coin = dashcore::OutPoint {
+            let contested = dashcore::OutPoint {
                 txid: funding.txid(),
                 vout: 0,
             };
-            let change_to_wallet = |value| dashcore::TxOut {
+            let to_wallet = |value| dashcore::TxOut {
                 value,
                 script_pubkey: ctx.receive_address.script_pubkey(),
+            };
+            let mut other_funding = spend_to(
+                dashcore::OutPoint {
+                    txid: dashcore::Txid::from_byte_array([7; 32]),
+                    vout: 0,
+                },
+                50_000,
+            );
+            other_funding.output[0] = to_wallet(50_000);
+            let other = dashcore::OutPoint {
+                txid: other_funding.txid(),
+                vout: 0,
             };
             let mut asset_lock = dashcore::Transaction {
                 version: 3,
                 special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
                     AssetLockPayload {
                         version: 1,
-                        credit_outputs: spend_to(coin, 74_000).output,
+                        credit_outputs: spend_to(contested, 120_000).output,
                     },
                 )),
-                ..spend_to(coin, 74_000)
+                ..spend_to(contested, 120_000)
             };
+            asset_lock.input.push(dashcore::TxIn {
+                previous_output: other,
+                ..asset_lock.input[0].clone()
+            });
             asset_lock.output[0].script_pubkey = dashcore::ScriptBuf::new_op_return(&[]);
-            asset_lock.output.push(change_to_wallet(20_000));
-            let mut competitor = spend_to(coin, 60_000);
-            competitor.output.push(change_to_wallet(30_000));
+            asset_lock.output.push(to_wallet(20_000));
+            let mut competitor = spend_to(contested, 60_000);
+            competitor.output.push(to_wallet(30_000));
             let change_of = |transaction: &dashcore::Transaction| dashcore::OutPoint {
                 txid: transaction.txid(),
                 vout: 1,
             };
 
-            // The persisted projection: the contested coin is gone, both
-            // change coins are on file.
+            // The persisted projection: both inputs of the lock are gone,
+            // both change coins are on file, the chain lock stands at 110.
             let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+            projection.metadata.last_applied_chain_lock =
+                Some(dashcore::ephemerealdata::chain_lock::ChainLock {
+                    block_height: 110,
+                    block_hash: dashcore::BlockHash::from_byte_array([110; 32]),
+                    signature: [0; 96].into(),
+                });
             for transaction in [&asset_lock, &competitor] {
                 projection
                     .first_bip44_managed_account_mut()
@@ -1660,15 +1744,6 @@ mod idempotent_load_tests {
                         ),
                     );
             }
-            let competitor_context = if competitor_in_block {
-                TransactionContext::InBlock(BlockInfo::new(
-                    120,
-                    dashcore::BlockHash::from_byte_array([120; 32]),
-                    120,
-                ))
-            } else {
-                TransactionContext::Mempool
-            };
             let stored = |transaction: &dashcore::Transaction, context| StoredTransaction {
                 txid: transaction.txid(),
                 transaction: transaction.clone(),
@@ -1684,28 +1759,37 @@ mod idempotent_load_tests {
             let instant = |txid| {
                 let lock = InstantLock {
                     txid,
-                    inputs: vec![coin],
+                    inputs: vec![contested, other],
                     ..Default::default()
                 };
                 AssetLockProof::Instant(InstantAssetLockProof::new(lock, asset_lock.clone(), 0))
             };
-            let (status, proof) = match proof {
-                Proof::Instant => (
+            let (status, proof) = match evidence {
+                Evidence::Instant => (
                     AssetLockStatus::InstantSendLocked,
                     instant(asset_lock.txid()),
                 ),
-                Proof::InstantOfAnotherTransaction => (
-                    AssetLockStatus::InstantSendLocked,
-                    instant(competitor.txid()),
-                ),
-                Proof::Chain => (
+                Evidence::ChainFinal => (
                     AssetLockStatus::ChainLocked,
                     AssetLockProof::Chain(ChainAssetLockProof {
-                        core_chain_locked_height: 150,
+                        core_chain_locked_height: 105,
                         out_point,
                     }),
                 ),
+                Evidence::ChainFinalWithInstant => {
+                    (AssetLockStatus::Consumed, instant(asset_lock.txid()))
+                }
+                Evidence::InstantOfAnotherTransaction => (
+                    AssetLockStatus::InstantSendLocked,
+                    instant(competitor.txid()),
+                ),
             };
+            let competitor_context = match competing {
+                Competitor::Unconfirmed => TransactionContext::Mempool,
+                Competitor::PlainBlock => in_block(120),
+                Competitor::ChainLocked => in_block(100),
+            };
+            let mut wallet = ctx.wallet.clone();
             let manager = make_history_manager(RecordedHistoryPersister {
                 wallet: ctx.wallet,
                 managed: projection,
@@ -1724,7 +1808,7 @@ mod idempotent_load_tests {
                         account_index: 0,
                         funding_type: AssetLockFundingType::IdentityRegistration,
                         identity_index: 0,
-                        amount: 74_000,
+                        amount: 120_000,
                         status,
                         proof: Some(proof),
                     },
@@ -1737,22 +1821,29 @@ mod idempotent_load_tests {
                 .await
                 .expect("the wallet must load");
 
-            let wm = manager.wallet_manager.read().await;
-            let core = &wm
+            let mut core = manager
+                .wallet_manager
+                .read()
+                .await
                 .get_wallet_info(&wallet_id)
                 .expect("the loaded wallet must be registered")
-                .core_wallet;
-            let holds = |outpoint: dashcore::OutPoint| {
+                .core_wallet
+                .clone();
+            let holds = |core: &ManagedWalletInfo, outpoint: dashcore::OutPoint| {
                 core.utxos().iter().any(|utxo| utxo.outpoint == outpoint)
             };
-            outcomes.push((holds(change_of(&asset_lock)), holds(change_of(&competitor))));
+            let changes = (
+                holds(&core, change_of(&asset_lock)),
+                holds(&core, change_of(&competitor)),
+            );
+            core.check_core_transaction(&other_funding, in_block(91), &mut wallet, true, true)
+                .await;
+            assert_eq!(
+                (changes.0, changes.1, !holds(&core, other)),
+                expected,
+                "{evidence:?} against {competing:?}"
+            );
         }
-
-        // (the funding's change stands, the competitor's change stands)
-        assert_eq!(
-            outcomes,
-            [(true, false), (true, true), (false, true), (false, true)]
-        );
     }
 
     /// Only a ChainLock overrules an InstantSend lock. When a stored
