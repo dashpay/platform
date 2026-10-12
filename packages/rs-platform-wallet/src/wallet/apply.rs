@@ -356,6 +356,8 @@ impl PlatformWalletInfo {
                 self.tracked_asset_locks.insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: entry.operation_id,
+                        shielded_funding_attempts: entry.shielded_funding_attempts.clone(),
                         out_point: entry.out_point,
                         transaction: entry.transaction,
                         account_index: entry.account_index,
@@ -719,6 +721,8 @@ mod tests {
         al_cs.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
+                shielded_funding_attempts: Vec::new(),
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,

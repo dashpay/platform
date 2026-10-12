@@ -2012,6 +2012,8 @@ mod chain_lock_wait_tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -2117,6 +2119,8 @@ mod chain_lock_wait_tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,

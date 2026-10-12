@@ -581,6 +581,10 @@ pub enum PlatformWalletError {
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
+    /// A whole-balance asset lock cannot fit into one standard transaction.
+    #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
+    AssetLockTooManyInputs { count: usize, max: usize },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 

@@ -200,6 +200,16 @@ public final class PersistentAssetLock {
     /// before introducing a subsequent version for further shape changes.
     public var recipientIsExternal: Bool?
 
+    /// Stable UUID bytes for a wallet-drain operation. Legacy rows are nil.
+    /// Retained on consumed locks so restart recovery can distinguish a
+    /// completed transfer from an operation that never reached broadcast.
+    public var operationId: Data?
+
+    /// Versioned binary property list of exact signed Type18 transitions. Rust
+    /// owns construction and recovery; this append-only sidecar stores bytes.
+    /// Nil on published V3 rows upgraded to the current, unshipped V4 schema.
+    public var shieldedFundingAttemptsBlob: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -213,7 +223,8 @@ public final class PersistentAssetLock {
         accountIndexRaw: Int32 = 0,
         amountDuffs: Int64,
         statusRaw: Int,
-        proofBytes: Data? = nil
+        proofBytes: Data? = nil,
+        operationId: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -224,6 +235,7 @@ public final class PersistentAssetLock {
         self.amountDuffs = amountDuffs
         self.statusRaw = statusRaw
         self.proofBytes = proofBytes
+        self.operationId = operationId
         self.createdAt = Date()
         self.updatedAt = Date()
     }

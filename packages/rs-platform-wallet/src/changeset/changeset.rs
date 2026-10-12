@@ -1430,6 +1430,12 @@ pub struct AssetLockChangeSet {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetLockEntry {
+    /// Stable host operation identifier; legacy rows have no identifier.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub operation_id: Option<[u8; 16]>,
+    /// Exact signed shielded funding transitions, retained in broadcast order.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub shielded_funding_attempts: Vec<Vec<u8>>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1471,10 +1477,29 @@ impl Merge for AssetLockChangeSet {
         // durable stores apply the same rule (sqlite upsert guard,
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
-        for (out_point, entry) in other.asset_locks {
+        for (out_point, mut entry) in other.asset_locks {
+            if entry.operation_id.is_none() {
+                entry.operation_id = self
+                    .asset_locks
+                    .get(&out_point)
+                    .and_then(|previous| previous.operation_id);
+            }
+            if let Some(previous) = self.asset_locks.get(&out_point) {
+                // A stale snapshot cannot erase an already signed attempt.
+                let mut attempts = previous.shielded_funding_attempts.clone();
+                for attempt in &entry.shielded_funding_attempts {
+                    if !attempts.contains(attempt) {
+                        attempts.push(attempt.clone());
+                    }
+                }
+                entry.shielded_funding_attempts = attempts;
+            }
             if entry.status != AssetLockStatus::Consumed {
-                if let Some(existing) = self.asset_locks.get(&out_point) {
+                if let Some(existing) = self.asset_locks.get_mut(&out_point) {
                     if existing.status == AssetLockStatus::Consumed {
+                        // Terminality guards lifecycle state, never discards
+                        // exact signed evidence carried by a delayed snapshot.
+                        existing.shielded_funding_attempts = entry.shielded_funding_attempts;
                         continue;
                     }
                 }
@@ -2520,6 +2545,8 @@ mod tests {
             vout: 0,
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
+            operation_id: None,
+            shielded_funding_attempts: Vec::new(),
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2548,6 +2575,29 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed,
             "a non-Consumed snapshot must not replace the Consumed terminal"
+        );
+
+        // Signed evidence is append-only even when its status snapshot is stale.
+        folded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_funding_attempts = vec![vec![18, 1]];
+        let mut delayed = cs_with(AssetLockStatus::Broadcast);
+        delayed
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_funding_attempts = vec![vec![18, 1], vec![18, 2]];
+        folded.merge(delayed);
+        folded.merge(cs_with(AssetLockStatus::Consumed));
+        assert_eq!(
+            folded.asset_locks[&outpoint].shielded_funding_attempts,
+            vec![vec![18, 1], vec![18, 2]]
+        );
+        assert_eq!(
+            folded.asset_locks[&outpoint].status,
+            AssetLockStatus::Consumed
         );
 
         // The legitimate direction still lands.
@@ -3204,6 +3254,8 @@ mod tests {
                     m.insert(
                         OutPoint::default(),
                         AssetLockEntry {
+                            operation_id: None,
+                            shielded_funding_attempts: Vec::new(),
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

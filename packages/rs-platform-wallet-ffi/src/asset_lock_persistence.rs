@@ -30,6 +30,8 @@ use platform_wallet::AssetLockStatus;
 /// bincode-encoded with `dpp::bincode::config::standard()`. Both byte
 /// slices are Rust-owned for the lifetime of the callback and live in
 /// the matching [`AssetLockEntryStorage`].
+/// This unversioned row's layout is frozen. Operation UUIDs travel through
+/// the size-negotiated persistence extension, never by changing this stride.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct AssetLockEntryFFI {
@@ -170,5 +172,52 @@ fn status_to_u8(status: &AssetLockStatus) -> u8 {
         AssetLockStatus::ChainLocked => 3,
         AssetLockStatus::Consumed => 4,
         AssetLockStatus::RecoveredFromChain => 5,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_keep_the_published_asset_lock_row_layout() {
+        // A host compiled before drain UUID support still allocates and indexes
+        // this exact shape. Sidecars must not move any field or grow its stride.
+        #[repr(C)]
+        struct LegacyAssetLockEntry {
+            out_point: [u8; 36],
+            transaction_bytes: *const u8,
+            transaction_bytes_len: usize,
+            account_index: u32,
+            funding_type: u8,
+            identity_index: u32,
+            amount_duffs: u64,
+            status: u8,
+            proof_bytes: *const u8,
+            proof_bytes_len: usize,
+        }
+        assert_eq!(
+            std::mem::size_of::<AssetLockEntryFFI>(),
+            std::mem::size_of::<LegacyAssetLockEntry>()
+        );
+        assert_eq!(
+            std::mem::align_of::<AssetLockEntryFFI>(),
+            std::mem::align_of::<LegacyAssetLockEntry>()
+        );
+        macro_rules! same_offset {
+            ($($field:ident),+) => { $(assert_eq!(std::mem::offset_of!(AssetLockEntryFFI, $field), std::mem::offset_of!(LegacyAssetLockEntry, $field));)+ };
+        }
+        same_offset!(
+            out_point,
+            transaction_bytes,
+            transaction_bytes_len,
+            account_index,
+            funding_type,
+            identity_index,
+            amount_duffs,
+            status,
+            proof_bytes,
+            proof_bytes_len
+        );
     }
 }

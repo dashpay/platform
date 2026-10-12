@@ -34,6 +34,8 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         account_index: 0,
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
+        operation_id: None,
+        shielded_funding_attempts: Vec::new(),
         amount_duffs: 1000,
         status,
         proof: None,
@@ -143,4 +145,200 @@ fn a2_all_consumed_yields_empty_feed() {
         .unwrap();
     drop(conn);
     assert!(feed.is_empty(), "all-consumed wallet → empty feed");
+}
+
+/// A completed drain must remain discoverable by UUID after restart, without
+/// making legacy consumed locks actionable again.
+#[test]
+fn should_restore_consumed_drain_operation_tombstones() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA6);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x30);
+    let operation_id = [0xC5; 16];
+    for status in [AssetLockStatus::Built, AssetLockStatus::Consumed] {
+        let mut row = entry(outpoint, status);
+        row.operation_id = Some(operation_id);
+        persister
+            .store(
+                w,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: [(outpoint, row)].into_iter().collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        persister.flush(w).unwrap();
+    }
+    drop(persister);
+    let reopened = reopen(&path);
+    let conn = reopened.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&outpoint];
+    assert_eq!(restored.operation_id, Some(operation_id));
+    assert_eq!(restored.status, AssetLockStatus::Consumed);
+}
+
+#[test]
+fn should_preserve_operation_id_when_legacy_snapshot_lacks_it() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xA7);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x31);
+    for id in [Some([7; 16]), None] {
+        let mut row = entry(outpoint, AssetLockStatus::Broadcast);
+        row.operation_id = id;
+        persister
+            .store(
+                w,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: [(outpoint, row)].into_iter().collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    assert_eq!(locks[&0][&outpoint].operation_id, Some([7; 16]));
+}
+
+#[test]
+fn should_migrate_legacy_blob_without_reencoding_and_reject_invalid_operation_ids() {
+    use platform_wallet_storage::sqlite::migrations;
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    migrations::runner()
+        .set_target(refinery::Target::Version(18))
+        .run(&mut conn)
+        .unwrap();
+    let w = wid(0xA8);
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        rusqlite::params![w.as_slice()],
+    )
+    .unwrap();
+    let outpoint = op(0x32);
+    let legacy = entry(outpoint, AssetLockStatus::Built);
+    let bytes = asset_locks::encode_entry_for_test(&legacy).unwrap();
+    let outpoint_bytes =
+        platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap();
+    conn.execute("INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob)
+                  VALUES (?1, ?2, 'built', 0, 0, 1000, ?3)",
+                 rusqlite::params![w.as_slice(), outpoint_bytes, bytes]).unwrap();
+    migrations::run(&mut conn).unwrap();
+    let (after, id): (Vec<u8>, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT lifecycle_blob, operation_id FROM asset_locks",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(after, bytes, "published lifecycle blobs must not change");
+    assert!(id.is_none());
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    assert_eq!(locks[&0][&outpoint].operation_id, None);
+    assert!(locks[&0][&outpoint].shielded_funding_attempts.is_empty());
+    assert!(conn
+        .execute("UPDATE asset_locks SET operation_id = ?1", [vec![1_u8; 15]])
+        .is_err());
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET operation_id = 'abcdefghijklmnop'",
+            []
+        )
+        .is_err());
+    conn.execute("UPDATE asset_locks SET operation_id = ?1", [vec![1_u8; 16]])
+        .unwrap();
+    assert!(conn
+        .execute("UPDATE asset_locks SET operation_id = ?1", [vec![2_u8; 16]])
+        .is_err());
+    assert!(conn
+        .execute("UPDATE asset_locks SET operation_id = NULL", [])
+        .is_err());
+}
+
+#[test]
+fn should_restore_append_only_signed_attempts_and_reject_replacement() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA9);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x33);
+    let first = vec![18, 1, 2, 3];
+    let second = vec![18, 4, 5, 6, 7];
+    let store = |attempts: Vec<Vec<u8>>, status, id| {
+        let mut row = entry(outpoint, status);
+        row.operation_id = id;
+        row.shielded_funding_attempts = attempts;
+        persister.store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, row)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+    };
+    store(
+        vec![first.clone()],
+        AssetLockStatus::Broadcast,
+        Some([8; 16]),
+    )
+    .unwrap();
+    store(
+        vec![first.clone()],
+        AssetLockStatus::Consumed,
+        Some([8; 16]),
+    )
+    .unwrap();
+    // A delayed evidence snapshot preserves terminal status while appending bytes.
+    store(
+        vec![first.clone(), second.clone()],
+        AssetLockStatus::Broadcast,
+        Some([8; 16]),
+    )
+    .unwrap();
+    assert!(store(vec![vec![18, 9]], AssetLockStatus::Consumed, Some([8; 16])).is_err());
+    // Legacy and stale prefixes cannot erase persisted attempts, even at terminal status.
+    store(Vec::new(), AssetLockStatus::Consumed, None).unwrap();
+    store(
+        vec![first.clone()],
+        AssetLockStatus::Consumed,
+        Some([8; 16]),
+    )
+    .unwrap();
+    persister.flush(w).unwrap();
+    drop(persister);
+    let reopened = reopen(&path);
+    let conn = reopened.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    assert_eq!(
+        locks[&0][&outpoint].shielded_funding_attempts,
+        vec![first, second]
+    );
+    assert_eq!(locks[&0][&outpoint].status, AssetLockStatus::Consumed);
+    conn.execute(
+        "UPDATE asset_locks SET shielded_funding_attempts_blob = X'00'",
+        [],
+    )
+    .unwrap();
+    assert!(
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .is_err()
+    );
 }

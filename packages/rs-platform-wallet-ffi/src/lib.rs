@@ -79,6 +79,8 @@ pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod shielded_types;
+#[cfg(feature = "shielded")]
+pub mod shielded_wallet_drain;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
@@ -154,6 +156,8 @@ pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
 pub use shielded_types::*;
+#[cfg(feature = "shielded")]
+pub use shielded_wallet_drain::*;
 pub use sign_with_mnemonic_resolver::*;
 pub use spv::*;
 pub use token_persistence::*;

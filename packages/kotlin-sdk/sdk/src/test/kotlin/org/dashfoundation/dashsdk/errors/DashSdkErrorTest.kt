@@ -10,6 +10,16 @@ import org.junit.Test
 class DashSdkErrorTest {
 
     @Test
+    fun shouldPreserveAssetLockInputCapWithoutRetryingAPartialDrain() {
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 59, "501 exceeds 500")
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockTooManyInputs)
+        assertEquals(native.message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
     fun mapsNativeCodesToHierarchy() {
         // Codes mirror DashSDKErrorCode in rs-sdk-ffi/src/error.rs.
         val cases = mapOf(

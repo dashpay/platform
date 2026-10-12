@@ -600,6 +600,10 @@ pub enum PlatformWalletFFIResultCode {
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
 
+    /// An all-input asset lock exceeds the builder's input cap. Nothing was
+    /// broadcast; the host must not silently substitute a partial drain.
+    ErrorAssetLockTooManyInputs = 59,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1005,6 +1009,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // branch on the shortfall without parsing text.
             PlatformWalletError::AssetLockInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
+            }
+            PlatformWalletError::AssetLockTooManyInputs { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its

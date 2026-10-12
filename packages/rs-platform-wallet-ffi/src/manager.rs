@@ -8,8 +8,10 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
-    LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
+    FFIPersister, FreeShieldedFundingAttemptsFn, FreeTrackedMasternodesFn,
+    LoadAssetLockOperationIdFn, LoadIdentityBalanceBlockTimeFn, LoadShieldedFundingAttemptsFn,
+    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistShieldedFundingAttemptFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
@@ -276,6 +278,26 @@ unsafe fn persistence_extension_callbacks(
         load_identity_balance_block_time: slot!(
             on_load_identity_balance_block_time_fn,
             LoadIdentityBalanceBlockTimeFn
+        ),
+        persist_asset_lock_operation_id: slot!(
+            on_persist_asset_lock_operation_id_fn,
+            PersistAssetLockOperationIdFn
+        ),
+        load_asset_lock_operation_id: slot!(
+            on_load_asset_lock_operation_id_fn,
+            LoadAssetLockOperationIdFn
+        ),
+        persist_shielded_funding_attempt: slot!(
+            on_persist_shielded_funding_attempt_fn,
+            PersistShieldedFundingAttemptFn
+        ),
+        load_shielded_funding_attempts: slot!(
+            on_load_shielded_funding_attempts_fn,
+            LoadShieldedFundingAttemptsFn
+        ),
+        load_shielded_funding_attempts_free: slot!(
+            on_load_shielded_funding_attempts_free_fn,
+            FreeShieldedFundingAttemptsFn
         ),
     }
 }
@@ -1304,6 +1326,123 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_asset_lock_operation_id_slots_independently() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_asset_lock_operation_id_fn: Some(persist),
+            on_load_asset_lock_operation_id_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_none());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_shielded_funding_attempt_slots_independently() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+            _: u32,
+            _: *const u8,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut *mut crate::persistence::ShieldedFundingAttemptFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(
+            _: *mut c_void,
+            _: *mut crate::persistence::ShieldedFundingAttemptFFI,
+            _: usize,
+        ) {
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_shielded_funding_attempt_fn: Some(persist),
+            on_load_shielded_funding_attempts_fn: Some(load),
+            on_load_shielded_funding_attempts_free_fn: Some(free),
+            ..Default::default()
+        };
+        for (size, expected) in [
+            (
+                std::mem::size_of::<PersistenceCallbacksExtension>(),
+                [true, true, true],
+            ),
+            (
+                std::mem::offset_of!(
+                    PersistenceCallbacksExtension,
+                    on_load_shielded_funding_attempts_free_fn
+                ),
+                [true, true, false],
+            ),
+            (
+                std::mem::offset_of!(
+                    PersistenceCallbacksExtension,
+                    on_load_shielded_funding_attempts_fn
+                ),
+                [true, false, false],
+            ),
+            (
+                std::mem::offset_of!(
+                    PersistenceCallbacksExtension,
+                    on_persist_shielded_funding_attempt_fn
+                ),
+                [false, false, false],
+            ),
+        ] {
+            ext.struct_size = size;
+            let parsed = unsafe { persistence_extension_callbacks(&ext) };
+            assert_eq!(
+                [
+                    parsed.persist_shielded_funding_attempt.is_some(),
+                    parsed.load_shielded_funding_attempts.is_some(),
+                    parsed.load_shielded_funding_attempts_free.is_some()
+                ],
+                expected
+            );
+        }
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

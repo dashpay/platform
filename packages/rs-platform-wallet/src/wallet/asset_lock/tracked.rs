@@ -114,6 +114,10 @@ pub enum AssetLockStatus {
 /// re-derived from funding_type + identity_index via key-wallet's Wallet.
 #[derive(Debug, Clone)]
 pub struct TrackedAssetLock {
+    /// Stable host operation identifier, retained through consumption and restart.
+    pub operation_id: Option<[u8; 16]>,
+    /// Exact signed Type18 attempts, persisted before dispatch and retained on completion.
+    pub shielded_funding_attempts: Vec<Vec<u8>>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     pub transaction: Transaction,
@@ -135,6 +139,8 @@ pub struct TrackedAssetLock {
 impl From<&TrackedAssetLock> for AssetLockEntry {
     fn from(lock: &TrackedAssetLock) -> Self {
         Self {
+            operation_id: lock.operation_id,
+            shielded_funding_attempts: lock.shielded_funding_attempts.clone(),
             out_point: lock.out_point,
             transaction: lock.transaction.clone(),
             account_index: lock.account_index,

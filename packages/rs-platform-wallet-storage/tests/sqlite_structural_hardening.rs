@@ -380,6 +380,8 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         account_index: 99, // blob says 99
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
+        operation_id: None,
+        shielded_funding_attempts: Vec::new(),
         amount_duffs: 1,
         status: AssetLockStatus::Built,
         proof: None,

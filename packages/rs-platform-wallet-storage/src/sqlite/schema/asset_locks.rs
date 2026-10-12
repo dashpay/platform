@@ -10,7 +10,7 @@
 //! the surrounding fields on the serde encoder — mirroring `IdentityKeyWire`
 //! in `identity_keys.rs`.
 
-use rusqlite::{params, Transaction};
+use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use dpp::prelude::AssetLockProof;
@@ -37,10 +37,11 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 /// cannot service the `deserialize_any` an internally-tagged serde enum needs,
 /// which made a `proof: Some(..)` row write-once/read-never (issue #4133).
 ///
-/// Fields 1–7 preserve the exact order and serde encodings of `AssetLockEntry`
+/// Fields 1–7 preserve the historical `AssetLockEntry` order and serde encodings
 /// (including the shared `asset_lock_funding_type` adapter) so a pre-fix
 /// `proof: None` row decodes byte-identically under this type — no migration
-/// needed for those rows.
+/// needed for those rows. The later operation UUID lives in a separate nullable
+/// column so adding it never changes this published bincode layout.
 #[derive(Serialize, Deserialize)]
 struct AssetLockEntryWire {
     out_point: OutPoint,
@@ -57,6 +58,27 @@ struct AssetLockEntryWire {
 
 // PUBLIC material only: asset-lock lifecycle reaching `lifecycle_blob`.
 impl_persistable_blob!(AssetLockEntryWire);
+
+/// Separate versioned sidecar; never extend the published lifecycle wire type.
+#[derive(Serialize, Deserialize)]
+struct ShieldedFundingAttemptsWire {
+    version: u32,
+    attempts: Vec<Vec<u8>>,
+}
+impl_persistable_blob!(ShieldedFundingAttemptsWire);
+
+fn decode_attempts(bytes: Option<&[u8]>) -> Result<Vec<Vec<u8>>, WalletStorageError> {
+    let Some(bytes) = bytes else {
+        return Ok(Vec::new());
+    };
+    let wire: ShieldedFundingAttemptsWire = blob::decode(bytes)?;
+    if wire.version != 1 || wire.attempts.iter().any(Vec::is_empty) {
+        return Err(WalletStorageError::blob_decode(
+            "invalid shielded funding attempts",
+        ));
+    }
+    Ok(wire.attempts)
+}
 
 /// Encode an [`AssetLockEntry`] to its on-disk `lifecycle_blob` form via the
 /// wire type. Test-only seam so integration tests can forge a lifecycle blob
@@ -113,6 +135,8 @@ impl AssetLockEntryWire {
             amount_duffs: self.amount_duffs,
             status: self.status,
             proof,
+            operation_id: None,
+            shielded_funding_attempts: Vec::new(),
         })
     }
 }
@@ -139,20 +163,60 @@ pub fn apply(
         // batches fold before reaching the store.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
-                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, shielded_funding_attempts_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
              ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
                 status = excluded.status, \
                 account_index = excluded.account_index, \
                 identity_index = excluded.identity_index, \
                 amount_duffs = excluded.amount_duffs, \
-                lifecycle_blob = excluded.lifecycle_blob \
+                lifecycle_blob = excluded.lifecycle_blob, \
+                operation_id = COALESCE(excluded.operation_id, asset_locks.operation_id), \
+                shielded_funding_attempts_blob = excluded.shielded_funding_attempts_blob \
              WHERE asset_locks.status != 'consumed' OR excluded.status = 'consumed'",
         )?;
         for (op, entry) in &cs.asset_locks {
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
-            stmt.execute(params![
+            let existing: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = tx.query_row(
+                "SELECT operation_id, shielded_funding_attempts_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![wallet_id.as_slice(), &op_bytes[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?;
+            let old_attempts =
+                decode_attempts(existing.as_ref().and_then(|(_, bytes)| bytes.as_deref()))?;
+            let incoming = &entry.shielded_funding_attempts;
+            if incoming.iter().any(Vec::is_empty)
+                || (!incoming.starts_with(&old_attempts) && !old_attempts.starts_with(incoming))
+            {
+                return Err(WalletStorageError::blob_decode(
+                    "shielded funding attempts cannot change",
+                ));
+            }
+            let attempts = if incoming.len() > old_attempts.len() {
+                incoming.clone()
+            } else {
+                old_attempts
+            };
+            let operation_id = entry
+                .operation_id
+                .as_ref()
+                .map(|id| id.as_slice())
+                .or_else(|| existing.as_ref().and_then(|(id, _)| id.as_deref()));
+            if !attempts.is_empty() && operation_id.is_none() {
+                return Err(WalletStorageError::blob_decode(
+                    "shielded funding attempts require an operation ID",
+                ));
+            }
+            let attempts_blob = if attempts.is_empty() {
+                None
+            } else {
+                Some(blob::encode(&ShieldedFundingAttemptsWire {
+                    version: 1,
+                    attempts,
+                })?)
+            };
+            let applied = stmt.execute(params![
                 wallet_id.as_slice(),
                 &op_bytes[..],
                 status_str(&entry.status),
@@ -163,7 +227,17 @@ pub fn apply(
                     entry.amount_duffs,
                 )?,
                 lifecycle_blob,
+                entry.operation_id.as_ref().map(|id| id.as_slice()),
+                attempts_blob,
             ])?;
+            if applied == 0 {
+                // The terminal lifecycle guard may suppress a stale status,
+                // but signed evidence must still be durable before dispatch.
+                tx.execute(
+                    "UPDATE asset_locks SET operation_id = COALESCE(?3, operation_id), shielded_funding_attempts_blob = ?4 WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![wallet_id.as_slice(), &op_bytes[..], entry.operation_id.as_ref().map(|id| id.as_slice()), attempts_blob],
+                )?;
+            }
         }
     }
     if !cs.removed.is_empty() {
@@ -256,11 +330,26 @@ fn decode_row(
     account_index: i64,
     blob_bytes: &[u8],
     typed_status: &str,
+    operation_id: Option<Vec<u8>>,
+    attempts_blob: Option<Vec<u8>>,
     ctx: &LoadCtx,
 ) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
     let outpoint = blob::decode_outpoint(op_bytes)?;
     let wire: AssetLockEntryWire = blob::decode(blob_bytes)?;
     let mut entry = wire.into_entry()?;
+    entry.operation_id = operation_id
+        .map(|bytes| {
+            bytes.try_into().map_err(|_| {
+                WalletStorageError::blob_decode("asset_locks.operation_id must contain 16 bytes")
+            })
+        })
+        .transpose()?;
+    entry.shielded_funding_attempts = decode_attempts(attempts_blob.as_deref())?;
+    if !entry.shielded_funding_attempts.is_empty() && entry.operation_id.is_none() {
+        return Err(WalletStorageError::blob_decode(
+            "shielded funding attempts require an operation ID",
+        ));
+    }
     let account_index =
         crate::sqlite::util::safe_cast::i64_to_u32("asset_locks.account_index", account_index)?;
     // Typed-column vs blob cross-check: corruption that passes PRAGMA
@@ -302,6 +391,8 @@ fn decode_row(
         amount: entry.amount_duffs,
         status: entry.status,
         proof: entry.proof,
+        operation_id: entry.operation_id,
+        shielded_funding_attempts: entry.shielded_funding_attempts,
     };
     Ok((account_index, outpoint, tracked))
 }
@@ -317,7 +408,7 @@ pub fn load_state(
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, length(shielded_funding_attempts_blob), shielded_funding_attempts_blob \
          FROM asset_locks WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -329,28 +420,40 @@ pub fn load_state(
         blob::check_size(row.get::<_, i64>(3)?)?;
         let blob_bytes: Vec<u8> = row.get(4)?;
         let status: String = row.get(5)?;
-        let (acct, outpoint, tracked) =
-            decode_row(&op_bytes, account_index, &blob_bytes, &status, ctx)?;
+        let operation_id: Option<Vec<u8>> = row.get(6)?;
+        if let Some(size) = row.get::<_, Option<i64>>(7)? {
+            blob::check_size(size)?;
+        }
+        let attempts_blob: Option<Vec<u8>> = row.get(8)?;
+        let (acct, outpoint, tracked) = decode_row(
+            &op_bytes,
+            account_index,
+            &blob_bytes,
+            &status,
+            operation_id,
+            attempts_blob,
+            ctx,
+        )?;
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
     Ok(out)
 }
 
 /// Status-filtered rehydration feed: every asset lock **except** terminal
-/// `Consumed` rows, bucketed by account index. Feeding `Consumed` locks back
-/// into the live set would resurrect a spent one-shot lock as actionable
-/// (A04/A08), so the exclusion is at the SQL level (`status NOT IN
-/// ('consumed')`, `status` indexed); history stays visible via [`load_state`].
-/// Malformed rows remain fatal; Recovery tolerates status drift and excludes
-/// the row if either representation says it is consumed.
+/// `Consumed` rows without an operation ID, bucketed by account index.
+/// Consumed wallet-drain locks are non-actionable recovery tombstones: retaining
+/// their ID prevents a restart from mistaking a completed operation for a new one.
+/// Legacy consumed locks remain excluded; full history is available via
+/// [`load_state`]. Malformed rows remain fatal. Recovery keeps consumption
+/// sticky when the typed column and blob disagree.
 pub fn load_unconsumed(
     conn: &Connection,
     wallet_id: &WalletId,
     ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
-         FROM asset_locks WHERE wallet_id = ?1 AND status NOT IN ('consumed')",
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, length(shielded_funding_attempts_blob), shielded_funding_attempts_blob \
+         FROM asset_locks WHERE wallet_id = ?1 AND (status != 'consumed' OR operation_id IS NOT NULL)",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out: AssetLocksByAccount = BTreeMap::new();
@@ -361,9 +464,21 @@ pub fn load_unconsumed(
         blob::check_size(row.get::<_, i64>(3)?)?;
         let blob_bytes: Vec<u8> = row.get(4)?;
         let status: String = row.get(5)?;
-        let (acct, outpoint, tracked) =
-            decode_row(&op_bytes, account_index, &blob_bytes, &status, ctx)?;
-        if tracked.status == AssetLockStatus::Consumed {
+        let operation_id: Option<Vec<u8>> = row.get(6)?;
+        if let Some(size) = row.get::<_, Option<i64>>(7)? {
+            blob::check_size(size)?;
+        }
+        let attempts_blob: Option<Vec<u8>> = row.get(8)?;
+        let (acct, outpoint, tracked) = decode_row(
+            &op_bytes,
+            account_index,
+            &blob_bytes,
+            &status,
+            operation_id,
+            attempts_blob,
+            ctx,
+        )?;
+        if tracked.status == AssetLockStatus::Consumed && tracked.operation_id.is_none() {
             continue;
         }
         out.entry(acct).or_default().insert(outpoint, tracked);
@@ -426,6 +541,8 @@ mod tests {
             account_index: 0,
             funding_type: AssetLockFundingType::IdentityRegistration,
             identity_index: 0,
+            operation_id: None,
+            shielded_funding_attempts: Vec::new(),
             amount_duffs: 1000,
             status,
             proof,
@@ -463,6 +580,8 @@ mod tests {
                 amount_duffs: tracked.amount,
                 status: tracked.status,
                 proof: tracked.proof,
+                operation_id: tracked.operation_id,
+                shielded_funding_attempts: tracked.shielded_funding_attempts,
             })
             .expect("stored asset lock must load back")
     }
@@ -543,9 +662,31 @@ mod tests {
     fn none_proof_row_is_byte_identical_across_shapes() {
         let entry = entry_with_proof(sample_outpoint(0x34), AssetLockStatus::Built, None);
 
-        // Old on-disk bytes: exactly what the pre-fix `blob::encode` produced
-        // (`bincode::serde::encode_to_vec` over the `AssetLockEntry` itself).
-        let old_bytes = bincode::serde::encode_to_vec(&entry, blob::bounded_config()).unwrap();
+        // Freeze the historical shape rather than following new fields on the
+        // live entry. UUIDs were added later and deliberately live outside this blob.
+        #[derive(Serialize)]
+        struct LegacyEntry<'a> {
+            out_point: OutPoint,
+            transaction: &'a dashcore::Transaction,
+            account_index: u32,
+            #[serde(with = "platform_wallet::changeset::serde_adapters::asset_lock_funding_type")]
+            funding_type: AssetLockFundingType,
+            identity_index: u32,
+            amount_duffs: u64,
+            status: &'a AssetLockStatus,
+            proof: &'a Option<AssetLockProof>,
+        }
+        let legacy = LegacyEntry {
+            out_point: entry.out_point,
+            transaction: &entry.transaction,
+            account_index: entry.account_index,
+            funding_type: entry.funding_type,
+            identity_index: entry.identity_index,
+            amount_duffs: entry.amount_duffs,
+            status: &entry.status,
+            proof: &entry.proof,
+        };
+        let old_bytes = bincode::serde::encode_to_vec(&legacy, blob::bounded_config()).unwrap();
         let new_bytes = blob::encode(&AssetLockEntryWire::from_entry(&entry).unwrap()).unwrap();
         assert_eq!(
             old_bytes, new_bytes,
@@ -591,6 +732,8 @@ mod tests {
             account_index: 0,
             funding_type: AssetLockFundingType::IdentityTopUp,
             identity_index: 0,
+            operation_id: None,
+            shielded_funding_attempts: Vec::new(),
             amount_duffs: 1000,
             status: AssetLockStatus::Built,
             proof: None,

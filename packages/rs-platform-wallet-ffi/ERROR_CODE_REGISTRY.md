@@ -114,7 +114,9 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 59** — 27–58 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 60** — 59 is claimed by the pooled Core-to-shielded
+wallet drain for `ErrorAssetLockTooManyInputs` (Rust, Swift and Kotlin mirrors).
+27–58 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
@@ -172,6 +174,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 56 | `ErrorShieldedRecoveryCorrupted` | #4715 | Proposed — durable shielded recovery data is malformed or invalid; preserved for diagnosis. Rust, Swift and Kotlin preserve this typed error |
 | 57 | `ErrorShieldedRecoveryKeysRequired` | #4715 | Proposed — recovery needs the account and compatible keys; ciphertext damage can produce the same symptom. Rust, Swift and Kotlin preserve this typed error |
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
+| 59 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — the full drain exceeds the builder input cap; no partial drain was broadcast. Rust, Swift and Kotlin retain the typed refusal |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged

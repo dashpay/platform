@@ -105,6 +105,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 return;
             }
             let lock = TrackedAssetLock {
+                operation_id: None,
+                shielded_funding_attempts: Vec::new(),
                 out_point,
                 transaction: tx,
                 account_index,
@@ -2171,6 +2173,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2306,6 +2310,8 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
+                        shielded_funding_attempts: Vec::new(),
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2527,6 +2533,8 @@ mod tests {
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
+            operation_id: None,
+            shielded_funding_attempts: Vec::new(),
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2803,6 +2811,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 self.out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4313,6 +4323,8 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
+                        shielded_funding_attempts: Vec::new(),
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4826,6 +4838,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -4949,6 +4963,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5451,6 +5467,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5555,6 +5573,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5833,6 +5853,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5977,6 +5999,8 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
+                        shielded_funding_attempts: Vec::new(),
                         out_point,
                         transaction,
                         account_index: 0,

@@ -4,6 +4,10 @@
 //! Platform consumption. Shared across sub-wallets via `Arc<AssetLockManager>`.
 
 mod build;
+mod operation;
+pub use operation::{
+    AssetLockOperationContext, AssetLockOperationSnapshot, AssetLockOperationState,
+};
 pub mod lock_notify_handler;
 pub mod manager;
 pub mod orchestration;

@@ -231,6 +231,8 @@ fn reconstruct_candidates(
             }
             let (status, proof) = recovered_status(record, out_point);
             Some(TrackedAssetLock {
+                operation_id: None,
+                shielded_funding_attempts: Vec::new(),
                 out_point,
                 transaction: record.transaction.clone(),
                 account_index,
@@ -762,6 +764,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction: tx.clone(),
                     account_index: 0,
@@ -997,6 +1001,8 @@ mod tests {
                 info.tracked_asset_locks.insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
+                        shielded_funding_attempts: Vec::new(),
                         out_point,
                         transaction: tx.clone(),
                         account_index: 0,

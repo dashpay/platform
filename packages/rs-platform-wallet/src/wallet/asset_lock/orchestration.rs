@@ -29,6 +29,7 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::OutPoint;
@@ -43,6 +44,7 @@ use crate::error::{
     as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed, PlatformWalletError,
 };
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::AssetLockOperationContext;
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -190,6 +192,14 @@ pub enum AssetLockFunding {
         /// pooled source set. DashPay contact-receiving accounts span
         /// their own indices and are pooled in regardless.
         account_index: u32,
+    },
+
+    /// Drain all ordinary pooled funding sources without creating change.
+    /// The operation context preserves the exact outpoint on errors and panics.
+    DrainWalletBalance {
+        account_index: u32,
+        minimum_lock_duffs: Option<u64>,
+        operation: Arc<AssetLockOperationContext>,
     },
 
     /// Build an asset lock that drains a funding account's whole balance:
@@ -631,6 +641,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         Ok(FundingResolution::IsTimeout { out_point })
                     }
                     Err(e) => Err(e),
+                }
+            }
+            AssetLockFunding::DrainWalletBalance {
+                account_index,
+                minimum_lock_duffs,
+                operation,
+            } => {
+                if funding_type != AssetLockFundingType::AssetLockShieldedAddressTopUp {
+                    return Err(PlatformWalletError::AssetLockTransaction(
+                        "pooled wallet drain is available only for shielded funding".into(),
+                    ));
+                }
+                match self
+                    .create_wallet_drain_asset_lock_proof(
+                        account_index,
+                        minimum_lock_duffs,
+                        funding_type,
+                        destination_index,
+                        asset_lock_signer,
+                        &operation,
+                    )
+                    .await
+                {
+                    Ok((proof, path, out_point)) => {
+                        Ok(FundingResolution::Resolved(ResolvedFunding {
+                            proof,
+                            path,
+                            tracked_out_point: Some(out_point),
+                        }))
+                    }
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
+                        Ok(FundingResolution::IsTimeout { out_point })
+                    }
+                    Err(error) => Err(error),
                 }
             }
             AssetLockFunding::DrainAccountBalance {
@@ -1102,6 +1146,8 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
+                        shielded_funding_attempts: Vec::new(),
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,

@@ -6115,6 +6115,8 @@ mod tests {
         asset_locks.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
+                shielded_funding_attempts: Vec::new(),
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,

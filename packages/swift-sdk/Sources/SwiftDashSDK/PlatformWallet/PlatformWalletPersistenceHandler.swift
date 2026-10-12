@@ -18,6 +18,13 @@ protocol ModelFetching: Sendable {
     ) throws -> [T]
 }
 
+private enum AssetLockPersistenceError: Error {
+    case malformedRecord
+    case duplicateOperationId
+    case missingRecord
+    case requiresChangeset
+}
+
 struct LiveModelFetcher: ModelFetching {
     func fetch<T: PersistentModel>(
         _ descriptor: FetchDescriptor<T>,
@@ -537,7 +544,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let descriptor = FetchDescriptor<PersistentAssetLock>(
                     predicate: #Predicate { $0.outPointHex == outPointHex }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                let existingRecord: PersistentAssetLock?
+                do {
+                    existingRecord = try modelFetcher.fetch(descriptor, in: backgroundContext).first
+                    if let operationId = entry.operationId {
+                        guard operationId.count == 16 else { throw AssetLockPersistenceError.malformedRecord }
+                        let sameOperation = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                            $0.walletId == walletId && $0.operationId == operationId
+                        })
+                        if try modelFetcher.fetch(sameOperation, in: backgroundContext).contains(where: {
+                            $0.outPointHex != outPointHex
+                        }) { throw AssetLockPersistenceError.duplicateOperationId }
+                        if let previousId = existingRecord?.operationId, previousId != operationId {
+                            throw AssetLockPersistenceError.duplicateOperationId
+                        }
+                    }
+                } catch {
+                    allPersisted = false
+                    continue
+                }
+                if let existing = existingRecord {
                     // Consumed (4) is the terminal lifecycle state — never
                     // let a non-Consumed snapshot regress it. Writers race:
                     // the wallet-event adapter's batched drain can deliver a
@@ -559,6 +585,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.amountDuffs = entry.amountDuffs
                     existing.statusRaw = entry.statusRaw
                     existing.proofBytes = entry.proofBytes
+                    existing.operationId = entry.operationId ?? existing.operationId
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -570,7 +597,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         accountIndexRaw: entry.accountIndexRaw,
                         amountDuffs: entry.amountDuffs,
                         statusRaw: entry.statusRaw,
-                        proofBytes: entry.proofBytes
+                        proofBytes: entry.proofBytes,
+                        operationId: entry.operationId
                     )
                     backgroundContext.insert(record)
                 }
@@ -609,7 +637,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let descriptor = FetchDescriptor<PersistentAssetLock>(
                     predicate: #Predicate { $0.outPointHex == hex }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                let existingRecord: PersistentAssetLock?
+                do {
+                    existingRecord = try modelFetcher.fetch(descriptor, in: backgroundContext).first
+                } catch {
+                    allPersisted = false
+                    continue
+                }
+                if let existing = existingRecord {
                     // Same terminal rule as the upsert guard above: a
                     // Consumed (4) row is deliberately retained for
                     // historical lookup, and neither removal producer can
@@ -630,6 +665,113 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
             return allPersisted
+        }
+    }
+
+    /// UUID sidecar for the frozen legacy FFI row. The base upsert and this
+    /// association are saved together by endChangeset; a UUID can never change.
+    func persistAssetLockOperationId(walletId: Data, outPoint: Data, operationId: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, operationId.count == 16 else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let previous = record.operationId, previous != operationId {
+                throw AssetLockPersistenceError.duplicateOperationId
+            }
+            let sameOperation = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.operationId == operationId
+            })
+            guard try !modelFetcher.fetch(sameOperation, in: backgroundContext).contains(where: {
+                $0.outPointHex != hex
+            }) else { throw AssetLockPersistenceError.duplicateOperationId }
+            record.operationId = operationId
+        }
+    }
+
+    /// A missing base row is a failed read, not evidence of a legacy nil UUID.
+    func loadAssetLockOperationId(walletId: Data, outPoint: Data) throws -> Data? {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let operationId = record.operationId, operationId.count != 16 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            return record.operationId
+        }
+    }
+
+    private struct ShieldedFundingAttemptsArchive: Codable {
+        let version: UInt32
+        var attempts: [Data]
+    }
+
+    private static func decodeShieldedFundingAttempts(_ record: PersistentAssetLock) throws -> [Data] {
+        guard let blob = record.shieldedFundingAttemptsBlob else { return [] }
+        let archive = try PropertyListDecoder().decode(ShieldedFundingAttemptsArchive.self, from: blob)
+        guard archive.version == 1, !archive.attempts.contains(where: { $0.isEmpty }),
+              archive.attempts.isEmpty || record.operationId?.count == 16 else {
+            throw AssetLockPersistenceError.malformedRecord
+        }
+        return archive.attempts
+    }
+
+    /// Idempotent per-index append, saved with the UUID and base row by endChangeset.
+    func persistShieldedFundingAttempt(walletId: Data, outPoint: Data, operationId: Data,
+                                      attemptIndex: UInt32, bytes: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, operationId.count == 16, !bytes.isEmpty else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            guard record.operationId == operationId else { throw AssetLockPersistenceError.duplicateOperationId }
+            var attempts = try Self.decodeShieldedFundingAttempts(record)
+            let index = Int(attemptIndex)
+            if index < attempts.count {
+                guard attempts[index] == bytes else { throw AssetLockPersistenceError.malformedRecord }
+                return
+            }
+            guard index == attempts.count else { throw AssetLockPersistenceError.malformedRecord }
+            attempts.append(bytes)
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            record.shieldedFundingAttemptsBlob = try encoder.encode(
+                ShieldedFundingAttemptsArchive(version: 1, attempts: attempts))
+            record.updatedAt = Date()
+        }
+    }
+
+    func loadShieldedFundingAttempts(walletId: Data, outPoint: Data) throws -> [Data] {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            return try Self.decodeShieldedFundingAttempts(record)
         }
     }
 
@@ -941,22 +1083,34 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// the wallet load path to rebuild `unused_asset_locks` on the
     /// Rust side so an in-flight registration that was interrupted by
     /// an app kill can resume from the latest status without
-    /// rebroadcasting the asset-lock transaction.
-    public func loadCachedAssetLocks(walletId: Data) -> [AssetLockEntrySnapshot] {
-        onQueue { loadCachedAssetLocksOnQueue(walletId: walletId) }
+    /// rebroadcasting the asset-lock transaction. Throws on unreadable or malformed
+    /// rows: an empty result must never hide a previously dispatched operation.
+    public func loadCachedAssetLocks(walletId: Data) throws -> [AssetLockEntrySnapshot] {
+        try onQueue { try loadCachedAssetLocksOnQueue(walletId: walletId) }
     }
 
     /// On-queue implementation reused by the load-wallet-list path
     /// without re-entering `onQueue`.
-    func loadCachedAssetLocksOnQueue(walletId: Data) -> [AssetLockEntrySnapshot] {
+    func loadCachedAssetLocksOnQueue(walletId: Data) throws -> [AssetLockEntrySnapshot] {
         let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: PersistentAssetLock.predicate(walletId: walletId)
         )
-        guard let records = try? backgroundContext.fetch(descriptor) else {
-            return []
-        }
-        return records.map { record in
-            AssetLockEntrySnapshot(
+        let records = try modelFetcher.fetch(descriptor, in: backgroundContext)
+        var operationIds = Set<Data>()
+        return try records.map { record in
+            guard decodeOutPointHex(record.outPointHex) != nil,
+                  !record.transactionBytes.isEmpty,
+                  (0...5).contains(record.fundingTypeRaw),
+                  (0...5).contains(record.statusRaw) else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            if let operationId = record.operationId {
+                guard operationId.count == 16 else { throw AssetLockPersistenceError.malformedRecord }
+                guard operationIds.insert(operationId).inserted else {
+                    throw AssetLockPersistenceError.duplicateOperationId
+                }
+            }
+            return AssetLockEntrySnapshot(
                 outPointHex: record.outPointHex,
                 transactionBytes: record.transactionBytes,
                 fundingTypeRaw: record.fundingTypeRaw,
@@ -964,7 +1118,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 accountIndexRaw: record.accountIndexRaw,
                 amountDuffs: record.amountDuffs,
                 statusRaw: record.statusRaw,
-                proofBytes: record.proofBytes
+                proofBytes: record.proofBytes,
+                operationId: record.operationId
             )
         }
     }
@@ -983,6 +1138,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let amountDuffs: Int64
         public let statusRaw: Int
         public let proofBytes: Data?
+        public var operationId: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -3160,6 +3316,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.trackedMasternodes
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
+                | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+                | PlatformWalletPersistenceCapabilities.shieldedFundingAttempts
         )
     }
 
@@ -3197,6 +3355,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             persistWalletChangesetUtxoVerdictsCallback
         extensionCallbacks.on_persist_identity_balance_block_time_fn = persistIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
+        extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
+        extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
+        extensionCallbacks.on_persist_shielded_funding_attempt_fn = persistShieldedFundingAttemptCallback
+        extensionCallbacks.on_load_shielded_funding_attempts_fn = loadShieldedFundingAttemptsCallback
+        extensionCallbacks.on_load_shielded_funding_attempts_free_fn = loadShieldedFundingAttemptsFreeCallback
         return extensionCallbacks
     }
 
@@ -7231,7 +7394,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // that was killed mid-flight can resume from the latest
             // status without rebroadcasting. Empty / null when the
             // wallet has no persisted locks.
-            let assetLockRows = loadCachedAssetLocksOnQueue(walletId: w.walletId)
+            let assetLockRows: [AssetLockEntrySnapshot]
+            do {
+                assetLockRows = try loadCachedAssetLocksOnQueue(walletId: w.walletId)
+            } catch {
+                // An unreadable operation ID must never look like "not sent".
+                allocation.release()
+                return (nil, 0, true)
+            }
             let (assetLockBuf, assetLockCount) = buildAssetLockRestoreBuffer(
                 rows: assetLockRows,
                 allocation: allocation
@@ -10243,8 +10413,10 @@ private func persistAssetLocksCallback(
     removedCount: UInt
 ) -> Int32 {
     guard let context = context,
-          let walletIdPtr = walletIdPtr else {
-        return 0
+          let walletIdPtr = walletIdPtr,
+          upsertsCount == 0 || upsertsPtr != nil,
+          removedCount == 0 || removedPtr != nil else {
+        return 1
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
@@ -11539,6 +11711,91 @@ extension PlatformWalletPersistenceHandler {
             return false
         }
     }
+}
+
+private func persistAssetLockOperationIdCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, operationId: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let operationId else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAssetLockOperationId(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            operationId: Data(bytes: operationId, count: 16))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAssetLockOperationIdCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outOperationId: UnsafeMutablePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outFound, let outOperationId else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let operationId = try handler.loadAssetLockOperationId(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
+            operationId.copyBytes(to: outOperationId, count: 16)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
+}
+
+private func persistShieldedFundingAttemptCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, operationId: UnsafePointer<UInt8>?,
+    attemptIndex: UInt32, bytes: UnsafePointer<UInt8>?, bytesLen: UInt
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let operationId, let bytes,
+          let count = Int(exactly: bytesLen), count > 0 else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistShieldedFundingAttempt(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            operationId: Data(bytes: operationId, count: 16), attemptIndex: attemptIndex,
+            bytes: Data(bytes: bytes, count: count))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadShieldedFundingAttemptsCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outEntries: UnsafeMutablePointer<UnsafeMutablePointer<ShieldedFundingAttemptFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outEntries, let outCount else { return -1 }
+    outEntries.pointee = nil
+    outCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        let attempts = try handler.loadShieldedFundingAttempts(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36))
+        guard !attempts.isEmpty else { return 0 }
+        let entries = UnsafeMutablePointer<ShieldedFundingAttemptFFI>.allocate(capacity: attempts.count)
+        for (index, attempt) in attempts.enumerated() {
+            let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: attempt.count)
+            attempt.copyBytes(to: bytes, count: attempt.count)
+            entries.advanced(by: index).initialize(to: ShieldedFundingAttemptFFI(
+                bytes: UnsafePointer(bytes), bytes_len: UInt(attempt.count)))
+        }
+        outEntries.pointee = entries
+        outCount.pointee = UInt(attempts.count)
+        return 0
+    } catch { return -1 }
+}
+
+private func loadShieldedFundingAttemptsFreeCallback(
+    context: UnsafeMutableRawPointer?, entries: UnsafeMutablePointer<ShieldedFundingAttemptFFI>?, count: UInt
+) {
+    guard let entries, let count = Int(exactly: count) else { return }
+    for index in 0..<count {
+        if let bytes = entries[index].bytes { UnsafeMutablePointer(mutating: bytes).deallocate() }
+    }
+    entries.deinitialize(count: count)
+    entries.deallocate()
 }
 
 private func persistIdentityBalanceBlockTimeCallback(

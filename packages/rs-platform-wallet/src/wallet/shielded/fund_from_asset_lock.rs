@@ -36,6 +36,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+use crate::wallet::asset_lock::AssetLockOperationState;
 
 use std::time::Duration;
 
@@ -145,6 +146,112 @@ impl PlatformWallet {
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         P: OrchardProver,
     {
+        // The context is retained by the FFI caller across panic unwinding.
+        // Register under the same guard as every shield-class operation, so a
+        // reused UUID never races a fresh build or a generic resume.
+        let operation = match &funding {
+            AssetLockFunding::DrainWalletBalance { operation, .. } => Some(operation.clone()),
+            _ => None,
+        };
+        if let Some(operation) = &operation {
+            self.register_wallet_drain_operation(operation.clone());
+        }
+        let _shield_guard = self.shield_guard.lock().await;
+        if operation.is_some() {
+            self.reconcile_wallet_drains(coordinator).await?;
+        }
+        let funding = if let Some(operation) = &operation {
+            match self.asset_locks.begin_wallet_drain(operation).await? {
+                Some(out_point) => AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                },
+                None => funding,
+            }
+        } else {
+            funding
+        };
+        // A generic exact-outpoint resume can resolve the same durable drain.
+        let resumed_outpoint = match &funding {
+            AssetLockFunding::FromExistingAssetLock { out_point, .. } => Some(*out_point),
+            _ => None,
+        };
+        if let Some(out_point) = resumed_outpoint {
+            if self.reconcile_wallet_drain(coordinator, out_point).await? {
+                if let Some(operation) = &operation {
+                    operation.set(AssetLockOperationState::Completed, Some(out_point));
+                }
+                return Ok(());
+            }
+            if self
+                .replay_wallet_drain_attempt(out_point, settings)
+                .await?
+            {
+                if self.reconcile_wallet_drain(coordinator, out_point).await? {
+                    if let Some(operation) = &operation {
+                        operation.set(AssetLockOperationState::Completed, Some(out_point));
+                    }
+                    return Ok(());
+                }
+                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                    "original drain attempt replayed; waiting for authenticated output confirmation".into(),
+                ));
+            }
+        }
+        let mut result = self
+            .shielded_fund_from_asset_lock_inner(
+                coordinator,
+                funding,
+                recipients,
+                asset_lock_signer,
+                prover,
+                surplus_output,
+                dummy_outputs,
+                settings,
+                cl_wait,
+            )
+            .await;
+        // A scan may have completed during the network wait. Only exact
+        // persisted outputs can upgrade an ambiguous/already-consumed reply.
+        if result.is_err() {
+            let out_point = resumed_outpoint
+                .or_else(|| operation.as_ref().and_then(|op| op.snapshot().out_point));
+            if let Some(out_point) = out_point {
+                if self.reconcile_wallet_drain(coordinator, out_point).await? {
+                    result = Ok(());
+                }
+            }
+        }
+        if let Some(operation) = operation {
+            let snapshot = operation.snapshot();
+            if result.is_ok() {
+                operation.set(AssetLockOperationState::Completed, snapshot.out_point);
+            } else if snapshot.out_point.is_none() {
+                // Every possibly durable or dispatched lock records its
+                // outpoint first. A returned pre-build error proves no send.
+                operation.set(AssetLockOperationState::NotSent, None);
+            }
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_fund_from_asset_lock_inner<AS, P>(
+        &self,
+        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        funding: AssetLockFunding,
+        recipients: Vec<(OrchardAddress, Option<Credits>)>,
+        asset_lock_signer: &AS,
+        prover: P,
+        surplus_output: Option<PlatformAddress>,
+        dummy_outputs: usize,
+        settings: Option<PutSettings>,
+        cl_wait: Option<Duration>,
+    ) -> Result<(), PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+        P: OrchardProver,
+    {
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
@@ -210,13 +317,20 @@ impl PlatformWallet {
                     minimum_lock_duffs: Some(minimum_lock_duffs),
                 }
             }
+            AssetLockFunding::DrainWalletBalance {
+                account_index,
+                operation,
+                ..
+            } => {
+                let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
+                AssetLockFunding::DrainWalletBalance {
+                    account_index,
+                    operation,
+                    minimum_lock_duffs: Some(pool_fee_credits / CREDITS_PER_DUFF + 1),
+                }
+            }
             other => other,
         };
-
-        // Single-flight: serialise shield-class operations on this
-        // wallet so two concurrent calls can't race the asset-lock
-        // tracker into a half-consumed state.
-        let _shield_guard = self.shield_guard.lock().await;
 
         // Step 2: resolve funding. `AssetLockShieldedAddressTopUp`
         // selects the BIP44 funding family dedicated to shielded
@@ -377,6 +491,7 @@ impl PlatformWallet {
         // them on success.
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             build_and_broadcast_shielded(
+                self,
                 sdk.clone(),
                 recipient,
                 shield_amount,
@@ -415,6 +530,7 @@ impl PlatformWallet {
                 self.asset_locks.queue_asset_lock_changeset(cs);
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     build_and_broadcast_shielded(
+                        self,
                         sdk.clone(),
                         recipient,
                         shield_amount,
@@ -470,6 +586,19 @@ impl PlatformWallet {
         // address-funding, which writes proof-attested balances back
         // into `ManagedPlatformAccount`).
         if let Some(out_point) = tracked_out_point {
+            if let Some(operation_id) = self
+                .asset_locks
+                .list_tracked_locks()
+                .await
+                .into_iter()
+                .find(|lock| lock.out_point == out_point)
+                .and_then(|lock| lock.operation_id)
+            {
+                self.asset_locks
+                    .complete_wallet_drain(out_point, operation_id)
+                    .await?;
+                return Ok(());
+            }
             // Platform DID accept the shield ST — propagating an Err
             // here would misreport the protocol outcome. The lock row
             // stays non-Consumed and surfaces in the Resumable
@@ -705,6 +834,7 @@ async fn lookup_asset_lock_value_credits(
 /// scan will recover).
 #[allow(clippy::too_many_arguments)]
 async fn build_and_broadcast_shielded<AS, P>(
+    wallet: &PlatformWallet,
     sdk: std::sync::Arc<dash_sdk::Sdk>,
     recipient: OrchardAddress,
     shield_amount: Credits,
@@ -724,6 +854,7 @@ where
     use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
     use dpp::state_transition::StateTransition;
 
+    let out_point = out_point_from_proof(&proof);
     let st = build_shield_from_asset_lock_transition_with_signer(
         &recipient,
         shield_amount,
@@ -747,6 +878,14 @@ where
         }
         _ => Vec::new(),
     };
+
+    // This is the last fallible local step before dispatch. Every rebuilt CL
+    // retry appends its own signed bytes, so a prior successful attempt remains
+    // identifiable after process death or a later unauthenticated rejection.
+    wallet
+        .persist_drain_shielded_attempt(out_point, &st)
+        .await
+        .map_err(|error| dash_sdk::Error::Generic(error.to_string()))?;
 
     // Wait for the verified result rather than relay-ACK. Single-use
     // asset-lock proof: a false-positive on a transition Platform
@@ -997,6 +1136,8 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
+                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
