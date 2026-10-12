@@ -25,7 +25,7 @@ use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
-use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{is_owned, AccountRegistrationEntry, CoreChangeSet};
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -465,15 +465,18 @@ pub(crate) fn restore_recorded_transactions(
     // TODO(release-repair-spends-after-reorg) in `core_history`.
     let mut replay = replay_order(records);
     if !unreplayable.is_empty() {
-        // Count only: the skipped txids are peer-supplied.
+        // Count only: the txids are peer-supplied.
         tracing::warn!(
             wallet_id = %hex::encode(wallet_info.wallet_id),
-            skipped = unreplayable.len(),
-            "unconfirmed transaction records with unsafe amounts left out of load replay; their stored spend claims still apply"
+            set_aside = unreplayable.len(),
+            "unconfirmed transaction records with unsafe amounts restored without replay; conflict settlement still sees them"
         );
-        replay.retain(|record| !unreplayable.contains(&record.txid));
     }
     for record in &mut replay {
+        // A set-aside record stays unconfirmed: it may lose a conflict, never settle one.
+        if unreplayable.contains_key(&record.txid) {
+            continue;
+        }
         record.context = match &record.context {
             TransactionContext::InBlock(block)
                 if wallet_info
@@ -506,6 +509,13 @@ pub(crate) fn restore_recorded_transactions(
             .utxos
             .retain(|outpoint, _| !removed.contains(&outpoint.txid));
     }
+    let (unreplayed, replay): (Vec<_>, Vec<_>) = replay
+        .into_iter()
+        .partition(|record| unreplayable.contains_key(&record.txid));
+    let restorable = unreplayed
+        .into_iter()
+        .filter(|record| unreplayable.get(&record.txid) == Some(&true));
+    restore_unreplayed_records(wallet_info, restorable);
     stage_recorded_spent_inputs(wallet_info, &replay, &placed);
     let completed = poll_ready(async {
         for record in &replay {
@@ -595,13 +605,14 @@ pub(crate) fn restore_recorded_transactions(
 /// A fitting net does not make an overflowing operand safe. Include every source
 /// of replay inputs: durable coins, parent outputs, and staged input details.
 ///
-/// Returns the unconfirmed records that must be left out of the replay. Nothing
-/// authenticates a mempool transaction, so its amounts are peer-supplied data,
-/// not corruption; only a network-final record fails the load.
+/// Returns the unconfirmed records that must be left out of the replay, each
+/// with whether it is safe in history as stored. Nothing authenticates a mempool
+/// transaction, so its amounts are peer-supplied data, not corruption; only a
+/// network-final record fails the load.
 fn validate_replay_amounts(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
-) -> Result<HashSet<Txid>, WalletStorageError> {
+) -> Result<HashMap<Txid, bool>, WalletStorageError> {
     fn total(
         field: &'static str,
         values: impl IntoIterator<Item = u64>,
@@ -647,19 +658,20 @@ fn validate_replay_amounts(
     fn replayable(
         record: &TransactionRecord,
         checked: Result<(), WalletStorageError>,
-        unreplayable: &mut HashSet<Txid>,
+        restorable: bool,
+        unreplayable: &mut HashMap<Txid, bool>,
     ) -> Result<bool, WalletStorageError> {
         match checked {
             Ok(()) => Ok(true),
             Err(_) if matches!(record.context, TransactionContext::Mempool) => {
-                unreplayable.insert(record.txid);
+                unreplayable.insert(record.txid, restorable);
                 Ok(false)
             }
             Err(error) => Err(error),
         }
     }
 
-    let mut unreplayable = HashSet::new();
+    let mut unreplayable = HashMap::new();
     let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
     let mut remember = |outpoint, value| {
         amounts
@@ -675,7 +687,8 @@ fn validate_replay_amounts(
     }
     for record in records {
         // A record left out credits nothing, so its outputs are no child's input amount.
-        if !replayable(record, own_amounts(record), &mut unreplayable)? {
+        let restorable = stored_flow_fits(record);
+        if !replayable(record, own_amounts(record), restorable, &mut unreplayable)? {
             continue;
         }
         let txid = record.transaction.txid();
@@ -697,7 +710,8 @@ fn validate_replay_amounts(
                 .iter()
                 .filter_map(|input| amounts.get(&input.previous_output).copied()),
         );
-        replayable(record, inputs, &mut unreplayable)?;
+        // Funding redelivery attributes these to the stored record, so it stays out.
+        replayable(record, inputs, false, &mut unreplayable)?;
     }
     Ok(unreplayable)
 }
@@ -779,6 +793,43 @@ fn plan_replay_sweeps(
             .retain(|outpoint| !removed.contains(&outpoint.txid) && !claimed.contains(outpoint));
     }
     sweeps
+}
+
+/// Restore set-aside records as stored, bypassing the checker, so the conflict
+/// sweep still finds what they spend: it reads topology, never amounts. One that
+/// is unsafe even as stored stays out; a winner stored by then sweeps it at load.
+fn restore_unreplayed_records(
+    wallet_info: &mut ManagedWalletInfo,
+    records: impl Iterator<Item = TransactionRecord>,
+) {
+    let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+    for record in records {
+        // Any funding account will do as a fallback: the sweep searches them all.
+        let owner = accounts
+            .iter()
+            .position(|account| funds_account_type(account) == record.account_type)
+            .unwrap_or(0);
+        if let Some(account) = accounts.get_mut(owner) {
+            account.transactions_mut().insert(record.txid, record);
+        }
+    }
+}
+
+/// Whether owned outputs and attributed inputs each sum within `i64`: the only
+/// arithmetic upstream runs over a stored record is its signed net of those two.
+fn stored_flow_fits(record: &TransactionRecord) -> bool {
+    fn fits(values: impl Iterator<Item = u64>) -> bool {
+        values
+            .map(i64::try_from)
+            .try_fold(0_i64, |sum, value| sum.checked_add(value.ok()?))
+            .is_some()
+    }
+    let owned = record
+        .output_details
+        .iter()
+        .filter(|detail| is_owned(detail.role))
+        .map(|detail| detail.value);
+    fits(owned) && fits(record.input_details.iter().map(|detail| detail.value))
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -4478,6 +4529,48 @@ mod tests {
 
     fn replayed_txids(records: Vec<TransactionRecord>) -> Vec<Txid> {
         replay_order(records).into_iter().map(|r| r.txid).collect()
+    }
+
+    #[test]
+    fn should_mark_set_aside_record_restorable_only_when_its_own_flow_fits() {
+        use key_wallet::managed_account::transaction_record::{OutputDetail, OutputRole};
+
+        let detail = |index, role, value| OutputDetail {
+            index,
+            role,
+            address: None,
+            value,
+        };
+        let (_, mut info, _) = wallet_with_receive_address();
+        let mut foreign_overflow = replay_record(&[], 1, TransactionContext::Mempool);
+        foreign_overflow.output_details = vec![
+            detail(0, OutputRole::Sent, i64::MAX as u64),
+            detail(1, OutputRole::Change, 1_000),
+        ];
+        let mut owned_overflow = replay_record(&[], 2, TransactionContext::Mempool);
+        owned_overflow.output_details = vec![
+            detail(0, OutputRole::Received, (1 << 62) + 1),
+            detail(1, OutputRole::Received, (1 << 62) + 1),
+        ];
+
+        let verdicts =
+            validate_replay_amounts(&info, &[foreign_overflow.clone(), owned_overflow.clone()])
+                .unwrap();
+
+        assert_eq!(
+            verdicts.get(&foreign_overflow.txid),
+            Some(&true),
+            "foreign amounts never enter the stored record's net"
+        );
+        assert_eq!(
+            verdicts.get(&owned_overflow.txid),
+            Some(&false),
+            "an owned flow past i64 would overflow the upstream net recomputation"
+        );
+        restore_unreplayed_records(&mut info, [foreign_overflow.clone()].into_iter());
+        assert!(info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&foreign_overflow.txid));
     }
 
     /// An unconfirmed child whose txid sorts ahead of its parent's still

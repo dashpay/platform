@@ -1773,6 +1773,314 @@ async fn should_keep_reservation_of_forged_mempool_spend_with_overflowing_foreig
     assert_eq!(loaded.wallet_info.balance.total(), 1_000);
 }
 
+/// Two confirmed wallet coins named as inputs by a forged, unminable mempool
+/// spend: its foreign output overflows the replay arithmetic, its change is small.
+struct ForgedSpend {
+    wallet: Wallet,
+    funding: Transaction,
+    /// The coin a final competitor also spends.
+    shared: Utxo,
+    /// The coin only the forged spend claims.
+    extra: Utxo,
+    forged: Transaction,
+    change: Utxo,
+    /// Funding and forged-spend records, as the live checker produced them.
+    records: Vec<key_wallet::managed_account::transaction_record::TransactionRecord>,
+    /// A confirmed transaction spending only `shared`, and its record.
+    winner: Transaction,
+    winner_records: Vec<key_wallet::managed_account::transaction_record::TransactionRecord>,
+}
+
+impl ForgedSpend {
+    async fn build() -> Self {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(
+            OutPoint::new(Txid::from_byte_array([85; 32]), 0),
+            [100_000, 20_000]
+                .into_iter()
+                .map(|value| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
+        );
+        let mut records = info
+            .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+            .await
+            .new_records;
+        let coins = &info.accounts.standard_bip44_accounts[&0].utxos;
+        let shared = coins[&OutPoint::new(funding.txid(), 0)].clone();
+        let extra = coins[&OutPoint::new(funding.txid(), 1)].clone();
+        let winner = spend_of(
+            shared.outpoint,
+            vec![TxOut {
+                value: 99_000,
+                script_pubkey: foreign_address(86).script_pubkey(),
+            }],
+        );
+        let winner_records = info
+            .clone()
+            .check_core_transaction(&winner, block(101), &mut wallet.clone(), true, true)
+            .await
+            .new_records;
+        let mut forged = spend_of(
+            shared.outpoint,
+            vec![
+                TxOut {
+                    value: i64::MAX as u64,
+                    script_pubkey: foreign_address(87).script_pubkey(),
+                },
+                TxOut {
+                    value: 1_000,
+                    script_pubkey: address.script_pubkey(),
+                },
+            ],
+        );
+        forged.input.push(TxIn {
+            previous_output: extra.outpoint,
+            ..Default::default()
+        });
+        records.extend(
+            info.check_core_transaction(
+                &forged,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        assert_eq!(
+            records.len(),
+            2,
+            "the live checker records the forged spend"
+        );
+        assert_eq!(winner_records.len(), 1);
+        let change = info.accounts.standard_bip44_accounts[&0].utxos
+            [&OutPoint::new(forged.txid(), 1)]
+            .clone();
+        Self {
+            wallet,
+            funding,
+            shared,
+            extra,
+            forged,
+            change,
+            records,
+            winner,
+            winner_records,
+        }
+    }
+
+    /// Persist the round a sync would write, optionally with the final competitor, and reopen.
+    fn store(&self, with_winner: bool) -> (SqlitePersister, tempfile::TempDir) {
+        let mut records = self.records.clone();
+        if with_winner {
+            records.extend(self.winner_records.clone());
+        }
+        store_then_reopen(
+            &self.wallet,
+            CoreChangeSet {
+                records,
+                new_utxos: vec![self.shared.clone(), self.extra.clone(), self.change.clone()],
+                spent_utxos: vec![self.shared.clone(), self.extra.clone()],
+                ..Default::default()
+            },
+        )
+    }
+}
+
+fn coin_set(info: &ManagedWalletInfo) -> Vec<OutPoint> {
+    info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .keys()
+        .copied()
+        .collect()
+}
+
+#[tokio::test]
+async fn should_settle_unsafe_mempool_loser_against_persisted_final_winner_on_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let scenario = ForgedSpend::build().await;
+    let (persister, _dir) = scenario.store(true);
+
+    let mut state = persister.load().unwrap();
+
+    let info = state
+        .wallets
+        .remove(&scenario.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert!(
+        !info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&scenario.forged.txid()),
+        "the forged spend lost to the confirmed competitor"
+    );
+    assert!(persister
+        .get_core_tx_record(scenario.wallet.wallet_id, &scenario.forged.txid())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        coin_set(&info),
+        vec![scenario.extra.outpoint],
+        "the extra input is released and the loser's change is gone"
+    );
+    assert_eq!(info.balance.total(), 20_000);
+}
+
+#[tokio::test]
+async fn should_settle_unsafe_mempool_loser_against_final_winner_after_restart() {
+    let scenario = ForgedSpend::build().await;
+    let (persister, _dir) = scenario.store(false);
+    let mut state = persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&scenario.wallet.wallet_id).unwrap();
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&scenario.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(
+        result.swept_transactions,
+        vec![scenario.forged.txid()],
+        "a final competitor arriving after restart still removes the forged spend"
+    );
+    assert_eq!(result.released_outpoints, vec![scenario.extra.outpoint]);
+    loaded
+        .wallet_info
+        .check_core_transaction(
+            &scenario.funding,
+            block(100),
+            &mut loaded.wallet,
+            true,
+            true,
+        )
+        .await;
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        vec![scenario.extra.outpoint],
+        "funding redelivery returns only the released coin"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 20_000);
+}
+
+#[tokio::test]
+async fn should_report_balances_while_holding_unsafe_mempool_record_after_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let scenario = ForgedSpend::build().await;
+    let (persister, _dir) = scenario.store(false);
+
+    let mut state = persister.load().unwrap();
+
+    let loaded = state.wallets.get_mut(&scenario.wallet.wallet_id).unwrap();
+    assert!(
+        loaded.wallet_info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&scenario.forged.txid()),
+        "the unsettled forged spend stays in history"
+    );
+    // Recompute from scratch, then through the late-funding path that revisits stored records.
+    loaded.wallet_info.update_balance();
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        vec![scenario.change.outpoint]
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
+    loaded
+        .wallet_info
+        .check_core_transaction(
+            &scenario.funding,
+            block(100),
+            &mut loaded.wallet,
+            true,
+            true,
+        )
+        .await;
+    loaded.wallet_info.update_balance();
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        vec![scenario.change.outpoint],
+        "both claimed coins stay reserved while no competitor is final"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
+    assert_eq!(loaded.wallet_info.balance.confirmed(), 0);
+}
+
+#[tokio::test]
+async fn should_recompute_unsafe_mempool_record_when_its_funding_arrives_after_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let owned = |value| TxOut {
+        value,
+        script_pubkey: address.script_pubkey(),
+    };
+    let funding = spend_of(
+        OutPoint::new(Txid::from_byte_array([88; 32]), 0),
+        vec![owned(100_000)],
+    );
+    let coin = OutPoint::new(funding.txid(), 0);
+    // Seen before its funding, so stored without the input's amount.
+    let forged = spend_of(
+        coin,
+        vec![
+            TxOut {
+                value: i64::MAX as u64,
+                script_pubkey: foreign_address(89).script_pubkey(),
+            },
+            owned(1_000),
+        ],
+    );
+    let rival = spend_of(coin, vec![owned(500)]);
+    let mut records = info
+        .clone()
+        .check_core_transaction(
+            &forged,
+            TransactionContext::Mempool,
+            &mut wallet.clone(),
+            true,
+            true,
+        )
+        .await
+        .new_records;
+    records.extend(
+        info.check_core_transaction(&rival, TransactionContext::Mempool, &mut wallet, true, true)
+            .await
+            .new_records,
+    );
+    assert_eq!(records.len(), 2);
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos: vec![
+                stored_utxo(&forged, 1, address.clone()),
+                stored_utxo(&rival, 0, address.clone()),
+            ],
+            ..Default::default()
+        },
+    );
+    let mut state = persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+
+    loaded
+        .wallet_info
+        .check_core_transaction(&funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    loaded.wallet_info.update_balance();
+
+    let record =
+        &loaded.wallet_info.accounts.standard_bip44_accounts[&0].transactions()[&forged.txid()];
+    assert_eq!(
+        record.input_details.len(),
+        1,
+        "the late funding is attributed to the record restored as stored"
+    );
+    assert_eq!(record.net_amount, 1_000 - 100_000);
+    assert_eq!(loaded.wallet_info.balance.total(), 1_500);
+}
+
 #[tokio::test]
 async fn should_report_wallet_scoped_unconverged_replay() {
     assert_conflict_restart(ConflictCase::Unconverged).await;
