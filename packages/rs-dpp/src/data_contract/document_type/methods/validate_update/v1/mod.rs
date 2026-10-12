@@ -296,26 +296,31 @@ impl DocumentTypeRef<'_> {
             return SimpleConsensusValidationResult::new();
         }
         let new_properties = new_document_type.flattened_properties();
-        for index in self.indexes().values() {
-            for (_, array, old_array) in index.typed_arrays(self.flattened_properties()) {
-                let Some(new_array) = typed_array_property(new_properties, array) else {
-                    continue;
-                };
-                if new_array.max_items > old_array.max_items {
-                    return SimpleConsensusValidationResult::new_with_error(
-                        DocumentTypeUpdateError::new(
-                            self.data_contract_id(),
-                            self.name(),
-                            format!(
-                                "document type can not raise the maxItems of indexed typed array \
-                                 '{}' from {} to {}: its documents have a time to live and \
-                                 prepaid their cleanup by the old bound",
-                                array, old_array.max_items, new_array.max_items,
-                            ),
-                        )
-                        .into(),
-                    );
-                }
+        let indexed_arrays = self
+            .indexes()
+            .values()
+            .filter_map(|index| index.indexed_array.as_deref());
+        for array in indexed_arrays {
+            let (Some(old_array), Some(new_array)) = (
+                typed_array_property(self.flattened_properties(), array),
+                typed_array_property(new_properties, array),
+            ) else {
+                continue;
+            };
+            if new_array.max_items > old_array.max_items {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not raise the maxItems of indexed typed array \
+                             '{}' from {} to {}: its documents have a time to live and \
+                             prepaid their cleanup by the old bound",
+                            array, old_array.max_items, new_array.max_items,
+                        ),
+                    )
+                    .into(),
+                );
             }
         }
         SimpleConsensusValidationResult::new()

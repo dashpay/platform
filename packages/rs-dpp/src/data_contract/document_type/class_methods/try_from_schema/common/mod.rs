@@ -32,9 +32,8 @@ use crate::data_contract::document_type::property::array::TypedArrayProperty;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
-    is_transient, property_at_path, top_level_property, typed_array_property,
-    DocumentPropertyReferenceTarget, KeyIdReference, KeyReferenceIdentityProperty,
-    PropertyReference, ReferenceHolder,
+    is_transient, property_at_path, top_level_property, DocumentPropertyReferenceTarget,
+    KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
     parse_property_constraint_condition, PropertyConstraint, SystemProperty, STORED_DOCUMENT_PREFIX,
@@ -143,8 +142,19 @@ use crate::consensus::basic::data_contract::{
 ///
 /// This type and its no-op exist only for generation 3; without it there is no
 /// per-property hook in the core at all.
-pub(super) type RankedIndexKeyLengthCheck =
-    fn(&str, &Index, &str, &DocumentPropertyType, &PlatformVersion) -> Result<(), ProtocolError>;
+///
+/// Its arguments: the document type's name, the index, the index property whose
+/// level the check reads, the name a refusal reports the bound under (the
+/// property itself, or `<array>.items` for the elements of a typed array), the
+/// type of the keyed value and the platform version.
+pub(super) type RankedIndexKeyLengthCheck = fn(
+    &str,
+    &Index,
+    &str,
+    &str,
+    &DocumentPropertyType,
+    &PlatformVersion,
+) -> Result<(), ProtocolError>;
 
 /// The [`RankedIndexKeyLengthCheck`] for a generation that has no ranking axes
 /// to constrain — i.e. every generation whose index grammar rejects the
@@ -153,6 +163,7 @@ pub(super) fn no_ranked_index_key_length_check(
     _document_type_name: &str,
     _index: &Index,
     _index_property_name: &str,
+    _reported_property_name: &str,
     _property_type: &DocumentPropertyType,
     _platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
@@ -279,9 +290,10 @@ pub(super) struct ParserGeneration {
     /// contract's parse the referenced field.
     pub admit_derived_index_properties: bool,
     /// Whether an index may name a typed array property, keying the document once by each
-    /// of its distinct elements. Admitted at generation 3; `validate_index_properties` and
-    /// `validate_indexed_arrays` judge the array and the index. Earlier generations refuse
-    /// the array as an index property type, as they always have.
+    /// of its distinct elements. Admitted at generation 3; `validate_index_properties`,
+    /// `validate_indexed_array_index`, `validate_indexed_array_element` and
+    /// `validate_index_entries_per_document` judge the array and the index. Earlier
+    /// generations refuse the array as an index property type, as they always have.
     pub admit_indexed_arrays: bool,
 }
 
@@ -1035,11 +1047,7 @@ fn parse_indices(
                             .iter()
                             .filter(|property| {
                                 declared.contains(&property.name)
-                                    || typed_array_property(
-                                        flattened_document_properties,
-                                        &property.name,
-                                    )
-                                    .is_some()
+                                    || index.indexed_array.as_ref() == Some(&property.name)
                             })
                             .map(|property| property.name.clone())
                             .collect();
@@ -1477,8 +1485,12 @@ fn parse_indices(
     if ctx.generation.admit_indexed_arrays {
         let indexed_arrays: BTreeMap<String, u16> = indices
             .values()
-            .flat_map(|index| index.typed_arrays(flattened_document_properties))
-            .map(|(_, name, typed_array)| (name.to_string(), typed_array.max_items))
+            .filter_map(|index| {
+                let array = index.indexed_array.as_ref()?;
+                index
+                    .indexed_array_fan_out(flattened_document_properties)
+                    .map(|(_, max_items)| (array.clone(), max_items))
+            })
             .collect();
         if !indexed_arrays.is_empty() {
             index_structure.stamp_indexed_arrays(&indexed_arrays);
@@ -1561,17 +1573,9 @@ fn validate_indexed_array_index(
         );
     }
     let ranked_above = index
-        .ranked_countable_at
-        .iter()
-        .chain(index.ranked_summable_at.iter())
-        .chain(index.ranked_averageable_at.iter())
-        .find(|ranked| {
-            index
-                .properties
-                .iter()
-                .position(|property| &property.name == *ranked)
-                .is_some_and(|ranked_position| ranked_position < position)
-        });
+        .at_level_positions(index.ranked_at_levels())
+        .find(|ranked_position| *ranked_position < position)
+        .map(|ranked_position| &index.properties[ranked_position].name);
     if let Some(ranked) = ranked_above {
         return refused(format!(
             "a ranking at \"{ranked}\", above the array, would count a document once per \
@@ -1661,14 +1665,15 @@ fn validate_index_entries_per_document(
     let mut has_indexed_array = false;
     let mut entries: u64 = 0;
     for index in indices.values() {
-        let windows = index
-            .bucketing()
-            .map_or(1, |bucketing| bucketing.overlap_factor().max(1));
         let elements = index
-            .typed_array_max_items(flattened_document_properties)
-            .map(u64::from);
+            .indexed_array_fan_out(flattened_document_properties)
+            .map(|(_, max_items)| u64::from(max_items));
         has_indexed_array |= elements.is_some();
-        entries = entries.saturating_add(windows.saturating_mul(elements.unwrap_or(1).max(1)));
+        entries = entries.saturating_add(
+            index
+                .windows_per_document()
+                .saturating_mul(elements.unwrap_or(1).max(1)),
+        );
     }
     if has_indexed_array && entries > u64::from(limit) {
         return Err(consensus_or_protocol_data_contract_error(
@@ -1753,17 +1758,21 @@ fn validate_index_properties(
                 if let DocumentPropertyType::TypedArray(typed_array) =
                     &property_definition.property_type
                 {
+                    // Both checks report an element bound under the `items` schema that
+                    // declares it; the ranked one reads the array's own level
+                    let elements = format!("{}.items", index_property.name);
                     (ctx.generation.ranked_index_key_length_check)(
                         ctx.name,
                         index,
                         index_property.name.as_str(),
+                        &elements,
                         &typed_array.item_type,
                         ctx.platform_version,
                     )?;
                     check_indexable_property_shape(
                         ctx.name,
                         &index.name,
-                        &format!("{}.items", index_property.name),
+                        &elements,
                         &typed_array.item_type,
                     )?;
                     return validate_indexed_array_element(
@@ -1790,6 +1799,7 @@ fn validate_index_properties(
             (ctx.generation.ranked_index_key_length_check)(
                 ctx.name,
                 index,
+                index_property.name.as_str(),
                 index_property.name.as_str(),
                 &property_definition.property_type,
                 ctx.platform_version,
@@ -1822,9 +1832,12 @@ pub(super) fn check_indexable_property_shape(
     property_type: &DocumentPropertyType,
 ) -> Result<(), ProtocolError> {
     match property_type {
-        // Array and objects aren't supported for indexing yet. A typed array
-        // is stored inline in the document, with no index entry per element
-        // and no query operator (see Drive's `allowed_ops_for_type`).
+        // Arrays and objects are no index keys. From generation 3 an index
+        // position naming a typed array is judged by its element type (the
+        // typed-array branch of `validate_index_properties`), so a typed array
+        // reaches this arm only where no index keys it by its elements: under
+        // an earlier generation, as an indexOnly terminal, or as the field a
+        // derived index property reads.
         DocumentPropertyType::Array(_)
         | DocumentPropertyType::Object(_)
         | DocumentPropertyType::VariableTypeArray(_)
@@ -3991,16 +4004,19 @@ fn skip_if_absent_index_error(
 ) -> Option<String> {
     // The skip set the keyword declares: an indexed typed array is in every skip set of an
     // index naming it whether the keyword is declared or not, and an empty list is absent
-    // whether the array is required or not, so these rules do not judge it.
+    // whether the array is required or not, so the rules on declared skip properties do
+    // not judge it. The ranking rule at the end still reads the whole skip set, the array
+    // included: a ranking above the array is refused there too, as
+    // `validate_indexed_array_index` refuses it under full validation.
     let declared_skip_properties: Vec<&String> = index
         .skip_if_absent_properties
         .iter()
-        .filter(|property| typed_array_property(flattened_properties, property).is_none())
+        .filter(|property| index.indexed_array.as_ref() != Some(*property))
         .collect();
     if declared_skip_properties.is_empty() {
         // The array alone: the index skips a document without elements whether the keyword
         // is declared or not, so the keyword adds nothing.
-        if let Some((_, array, _)) = index.typed_arrays(flattened_properties).next() {
+        if let Some(array) = &index.indexed_array {
             return Some(format!(
                 "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but its only \
                  skip property is the typed array \"{}\", which every index naming it skips \

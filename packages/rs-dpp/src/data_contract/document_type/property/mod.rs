@@ -3286,7 +3286,9 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ),
             )),
-            // Arrays are never index keys: the parser refuses an index on one
+            // No array is keyed whole: parser generations before 3 refuse an index on
+            // one, and from generation 3 `serialize_value_for_key` keys a typed array by
+            // each element, through the element's type
             DocumentPropertyType::Array(_)
             | DocumentPropertyType::VariableTypeArray(_)
             | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::DataContractError(

@@ -1343,6 +1343,13 @@ impl Index {
         }
     }
 
+    /// How many windows of the index's `timeRange` or `integerRange` grid
+    /// hold one document: 1 for an index without one.
+    pub fn windows_per_document(&self) -> u64 {
+        self.bucketing()
+            .map_or(1, |bucketing| bucketing.overlap_factor().max(1))
+    }
+
     /// Whether this index buckets its first property (`timeRange` or
     /// `integerRange`). A bucketed index stores window starts, not the
     /// property's values, so only a resolved window selection may read it.
