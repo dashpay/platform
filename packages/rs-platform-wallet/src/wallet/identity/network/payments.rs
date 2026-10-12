@@ -5258,7 +5258,8 @@ mod tests {
 
         let (manager, persister, wallet_id) = make_wallet().await;
         let owner = Identifier::from([0xAA; 32]);
-        let contact = Identifier::from([0x01; 32]);
+        // A contact no other test registers, so the rendezvous holds only these.
+        let contact = Identifier::from([0x7E; 32]);
         let shared_key = [0x55u8; 32];
         let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -5282,9 +5283,10 @@ mod tests {
         persister.stores.lock().unwrap().clear();
 
         // Both registrations pass the early read-guard check while the
-        // account is absent: the test holds a read guard, so neither can take
-        // the write guard yet, and both queue behind it.
-        let held = manager.wallet_manager.read().await;
+        // account is absent, and meet at the rendezvous before either asks
+        // for the write guard — so the loser can only learn that the account
+        // exists from the re-check under that guard.
+        crate::wallet::identity::network::contacts::registration_rendezvous::install(contact, 2);
         let register = || {
             let iw = iw.clone();
             let payload = payload.clone();
@@ -5302,8 +5304,6 @@ mod tests {
         };
         let first = register();
         let second = register();
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        drop(held);
 
         // One of them holds the write guard inside its durable write.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -5322,6 +5322,7 @@ mod tests {
         release.send(()).expect("release the store");
 
         let mut outcomes = vec![first.await.expect("first"), second.await.expect("second")];
+        crate::wallet::identity::network::contacts::registration_rendezvous::remove(&contact);
         outcomes.sort_by_key(|outcome| *outcome == ExternalAccountRegistration::Built);
         assert_eq!(
             outcomes,

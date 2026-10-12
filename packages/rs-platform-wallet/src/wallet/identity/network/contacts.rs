@@ -551,6 +551,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // typed `insert_funds` API after the upstream split.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
+        #[cfg(test)]
+        registration_rendezvous::wait(&contact_identity_id).await;
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -674,5 +676,42 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
 
         Ok(ExternalAccountRegistration::Built)
+    }
+}
+
+/// Test-only rendezvous between [`IdentityWallet::register_external_contact_account`]'s
+/// early absence check and its write-guard acquisition, so a test can hold
+/// several registrations of one contact at exactly that point and release
+/// them together. Keyed by contact id, so registrations of every other
+/// contact — and every other test — pass straight through.
+#[cfg(test)]
+pub(crate) mod registration_rendezvous {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use dpp::prelude::Identifier;
+    use tokio::sync::Barrier;
+
+    static BARRIERS: Mutex<BTreeMap<Identifier, Arc<Barrier>>> = Mutex::new(BTreeMap::new());
+
+    /// Hold `parties` registrations of `contact` at the rendezvous until all
+    /// of them have arrived.
+    pub(crate) fn install(contact: Identifier, parties: usize) {
+        BARRIERS
+            .lock()
+            .unwrap()
+            .insert(contact, Arc::new(Barrier::new(parties)));
+    }
+
+    /// Stop holding registrations of `contact`.
+    pub(crate) fn remove(contact: &Identifier) {
+        BARRIERS.lock().unwrap().remove(contact);
+    }
+
+    pub(crate) async fn wait(contact: &Identifier) {
+        let barrier = BARRIERS.lock().unwrap().get(contact).cloned();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
     }
 }

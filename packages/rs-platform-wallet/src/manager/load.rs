@@ -13,9 +13,12 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dashcore::Address;
 use dpp::prelude::Identifier;
-use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, DerivedKey, KeySource,
+};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
@@ -1472,27 +1475,39 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
     cleared
 }
 
-/// Whether every address in `pool` is the one `xpub` derives at its index —
-/// checked by regenerating a scratch pool with the same layout.
+/// Whether every address in `pool` is the one `xpub` derives at its index.
+///
+/// Only the indices the pool actually holds are derived, one at a time, so
+/// the cost follows the restored rows: a sparse row at a huge index costs one
+/// derivation, not one per index below it. An index or derivation that fails
+/// counts as a mismatch.
 fn pool_derives_from(pool: &AddressPool, xpub: &ExtendedPubKey) -> bool {
-    let Some(highest) = pool.highest_generated else {
-        return true;
+    let key_source = KeySource::Public(*xpub);
+    pool.addresses.iter().all(|(index, info)| {
+        derived_address(pool, &key_source, *index).is_some_and(|address| address == info.address)
+    })
+}
+
+/// The address `key_source` derives at `index` in a pool laid out like
+/// `pool` — the same relative path and P2PKH encoding key-wallet uses for an
+/// ECDSA pool. `None` when the index or the derivation is invalid, or the
+/// layout cannot be derived from a public key.
+fn derived_address(pool: &AddressPool, key_source: &KeySource, index: u32) -> Option<Address> {
+    let child = |i: u32| ChildNumber::from_normal_idx(i).ok();
+    let path = match pool.pool_type {
+        AddressPoolType::External => DerivationPath::from(vec![child(0)?, child(index)?]),
+        AddressPoolType::Internal => DerivationPath::from(vec![child(1)?, child(index)?]),
+        AddressPoolType::Absent => DerivationPath::from(vec![child(index)?]),
+        // A public key cannot derive hardened children.
+        AddressPoolType::AbsentHardened => return None,
     };
-    let mut derived = AddressPool::new_without_generation(
-        pool.base_path.clone(),
-        pool.pool_type,
-        pool.gap_limit,
-        pool.network,
-    );
-    if derived
-        .generate_addresses(highest.saturating_add(1), &KeySource::Public(*xpub), true)
-        .is_err()
-    {
-        return false;
+    match key_source.derive_at_path(&path).ok()? {
+        DerivedKey::ECDSA(derived) => Some(Address::p2pkh(
+            &dashcore::PublicKey::new(derived.public_key),
+            pool.network,
+        )),
+        _ => None,
     }
-    pool.addresses
-        .iter()
-        .all(|(index, info)| derived.address_at_index(*index).as_ref() == Some(&info.address))
 }
 
 #[cfg(test)]
@@ -1741,6 +1756,58 @@ mod tests {
             1,
             "dropping the manager must release the persister immediately — an \
              idle adapter holds no strong reference to await"
+        );
+    }
+
+    /// Restored-address validation costs one derivation per restored row: a
+    /// single sparse row at index 1,000,000 is checked directly, not by
+    /// deriving every index below it, and a mismatching one is still caught
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn restored_address_validation_is_proportional_to_the_restored_rows() {
+        use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+
+        let secp = dashcore::secp256k1::Secp256k1::new();
+        let xpub = |seed: u8| {
+            ExtendedPubKey::from_priv(
+                &secp,
+                &ExtendedPrivKey::new_master(dashcore::Network::Testnet, &[seed; 32])
+                    .expect("master"),
+            )
+        };
+        let (current, previous) = (xpub(1), xpub(2));
+        let mut pool = AddressPool::new_without_generation(
+            DerivationPath::from(vec![]),
+            AddressPoolType::Absent,
+            20,
+            dashcore::Network::Testnet,
+        );
+        pool.generate_addresses(1, &KeySource::Public(current), true)
+            .expect("index 0");
+        let template = pool.addresses[&0].clone();
+        let sparse = |address| {
+            let mut pool = pool.clone();
+            let mut info = template.clone();
+            info.index = 1_000_000;
+            info.address = address;
+            pool.addresses.insert(1_000_000, info);
+            pool.highest_generated = Some(1_000_000);
+            pool
+        };
+        let at = |key: ExtendedPubKey| {
+            super::derived_address(&pool, &KeySource::Public(key), 1_000_000).expect("derives")
+        };
+
+        let started = std::time::Instant::now();
+        assert!(super::pool_derives_from(&sparse(at(current)), &current));
+        assert!(
+            !super::pool_derives_from(&sparse(at(previous)), &current),
+            "a row the current xpub does not derive is caught"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "validation must not derive every index below the sparse row"
         );
     }
 }
