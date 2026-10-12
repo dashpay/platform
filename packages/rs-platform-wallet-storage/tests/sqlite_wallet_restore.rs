@@ -1544,3 +1544,63 @@ async fn should_count_an_unrestored_reservation_once_when_startup_repair_rebuild
         );
     }
 }
+
+/// `v4.2` registered both Standard variants under the label `standard`. That
+/// label lives in the account registration; the pool rows of such a store
+/// carry the split label, so the account gets its pools back.
+#[test]
+fn should_restore_pools_of_a_standard_account_registered_under_the_legacy_label() {
+    use key_wallet::account::StandardAccountType;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let account_type = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let (persister, _tmp, path) = common::fresh_persister();
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let source = account_key_source(&wallet, account_type);
+    let reserved = with_pool(&mut info, account_type, AddressPoolType::External, |pool| {
+        pool.next_unused_and_reserve(&source, 12345).unwrap()
+    });
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    {
+        let conn = persister.lock_conn_for_test();
+        let relabelled = conn
+            .execute(
+                "UPDATE account_registrations SET account_type = 'standard' \
+                 WHERE account_type = 'standard_bip44'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(relabelled, 1);
+        let legacy_pool_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM core_address_pool WHERE account_type = 'standard'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy_pool_rows, 0, "no writer files a pool row under it");
+    }
+    drop(persister);
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
+    let mut state = persister.load().expect("a v4.2-labelled account loads");
+    assert!(!persister.last_load_degradation().degraded);
+    let restored = &mut state
+        .wallets
+        .get_mut(&wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    with_pool(restored, account_type, AddressPoolType::External, |pool| {
+        assert_eq!(
+            pool.addresses[&pool.address_index[&reserved]].state,
+            AddressState::Reserved { at: 12345 }
+        );
+    });
+}
