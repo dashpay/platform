@@ -35,6 +35,7 @@ use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
@@ -161,6 +162,24 @@ fn setup_with(contract: DataContract) -> (Drive, DataContract) {
 }
 
 fn insert(drive: &Drive, contract: &DataContract, document: &Document) {
+    create_fee(drive, contract, document, true);
+}
+
+fn update(drive: &Drive, contract: &DataContract, document: &Document) {
+    replace_fee(drive, contract, document, true);
+}
+
+fn delete(drive: &Drive, contract: &DataContract, id: u8) {
+    delete_fee(drive, contract, id, true);
+}
+
+/// What creating `document` costs, applied or only priced.
+fn create_fee(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    apply: bool,
+) -> FeeResult {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -176,15 +195,22 @@ fn insert(drive: &Drive, contract: &DataContract, document: &Document) {
             },
             false,
             BlockInfo::default(),
-            true,
+            apply,
             None,
             PlatformVersion::latest(),
             None,
         )
-        .expect("add document");
+        .expect("add document")
 }
 
-fn update(drive: &Drive, contract: &DataContract, document: &Document) {
+/// What replacing the stored post with `document` costs, applied or only
+/// priced.
+fn replace_fee(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    apply: bool,
+) -> FeeResult {
     drive
         .update_document_for_contract(
             document,
@@ -192,28 +218,29 @@ fn update(drive: &Drive, contract: &DataContract, document: &Document) {
             contract.document_type_for_name("post").expect("post"),
             Some(OWNER),
             BlockInfo::default(),
-            true,
+            apply,
             None,
             None,
             PlatformVersion::latest(),
             None,
         )
-        .expect("update document");
+        .expect("update document")
 }
 
-fn delete(drive: &Drive, contract: &DataContract, id: u8) {
+/// What deleting post `id` costs, applied or only priced.
+fn delete_fee(drive: &Drive, contract: &DataContract, id: u8, apply: bool) -> FeeResult {
     drive
         .delete_document_for_contract(
             Identifier::from([id; 32]),
             contract,
             "post",
             BlockInfo::default(),
-            true,
+            apply,
             None,
             PlatformVersion::latest(),
             None,
         )
-        .expect("delete document");
+        .expect("delete document")
 }
 
 fn text(value: &str) -> Vec<u8> {
@@ -492,82 +519,73 @@ fn should_move_only_the_changed_entries_on_update() {
 }
 
 /// Pricing a write without applying it walks the same element fan-out with
-/// estimated layers: a create and a replace of a real post, and a delete,
-/// which prices the stored post as the worst case (`maxItems` estimated
-/// elements per array, each a key of its own). None of them touches state.
+/// estimated layers, and touches no state: a create and a replace of a real
+/// post price its elements, a delete prices the stored post as the worst case
+/// (`maxItems` estimated elements per array, each a key of its own). Each
+/// estimate covers what the write then costs from the same state, including
+/// a replace moving to a disjoint element set and an array under overlapping
+/// windows, whose entries multiply.
 #[test]
-fn should_price_writes_of_an_indexed_array_without_applying_them() {
-    let (drive, contract) = setup();
-    let platform_version = PlatformVersion::latest();
-    let document_type = contract.document_type_for_name("post").expect("post");
-    let root_hash = |drive: &Drive| {
-        drive
-            .grove
-            .root_hash(None, &platform_version.drive.grove_version)
-            .unwrap()
-            .expect("root hash")
-    };
-    let document = post(1, Some(&["dash", "news"]), Some(&[[7; 32]]));
-    let before = root_hash(&drive);
-    let create = drive
-        .add_document_for_contract(
-            DocumentAndContractInfo {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefInfo((
-                        &document,
-                        StorageFlags::optional_default_as_cow(),
-                    )),
-                    owner_id: Some(OWNER),
-                },
-                contract: &contract,
-                document_type,
-            },
-            false,
-            BlockInfo::default(),
-            false,
-            None,
-            platform_version,
-            None,
-        )
-        .expect("the create is priced");
-    assert!(create.storage_fee > 0 && create.processing_fee > 0);
-    assert_eq!(root_hash(&drive), before, "pricing writes nothing");
+fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
+    let created_at = 20_000 * DAY_MS + 1_000;
+    let mut trending_post = post_created(1, created_at, &["dash", "news"]);
+    trending_post.properties_mut().remove("language");
+    for (contract, document, replaced_elements) in [
+        (
+            post_contract(),
+            post(1, Some(&["dash", "news"]), Some(&[[7; 32]])),
+            vec!["crypto", "defi", "web3"],
+        ),
+        (
+            trending_three_days_contract(),
+            trending_post,
+            vec!["crypto", "defi", "web3", "nft"],
+        ),
+    ] {
+        let (drive, contract) = setup_with(contract);
+        let platform_version = PlatformVersion::latest();
+        let root_hash = |drive: &Drive| {
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash")
+        };
+        let covers = |write: &str, estimated: FeeResult, actual: FeeResult| {
+            assert!(
+                estimated.total_base_fee() >= actual.total_base_fee(),
+                "{write}: estimated {} below actual {}",
+                estimated.total_base_fee(),
+                actual.total_base_fee()
+            );
+        };
 
-    insert(&drive, &contract, &document);
-    let stored = root_hash(&drive);
-    let mut replaced = document.clone();
-    replaced.set(
-        "hashtags",
-        Value::Array(vec![Value::Text("crypto".to_string())]),
-    );
-    let replace = drive
-        .update_document_for_contract(
-            &replaced,
-            &contract,
-            document_type,
-            Some(OWNER),
-            BlockInfo::default(),
-            false,
-            StorageFlags::optional_default_as_cow(),
-            None,
-            platform_version,
-            None,
-        )
-        .expect("the replace is priced");
-    let delete = drive
-        .delete_document_for_contract(
-            Identifier::from([1; 32]),
-            &contract,
-            "post",
-            BlockInfo::default(),
-            false,
-            None,
-            platform_version,
-            None,
-        )
-        .expect("the delete is priced");
-    assert!(replace.processing_fee > 0 && delete.processing_fee > 0);
-    assert_eq!(root_hash(&drive), stored, "pricing writes nothing");
+        let empty = root_hash(&drive);
+        let estimated = create_fee(&drive, &contract, &document, false);
+        assert_eq!(root_hash(&drive), empty, "pricing writes nothing");
+        covers(
+            "create",
+            estimated,
+            create_fee(&drive, &contract, &document, true),
+        );
+
+        let mut replaced = document.clone();
+        replaced.set("hashtags", platform_value!(replaced_elements));
+        replaced.set_revision(Some(2));
+        let stored = root_hash(&drive);
+        let estimated = replace_fee(&drive, &contract, &replaced, false);
+        assert_eq!(root_hash(&drive), stored, "pricing writes nothing");
+        covers(
+            "replace",
+            estimated,
+            replace_fee(&drive, &contract, &replaced, true),
+        );
+
+        let replaced_root = root_hash(&drive);
+        let estimated = delete_fee(&drive, &contract, 1, false);
+        assert_eq!(root_hash(&drive), replaced_root, "pricing writes nothing");
+        covers("delete", estimated, delete_fee(&drive, &contract, 1, true));
+    }
 }
 
 #[test]
@@ -1696,14 +1714,10 @@ fn should_sum_and_average_each_element_through_updates() {
     );
 }
 
-/// An array under overlapping windows: a post is entered once per window
-/// holding its `$createdAt` and per distinct element, every combination; an
-/// update moves the combinations of the elements it changes in every window,
-/// and a delete removes them all, pruning an element's trees in every window
-/// where no other post holds it.
-#[test]
-fn should_enter_a_post_per_window_and_element_across_overlapping_windows() {
-    let (drive, contract) = setup_with(post_contract_with(platform_value!({
+/// A `post` whose `hashtags` are indexed under three-day windows stepping
+/// daily (`trendingThreeDays`), so a post lies in three windows.
+fn trending_three_days_contract() -> DataContract {
+    post_contract_with(platform_value!({
         "type": "object",
         "documentsMutable": true,
         "properties": {
@@ -1721,7 +1735,17 @@ fn should_enter_a_post_per_window_and_element_across_overlapping_windows() {
             "timeRange": {"on": "$createdAt", "range": 259200, "step": 86400}
         }],
         "additionalProperties": false
-    })));
+    }))
+}
+
+/// An array under overlapping windows: a post is entered once per window
+/// holding its `$createdAt` and per distinct element, every combination; an
+/// update moves the combinations of the elements it changes in every window,
+/// and a delete removes them all, pruning an element's trees in every window
+/// where no other post holds it.
+#[test]
+fn should_enter_a_post_per_window_and_element_across_overlapping_windows() {
+    let (drive, contract) = setup_with(trending_three_days_contract());
     let document_type = contract.document_type_for_name("post").expect("post");
     let index = document_type
         .indexes()
