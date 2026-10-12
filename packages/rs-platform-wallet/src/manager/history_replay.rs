@@ -40,6 +40,10 @@ pub struct HistoryReplay {
     /// settled conflict with their descendants, and the records with unsafe
     /// amounts.
     pub retired: HashSet<Txid>,
+    /// The retired records a stored conflict winner defeated, with their
+    /// descendants. A record only left out for unsafe amounts is not among
+    /// them: nothing has proven the coins it spends free.
+    pub defeated: HashSet<Txid>,
 }
 
 impl HistoryReplay {
@@ -357,10 +361,12 @@ pub async fn replay_recorded_history(
     claims.extend(irreversible_spend_claims(&replay));
     wallet_info.restore_spent_outpoints(&claims);
     wallet_info.update_balance();
+    let defeated = swept.clone();
     swept.extend(set_aside.iter().map(|stored| stored.txid));
     HistoryReplay {
         replayed: replay.len(),
         retired: swept,
+        defeated,
     }
 }
 
@@ -2311,6 +2317,11 @@ mod tests {
         assert!(
             outcome.retired.contains(&unsafe_send.txid()),
             "a record with unsafe amounts must not reach the checker by re-dispatch either"
+        );
+        assert_eq!(
+            outcome.defeated,
+            HashSet::from([loser.txid(), descendant.txid()]),
+            "a record left out for unsafe amounts lost no conflict"
         );
         let sends = vec![
             loser.clone(),

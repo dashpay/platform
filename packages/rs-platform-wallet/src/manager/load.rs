@@ -176,6 +176,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &history_txids,
                 unused_asset_locks.values().flat_map(BTreeMap::values),
             );
+            let mut defeated = HashSet::new();
             if !recorded_history.is_empty() {
                 let offered = recorded_history.transactions.len();
                 let outcome =
@@ -189,6 +190,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 );
                 // A send the replay retired is not dispatched again below.
                 unconfirmed_outgoing_txs = outcome.resendable(unconfirmed_outgoing_txs);
+                defeated = outcome.defeated;
             }
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -254,9 +256,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracked_asset_locks.extend(account_locks);
             }
             // A host may drop a final lock's inputs from the projection while
-            // the funding's own record guards nothing.
-            wallet_info
-                .restore_spent_outpoints(&final_lock_input_claims(tracked_asset_locks.values()));
+            // the funding's own record guards nothing. A funding the replay
+            // defeated spends nothing any more, whatever its lock's status.
+            wallet_info.restore_spent_outpoints(&final_lock_input_claims(
+                tracked_asset_locks
+                    .values()
+                    .filter(|lock| !defeated.contains(&lock.transaction.txid())),
+            ));
 
             // Canonical id recomputed from the wallet's own key material.
             // Computed up front — before `insert_wallet` consumes `wallet` —
@@ -1746,6 +1752,216 @@ mod idempotent_load_tests {
         assert_eq!(
             outcomes,
             [(true, false), (true, true), (false, true), (false, true)]
+        );
+    }
+
+    /// Only a ChainLock overrules an InstantSend lock. When a stored
+    /// chain-locked spend defeats a tracked lock's funding, the funding's
+    /// other inputs are unspent again: the load must not claim them for a
+    /// transaction that no longer stands.
+    #[tokio::test]
+    async fn should_not_claim_inputs_of_a_tracked_funding_the_replay_defeated() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use dpp::prelude::AssetLockProof;
+        use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let in_block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                dashcore::BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let contested = dashcore::OutPoint {
+            txid: funding.txid(),
+            vout: 0,
+        };
+        let mut other_funding = spend_to(
+            dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([7; 32]),
+                vout: 0,
+            },
+            50_000,
+        );
+        other_funding.output[0].script_pubkey = ctx.receive_address.script_pubkey();
+        let other = dashcore::OutPoint {
+            txid: other_funding.txid(),
+            vout: 0,
+        };
+        let mut asset_lock = spend_to(contested, 120_000);
+        asset_lock.input.push(dashcore::TxIn {
+            previous_output: other,
+            ..asset_lock.input[0].clone()
+        });
+        let winner = spend_to(contested, 60_000);
+        let stored = |transaction: &dashcore::Transaction, context| StoredTransaction {
+            txid: transaction.txid(),
+            transaction: transaction.clone(),
+            context,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+        // The persisted projection: the winner's block is chain-locked, and
+        // the host withholds both inputs of the lock.
+        let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+        projection.metadata.last_applied_chain_lock =
+            Some(dashcore::ephemerealdata::chain_lock::ChainLock {
+                block_height: 150,
+                block_hash: dashcore::BlockHash::from_byte_array([150; 32]),
+                signature: [0; 96].into(),
+            });
+        let out_point = dashcore::OutPoint {
+            txid: asset_lock.txid(),
+            vout: 0,
+        };
+        let instant_lock = InstantLock {
+            txid: asset_lock.txid(),
+            inputs: vec![contested, other],
+            ..Default::default()
+        };
+        let mut wallet = ctx.wallet.clone();
+        let manager = make_history_manager(RecordedHistoryPersister {
+            wallet: ctx.wallet,
+            managed: projection,
+            history: RecordedHistory {
+                transactions: vec![
+                    stored(&asset_lock, TransactionContext::Mempool),
+                    stored(&winner, in_block(100)),
+                ],
+                instant_locks: BTreeMap::new(),
+            },
+            asset_locks: [(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction: asset_lock.clone(),
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 0,
+                    amount: 120_000,
+                    status: AssetLockStatus::InstantSendLocked,
+                    proof: Some(AssetLockProof::Instant(InstantAssetLockProof::new(
+                        instant_lock,
+                        asset_lock.clone(),
+                        0,
+                    ))),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let mut core = manager
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .expect("the loaded wallet must be registered")
+            .core_wallet
+            .clone();
+
+        for (transaction, height) in [(&funding, 90), (&other_funding, 91)] {
+            core.check_core_transaction(transaction, in_block(height), &mut wallet, true, true)
+                .await;
+        }
+
+        let holds = |outpoint| core.utxos().iter().any(|utxo| utxo.outpoint == outpoint);
+        assert!(!holds(contested), "the winner spent the contested coin");
+        assert!(
+            holds(other),
+            "the coin only the defeated funding spent is unspent again"
+        );
+    }
+
+    /// A funding left out of the replay for unsafe amounts was not defeated:
+    /// nothing proves its inputs free, so a final lock still claims them.
+    #[tokio::test]
+    async fn should_keep_the_claim_of_a_final_lock_whose_funding_was_only_left_out() {
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let coin = dashcore::OutPoint {
+            txid: funding.txid(),
+            vout: 0,
+        };
+        let asset_lock = spend_to(coin, 1 << 63);
+        let out_point = dashcore::OutPoint {
+            txid: asset_lock.txid(),
+            vout: 0,
+        };
+        let mut wallet = ctx.wallet.clone();
+        let manager = make_history_manager(RecordedHistoryPersister {
+            managed: ManagedWalletInfo::from_wallet(&ctx.wallet, 0),
+            wallet: ctx.wallet,
+            history: RecordedHistory {
+                transactions: vec![StoredTransaction {
+                    txid: asset_lock.txid(),
+                    transaction: asset_lock.clone(),
+                    context: TransactionContext::Mempool,
+                    stored_net_amount: None,
+                    stored_direction: None,
+                    owned_inputs: Vec::new(),
+                }],
+                instant_locks: BTreeMap::new(),
+            },
+            asset_locks: [(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction: asset_lock,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 0,
+                    amount: 74_000,
+                    status: AssetLockStatus::InstantSendLocked,
+                    proof: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let mut core = manager
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .expect("the loaded wallet must be registered")
+            .core_wallet
+            .clone();
+
+        let block = BlockInfo::new(90, dashcore::BlockHash::from_byte_array([90; 32]), 90);
+        core.check_core_transaction(
+            &funding,
+            TransactionContext::InBlock(block),
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+
+        assert!(
+            !core.utxos().iter().any(|utxo| utxo.outpoint == coin),
+            "the lock's input stays claimed"
         );
     }
 
