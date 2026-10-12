@@ -3453,8 +3453,11 @@ impl DocumentPropertyType {
         if value.is_empty() || !self.has_unsigned_integer_tree_key() {
             return self.decode_value_for_tree_keys(value);
         }
-        let key = self
-            .unsigned_tree_key_in_other_generation(value)
+        // Every unsigned key type is at most 16 bytes wide: flip the copy on the stack
+        let mut buffer = [0u8; 16];
+        let key = buffer
+            .get_mut(..value.len())
+            .filter(|_| self.is_unsigned_integer_tree_key_of_full_width(value))
             .ok_or_else(|| {
                 ProtocolError::DecodingError(format!(
                     "could not decode a {} from {} bytes",
@@ -3462,7 +3465,11 @@ impl DocumentPropertyType {
                     value.len()
                 ))
             })?;
-        self.decode_value_for_tree_keys(&key)
+        key.copy_from_slice(value);
+        if let Some(top) = key.first_mut() {
+            *top ^= 0b1000_0000;
+        }
+        self.decode_value_for_tree_keys(key)
     }
 
     /// The key the other tree-key generation writes for the value `key`
