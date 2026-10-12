@@ -549,7 +549,10 @@ the fees of documents whose type declares a [`ttl`](../data-model/document-ttl.m
 and the budget of a [`chooseFirst`](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)
 competitor scan (`choose_first_credits_per_candidate`, 100,000 credits a
 candidate, times `SystemLimits::max_choose_first_candidates`), which check tx
-reserves on top of a reveal's estimated fee. Platform states store only
+reserves on top of a reveal's estimated fee, and the processing fee of a
+[`where` entry comparing typed arrays](../contract-keywords/refers-to.md#typed-arrays)
+(`where_list_credits_per_element`, 100 credits for each list element it reads,
+billed before it compares them). Platform states store only
 `fee_version_number`, so neither group touches a stored format.
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The

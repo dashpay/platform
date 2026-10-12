@@ -25,6 +25,20 @@ mod typed_array_where_tests {
     };
     use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
     use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+    use crate::execution::types::execution_operation::ValidationOperation;
+    use crate::execution::types::state_transition_execution_context::{
+        StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+    };
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
+    use crate::platform_types::platform::PlatformStateRef;
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::fee::fee_result::FeeResult;
+    use dpp::validation::SimpleConsensusValidationResult;
+    use dpp::version::DefaultForPlatformVersion;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{
+        DocumentBaseTransitionAction, DocumentBaseTransitionActionV0,
+    };
     use std::collections::BTreeMap;
 
     const CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-where-typed-arrays.json";
@@ -255,6 +269,161 @@ mod typed_array_where_tests {
             )) => action.data().clone(),
             other => panic!("expected a create action, got {other:?}"),
         }
+    }
+
+    /// Validates the references of a document of `type_name` holding `data`,
+    /// written by the setup's identity, under `platform_version`, as a create's
+    /// state validation does, and returns the result with what it billed.
+    fn validate_references(
+        setup: &Setup,
+        type_name: &str,
+        data: &[(&str, Value)],
+        platform_version: &PlatformVersion,
+    ) -> (
+        SimpleConsensusValidationResult,
+        StateTransitionExecutionContext,
+    ) {
+        let (_, contract_fetch_info) = setup
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                setup.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract");
+        let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+            id: Identifier::from([0xAA; 32]),
+            identity_contract_nonce: 1,
+            document_type_name: type_name.to_string(),
+            data_contract: contract_fetch_info.expect("the contract is in state"),
+            token_cost: None,
+            shielded_token_payment: None,
+            gas_fees_paid_by: GasFeesPaidBy::default(),
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
+        });
+        let platform_state = setup.platform.state.load();
+        let platform_ref = PlatformStateRef {
+            drive: &setup.platform.drive,
+            state: &platform_state,
+            config: &setup.platform.config,
+        };
+        let data: BTreeMap<String, Value> = data
+            .iter()
+            .map(|(property, value)| (property.to_string(), value.clone()))
+            .collect();
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("expected an execution context");
+        let result = base
+            .validate_document_references(
+                &data,
+                setup.owner,
+                Some(setup.owner),
+                &DocumentSystemValues::default(),
+                None,
+                None,
+                &platform_ref,
+                &BlockInfo::default(),
+                &mut Vec::new(),
+                None,
+                &mut BTreeMap::new(),
+                None,
+                &mut execution_context,
+                platform_version,
+            )
+            .expect("expected the references to be validated");
+        (result, execution_context)
+    }
+
+    /// The processing fee of everything the validation billed.
+    fn processing_fee(execution_context: &StateTransitionExecutionContext) -> u64 {
+        let mut fee = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(
+            execution_context.operations_slice(),
+            &mut fee,
+            PlatformVersion::latest(),
+        )
+        .expect("expected the operations to sum");
+        fee.processing_fee
+    }
+
+    /// Every list element an entry over lists reads is billed before it is
+    /// compared, on both sides, the refused write too: an equality reads both
+    /// lists, a `containsAll` the post's and the document's, a `contains` the
+    /// post's.
+    #[tokio::test]
+    async fn should_bill_every_list_element_a_where_entry_reads() {
+        let mut setup = Setup::new(CONTRACT_PATH, 6108);
+        let post = setup
+            .post(&[("tags", texts(&["dash", "news", "tech"]))])
+            .await;
+        let post_id = ("postId", Value::Identifier(post.to_buffer()));
+        let per_element = |credits: u64| {
+            let mut platform_version = PlatformVersion::latest().clone();
+            platform_version
+                .fee_version
+                .document_reference
+                .where_list_credits_per_element = credits;
+            platform_version
+        };
+        let (free, seven) = (per_element(0), per_element(7));
+
+        for (type_name, data, holds, elements) in [
+            ("like", ("tags", texts(&["dash", "news", "tech"])), true, 6),
+            ("subset", ("tags", texts(&["news", "dash"])), true, 5),
+            ("subset", ("tags", texts(&["sport"])), false, 4),
+            ("tagged", ("tag", Value::Text("tech".to_string())), true, 3),
+        ] {
+            let data = [post_id.clone(), data];
+            let (result, billed) = validate_references(&setup, type_name, &data, &seven);
+            assert_eq!(result.is_valid(), holds, "{type_name}: {result:?}");
+            let (_, unbilled) = validate_references(&setup, type_name, &data, &free);
+            assert_eq!(
+                processing_fee(&billed) - processing_fee(&unbilled),
+                7 * elements,
+                "{type_name} bills {elements} elements"
+            );
+        }
+    }
+
+    /// An integer list may be carried as whole floats, which compare with the
+    /// post's integers as a scalar equality compares them: 1.0 is 1, `-0.0` is
+    /// not 0. A `containsAll` of many repeated floats looks each up, billed by
+    /// the elements read.
+    #[tokio::test]
+    async fn should_compare_floats_in_an_integer_list_as_scalars() {
+        let mut setup = Setup::new(CONTRACT_PATH, 6109);
+        let post = setup
+            .post(&[("scores", Value::Array(vec![Value::U16(0), Value::U16(1)]))])
+            .await;
+        let post_id = ("postId", Value::Identifier(post.to_buffer()));
+
+        let ones = Value::Array(vec![Value::Float(1.0); 1024]);
+        let (result, _) = validate_references(
+            &setup,
+            "scoreSubset",
+            &[post_id.clone(), ("scores", ones)],
+            PlatformVersion::latest(),
+        );
+        assert!(result.is_valid(), "1.0 is the integer 1: {result:?}");
+
+        let negative_zero = Value::Array(vec![Value::Float(-0.0)]);
+        let (result, _) = validate_references(
+            &setup,
+            "scoreSubset",
+            &[post_id, ("scores", negative_zero)],
+            PlatformVersion::latest(),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPropertyMismatchError(e))]
+                if e.referring_property() == "{ \"containsAll\": \"scores\" }",
+            "-0.0 is not the integer 0"
+        );
     }
 
     /// A `contains` holds when the post's list holds the referring value; a

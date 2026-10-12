@@ -25,7 +25,8 @@ use dpp::data_contract::document_type::property_constraints::{
     referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
 };
 use dpp::data_contract::document_type::{
-    typed_array_property, where_lists_equal, WhereBoundRead, WhereCondition, WhereLiteralKind,
+    typed_array_property, where_lists_elements_read, where_lists_equal, WhereBoundRead,
+    WhereCondition, WhereLiteralKind,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{ID, OWNER_ID};
@@ -1452,6 +1453,8 @@ fn validate_reference_target_v0(
                         referring_system,
                         path,
                         rule_reads,
+                        execution_context,
+                        platform_version,
                     );
                 }
             }
@@ -1542,6 +1545,14 @@ fn validate_reference_target_v0(
                     )
                     .is_some();
                     if lists {
+                        bill_where_list_elements(
+                            where_lists_elements_read(
+                                referring_value.as_deref(),
+                                referenced_value.as_deref(),
+                            ),
+                            execution_context,
+                            platform_version,
+                        )?;
                         if !where_lists_equal(
                             referring_value.as_deref(),
                             referenced_value.as_deref(),
@@ -1589,6 +1600,11 @@ fn validate_reference_target_v0(
                     else {
                         return Ok(condition_mismatch(path, condition, referenced_property));
                     };
+                    bill_where_list_elements(
+                        condition.list_elements_read(referenced_value.as_deref(), bound.as_deref()),
+                        execution_context,
+                        platform_version,
+                    )?;
                     if !condition.holds(referenced_value.as_deref(), kind, bound.as_deref()) {
                         return Ok(condition_mismatch(path, condition, referenced_property));
                     }
@@ -2163,6 +2179,40 @@ fn condition_mismatch(
     )
 }
 
+/// Bills `elements`, the list elements a `where` entry comparing typed arrays
+/// reads (`where_lists_elements_read`, `WhereCondition::list_elements_read`),
+/// before it compares them: `where_list_credits_per_element` each, of the
+/// fee schedule's document reference group. Nothing for an entry comparing
+/// single values, which reads none. Every list holds at most
+/// `max_typed_array_items` elements, so the product never nears overflow; an
+/// overflow is still an error rather than a wrapped bill.
+fn bill_where_list_elements(
+    elements: usize,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if elements == 0 {
+        return Ok(());
+    }
+    let credits = u64::try_from(elements)
+        .ok()
+        .and_then(|elements| {
+            elements.checked_mul(
+                platform_version
+                    .fee_version
+                    .document_reference
+                    .where_list_credits_per_element,
+            )
+        })
+        .ok_or(Error::Execution(ExecutionError::Overflow(
+            "where list comparison fee overflow",
+        )))?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        FeeResult::new_from_processing_fee(credits),
+    ));
+    Ok(())
+}
+
 /// The value of the bound `condition` compares the referenced side with, read
 /// from the referring document: a property of `document_data` (`None` when it
 /// leaves it out), the writer `owner_id`, or a time or height of
@@ -2259,7 +2309,9 @@ impl RemovalRecord<'_> {
 /// it is, unless a rule reads the document through the reference: then every
 /// entry is checked, as the replace checks every entry against a document in
 /// state, and registration keeps each to what every record holds. No read: the
-/// record was read and billed by the caller.
+/// record was read and billed by the caller. The list elements an entry
+/// comparing typed arrays reads are billed before it compares them
+/// ([`bill_where_list_elements`]), as against a document in state.
 ///
 /// In place in generation 0: reached from protocol version 14 only, the only
 /// version whose parser produces a `moderatedDocument` reference.
@@ -2276,6 +2328,8 @@ fn validate_pairs_against_removal(
     referring_system: &DocumentSystemValues,
     path: &str,
     rule_reads: Option<RuleReads<'_>>,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let mut record = RemovalRecord {
         removal,
@@ -2325,6 +2379,11 @@ fn validate_pairs_against_removal(
         )
         .is_some();
         let holds = if lists {
+            bill_where_list_elements(
+                where_lists_elements_read(referring_value.as_deref(), referenced_value.as_ref()),
+                execution_context,
+                platform_version,
+            )?;
             where_lists_equal(referring_value.as_deref(), referenced_value.as_ref())
         } else {
             match (referring_value, referenced_value) {
@@ -2368,6 +2427,11 @@ fn validate_pairs_against_removal(
         else {
             return Ok(condition_mismatch(path, condition, referenced_property));
         };
+        bill_where_list_elements(
+            condition.list_elements_read(referenced_value.as_ref(), bound.as_deref()),
+            execution_context,
+            platform_version,
+        )?;
         if !condition.holds(referenced_value.as_ref(), kind, bound.as_deref()) {
             return Ok(condition_mismatch(path, condition, referenced_property));
         }

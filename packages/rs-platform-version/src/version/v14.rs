@@ -2604,7 +2604,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     still refuse a typed array. Document reference validation 0 (in place)
 ///     checks them against the document found or the removal record, refusing
 ///     with 40127, and refuses an entry whose referring path is no object on
-///     the way as a mismatch. `Index::preallocation_bindings` and
+///     the way as a mismatch. Before comparing, it bills the list elements
+///     such an entry reads, both lists for an equality and a `containsAll`, the
+///     referenced one for a `contains`, at
+///     `FEE_VERSION3.document_reference.where_list_credits_per_element` (100
+///     credits, a field added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`,
+///     which every schedule carries and only this version reads). `Index::preallocation_bindings` and
 ///     `Index::count_index_derivations` bind no index property that is a typed
 ///     array, so no preallocated or `summableOffCountIndex` index is keyed
 ///     through a pair of lists; inert while an indexOnly type, the only one
