@@ -436,9 +436,33 @@ let identity_id = drive.fetch_identity_id_by_unique_public_key_hash(
 ```rust
 // Returns all identity IDs registered under this non-unique key hash
 let identity_ids = drive.fetch_identity_ids_by_non_unique_public_key_hash(
-    key_hash, transaction, platform_version
+    key_hash, None, None, transaction, platform_version
 )?;
 ```
+
+### Proved non-unique identity lookup
+
+`getIdentityByNonUniquePublicKeyHash` returns the first matching identity in
+lexicographic identity-ID byte order. `start_after` is exclusive; use the returned
+ID to fetch the next match. A proved response contains one standard `Proof`
+(result field 4). It proves the complete index prefix through that identity and
+all its keys, balance and revision at the same signed root. An absent hash or
+exhausted cursor proves the entire remaining range is empty. A missing identity
+referenced by the index is a proof error, rather than an empty result.
+
+Clients reconstruct the query using the producer protocol version in signed
+metadata and retain their verification security floor. Unsupported future query
+versions require an SDK update and fail closed. The Rust SDK still returns
+`Option<Identity>`; high-level WASM/JavaScript APIs retain their existing result
+shape. The direct WASM verifier takes one proof blob and returns a root that the
+caller must authenticate independently.
+
+The nested double-proof response (retired field 2) has been removed with no
+fallback. Stable v4.1.1 clients and nodes use that old format and are incompatible
+with this proved endpoint during a mixed rollout. Update clients and nodes
+together; mismatched or unsupported-future-version responses can trigger the
+existing SDK retry and node-ban behavior. Unproved response field 1 and the
+request fields remain unchanged.
 
 **Fetch all keys for an identity:**
 ```rust

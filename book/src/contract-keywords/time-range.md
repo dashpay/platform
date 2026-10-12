@@ -88,6 +88,8 @@ On an index-only type, a window with a `ttl` may also declare [`outlivesDelete`]
 - A `refersTo` `findBy` cannot resolve through a time-range index. See [findBy](refers-to-lookup.md).
 - On an [index-only type](index-only.md), only `$createdAt` can be bucketed, and a bucketed index cannot serve as the type's proof index.
 
+- The index may name a [typed array](indexes.md#typed-arrays) after the bucketed property, which enters the document once per window and element: the array's `maxItems` is then at most 4 (`InvalidIndexedPropertyConstraintError`, 10205).
+
 A broken rule is refused as `InvalidContractStructure` (10231), or by the meta-schema as `JsonSchemaError` (10101). Before protocol version 14 the keyword is unknown and refused.
 
 ## See also

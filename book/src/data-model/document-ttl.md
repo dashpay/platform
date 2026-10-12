@@ -165,9 +165,11 @@ document of such a type:
 - **Deletion.** Creating the document prepays, as processing, what its deletion will cost:
   `cleanup_base_processing_cost` (1,200,000), plus `cleanup_processing_cost_per_index_level`
   (400,000) per index level of the type, where an index counts its properties, times the
-  overlapping windows of a `timeRange` index, plus `cleanup_processing_cost_per_document_byte`
-  (420, what removing and reading a byte costs) per byte of the stored document. The cleanup
-  itself bills nobody.
+  overlapping windows of a `timeRange` or `integerRange` index, and an index naming a
+  [typed array](../contract-keywords/typed-arrays.md) counts the levels above the array once
+  and the array's level and those below it once per element its `maxItems` allows, plus
+  `cleanup_processing_cost_per_document_byte` (420, what removing and reading a byte costs)
+  per byte of the stored document. The cleanup itself bills nobody.
 - **Changes.** A replace, transfer, purchase or price update prices the bytes it adds by the
   lifetime left at that block, and prepays the deletion of the document bytes it adds at
   `cleanup_processing_cost_per_document_byte`. A deletion by the owner or a moderator pays its

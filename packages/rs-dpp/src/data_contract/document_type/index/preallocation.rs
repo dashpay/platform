@@ -56,10 +56,11 @@ pub enum PreallocatedKeySource<'a> {
     /// its value is the named property of the referenced document, which may
     /// be one of its `$ownerId` and `$creatorId` system identifiers as well
     /// as a schema property. The two sides are validated to share one value
-    /// kind, so encoding the referenced document's value yields the same key
-    /// bytes the referring side would produce; the insert path resolves the
-    /// name through the same document accessor the entry walkers key by,
-    /// which serves the two system names alongside the schema properties.
+    /// kind; the insert path resolves the name through the same document
+    /// accessor the entry walkers key by, which serves the two system names
+    /// alongside the schema properties, then keys the value as the referring
+    /// type keys its property (an unsigned integer can be keyed in a
+    /// different generation on each side).
     ReferencedDocumentProperty(&'a str),
 }
 
@@ -215,8 +216,9 @@ impl Index {
             let Some(property) = flattened_properties.get(&candidate.name) else {
                 continue;
             };
-            // Only a scalar reference can bind: an index property is never a
-            // typed array, so element references never reach an index. A
+            // Only a scalar reference can bind: a preallocated index is on an
+            // indexOnly type, which indexes no typed array, so element
+            // references never reach one. A
             // lookup reference of either kind never matches either: its value
             // is not the referenced document's `$id`. Nor
             // does a reference expression (`anyOf` / `allOf`), even of
@@ -371,6 +373,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -501,6 +504,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
         );

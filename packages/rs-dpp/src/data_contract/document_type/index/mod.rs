@@ -41,6 +41,7 @@ pub mod preallocation;
 pub mod random_index;
 pub mod summable_off_count_index;
 pub mod time_range;
+mod typed_arrays;
 
 pub use bucketing::IndexBucketing;
 pub(crate) use derived_index_property::{
@@ -1013,8 +1014,12 @@ pub struct Index {
     pub skip_if_absent: bool,
     /// The skip set of a `skipIfAbsent` index, in index-property order: a
     /// document takes part in the index exactly when it carries every one of
-    /// these properties. On a parsed document type this is empty exactly when
-    /// `skip_if_absent` is `false`. The index parser alone cannot resolve
+    /// these properties. An indexed typed array (protocol version 14) is in
+    /// the skip set of every index naming it, declared or not: a document
+    /// whose list is empty or absent has no element to be keyed by. On a
+    /// parsed document type the set is therefore empty exactly when
+    /// `skip_if_absent` is `false` and the index names no typed array. The
+    /// index parser alone cannot resolve
     /// `skipIfAbsent: true` (the set is the index's optional properties, and
     /// optionality is a document-type fact), so it leaves the set empty for
     /// that spelling and the document type parser fills it in before the
@@ -1032,6 +1037,21 @@ pub struct Index {
     // `serde(default)`: see `skip_if_absent`.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub summable_off_count_index: Option<String>,
+    /// The typed array this index keys a document by the elements of
+    /// (protocol version 14), stamped by the document type parser on every
+    /// parse, which alone knows the property types. The array is also in
+    /// [`Self::skip_if_absent_properties`], declared or not; this says which
+    /// member of that set it is, since an element binds the array while a
+    /// declared skip property is bound only by a value no missing one can
+    /// meet (`index_admissible_for_skip_if_absent`). `None` on every index
+    /// that names no typed array.
+    //
+    // `serde(default)`: see `skip_if_absent`.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub indexed_array: Option<String>,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -1323,6 +1343,13 @@ impl Index {
         }
     }
 
+    /// How many windows of the index's `timeRange` or `integerRange` grid
+    /// hold one document: 1 for an index without one.
+    pub fn windows_per_document(&self) -> u64 {
+        self.bucketing()
+            .map_or(1, |bucketing| bucketing.overlap_factor().max(1))
+    }
+
     /// Whether this index buckets its first property (`timeRange` or
     /// `integerRange`). A bucketed index stores window starts, not the
     /// property's values, so only a resolved window selection may read it.
@@ -1506,6 +1533,23 @@ impl Index {
     /// group, no entry per document.
     pub fn is_summable_off_count_index(&self) -> bool {
         self.summable_off_count_index.is_some()
+    }
+
+    /// Whether this index is `rangeSummable` and ends with `property`. The
+    /// tree holding `property`'s values then keeps a signed sum in every node,
+    /// so `serialize_value_for_key` 1 keys such a property, when unsigned, as
+    /// generation 0 at every protocol version: values of both signs whose
+    /// sums fit every node in the earlier key order can leave the signed
+    /// 64-bit range in every balanced tree of value order, and a summed
+    /// property's type does not tell its stored values are never negative
+    /// (an update before protocol version 14 can make a property holding
+    /// negative values unsigned).
+    pub fn ends_range_summable_with(&self, property: &str) -> bool {
+        self.range_summable
+            && self
+                .properties
+                .last()
+                .is_some_and(|last| last.name == property)
     }
 
     /// The position of the shallowest level of this index's count chain: the
@@ -3299,6 +3343,7 @@ impl Index {
             skip_if_absent,
             skip_if_absent_properties,
             summable_off_count_index,
+            indexed_array: None,
         })
     }
 }
@@ -3380,6 +3425,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -7259,6 +7305,7 @@ mod json_convertible_tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 

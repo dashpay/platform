@@ -74,4 +74,9 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 0,
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
     max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_indexed_array_items: None,
+    max_windowed_indexed_array_items: None,
+    max_index_entries_per_document: None,
+    max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
+    max_rekey_batch_moves: None,        // read only by the protocol version 14 upgrade
 };

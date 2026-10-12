@@ -19,6 +19,8 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentPropertyType;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -262,6 +264,31 @@ pub(crate) fn bound_value_fits_referring_property(
         .encode_value_for_tree_keys(value)?
         .len();
     Ok(width <= usize::from(max_width))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// `key`, which `target` wrote for its `referenced_property`, as `referring`
+/// writes the same value for its `referring_property`. Registration pairs the
+/// two with one property type, but an unsigned integer can still be keyed in
+/// a different generation on each side (a property ending an index that
+/// is `rangeSummable` keeps generation 0), so the key is
+/// carried through generation 0 from one codec to the other.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_tree_key_for_referring_property(
+    key: Vec<u8>,
+    target: DocumentTypeRef,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let key_in_generation_0 =
+        target.tree_key_into_generation_0(referenced_property, key, platform_version)?;
+    Ok(referring.tree_key_from_generation_0(
+        referring_property,
+        &key_in_generation_0,
+        platform_version,
+    )?)
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]

@@ -534,29 +534,27 @@ fn should_refuse_a_condition_reading_a_total_on_both_modes() {
     }
 }
 
-/// `$old.` is the stored document, which only a replace has: a
-/// `propertyConstraints` rule judges a create too.
+/// A `propertyConstraints` rule reads the stored document through `$old.` as
+/// a condition does, on both paths: a create, which has none, reads it absent.
 #[test]
-fn should_refuse_a_stored_read_in_a_property_constraints_rule() {
+fn should_read_the_stored_document_in_a_property_constraints_rule() {
     let schema = post_schema_with(
         "propertyConstraints",
         platform_value!({ "keepsMeta": { "present": "$old.meta" } }),
     );
-    // The meta-schema's path pattern refuses it first under full validation;
-    // the parse refuses it on the stored path as well
-    assert!(parse_with(schema.clone(), PlatformVersion::latest(), true).is_err());
-    expect_structure_error(
-        parse_with(schema, PlatformVersion::latest(), false),
-        "rule \"keepsMeta\" reads \"$old.meta\", but only a condition judging a replace (an \
-         `immutable` entry's, or `retractedWhen`) reads the stored document",
-    );
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .unwrap_or_else(|error| {
+                panic!("the rule should parse (full_validation: {full_validation}): {error}")
+            });
+        assert!(document_type.property_constraints()["keepsMeta"].reads_stored());
+    }
 }
 
 /// A `countPresent` in a condition judging a replace counts the stored
 /// document's properties through `$old.` and the written one's without it:
 /// `meta` frozen once both hold a `meta.tag` holds only when each does.
-/// The same paths in a `propertyConstraints` rule, which judges creates too,
-/// are refused.
+/// The same paths parse in a `propertyConstraints` rule.
 #[test]
 fn should_count_stored_and_written_properties_in_a_condition() {
     let when = platform_value!({
@@ -607,13 +605,12 @@ fn should_count_stored_and_written_properties_in_a_condition() {
         "propertyConstraints",
         platform_value!({ "keepsTag": { "equal": [{ "countPresent": ["$old.meta.tag", "meta.tag"] }, 2] } }),
     );
-    // The meta-schema's path pattern refuses it first under full validation;
-    // the parse refuses it on the stored path as well
-    assert!(parse_with(schema.clone(), PlatformVersion::latest(), true).is_err());
-    expect_structure_error(
-        parse_with(schema, PlatformVersion::latest(), false),
-        "rule \"keepsTag\" reads \"$old.meta.tag\", but only a condition judging a replace",
-    );
+    for full_validation in [false, true] {
+        assert!(
+            parse_with(schema.clone(), PlatformVersion::latest(), full_validation).is_ok(),
+            "full_validation: {full_validation}"
+        );
+    }
 }
 
 /// The lints are validation-only, as for the entries without a condition.

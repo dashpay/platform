@@ -461,7 +461,7 @@ mod encrypted_for_tests {
             creator_id: None,
             moderated_at: None,
             moderated_by: None,
-            property_constraint_aggregates: Default::default(),
+            property_constraint_reads: Default::default(),
         });
 
         let before = action

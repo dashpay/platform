@@ -59,6 +59,8 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
@@ -67,7 +69,7 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources, validate_referencing_rules,
+    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
 };
 
 mod ranked_prefix_overlap;
@@ -156,6 +158,7 @@ fn validate_ranked_index_property_key_length(
     document_type_name: &str,
     index: &Index,
     index_property_name: &str,
+    reported_property_name: &str,
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
@@ -170,9 +173,12 @@ fn validate_ranked_index_property_key_length(
         return Ok(());
     };
 
-    // A typed array is no index key at all, and its byte bound measures the
-    // whole list: the property-type check right after this one rejects it
-    // with the error that explains the problem.
+    // A typed array an index names is keyed by its elements, and the
+    // index-property check judges it here through the element type, so a
+    // typed array reaching this check whole is the field a derived index
+    // property reads: its byte bound measures the whole list, and the
+    // property-type check right after this one rejects it with the error
+    // that explains the problem.
     if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
         return Ok(());
     }
@@ -239,7 +245,7 @@ fn validate_ranked_index_property_key_length(
         InvalidIndexedPropertyConstraintError::new(
             document_type_name.to_owned(),
             index.name.to_owned(),
-            index_property_name.to_owned(),
+            reported_property_name.to_owned(),
             constraint_name.to_string(),
             reason,
         )
@@ -511,6 +517,9 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
+            // INDEXED ARRAYS: an index keyed by the elements of a typed array
+            // (`validate_indexed_array_index`).
+            admit_indexed_arrays: true,
         },
         platform_version,
     )?;
@@ -643,6 +652,10 @@ fn parse_generation_3(
         full_validation,
         platform_version,
     )?;
+    // After `apply_property_constraints` and `apply_moderator_abilities`: whether the type
+    // keeps the revision `$revision` reads, and has a write replacing the stored version a rule
+    // reads through `$old.`, depends on the fields it keeps for its moderators too.
+    validate_stored_version_reads(&v2, name).map_err(consensus_or_protocol_data_contract_error)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
         &mut v2,
@@ -683,6 +696,7 @@ fn parse_generation_3(
         validate_no_immutable_contract_owner_requirements(&v2, name)?;
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
+        validate_integer_range_sources_keyed_in_value_order(&v2, name)?;
     }
     // The property an `inList` reference reads the list's document through; the
     // list itself is checked where the referenced type is in hand. In every
@@ -973,6 +987,7 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             validate_ranked_index_property_key_length(
                                 name,
                                 index,
+                                &index_property.name,
                                 &index_property.name,
                                 &property.property_type,
                                 platform_version,
@@ -1322,6 +1337,49 @@ fn validate_no_transient_index_properties(
                 )),
             ));
         }
+    }
+    Ok(())
+}
+
+/// No `integerRange` buckets an unsigned property keyed the earlier way.
+/// A grid reads and writes its source's keys as generation 1 of
+/// `serialize_value_for_key` keys unsigned values (`IntegerRangeKeyType`),
+/// while an unsigned property that ends a `rangeSummable` index keeps
+/// generation 0's keys at every protocol version
+/// ([`Index::ends_range_summable_with`]), so the two can't share a property.
+/// A signed source keeps its signed keys either way.
+///
+/// Full validation only, like the other index checks: only this generation
+/// (protocol version 14) admits `integerRange`.
+#[cfg(feature = "validation")]
+fn validate_integer_range_sources_keyed_in_value_order(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        let Some(transform) = &index.integer_range else {
+            continue;
+        };
+        if transform.key_type.min_value() < 0
+            || DocumentTypeRef::V2(document_type)
+                .tree_keys_differ_between_generations(&transform.source)
+        {
+            continue;
+        }
+        let summing = document_type
+            .indices
+            .values()
+            .find(|other| other.ends_range_summable_with(&transform.source))
+            .map_or("", |other| other.name.as_str());
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "integerRange.on (\"{}\") of index \"{}\" of document type \"{name}\" names \
+                 a property that the rangeSummable index \"{summing}\" ends with: such a \
+                 property keeps its earlier key encoding, which an integerRange grid does not \
+                 read; bucket another property",
+                transform.source, index.name
+            )),
+        ));
     }
     Ok(())
 }
@@ -1909,6 +1967,8 @@ impl DocumentType {
 #[cfg(all(test, feature = "validation"))]
 mod byte_array_reads_tests;
 #[cfg(all(test, feature = "validation"))]
+mod choose_first_tests;
+#[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
@@ -1926,6 +1986,8 @@ mod expiring_summed_value_bounds_tests;
 mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
+#[cfg(all(test, feature = "validation"))]
+mod indexed_array_tests;
 #[cfg(all(test, feature = "validation"))]
 mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -1973,6 +2035,8 @@ mod referenced_rule_tests;
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
+#[cfg(all(test, feature = "validation"))]
+mod stored_version_reads_tests;
 #[cfg(all(test, feature = "validation"))]
 mod string_find_by_key_tests;
 #[cfg(all(test, feature = "validation"))]
