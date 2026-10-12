@@ -38,6 +38,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
+use drive::error::Error as DriveError;
 use drive::query::{
     BindingSource, DriveDocumentQuery, DriveSubQuery, SubQueryBinding, SubQueryKind,
     SubQueryResult, MAX_SUB_QUERIES,
@@ -55,6 +56,14 @@ struct DecodedSubQuery {
     order_by: Vec<drive::query::OrderClause>,
     limit: Option<u16>,
     binding: Option<SubQueryBinding>,
+}
+
+/// Drive query errors identify caller mistakes; storage failures remain node faults.
+fn composite_query_error(error: DriveError) -> Result<QueryError, Error> {
+    match error {
+        DriveError::Query(query_error) => Ok(QueryError::Query(query_error)),
+        error => Err(error.into()),
+    }
 }
 
 impl<C> Platform<C> {
@@ -283,12 +292,11 @@ impl<C> Platform<C> {
         // before any execution.
         match composite.validate_composite(platform_version) {
             Ok(()) => {}
-            Err(drive::error::Error::Query(query_error)) => {
-                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    query_error,
-                )));
+            Err(error) => {
+                return Ok(QueryValidationResult::new_with_error(
+                    composite_query_error(error)?,
+                ));
             }
-            Err(e) => return Err(e.into()),
         }
 
         let response = if prove {
@@ -297,12 +305,11 @@ impl<C> Platform<C> {
                 .query_composite_documents_with_proof(&composite, platform_version)
             {
                 Ok(result) => result,
-                Err(drive::error::Error::Query(query_error)) => {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        query_error,
-                    )));
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        composite_query_error(error)?,
+                    ));
                 }
-                Err(e) => return Err(e.into()),
             };
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, merged_proof, GroveDBToUse::Current)?;
@@ -317,12 +324,11 @@ impl<C> Platform<C> {
                     .query_composite_documents(&composite, None, None, platform_version)
                 {
                     Ok(outcome) => outcome,
-                    Err(drive::error::Error::Query(query_error)) => {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            query_error,
-                        )));
+                    Err(error) => {
+                        return Ok(QueryValidationResult::new_with_error(
+                            composite_query_error(error)?,
+                        ));
                     }
-                    Err(e) => return Err(e.into()),
                 };
             let serialize_all = |documents: &[dpp::document::Document],
                                  sub: Option<&DriveSubQuery>|
@@ -396,6 +402,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::service::query_result_into_response;
     use crate::query::tests::{
         assert_invalid_argument_status, removal_of, remove_post_by_moderator, setup_platform,
         store_data_contract, store_document, with_moderated_posts,
@@ -411,6 +418,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::Result as ResponseResult;
     use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
     use dapi_grpc::platform::v0::GetDocumentsRequest;
+    use dapi_grpc::tonic::Code;
     use dpp::dashcore::Network;
     use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -420,7 +428,39 @@ mod tests {
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_json_value};
     use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+    use drive::grovedb::Error as GroveError;
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
+
+    #[test]
+    fn should_keep_grovedb_faults_internal_for_composite_queries() {
+        const CAPABILITY: &str =
+            "per-instance query limits (Query::limit) require a grove version that serves them";
+        for grove_error in [
+            GroveError::NotSupported(CAPABILITY.to_owned()),
+            GroveError::NotSupported("different unsupported storage operation".to_owned()),
+            GroveError::NotSupported(format!("{CAPABILITY} extra")),
+            GroveError::InvalidQuery(CAPABILITY),
+            GroveError::CorruptedData(CAPABILITY.to_owned()),
+        ] {
+            let result: Result<QueryValidationResult<()>, Error> =
+                composite_query_error(DriveError::GroveDB(Box::new(grove_error)))
+                    .map(QueryValidationResult::new_with_error);
+            let status = query_result_into_response(result)
+                .expect_err("classification returns an error response");
+            assert_eq!(status.code(), Code::Internal);
+        }
+        let result: Result<QueryValidationResult<()>, Error> =
+            composite_query_error(DriveError::Query(QuerySyntaxError::Unsupported(
+                "existing proof-shape rejection".to_owned(),
+            )))
+            .map(QueryValidationResult::new_with_error);
+        let status = query_result_into_response(result).unwrap_err();
+        assert_eq!(status.code(), Code::InvalidArgument);
+        assert_eq!(
+            status.message(),
+            "unsupported error: existing proof-shape rejection"
+        );
+    }
 
     const FEED_CONTRACT_PATH: &str =
         "../rs-drive/tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";

@@ -106,6 +106,13 @@ pub struct DriveDocumentQueryMethodVersions {
     /// structurally and reports duplicate-field and overlap errors
     /// instead. Flips together with `non_primary_key_path_query`.
     pub where_clause_grouping: FeatureVersion,
+    /// Reading a query's `startAt`/`startAfter` cursor document from the
+    /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
+    /// any other element as a corrupted path, so a cursor on a
+    /// `documentsSummable` type, whose documents are stored as
+    /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
+    /// decodes any item element, as the proof verifier always has.
+    pub start_at_document: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -115,6 +115,9 @@ use crate::version::system_limits::SystemLimits;
 ///   `chooseFirst` reads at most 1,000 competitors of the commitment it found
 ///   (`max_choose_first_candidates`, backfilled into the earlier tables, whose validation never
 ///   reads it).
+/// * Unsigned index value keys (protocol version 14): the first block of the version rewrites
+///   the keys of unsigned integer index values, applying its moves in batches of 10,000 moves
+///   (`max_rekey_batch_moves`). `None` in the earlier tables, which never run the rewrite.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // The page matches one notes-tree chunk (2^11). A batch holds at most that
     // page's missing rhos; GroveDB accepts a Vec of operations with no smaller API cap.
@@ -186,4 +189,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
     max_choose_first_candidates: 1_000, // refersTo chooseFirst (new in v14): competitors a create reads, oldest first
+    max_rekey_batch_moves: Some(10_000), // the protocol version 14 rewrite of unsigned index value keys applies its moves in batches of this many moves
 };

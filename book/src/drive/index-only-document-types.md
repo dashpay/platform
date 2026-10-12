@@ -47,7 +47,7 @@ count/ranked trees exactly as References do.
 The member key is the terminal value's **tree-key encoding**, produced by
 the same functions the prefix levels use (the walkers and probes through
 `get_raw_for_document_type`, queries and executed proofs through
-`serialize_value_for_key`, synthesis through `decode_value_for_tree_keys`),
+`serialize_value_for_key`, synthesis through `deserialize_value_for_key`),
 so nothing about it is specific to a 32-byte identifier: a 33-byte public
 key, a short string or an integer keys the `0` bucket exactly as it would
 key a prefix level, and fee estimation sizes the member key by the
@@ -440,7 +440,7 @@ absent tree.
 An entry's proved `(path, key)` position IS the document, so queries and
 proofs **synthesize** documents through one shared builder
 (`query/index_only_synthesis.rs`, compiled for server and verify): prefix
-properties decoded from the path via `decode_value_for_tree_keys` (the
+properties decoded from the path via `deserialize_value_for_key` (the
 inverse of the write path's key encoding), the terminal from the member
 key. A query through a subset index yields a documented *projection*. The
 synthesized `$id` is deterministic over the proved position (a

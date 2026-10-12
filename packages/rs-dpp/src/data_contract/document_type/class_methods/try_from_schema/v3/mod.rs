@@ -59,6 +59,8 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
@@ -683,6 +685,7 @@ fn parse_generation_3(
         validate_no_immutable_contract_owner_requirements(&v2, name)?;
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
+        validate_integer_range_sources_keyed_in_value_order(&v2, name)?;
     }
     // The property an `inList` reference reads the list's document through; the
     // list itself is checked where the referenced type is in hand. In every
@@ -1322,6 +1325,49 @@ fn validate_no_transient_index_properties(
                 )),
             ));
         }
+    }
+    Ok(())
+}
+
+/// No `integerRange` buckets an unsigned property keyed the earlier way.
+/// A grid reads and writes its source's keys as generation 1 of
+/// `serialize_value_for_key` keys unsigned values (`IntegerRangeKeyType`),
+/// while an unsigned property that ends a `rangeSummable` index keeps
+/// generation 0's keys at every protocol version
+/// ([`Index::ends_range_summable_with`]), so the two can't share a property.
+/// A signed source keeps its signed keys either way.
+///
+/// Full validation only, like the other index checks: only this generation
+/// (protocol version 14) admits `integerRange`.
+#[cfg(feature = "validation")]
+fn validate_integer_range_sources_keyed_in_value_order(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        let Some(transform) = &index.integer_range else {
+            continue;
+        };
+        if transform.key_type.min_value() < 0
+            || DocumentTypeRef::V2(document_type)
+                .tree_keys_differ_between_generations(&transform.source)
+        {
+            continue;
+        }
+        let summing = document_type
+            .indices
+            .values()
+            .find(|other| other.ends_range_summable_with(&transform.source))
+            .map_or("", |other| other.name.as_str());
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "integerRange.on (\"{}\") of index \"{}\" of document type \"{name}\" names \
+                 a property that the rangeSummable index \"{summing}\" ends with: such a \
+                 property keeps its earlier key encoding, which an integerRange grid does not \
+                 read; bucket another property",
+                transform.source, index.name
+            )),
+        ));
     }
     Ok(())
 }
