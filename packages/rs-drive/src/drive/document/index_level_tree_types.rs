@@ -95,6 +95,8 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
 use grovedb_merk::tree_type::TreeType;
+#[cfg(feature = "server")]
+use itertools::Either;
 
 /// The two tree types an index sub-level materializes: the
 /// property-name tree (keys = the property's distinct values) and the
@@ -175,6 +177,19 @@ pub(crate) enum LevelKeys<'a> {
     /// The property's single value, `None` when the document lacks it; each
     /// walker keys an absent value by its own layout rule.
     Value(Option<DriveKeyInfo<'a>>),
+}
+
+#[cfg(feature = "server")]
+impl<'a> LevelKeys<'a> {
+    /// The keys of a level below the top: the elements, or the single value
+    /// with an absent one keyed by the null layout's empty key, the single
+    /// value yielded without collecting it.
+    pub(crate) fn nested_keys(self) -> impl ExactSizeIterator<Item = DriveKeyInfo<'a>> {
+        match self {
+            LevelKeys::Elements(keys) => Either::Left(keys.into_iter()),
+            LevelKeys::Value(value) => Either::Right(std::iter::once(value.unwrap_or_default())),
+        }
+    }
 }
 
 /// The keys `document_info` is entered under at `level`, reading `property`:

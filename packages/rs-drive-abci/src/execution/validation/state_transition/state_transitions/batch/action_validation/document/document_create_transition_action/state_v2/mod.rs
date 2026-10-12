@@ -170,8 +170,9 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             .validate_referencing_property_constraints(
                 self.data(),
                 referenced_documents,
-                &DocumentSystemValues {
+                DocumentSystemValues {
                     aggregates: Some(self.property_constraint_aggregates().clone()),
+                    consensus: true,
                     ..system
                 },
                 platform_version,

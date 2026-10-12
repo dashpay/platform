@@ -7,6 +7,7 @@
 
 use super::LimitQuery;
 use crate::platform::documents::document_query::DocumentQuery;
+use crate::sdk::ProofResponseMetadata;
 use crate::{error::Error, mock::MockResponse, platform::query::Query, sync::retry, Sdk};
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::Version as IdentityVotesRequestVersion;
 use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::Version as VotePollsRequestVersion;
@@ -117,7 +118,7 @@ where
     /// Wire-encoded request that hits the network. Its response is `Clone`
     /// so that a proof whose quorum key had to be fetched can be verified
     /// again without asking the network a second time.
-    type Request: TransportRequest<Response: Clone>;
+    type Request: TransportRequest<Response: Clone + ProofResponseMetadata>;
 
     /// Prepare the owned query before deriving its wire request and verifying its proof.
     ///

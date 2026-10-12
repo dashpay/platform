@@ -69,7 +69,7 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources, validate_referencing_rules,
+    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
 };
 
 mod ranked_prefix_overlap;
@@ -652,6 +652,10 @@ fn parse_generation_3(
         full_validation,
         platform_version,
     )?;
+    // After `apply_property_constraints` and `apply_moderator_abilities`: whether the type
+    // keeps the revision `$revision` reads, and has a write replacing the stored version a rule
+    // reads through `$old.`, depends on the fields it keeps for its moderators too.
+    validate_stored_version_reads(&v2, name).map_err(consensus_or_protocol_data_contract_error)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
         &mut v2,
@@ -2031,6 +2035,8 @@ mod referenced_rule_tests;
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
+#[cfg(all(test, feature = "validation"))]
+mod stored_version_reads_tests;
 #[cfg(all(test, feature = "validation"))]
 mod string_find_by_key_tests;
 #[cfg(all(test, feature = "validation"))]

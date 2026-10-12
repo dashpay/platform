@@ -6,9 +6,16 @@ import Foundation
 /// properties must meet. Consensus checks every rule, in name order, and
 /// refuses a document breaking one with `DocumentPropertyConstraintViolatedError`
 /// (code 10422); a refused state transition is still paid for. A transfer or a
-/// purchase is judged against the rules reading `$ownerId` or the transfer's
-/// time or heights too, and a price update against the rules reading the
-/// update's (see `readsOwner` and `readsSystem`).
+/// purchase is judged against the rules reading the owner or the transfer's
+/// time or heights too, a price update against the rules reading the
+/// update's, and each of them against the rules reading `$revision` (see
+/// `readsOwner` and `readsSystem`).
+///
+/// A rule may read the stored version of the document a write replaces
+/// through the `$old.` prefix (see `readsStored`): `$old.status` is the stored
+/// `status`, `$old.$ownerId` the stored owner, and `$old.$updatedAt` or
+/// `$old.$revision` a stored system value. A create has no stored version, so
+/// there every such read is absent.
 ///
 /// Rust parses the rules and reports them
 /// (`dash_sdk_data_contract_get_property_constraints`); this type only carries
@@ -23,7 +30,8 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// sorting changes nothing a reader would notice). Among its operators:
     /// sizes (`{ "length": path }`, `{ "byteLength": path }`,
     /// `{ "count": path }`), `{ "countPresent": [path, path, ...] }`, system
-    /// times and heights as bare operands (`"$createdAt"`),
+    /// times, heights and `$revision` as bare operands (`"$createdAt"`),
+    /// paths of the stored version through `$old.` (`"$old.status"`),
     /// `{ "contains": [arrayPath, value] }`,
     /// `{ "startsWith": [a, b] }`, `{ "endsWith": [a, b] }`,
     /// `{ "notIn": [operand, [values]] }`, `{ "min": [a, b, ...] }`,
@@ -38,33 +46,57 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// Every property the rule reads, in declared order, a property read twice
     /// listed twice. The list describes the rule, not one document: it covers
     /// every branch of an `ifThen` or `ifThenElse`, whichever one a document
-    /// takes. `$ownerId` is no property and is not listed: see `readsOwner`;
-    /// nor are the system times and heights: see `readsSystem`. A property a
-    /// total's filter takes a value from is listed (`category` in
+    /// takes. A property of the stored version, read through `$old.`, is
+    /// listed under that path (`$old.status`): see `readsStored`. `$ownerId`
+    /// and `$old.$ownerId` are no properties and are not listed: see
+    /// `readsOwner`; nor are the system times, heights and revisions: see
+    /// `readsSystem`. A property a total's filter takes a value from is listed
+    /// (`category` in
     /// `{ "sumOf": ["listing", "price", { "category": "category" }] }`), the
     /// total itself is not: see `readsTotals`. Nor is a value of a document a
     /// reference points at: see `readsReferenced`.
     public let reads: [PropertyConstraintRead]
 
-    /// Whether the rule reads the document's owner, `$ownerId`, in any branch,
-    /// as in `reads`: by comparing it, or through a total that depends on it
-    /// (a `countOf` or `sumOf` filtered by `$ownerId`, see `readsTotals`).
-    /// Then a transfer or a purchase, which changes the owner, is judged
-    /// against it too.
+    /// Whether the rule reads the document's owner in any branch, as in
+    /// `reads`: by comparing `$ownerId`, or the stored version's owner
+    /// `$old.$ownerId`, or through a total that depends on it (a `countOf` or
+    /// `sumOf` filtered by `$ownerId`, see `readsTotals`). Then a transfer or
+    /// a purchase, which changes the owner, is judged against it too.
     public let readsOwner: Bool
 
-    /// The system times and heights the rule reads, by name, in declared
-    /// order, one read twice listed twice, every branch included as in
-    /// `reads`: `$createdAt`, `$updatedAt` and `$transferredAt` (block times,
-    /// in milliseconds), each also with `BlockHeight` or `CoreBlockHeight`
-    /// appended (the Platform and Core block heights), the names of wasm-dpp2's
-    /// `PropertyConstraintSystemProperty`. Consensus judges a price update
-    /// against the rules reading `$updatedAt…`, and a transfer or a purchase
-    /// against the rules reading `$transferredAt…` (or `$ownerId`).
+    /// The system values the rule reads, by name, in declared order, one read
+    /// twice listed twice, every branch included as in `reads`: `$createdAt`,
+    /// `$updatedAt` and `$transferredAt` (block times, in milliseconds), each
+    /// also with `BlockHeight` or `CoreBlockHeight` appended (the Platform and
+    /// Core block heights), and `$revision` (1 for a created document, one
+    /// more for each later write of it), the names of wasm-dpp2's
+    /// `PropertyConstraintSystemProperty`. A name prefixed with `$old.` is the
+    /// stored version's value (`$old.$updatedAt`, `$old.$revision`): see
+    /// `readsStored`. Consensus judges a price update against the rules
+    /// reading `$updatedAt…`, a transfer or a purchase against the rules
+    /// reading `$transferredAt…` (or the owner, see `readsOwner`), and each of
+    /// them against the rules reading `$revision`, of either version.
     ///
     /// Empty for a rule reading none, and for every rule reported by a library
     /// built before the field existed.
     public let readsSystem: [String]
+
+    /// Whether the rule reads the stored version of the document a write
+    /// replaces, through `$old.`: one of its properties (listed in `reads`),
+    /// its owner, `$old.$ownerId` (see `readsOwner`), or one of its system
+    /// values (listed in `readsSystem`).
+    ///
+    /// A create has no stored version, so consensus reads every such value as
+    /// absent there: a property as one the document leaves out (0, or its
+    /// `ifAbsent` value; absent to `present`; equal to no string or
+    /// identifier), `$old.$ownerId` as equal to no identifier, and a stored
+    /// time, height or revision as 0. The pre-check
+    /// (`SDK.checkDocumentPropertyConstraints`), which judges a document to
+    /// create, reads them the same way.
+    ///
+    /// `false` for a rule reading none, and for every rule reported by a
+    /// library built before the field existed.
+    public let readsStored: Bool
 
     /// The `countOf` and `sumOf` totals the rule reads, in declared order, one
     /// read twice listed twice, every branch included as in `reads`: how many
@@ -102,13 +134,15 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
         readsOwner: Bool,
         readsSystem: [String] = [],
         readsTotals: [PropertyConstraintTotalRead] = [],
-        readsReferenced: [PropertyConstraintReferencedRead] = []
+        readsReferenced: [PropertyConstraintReferencedRead] = [],
+        readsStored: Bool = false
     ) {
         self.name = name
         self.ruleJSON = ruleJSON
         self.reads = reads
         self.readsOwner = readsOwner
         self.readsSystem = readsSystem
+        self.readsStored = readsStored
         self.readsTotals = readsTotals
         self.readsReferenced = readsReferenced
     }
@@ -129,7 +163,9 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     }
 
     /// Decode the JSON array `dash_sdk_data_contract_get_property_constraints`
-    /// returns, keeping its order (name order).
+    /// returns, keeping its order (name order). A rule without `readsSystem`,
+    /// `readsStored` or `readsTotals`, from a library built before the key,
+    /// reads as reading none.
     public static func list(fromJSON json: String) throws -> [DocumentPropertyConstraint] {
         guard let entries = try PropertyConstraintJSON.object(from: json) as? [Any] else {
             throw SDKError.serializationError("propertyConstraints rules are not a JSON array")
@@ -142,7 +178,8 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
                   let readsOwner = DocumentTypedArray.jsonBool(rule["readsOwner"]),
                   let readsSystem = systemReads(rule["readsSystem"]),
                   let readsTotals = totalReads(rule["readsTotals"]),
-                  let readsReferenced = referencedReads(rule["readsReferenced"])
+                  let readsReferenced = referencedReads(rule["readsReferenced"]),
+                  let readsStored = storedRead(rule["readsStored"])
             else {
                 throw SDKError.serializationError("Malformed propertyConstraints rule: \(entry)")
             }
@@ -153,9 +190,19 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
                 readsOwner: readsOwner,
                 readsSystem: readsSystem,
                 readsTotals: readsTotals,
-                readsReferenced: readsReferenced
+                readsReferenced: readsReferenced,
+                readsStored: readsStored
             )
         }
+    }
+
+    /// A rule's `readsStored`, `false` when the key is missing (a library
+    /// built before it), or `nil` for anything but a JSON boolean.
+    private static func storedRead(_ value: Any?) -> Bool? {
+        guard let value else {
+            return false
+        }
+        return DocumentTypedArray.jsonBool(value)
     }
 
     /// A rule's `readsSystem` names, `[]` when the key is missing (a library
@@ -526,19 +573,27 @@ extension SDK {
     /// `serializedContract` is as for `documentPropertyConstraints`. Bridges
     /// `dash_sdk_data_contract_check_property_constraints`.
     ///
+    /// A create has no stored version, so a rule reading one through `$old.`
+    /// (`DocumentPropertyConstraint.readsStored`) is judged as consensus
+    /// judges it on a create, every such read absent (a stored time, height
+    /// or revision reads 0), and `$revision` reads 1, the revision a created
+    /// document starts at.
+    ///
     /// The block the create lands in is not known yet, so Rust estimates its
     /// system values: the device clock stands in for the block time the create
     /// records as `$createdAt`, `$updatedAt` and `$transferredAt`, and a rule
-    /// reading a block height (a `readsSystem` name ending in `BlockHeight`
-    /// or `CoreBlockHeight`) is not judged at all. Nor is a rule reading a
-    /// `countOf` or `sumOf` total (its `readsTotals` not empty), or a value of
-    /// a document a reference points at (its `readsReferenced` not empty): the
-    /// platform reads the total from state when the document is sent, and the
+    /// reading a block height the create records (a `readsSystem` name ending
+    /// in `BlockHeight` or `CoreBlockHeight` without `$old.`) is not judged
+    /// at all; a stored height (`$old.$createdAtBlockHeight`, ...) reads 0,
+    /// as above, and is judged. Nor is a rule reading a `countOf` or `sumOf`
+    /// total (its `readsTotals` not empty), or a value of a document a
+    /// reference points at (its `readsReferenced` not empty): the platform
+    /// reads the total from state when the document is sent, and the
     /// referenced document when it checks the reference, and this check reads
     /// no state. So `nil` does not promise consensus accepts the document: a
-    /// rule reading a block height, a total or a referenced document, or a
-    /// time rule the device clock judges differently from the block time, can
-    /// still refuse it.
+    /// rule reading a block height the create records, a total or a
+    /// referenced document, or a time rule the device clock judges differently
+    /// from the block time, can still refuse it.
     ///
     /// - Throws: `SDKError.invalidParameter` for an owner id that is not 32
     ///   bytes or properties that are not a JSON object, `SDKError.notFound` for

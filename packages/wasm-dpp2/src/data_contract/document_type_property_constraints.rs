@@ -8,23 +8,29 @@
 //! (or `$ownerId`, the document's owner) with constants or with another
 //! property of its kind, a test of whether a string or a byte array starts or ends
 //! with another (`startsWith`, `endsWith`), a presence test (`present`,
-//! `absent`), or `anyOf`, `allOf` or `not` over conditions. Consensus evaluates every rule on each create and
-//! replace, and the rules reading `$ownerId` on each transfer and purchase,
-//! refusing a broken one with `DocumentPropertyConstraintViolatedError`
-//! (basic code 10422). What this module adds is *discovery* ("which rules does
+//! `absent`), or `anyOf`, `allOf` or `not` over conditions. Through `$old.` a
+//! rule reads the stored version of the document a write replaces. Consensus
+//! evaluates every rule on each create and replace; on a transfer or a
+//! purchase, the rules reading the owner, the transfer's time and heights or
+//! `$revision`, of either version; on a price update, those reading the
+//! update's or `$revision`; and on a moderator's change or restore, the rules
+//! it can break, refusing a broken one with
+//! `DocumentPropertyConstraintViolatedError` (basic code 10422). What this module adds is *discovery* ("which rules does
 //! this document type declare, and what do they read?") and a *pre-check*
 //! that evaluates a document against them with the very code consensus runs,
 //! so an app can find a broken rule before paying for a refused transition.
 
 use crate::error::{WasmDppError, WasmDppResult};
+use dpp::consensus::ConsensusError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::document::PropertyConstraintViolation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::property_constraints::{
-    AggregateKind, DocumentSystemValues, PropertyRead,
+    AggregateKind, DocumentSystemValues, PropertyRead, StoredVersion,
 };
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, INITIAL_REVISION};
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, Reflect};
@@ -49,7 +55,8 @@ export type PropertyConstraintReferenced = {
 
 /**
  * Where a rule reads a value: the dotted path of a property of the document
- * type, or a value of a referenced document.
+ * type, that path under `$old.` for the stored version the write replaces
+ * (`$old.price`; absent on a create), or a value of a referenced document.
  */
 export type PropertyConstraintPath = string | PropertyConstraintReferenced;
 
@@ -60,9 +67,10 @@ export type PropertyConstraintPath = string | PropertyConstraintReferenced;
  *   (rules report such a literal as a `bigint`, exactly);
  * - a string: the dotted path of an integer or boolean property, whose value
  *   it takes (a boolean reads as 1 for true and 0 for false), 0 when the
- *   document leaves the property out; or a system time or height the
- *   document type records by listing it in `required`
- *   (`PropertyConstraintSystemProperty`);
+ *   document leaves the property out, under `$old.` the stored version's; or
+ *   a system value (`PropertyConstraintSystemProperty`): a time or height the
+ *   document type records by listing it in `required`, or `$revision` on a
+ *   type keeping one, either under `$old.` for the stored version's;
  * - `ifAbsent`: a property path and the integer it takes when left out;
  * - `add`, `multiply`, `min` and `max` over two or more operands,
  *   `subtract`, `divide`, `modulo` and `power` over exactly two, `abs` over
@@ -130,7 +138,9 @@ export type PropertyConstraintAggregateFilter = Record<
  * `endsWith` of strings or byte arrays.
  *
  * - a string: the dotted path of a string, an identifier or a byte array
- *   property, or `"$ownerId"`, the document's owner, an identifier;
+ *   property, under `$old.` the stored version's, or `"$ownerId"`, the
+ *   document's owner, or `"$old.$ownerId"`, the stored version's (the owner
+ *   before a transfer or a purchase), each an identifier;
  * - `const`: a string constant, a base58 identifier beside an identifier
  *   property or `$ownerId`, or hex digits, two a byte, beside a byte array
  *   property in a `startsWith` or `endsWith`;
@@ -156,7 +166,7 @@ export type PropertyConstraintEqualityOperand =
  * - a comparison of two integer expressions; `equal` and `notEqual` also
  *   compare strings or identifiers, which are never ordered;
  * - `in`: an integer expression and two or more distinct integers, or a
- *   string or identifier property (or `$ownerId`) and two or more distinct
+ *   string or identifier property (or `$ownerId` or `$old.$ownerId`) and two or more distinct
  *   strings or base58 identifiers;
  * - `startsWith` / `endsWith`: two strings, a `const` or a string property
  *   each, the first starting or ending with the second, byte for byte; or
@@ -211,13 +221,20 @@ export type PropertyConstraintReadKind =
   | 'bytes';
 
 /**
- * A system time or height a rule reads: the block time in milliseconds
- * (`At`), the Platform block height (`AtBlockHeight`) or the Core block height
+ * A system value a rule reads: the block time in milliseconds (`At`), the
+ * Platform block height (`AtBlockHeight`) or the Core block height
  * (`AtCoreBlockHeight`) of the document's creation, its last update (a create,
  * a replace or a price update) and its last transfer (a create, a transfer or
- * a purchase).
+ * a purchase); or `$revision`, 1 on a create and one more for each later
+ * write. Under `$old.` it is the stored version's, the document a write
+ * replaces (0 on a create, which has none).
  */
 export type PropertyConstraintSystemProperty =
+  | PropertyConstraintSystemValue
+  | `$old.${PropertyConstraintSystemValue}`;
+
+/** A system value of one version of the document. */
+export type PropertyConstraintSystemValue =
   | '$createdAt'
   | '$updatedAt'
   | '$transferredAt'
@@ -226,7 +243,8 @@ export type PropertyConstraintSystemProperty =
   | '$transferredAtBlockHeight'
   | '$createdAtCoreBlockHeight'
   | '$updatedAtCoreBlockHeight'
-  | '$transferredAtCoreBlockHeight';
+  | '$transferredAtCoreBlockHeight'
+  | '$revision';
 
 /**
  * A `countOf` or `sumOf` total a rule reads: how many documents of
@@ -269,22 +287,31 @@ export type DocumentPropertyConstraint = {
   /** The rule as the schema declares it. */
   rule: PropertyConstraintCondition;
   /**
-   * Every property of the document type the rule reads, in declared order;
-   * `$ownerId` is no property and is not listed, and neither is a value of a
-   * referenced document (`readsReferenced`).
+   * Every property of the document type the rule reads, in declared order,
+   * one of the stored version under its `$old.` path; `$ownerId` and
+   * `$old.$ownerId` are no properties and are not listed, and neither is a
+   * value of a referenced document (`readsReferenced`).
    */
   reads: Array<{ path: string; kind: PropertyConstraintReadKind }>;
   /**
-   * Whether the rule reads `$ownerId`, or a total that depends on the owner:
-   * then a transfer or a purchase is judged against it too.
+   * Whether the rule reads `$ownerId` or `$old.$ownerId`, or a total that
+   * depends on the owner: then a transfer or a purchase is judged against it
+   * too.
    */
   readsOwner: boolean;
   /**
-   * The system times and heights the rule reads, in declared order. A price
-   * update is judged against a rule reading the update's, and a transfer or a
-   * purchase against one reading the transfer's.
+   * The system values the rule reads, in declared order, of either version. A
+   * price update is judged against a rule reading the update's, a transfer or
+   * a purchase against one reading the transfer's, and each against one
+   * reading `$revision`.
    */
   readsSystem: PropertyConstraintSystemProperty[];
+  /**
+   * Whether the rule reads the stored version of the document through
+   * `$old.`. `checkDocumentPropertyConstraints` judges it only when told what
+   * the stored version is: none for a create, or the stored document.
+   */
+  readsStored: boolean;
   /**
    * The `countOf` and `sumOf` totals the rule reads, in declared order, one
    * read twice listed twice. The pre-check does not judge a rule reading one.
@@ -484,10 +511,16 @@ pub(crate) fn property_constraints_for_document_type(
             name,
         )?;
         let reads_system = Array::new();
-        for property in constraint.system_reads() {
-            reads_system.push(&JsValue::from_str(property.name()));
+        for read in constraint.system_reads() {
+            reads_system.push(&JsValue::from_str(&read.name()));
         }
         set_field(&object, "readsSystem", &reads_system, name)?;
+        set_field(
+            &object,
+            "readsStored",
+            &JsValue::from_bool(constraint.reads_stored()),
+            name,
+        )?;
         let reads_totals = Array::new();
         for read in constraint.aggregate_reads() {
             let entry = Object::new();
@@ -530,36 +563,69 @@ pub(crate) fn property_constraints_for_document_type(
 }
 
 /// The system values a create or a replace of `document` will have, as far as
-/// a client can tell before its block: the owner, and the stored times and
-/// heights the write keeps, with the device clock standing in for the block
-/// time it records (its update, and its creation and transfer when the
-/// document has none yet). The block heights it records are unknown until the
-/// block, so a rule reading one is not judged, and so is a rule reading a
-/// `countOf` or `sumOf` total, or a value of a referenced document, which no
-/// client reads from state here.
-fn system_values_for_write(document: &Document) -> DocumentSystemValues {
+/// a client can tell before its block: the owner, the revision, and the stored
+/// times and heights the write keeps, with the device clock standing in for
+/// the block time it records (its update, and its creation and transfer when
+/// the document has none yet), and `stored`, the version it replaces. Told
+/// which write it is, they are what consensus judges whatever `document`
+/// holds: on a replace, the stored owner, creation and transfer, which a
+/// replace keeps, and the revision after the stored one, the only one a
+/// replace may write; on a create, the first revision and this block for
+/// every time. Not told, it does not know the revision the write records
+/// either, the first or the one after the stored. The block heights it records
+/// are unknown until the block, so a rule reading one is not judged, and so is
+/// a rule reading a `countOf` or `sumOf` total, or a value of a referenced
+/// document, which no client reads from state here, or a stored version or
+/// revision it is not given.
+fn system_values_for_write(
+    document: &Document,
+    stored: Option<StoredVersion>,
+) -> DocumentSystemValues {
     // Milliseconds since the epoch, a whole number well inside a `u64`
     let now = js_sys::Date::now() as u64;
-    let stored = DocumentSystemValues::of_document(document);
+    let values = match &stored {
+        Some(StoredVersion::Present(stored)) => DocumentSystemValues {
+            revision: stored
+                .system
+                .revision
+                .and_then(|revision| revision.checked_add(1)),
+            ..stored.system.as_written()
+        },
+        Some(StoredVersion::Absent) => DocumentSystemValues {
+            owner_id: Some(document.owner_id()),
+            created_at: Some(now),
+            transferred_at: Some(now),
+            revision: Some(INITIAL_REVISION),
+            ..Default::default()
+        },
+        None => DocumentSystemValues {
+            revision: None,
+            ..DocumentSystemValues::of_document(document)
+        },
+    };
     DocumentSystemValues {
-        created_at: stored.created_at.or(Some(now)),
+        created_at: values.created_at.or(Some(now)),
         updated_at: Some(now),
-        transferred_at: stored.transferred_at.or(Some(now)),
+        transferred_at: values.transferred_at.or(Some(now)),
         updated_at_block_height: None,
         updated_at_core_block_height: None,
-        ..stored
+        stored,
+        ..values
     }
 }
 
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
 /// breaks, in name order, as consensus judges a create or replace: its
 /// properties with every `generatedFrom` property generated from its params,
-/// as the transition builders send them, its owner for `$ownerId`, and its
-/// system times and heights as [`system_values_for_write`] estimates them.
+/// as the transition builders send them, its owner for `$ownerId`, its system
+/// times and heights as [`system_values_for_write`] estimates them, and
+/// `stored`, the version it replaces, for the paths through `$old.`, judged by
+/// the code consensus judges with (`validate_property_constraints`).
 /// `undefined` when it meets them all.
 pub(crate) fn check_property_constraints(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
+    stored: Option<StoredVersion>,
 ) -> WasmDppResult<JsValue> {
     let constraints = document_type.property_constraints();
     if constraints.is_empty() {
@@ -567,26 +633,32 @@ pub(crate) fn check_property_constraints(
     }
     let mut properties = document.properties().clone();
     document_type.regenerate_generated_properties(&mut properties, PlatformVersion::desired())?;
-    let data = Value::from(properties);
-    let system = system_values_for_write(document);
-    for (name, constraint) in constraints {
-        if let Some(violation) = constraint.violation(&data, &system) {
-            let object = Object::new();
-            set_field(&object, "rule", &JsValue::from_str(name), name)?;
-            set_field(
-                &object,
-                "violation",
-                &JsValue::from_str(violation_name(violation)),
-                name,
-            )?;
-            set_field(
-                &object,
-                "message",
-                &JsValue::from_str(&violation.to_string()),
-                name,
-            )?;
-            return Ok(object.into());
-        }
-    }
-    Ok(JsValue::UNDEFINED)
+    let result = document_type.validate_property_constraints(
+        &Value::from(properties),
+        &system_values_for_write(document, stored),
+        PlatformVersion::desired(),
+    )?;
+    let Some(ConsensusError::BasicError(BasicError::DocumentPropertyConstraintViolatedError(
+        broken,
+    ))) = result.errors.first()
+    else {
+        return Ok(JsValue::UNDEFINED);
+    };
+    let name = broken.constraint();
+    let violation = broken.violation();
+    let object = Object::new();
+    set_field(&object, "rule", &JsValue::from_str(name), name)?;
+    set_field(
+        &object,
+        "violation",
+        &JsValue::from_str(violation_name(violation)),
+        name,
+    )?;
+    set_field(
+        &object,
+        "message",
+        &JsValue::from_str(&violation.to_string()),
+        name,
+    )?;
+    Ok(object.into())
 }

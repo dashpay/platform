@@ -1238,3 +1238,54 @@ fn should_delete_every_element_entry_of_an_expired_document() {
         );
     }
 }
+
+#[test]
+fn should_estimate_at_least_what_shrinking_an_expiring_array_costs() {
+    // A replace that drops elements removes their entries from both indexes, more than
+    // it writes: its estimate still covers it.
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_contract(tagged_contract_with_ttl(TWO_WEEKS_S));
+    let mut document = tagged(1, START_MS, &["a", "b", "c", "d"]);
+    insert(&drive, &contract, "tagged", &document, true);
+    for (revision, tags) in [(2, vec!["a"]), (3, vec![])] {
+        document.set(
+            "tags",
+            Value::Array(
+                tags.iter()
+                    .map(|tag| Value::Text(tag.to_string()))
+                    .collect(),
+            ),
+        );
+        document.set_revision(Some(revision));
+        let replace = |apply: bool| {
+            drive
+                .update_document_for_contract(
+                    &document,
+                    &contract,
+                    contract.document_type_for_name("tagged").expect("type"),
+                    Some(OWNER),
+                    block_at(START_MS + 60_000),
+                    apply,
+                    owner_flags(),
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("the replace runs")
+        };
+        let estimated = replace(false);
+        let actual = replace(true);
+        assert!(
+            estimated.total_base_fee() >= actual.total_base_fee(),
+            "to {tags:?}: estimated {} below actual {}",
+            estimated.total_base_fee(),
+            actual.total_base_fee()
+        );
+        assert!(
+            estimated.processing_fee >= actual.processing_fee,
+            "to {tags:?}: estimated processing {} below actual {}",
+            estimated.processing_fee,
+            actual.processing_fee
+        );
+    }
+}

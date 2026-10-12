@@ -7020,10 +7020,11 @@ mod tests {
         #[tokio::test]
         async fn should_reject_a_rule_reading_a_referenced_document_beside_a_total_a_restore_moves()
         {
-            // A moderator's restore brings an entry back into the count of its
-            // room's entries the rule bounds by the room's capacity, and judges
-            // no rule reading a referenced document, so the contract is refused
-            // before any restore could pass the capacity
+            // A moderator's restore is judged against every rule reading a total,
+            // which may have moved while the entry was gone (here the count of its
+            // room's entries, bounded by the room's capacity), and judges no rule
+            // reading a referenced document, so the contract is refused before any
+            // restore could pass the capacity
             let config = DataContractConfig::default_for_version(PlatformVersion::latest())
                 .unwrap()
                 .with_moderation(Some(ContractModerationConfig {
@@ -7047,7 +7048,7 @@ mod tests {
                     )),
                     ..
                 } if message.contains("rule \"cap\"")
-                    && message.contains("a moderator's restore brings a document back into")
+                    && message.contains("and a total, which a moderator's restore is judged against")
             );
         }
 

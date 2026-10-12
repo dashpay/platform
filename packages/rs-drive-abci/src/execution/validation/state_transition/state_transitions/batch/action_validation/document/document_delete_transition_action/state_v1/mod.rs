@@ -96,6 +96,7 @@ impl DocumentDeleteTransitionActionStateValidationV1 for DocumentDeleteTransitio
                 &data,
                 &DocumentSystemValues {
                     aggregates: Some(aggregates),
+                    consensus: true,
                     ..DocumentSystemValues::of_document(&document)
                 },
                 platform_version,

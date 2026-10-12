@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     document_takes_part_in_index, index_level_tree_types_with_continuation_demotion, level_keys,
-    level_removes_entry, LevelKeys,
+    level_removes_entry,
 };
 use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -24,9 +24,7 @@ use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::PathInfo::PathAsVec;
-use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
-};
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -203,7 +201,7 @@ impl Drive {
 
             // Mirror of the insert walker: an indexed typed array (protocol version 14) holds
             // one value tree of the document per distinct element.
-            let document_index_fields: Vec<DriveKeyInfo> = match level_keys(
+            let document_index_fields = level_keys(
                 &document_and_contract_info.owned_document_info.document_info,
                 sub_level,
                 name,
@@ -211,11 +209,8 @@ impl Drive {
                 document_and_contract_info.owned_document_info.owner_id,
                 Some((sub_level, event_id)),
                 platform_version,
-            )? {
-                LevelKeys::Elements(element_keys) => element_keys,
-                // An absent value keeps its null-layout empty key
-                LevelKeys::Value(value) => vec![value.unwrap_or_default()],
-            };
+            )?
+            .nested_keys();
 
             sub_level_index_path_info.push(index_property_key)?;
 
