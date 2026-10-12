@@ -175,9 +175,7 @@ use dpp::version::FeatureVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub use canonicalize::{
-    answers_per_element, key_array_element_clauses, validate_and_canonicalize_where_clauses,
-};
+pub use canonicalize::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -2536,7 +2534,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// clauses reading the elements of a typed array
     /// ([`Self::validate_array_element_shape`]): grouping v1 leaves no such
     /// clause out of `internal_clauses`, so every one is judged here. The
-    /// lowering keeps equivalent guards for callers that reach it directly.
+    /// lowering repeats the multi-`In` guards for callers that reach it
+    /// directly, but not the element rules: a caller of the lowering judges
+    /// element clauses here first, as `construct_path_query` and the verifiers
+    /// do.
     pub fn validate_where_clause_shape(
         &self,
         platform_version: &PlatformVersion,
@@ -2660,10 +2661,12 @@ impl<'a> DriveDocumentQuery<'a> {
     /// document. The first occurrence stays. The proof carries every
     /// occurrence, so the server and the verifier drop the same ones, and the
     /// page may hold fewer documents than the limit, which counts occurrences.
-    /// A row is told apart by the stored document's bytes, borrowed from the
-    /// row: nothing is copied.
+    /// A row is told apart by `row_key`, borrowed from the row so nothing is
+    /// copied: the stored document's bytes on the server, whose rows carry no
+    /// key, and the proved document id in a verifier. Either names one
+    /// document, since every serialized document holds its id.
     #[cfg(any(feature = "server", feature = "verify"))]
-    fn drop_repeated_element_matches<T, F>(&self, rows: Vec<T>, stored_document: F) -> Vec<T>
+    pub(crate) fn drop_repeated_element_matches<T, F>(&self, rows: Vec<T>, row_key: F) -> Vec<T>
     where
         F: Fn(&T) -> Option<&[u8]>,
     {
@@ -2673,7 +2676,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let first_occurrences: Vec<bool> = {
             let mut seen: HashSet<&[u8]> = HashSet::new();
             rows.iter()
-                .map(|row| stored_document(row).is_none_or(|bytes| seen.insert(bytes)))
+                .map(|row| row_key(row).is_none_or(|bytes| seen.insert(bytes)))
                 .collect()
         };
         rows.into_iter()
@@ -2786,12 +2789,32 @@ impl<'a> DriveDocumentQuery<'a> {
                 let path_query =
                     PathQuery::new_single_key(start_at_document_path, start_at_document_key);
 
-                if let Element::Item(item, _) = start_at_document {
-                    let document = Document::from_bytes(
-                        item.as_slice(),
-                        self.document_type,
-                        platform_version,
-                    )?;
+                // v0 decodes only a plain item, so a `documentsSummable`
+                // type's `ItemWithSumItem` cursor is refused; v1 (protocol
+                // version 14) decodes any item element.
+                let item = match platform_version
+                    .drive
+                    .methods
+                    .document
+                    .query
+                    .start_at_document
+                {
+                    0 => match &start_at_document {
+                        Element::Item(item, _) => Some(item.as_slice()),
+                        _ => None,
+                    },
+                    1 => start_at_document.as_item_bytes().ok(),
+                    version => {
+                        return Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                            method: "DriveDocumentQuery::start_at_document".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        }))
+                    }
+                };
+                if let Some(item) = item {
+                    let document =
+                        Document::from_bytes(item, self.document_type, platform_version)?;
                     Ok((Some((document, cursor_included)), Some(path_query)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
@@ -3041,7 +3064,7 @@ impl<'a> DriveDocumentQuery<'a> {
         Ok(())
     }
 
-    #[cfg(any(feature = "server", feature = "verify"))]
+    #[cfg(feature = "server")]
     /// Drops the repeats of a page reading several elements of a typed array
     /// ([`Self::drop_repeated_element_matches`]), then the cursor document
     /// from a page produced by a padded
@@ -3057,12 +3080,24 @@ impl<'a> DriveDocumentQuery<'a> {
         serialized_documents: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-        use dpp::document::DocumentV0Getters;
-        let mut serialized_documents = self
+        let serialized_documents = self
             .drop_repeated_element_matches(serialized_documents, |document| {
                 Some(document.as_slice())
             });
+        self.strip_cursor_from_distinct_page(serialized_documents, platform_version)
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// [`Self::strip_cursor_from_page`] for a page whose repeats are already
+    /// dropped: a verifier drops them by the proved document ids, which are
+    /// shorter to compare than the documents.
+    pub(crate) fn strip_cursor_from_distinct_page(
+        &self,
+        mut serialized_documents: Vec<Vec<u8>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::document::DocumentV0Getters;
         if !self.pads_cursor_page(platform_version) {
             return Ok((serialized_documents, 0));
         }
@@ -3116,8 +3151,11 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             None => None,
         };
-        let first_is_cursor = match first_element {
-            Some(Element::Item(bytes, _)) => {
+        // A summable type stores its documents as `ItemWithSumItem`, read as
+        // an item all the same. Padded pages exist only from protocol
+        // version 14 (`pads_cursor_page`), so no earlier page reaches here.
+        let first_is_cursor = match first_element.map(Element::as_item_bytes) {
+            Some(Ok(bytes)) => {
                 Document::from_bytes(bytes, self.document_type, platform_version)?
                     .id()
                     .to_buffer()
@@ -4071,6 +4109,9 @@ impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
         response
     }
 }
+
+#[cfg(all(test, feature = "server"))]
+pub(crate) mod unsigned_index_key_order_tests;
 
 #[cfg(feature = "server")]
 #[cfg(test)]
@@ -5526,6 +5567,252 @@ mod tests {
                 ),
                 "expected WhereClauseOnNonIndexedProperty, got {error:?}"
             );
+        }
+    }
+
+    /// A `documentsSummable` type stores each document as an
+    /// `ItemWithSumItem`. A padded `startAfter` page (protocol version 14,
+    /// see `pads_cursor_page`) read as elements must drop the cursor
+    /// document all the same, and hold the page the serialized read and the
+    /// proof hold.
+    mod summable_start_after_page {
+        use super::*;
+        use crate::error::drive::DriveError;
+        use crate::error::Error;
+        use crate::util::object_size_info::{
+            DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
+        };
+        use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+        use grovedb::query_result_type::QueryResultType;
+        use grovedb::Element;
+
+        const TIP_COUNT: u64 = 5;
+
+        fn setup_tip_jar() -> (Drive, DataContract) {
+            let platform_version = PlatformVersion::latest();
+            let drive = setup_drive_with_initial_state_structure(None);
+            let contract = json_document_to_contract(
+                "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
+                false,
+                platform_version,
+            )
+            .expect("expected to load the tip jar contract");
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply the tip jar contract");
+            (drive, contract)
+        }
+
+        /// Inserts five tips with `sentAt` 1 to 5 and returns their ids in
+        /// `sentAt` order.
+        fn setup_tips(drive: &Drive, contract: &DataContract) -> Vec<Identifier> {
+            let platform_version = PlatformVersion::latest();
+            let document_type = contract
+                .document_type_for_name("tip")
+                .expect("tip type should exist");
+            (1..=TIP_COUNT)
+                .map(|sent_at| {
+                    let mut tip = document_type
+                        .random_document(Some(sent_at), platform_version)
+                        .expect("expected a random tip");
+                    tip.set("recipient", Value::Identifier([7; 32]));
+                    tip.set("amount", Value::U64(sent_at * 10));
+                    tip.set("sentAt", Value::U64(sent_at));
+                    drive
+                        .add_document_for_contract(
+                            DocumentAndContractInfo {
+                                owned_document_info: OwnedDocumentInfo {
+                                    document_info: DocumentInfo::DocumentRefInfo((&tip, None)),
+                                    owner_id: None,
+                                },
+                                contract,
+                                document_type,
+                            },
+                            false,
+                            BlockInfo::default(),
+                            true,
+                            None,
+                            platform_version,
+                            None,
+                        )
+                        .expect("expected to insert a tip");
+                    tip.id()
+                })
+                .collect()
+        }
+
+        fn tips_after<'a>(
+            contract: &'a DataContract,
+            cursor: Identifier,
+            offset: Option<u16>,
+            limit: u16,
+        ) -> DriveDocumentQuery<'a> {
+            let internal_clauses = InternalClauses::extract_from_clauses(
+                vec![WhereClause {
+                    field: "sentAt".to_string(),
+                    operator: WhereOperator::GreaterThan,
+                    value: Value::U64(0),
+                }],
+                PlatformVersion::latest(),
+            )
+            .expect("clauses should group structurally");
+            DriveDocumentQuery {
+                contract,
+                document_type: contract
+                    .document_type_for_name("tip")
+                    .expect("tip type should exist"),
+                internal_clauses,
+                offset,
+                limit: Some(limit),
+                order_by: IndexMap::from([(
+                    "sentAt".to_string(),
+                    OrderClause {
+                        field: "sentAt".to_string(),
+                        ascending: true,
+                    },
+                )]),
+                start_at: Some(cursor.to_buffer()),
+                start_at_included: false,
+                block_time_ms: None,
+                resolved_time_ranges: vec![],
+                sub_queries: vec![],
+            }
+        }
+
+        fn ids(serialized_documents: &[Vec<u8>], contract: &DataContract) -> Vec<Identifier> {
+            let document_type = contract
+                .document_type_for_name("tip")
+                .expect("tip type should exist");
+            serialized_documents
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(bytes, document_type, PlatformVersion::latest())
+                        .expect("expected a tip")
+                        .id()
+                })
+                .collect()
+        }
+
+        #[test]
+        fn should_drop_the_start_after_cursor_from_an_element_page_of_a_summable_type() {
+            let platform_version = PlatformVersion::latest();
+            let (drive, contract) = setup_tip_jar();
+            let tip_ids = setup_tips(&drive, &contract);
+
+            for (position, cursor) in tip_ids.iter().enumerate() {
+                for (offset, limit) in [(None, 1u16), (None, 2), (Some(1u16), 2)] {
+                    let context = format!("cursor {position}, offset {offset:?}, limit {limit}");
+                    let expected: Vec<Identifier> = tip_ids[position + 1..]
+                        .iter()
+                        .skip(offset.unwrap_or(0) as usize)
+                        .take(limit as usize)
+                        .copied()
+                        .collect();
+                    let query = tips_after(&contract, *cursor, offset, limit);
+                    assert!(query.pads_cursor_page(platform_version), "{context}");
+
+                    let (elements, element_skipped) = query
+                        .execute_no_proof_internal(
+                            &drive,
+                            QueryResultType::QueryElementResultType,
+                            None,
+                            &mut vec![],
+                            platform_version,
+                        )
+                        .expect("expected the element page");
+                    let elements = elements.to_elements();
+                    assert!(
+                        elements
+                            .iter()
+                            .all(|element| matches!(element, Element::ItemWithSumItem(..))),
+                        "{context}: a summable type's documents are items with a sum"
+                    );
+                    let element_page: Vec<Vec<u8>> = elements
+                        .iter()
+                        .map(|element| element.as_item_bytes().expect("expected an item").to_vec())
+                        .collect();
+                    let element_page = ids(&element_page, &contract);
+                    assert!(
+                        !element_page.contains(cursor),
+                        "{context}: the cursor document is on the element page"
+                    );
+                    assert_eq!(element_page, expected, "{context}: element page");
+
+                    let (serialized, serialized_skipped, _) = query
+                        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                        .expect("expected the serialized page");
+                    assert_eq!(
+                        ids(&serialized, &contract),
+                        element_page,
+                        "{context}: serialized page"
+                    );
+                    assert_eq!(element_skipped, serialized_skipped, "{context}: skipped");
+
+                    let (_, proved, _) = query
+                        .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+                        .expect("expected the proved page");
+                    assert_eq!(
+                        ids(&proved, &contract),
+                        element_page,
+                        "{context}: proved page"
+                    );
+                }
+            }
+        }
+
+        /// The cursor read as released (v0, every protocol version before
+        /// 14) still refuses a summable type's cursor document, on every
+        /// read path.
+        #[test]
+        fn should_refuse_a_summable_cursor_with_the_released_cursor_read() {
+            let (drive, contract) = setup_tip_jar();
+            let tip_ids = setup_tips(&drive, &contract);
+            let mut released_cursor_read = PlatformVersion::latest().clone();
+            released_cursor_read
+                .drive
+                .methods
+                .document
+                .query
+                .start_at_document = 0;
+            let query = tips_after(&contract, tip_ids[1], None, 2);
+            let refused = |result: Result<(), Error>| {
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::CorruptedDocumentPath(
+                        "Holding paths should only have items"
+                    )))
+                )
+            };
+            assert!(refused(
+                query
+                    .execute_no_proof_internal(
+                        &drive,
+                        QueryResultType::QueryElementResultType,
+                        None,
+                        &mut vec![],
+                        &released_cursor_read,
+                    )
+                    .map(|_| ())
+            ));
+            assert!(refused(
+                query
+                    .execute_raw_results_no_proof(&drive, None, None, &released_cursor_read)
+                    .map(|_| ())
+            ));
+            assert!(refused(
+                query
+                    .execute_with_proof_only_get_elements(&drive, None, None, &released_cursor_read)
+                    .map(|_| ())
+            ));
         }
     }
 }

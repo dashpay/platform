@@ -1,3 +1,4 @@
+use crate::drive::document::index_level_tree_types::distinct_estimated_keys;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -11,9 +12,7 @@ use crate::util::type_constants::{
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{
-    typed_array_property, DocumentPropertyType, DocumentTypeRef, IndexLevel,
-};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
@@ -310,9 +309,8 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveKeyInfo<'_>>, Error> {
-        match self {
-            DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefInfo((document, _)) => Ok(document
+        if let Some(document) = self.get_borrowed_document() {
+            return Ok(document
                 .get_raw_array_elements_for_document_type(
                     key_path,
                     document_type,
@@ -320,55 +318,33 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                 )?
                 .into_iter()
                 .map(Key)
-                .collect()),
-            DocumentInfo::DocumentOwnedInfo((document, _))
-            | DocumentInfo::DocumentAndSerialization((document, _, _)) => Ok(document
-                .get_raw_array_elements_for_document_type(
-                    key_path,
-                    document_type,
-                    platform_version,
-                )?
-                .into_iter()
-                .map(Key)
-                .collect()),
-            DocumentInfo::DocumentEstimatedAverageSize(_) => {
-                let (index_level, base_event) = size_info_with_base_event.ok_or(Error::Drive(
-                    DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
-                ))?;
-                let Some(typed_array) =
-                    typed_array_property(document_type.flattened_properties(), key_path)
-                else {
-                    return Err(Error::Fee(
-                        FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
-                            "key path [{}] is not a typed array of the document type",
-                            key_path
-                        )),
-                    ));
-                };
-                let estimated_middle_size = typed_array
-                    .item_type
-                    .middle_byte_size_ceil(platform_version)?
-                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "an indexed typed array element must have a max size",
-                    )))?;
-                let estimated_middle_size = u8::try_from(estimated_middle_size).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "estimated middle size is too big for a key",
-                    ))
-                })?;
-                let unique_id = document_type.unique_id_for_document_field(index_level, base_event);
-                // Each element is a key of its own: the ordinal keeps their estimates apart.
-                Ok((0..typed_array.max_items)
-                    .map(|ordinal| {
-                        let mut element_unique_id = unique_id.to_vec();
-                        element_unique_id.extend_from_slice(&ordinal.to_be_bytes());
-                        KeySize(KeyInfo::MaxKeySize {
-                            unique_id: element_unique_id,
-                            max_size: estimated_middle_size,
-                        })
-                    })
-                    .collect())
+                .collect());
+        }
+        // The worst case holds `maxItems` distinct elements, each estimated as
+        // a key of the element's type is (`get_raw_for_document_type` reads a
+        // typed array as its element type), and each a key of its own
+        let (index_level, _) = size_info_with_base_event.ok_or(Error::Drive(
+            DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
+        ))?;
+        let max_items = index_level.indexed_array_max_items().ok_or(Error::Fee(
+            FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
+                "key path [{}] does not reach a level of typed array elements",
+                key_path
+            )),
+        ))?;
+        match self.get_raw_for_document_type(
+            key_path,
+            document_type,
+            None,
+            size_info_with_base_event,
+            platform_version,
+        )? {
+            Some(KeySize(key_info)) => {
+                Ok(distinct_estimated_keys(&key_info, usize::from(max_items)))
             }
+            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an estimated document estimates its keys",
+            ))),
         }
     }
 

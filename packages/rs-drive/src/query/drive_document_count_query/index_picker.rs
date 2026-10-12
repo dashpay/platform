@@ -3,6 +3,12 @@
 //! Pure functions on the document type's index map + where clauses;
 //! no Drive, no proof. Picks a covering index for a given query
 //! shape, returning `None` if no index can serve the query.
+//!
+//! The clauses must already be keyed by
+//! [`key_array_element_clauses`](crate::query::key_array_element_clauses),
+//! which judges a clause on a typed array: a keyed element read and a raw
+//! `==` or `in` on the array look alike here, and both select the array's
+//! index, whose entries are per element.
 
 use super::super::conditions::WhereClause;
 use super::{

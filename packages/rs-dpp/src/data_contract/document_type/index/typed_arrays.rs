@@ -23,14 +23,20 @@ impl Index {
             })
     }
 
-    /// The `maxItems` of the typed array this index names, if it names one:
-    /// the most entries one document fans out to at the array's level.
-    pub fn typed_array_max_items(
+    /// Where the typed array this index keys its documents by
+    /// ([`Index::indexed_array`], stamped by the parser on every parse) sits
+    /// in the index, and its `maxItems`: the levels from that position on
+    /// fan a document out over at most that many elements.
+    pub fn indexed_array_fan_out(
         &self,
         flattened_properties: &IndexMap<String, DocumentProperty>,
-    ) -> Option<u16> {
-        self.typed_arrays(flattened_properties)
-            .next()
-            .map(|(_, _, typed_array)| typed_array.max_items)
+    ) -> Option<(usize, u16)> {
+        let array = self.indexed_array.as_deref()?;
+        let position = self
+            .properties
+            .iter()
+            .position(|property| property.name == array)?;
+        typed_array_property(flattened_properties, array)
+            .map(|typed_array| (position, typed_array.max_items))
     }
 }

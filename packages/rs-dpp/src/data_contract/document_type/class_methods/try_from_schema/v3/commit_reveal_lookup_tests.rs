@@ -7,7 +7,9 @@
 //! the checks of the referenced side at contract level, and the protocol
 //! version gate.
 
-use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
+use super::reference_test_helpers::{
+    assert_refused, assert_refused_by_the_parser, contract, contract_on, CONTRACT_ID,
+};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -74,7 +76,7 @@ fn salt_reveal(
 /// an earlier block, deleted by the create.
 fn dpns_salt_reveal() -> serde_json::Value {
     salt_reveal(
-        json!({ "minimumAgeBlocks": 1, "consume": true }),
+        json!({ "constraints": { "minimumAgeBlocks": 1 }, "consume": true }),
         json!({ "$ownerId": "$ownerId" }),
     )
 }
@@ -224,18 +226,8 @@ fn dpns_lookup(minimum_age_blocks: Option<u32>, consume: bool) -> DocumentRefere
         )]),
         minimum_age_blocks,
         consume,
+        choose_first: None,
     }
-}
-
-/// Both parses refuse `contract_value`: the validating one with the
-/// meta-schema or the parser, the one that skips the meta-schema with the
-/// parser's `fragment`.
-fn assert_refused_by_the_parser(contract_value: serde_json::Value, fragment: &str) {
-    contract(contract_value.clone()).expect_err("a validating parse should refuse it");
-    assert_refused(
-        contract_on(contract_value, false, PlatformVersion::latest()),
-        fragment,
-    );
 }
 
 #[test]
@@ -249,6 +241,7 @@ fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: None,
             document_type_name: "preorder".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
             lookup: dpns_lookup(Some(1), true),
         }
@@ -408,8 +401,8 @@ fn should_refuse_malformed_functions_in_the_parser() {
             "const holds between 1 and 64 bytes",
         ),
         (
-            json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "$ownerId"] }),
-            "not \"$ownerId\"",
+            json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "$creatorId"] }),
+            "not \"$creatorId\"",
         ),
         (
             json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", { "value": "." }] }),
@@ -514,7 +507,7 @@ fn should_parse_age_and_consume_without_a_function_on_a_type_never_replaced() {
     // The domain's documents are never replaced, so its plain lookup is judged on the create
     // alone, as a computed key is, and may declare both
     let parsed = contract(referrer_contract(
-        plain_owned_lookup(json!({ "minimumAgeBlocks": 1, "consume": true })),
+        plain_owned_lookup(json!({ "constraints": { "minimumAgeBlocks": 1 }, "consume": true })),
         false,
     ))
     .expect("age and consume on a type never replaced should parse");
@@ -535,7 +528,10 @@ fn should_parse_age_and_consume_without_a_function_on_a_type_never_replaced() {
 #[test]
 fn should_refuse_age_and_consume_without_a_function_on_a_type_whose_documents_can_be_replaced() {
     // A replace judges the plain lookup again, so it is not judged on the create alone
-    for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
+    for extra in [
+        json!({ "constraints": { "minimumAgeBlocks": 1 } }),
+        json!({ "consume": true }),
+    ] {
         assert_refused_by_the_parser(
             referrer_contract(plain_owned_lookup(extra), true),
             "the reference must be judged on the create alone",
@@ -551,9 +547,9 @@ fn should_refuse_age_and_consume_without_find_by() {
         referrer(json!({
             "type": "deletableDocument",
             "documentType": "preorder",
-            "minimumAgeBlocks": 1
+            "constraints": { "minimumAgeBlocks": 1 }
         })),
-        "deletableDocument refersTo does not take minimumAgeBlocks without findBy",
+        "deletableDocument refersTo does not take constraints without findBy",
     );
     assert_refused_by_the_parser(
         referrer(json!({ "type": "identity", "consume": true })),
@@ -564,7 +560,10 @@ fn should_refuse_age_and_consume_without_find_by() {
 #[test]
 fn should_refuse_a_minimum_age_of_zero_or_a_consume_of_false() {
     assert_refused_by_the_parser(
-        dpns_contract(salt_reveal(json!({ "minimumAgeBlocks": 0 }), json!({}))),
+        dpns_contract(salt_reveal(
+            json!({ "constraints": { "minimumAgeBlocks": 0 } }),
+            json!({}),
+        )),
         "minimumAgeBlocks must be at least 1",
     );
     assert_refused_by_the_parser(
@@ -641,7 +640,10 @@ fn should_refuse_a_minimum_age_on_a_commitment_type_recording_no_creation_block(
     // The creation time is not the creation block: the age is counted in blocks
     assert_refused(
         contract(dpns_contract_with(
-            salt_reveal(json!({ "minimumAgeBlocks": 1 }), json!({})),
+            salt_reveal(
+                json!({ "constraints": { "minimumAgeBlocks": 1 } }),
+                json!({}),
+            ),
             json!({}),
             json!({ "required": ["$createdAt", "saltedDomainHash"] }),
         )),
@@ -691,7 +693,7 @@ fn should_refuse_consuming_a_commitment_whose_delete_rules_it_would_skip() {
     // Without the consume, the reveal leaves the preorder to its owner's delete
     contract(dpns_contract_with(
         salt_reveal(
-            json!({ "minimumAgeBlocks": 1 }),
+            json!({ "constraints": { "minimumAgeBlocks": 1 } }),
             json!({ "$ownerId": "$ownerId" }),
         ),
         json!({}),
@@ -715,6 +717,7 @@ fn should_consume_a_commitment_only_a_consume_deletes() {
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: None,
             document_type_name: "preorder".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
             lookup: dpns_lookup(Some(1), true),
         }
@@ -1089,7 +1092,7 @@ fn should_refuse_an_update_changing_a_function_or_what_it_demands() {
     let old_domain = old.document_type_for_name("domain").expect("the domain");
 
     let mut reordered = salt_reveal(
-        json!({ "minimumAgeBlocks": 1, "consume": true }),
+        json!({ "constraints": { "minimumAgeBlocks": 1 }, "consume": true }),
         json!({ "$ownerId": "$ownerId" }),
     );
     reordered["findBy"]["saltedDomainHash"]["params"] =
@@ -1100,11 +1103,11 @@ fn should_refuse_an_update_changing_a_function_or_what_it_demands() {
     for changed in [
         reordered,
         salt_reveal(
-            json!({ "minimumAgeBlocks": 2, "consume": true }),
+            json!({ "constraints": { "minimumAgeBlocks": 2 }, "consume": true }),
             json!({ "$ownerId": "$ownerId" }),
         ),
         salt_reveal(
-            json!({ "minimumAgeBlocks": 1 }),
+            json!({ "constraints": { "minimumAgeBlocks": 1 } }),
             json!({ "$ownerId": "$ownerId" }),
         ),
     ] {
@@ -1283,4 +1286,41 @@ fn should_accept_a_find_by_function_reading_the_writer_on_a_type_that_can_change
         assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
         assert!(lookup.is_checked_on_create_only(true));
     }
+}
+
+#[test]
+fn should_refuse_a_where_bound_a_later_write_changes_beside_a_function() {
+    // A reveal is judged when the document is created only, so an ordering
+    // bounded by `$updatedAt`, which every replace moves, would go unchecked
+    // after the create; one bounded by the create's own time is fixed with it
+    let bounded_by = |bound: &str| {
+        contract(dpns_contract_with(
+            salt_reveal(json!({}), json!({ "deadline": { "greaterThan": bound } })),
+            json!({
+                "documentsMutable": true,
+                "immutable": ["label", "normalizedLabel", "parentDomainName"],
+                "required": [
+                    "label", "normalizedLabel", "parentDomainName", "preorderSalt",
+                    "$createdAt", "$updatedAt"
+                ]
+            }),
+            json!({
+                "properties": {
+                    "saltedDomainHash": {
+                        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                        "position": 0
+                    },
+                    "deadline": {
+                        "type": "integer", "minimum": 0, "maximum": 9007199254740991u64,
+                        "position": 1
+                    }
+                }
+            }),
+        ))
+    };
+    assert_refused(
+        bounded_by("$updatedAt"),
+        "is bounded by \"$updatedAt\" beside a findBy function",
+    );
+    bounded_by("$createdAt").expect("a time of the create is fixed with it");
 }

@@ -29,16 +29,20 @@ use dpp::version::PlatformVersion;
 /// its elements, and a clause reading elements must name a typed array
 /// ([`WhereClause::validate_array_element_clause`]): the marker is gone once a
 /// clause is keyed, so this is where the field's type is judged.
-/// `several_elements_allowed` says whether the request answers per element
-/// when it reads several ([`answers_per_element`]): a total over several
-/// elements would count a document once per element it holds, so it is
-/// refused.
+/// `grouped_by_in` says whether the request is grouped by its `In` field
+/// alone (a `containsAny` routes as one): only then, and without a range
+/// clause, does it answer per element when it reads several
+/// ([`answers_per_element`]). A total over several elements would count a
+/// document once per element it holds, so it is refused. The ranked and
+/// having surfaces and a count sub-query read one element at most, and pass
+/// `false`.
 pub fn key_array_element_clauses(
     clauses: Vec<WhereClause>,
     document_type: DocumentTypeRef,
-    several_elements_allowed: bool,
+    grouped_by_in: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, Error> {
+    let several_elements_allowed = answers_per_element(grouped_by_in, &clauses);
     clauses
         .into_iter()
         .map(|mut clause| {
@@ -65,10 +69,10 @@ pub fn key_array_element_clauses(
 /// typed array (`containsAny`) answers one total per element: grouped by the
 /// `In` field alone (`containsAny` routes as one, so it is grouped by the
 /// array), with no range clause, over which the surfaces fold a group's
-/// totals. The one rule the aggregate dispatchers and the SDK proof verifiers
-/// pass to [`key_array_element_clauses`], so a verifier refuses exactly the
-/// totals the server refuses.
-pub fn answers_per_element(grouped_by_in: bool, where_clauses: &[WhereClause]) -> bool {
+/// totals. Applied by [`key_array_element_clauses`] to the clauses it keys,
+/// for the aggregate dispatchers and the SDK proof verifiers alike, so a
+/// verifier refuses exactly the totals the server refuses.
+fn answers_per_element(grouped_by_in: bool, where_clauses: &[WhereClause]) -> bool {
     grouped_by_in
         && !where_clauses
             .iter()

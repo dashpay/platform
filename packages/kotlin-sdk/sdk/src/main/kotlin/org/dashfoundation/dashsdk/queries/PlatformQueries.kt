@@ -670,8 +670,10 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * Each rule lists the properties it reads and how
      * ([DocumentPropertyConstraint.reads]), whether it reads the owner
      * ([DocumentPropertyConstraint.readsOwner]), the system times and
-     * heights it reads ([DocumentPropertyConstraint.readsSystem]) and the
-     * `countOf` and `sumOf` totals it reads ([DocumentPropertyConstraint.readsTotals]).
+     * heights it reads ([DocumentPropertyConstraint.readsSystem]), the
+     * `countOf` and `sumOf` totals it reads ([DocumentPropertyConstraint.readsTotals])
+     * and the values it reads of referenced documents
+     * ([DocumentPropertyConstraint.readsReferenced]).
      *
      * [serializedContract] is the contract's platform serialization, the bytes
      * kept beside a fetched contract ([ContractWithSerialization.binarySerialization],
@@ -712,9 +714,12 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * reading a block height (`$createdAtBlockHeight`, ...) is not judged,
      * since the height is unknown until the block, nor is a rule reading a
      * `countOf` or `sumOf` total ([DocumentPropertyConstraint.readsTotals]),
-     * which the platform reads from state when the document is sent; consensus
-     * may still refuse the document for either. [serializedContract] is as for
-     * [propertyConstraints]; no network call.
+     * which the platform reads from state when the document is sent, nor one
+     * reading a value of a referenced document
+     * ([DocumentPropertyConstraint.readsReferenced]), which the platform reads
+     * when it checks the reference; consensus may still refuse the document
+     * for any of these. [serializedContract] is as for [propertyConstraints];
+     * no network call.
      *
      * @throws DashSdkError.InvalidParameter for empty contract bytes, an owner
      *   id that is not 32 bytes, or properties that are not a JSON object.

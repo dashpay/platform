@@ -243,6 +243,19 @@ for (const ref of contract.documentTypeReferences('note')) {
   // the writer's own `$ownerId`: a write gate such as
   // `{ '$ownerId': '$ownerId' }` lets only the referenced document's current
   // owner create or replace the referring document.
+  // A value may instead be a condition object with one key, as the schema
+  // writes it: `{ const: v }`, `{ notEqual: b }`, `{ in: [v1, v2] }`, or an
+  // ordering such as `{ lessThanOrEqual: 'amount' }` or
+  // `{ greaterThan: '$updatedAt' }` (a bound is a referring property,
+  // `'$ownerId'`, a time or height, or `{ const: v }`; an integer past
+  // Number.MAX_SAFE_INTEGER is a bigint). Tell the two apart by type:
+  for (const [referenced, value] of Object.entries(ref.where ?? {})) {
+    if (typeof value === 'string') {
+      // an equality with the referring property `value`
+    } else {
+      // a condition, e.g. { in: ['open', 'extended'] }
+    }
+  }
   console.log(ref.path, ref.type);
 }
 
@@ -504,13 +517,13 @@ try {
 }
 ```
 
-To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys):
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys), nor one reading a value of the document a reference points at, `{ referenced: [reference, field] }`, which the platform reads when it checks the reference (`readsReferenced` lists them, each with its `reference`, `path` and `kind`):
 
 ```ts
 contract.documentTypePropertyConstraints('offer');
 // [{ name: 'discountBelowPrice', rule: { lessThan: ['discount', 'price'] },
 //    reads: [{ path: 'discount', kind: 'value' }, { path: 'price', kind: 'value' }],
-//    readsOwner: false, readsSystem: [], readsTotals: [] }, ...]
+//    readsOwner: false, readsSystem: [], readsTotals: [], readsReferenced: [] }, ...]
 
 const broken = contract.checkDocumentPropertyConstraints(document);
 if (broken) {

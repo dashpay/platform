@@ -27,8 +27,7 @@ A reply to a post only the moderators take down:
   ],
   "properties": {
     "postId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "moderatedDocument", "documentType": "post" },
       "position": 0
     },

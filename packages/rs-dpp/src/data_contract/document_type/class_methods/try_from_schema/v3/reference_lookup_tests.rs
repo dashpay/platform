@@ -85,6 +85,7 @@ fn expected_lookup(keys: &[(&str, LookupKeySource)]) -> DocumentReferenceLookup 
             .collect(),
         minimum_age_blocks: None,
         consume: false,
+        choose_first: None,
     }
 }
 
@@ -98,6 +99,7 @@ fn should_parse_find_by_with_a_property_source_an_owner_source_and_the_reference
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "joinRequest".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: expected_lookup(&[
                     (
@@ -460,6 +462,7 @@ fn should_parse_find_by_on_a_deletable_document_reference_and_check_its_referenc
             DocumentPropertyReferenceTarget::DeletableDocumentLookup {
                 contract_id: None,
                 document_type_name: "joinRequest".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: expected_lookup(&[
                     (
@@ -531,6 +534,7 @@ fn should_parse_find_by_on_the_elements_of_a_typed_array_as_the_charter_declares
             target: &DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "joinRequest".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: expected_lookup(&[
                     (
@@ -666,6 +670,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_and_without_
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "joinRequest".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
             }
         )

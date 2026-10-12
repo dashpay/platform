@@ -56,10 +56,11 @@ pub enum PreallocatedKeySource<'a> {
     /// its value is the named property of the referenced document, which may
     /// be one of its `$ownerId` and `$creatorId` system identifiers as well
     /// as a schema property. The two sides are validated to share one value
-    /// kind, so encoding the referenced document's value yields the same key
-    /// bytes the referring side would produce; the insert path resolves the
-    /// name through the same document accessor the entry walkers key by,
-    /// which serves the two system names alongside the schema properties.
+    /// kind; the insert path resolves the name through the same document
+    /// accessor the entry walkers key by, which serves the two system names
+    /// alongside the schema properties, then keys the value as the referring
+    /// type keys its property (an unsigned integer can be keyed in a
+    /// different generation on each side).
     ReferencedDocumentProperty(&'a str),
 }
 
@@ -291,6 +292,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
                     document_type_name: target_type.to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: agreement
                         .iter()
                         .map(|(referring, referenced)| {
@@ -496,11 +498,13 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
         );
@@ -520,6 +524,7 @@ mod tests {
         let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: document_type_name.to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
         };
         let index = index_on(&["postId"]);
@@ -556,6 +561,7 @@ mod tests {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                ..
             },
         ) = property.property_type
         else {
@@ -565,6 +571,7 @@ mod tests {
             DocumentPropertyReferenceTarget::ModeratedDocument {
                 contract_id,
                 document_type_name,
+                where_conditions: Default::default(),
                 property_agreement,
             },
         );
@@ -604,6 +611,7 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
             },
         );

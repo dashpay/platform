@@ -1,5 +1,6 @@
 use crate::version::fee::data_contract_registration::v2::FEE_DATA_CONTRACT_REGISTRATION_VERSION2;
 use crate::version::fee::data_contract_validation::v1::FEE_DATA_CONTRACT_VALIDATION_VERSION1;
+use crate::version::fee::document_reference::v1::FEE_DOCUMENT_REFERENCE_VERSION1;
 use crate::version::fee::document_ttl::v1::FEE_DOCUMENT_TTL_VERSION1;
 use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
 use crate::version::fee::processing::v1::FEE_PROCESSING_VERSION1;
@@ -23,4 +24,6 @@ pub const FEE_VERSION2: FeeVersion = FeeVersion {
     vote_resolution_fund_fees: VOTE_RESOLUTION_FUND_FEES_VERSION1,
     // Unread before protocol version 14: the document `ttl` keyword does not parse there.
     document_ttl: FEE_DOCUMENT_TTL_VERSION1,
+    // Unread before protocol version 14: `chooseFirst` does not parse there.
+    document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
 };

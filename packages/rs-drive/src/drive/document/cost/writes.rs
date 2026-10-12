@@ -21,6 +21,7 @@ use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
     index_only_row_commitment, make_document_reference, make_document_reference_with_sum_item,
     preallocation_bindings_targeting, read_document_sum_contribution,
+    referenced_tree_key_for_referring_property,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -201,9 +202,9 @@ fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) 
 fn carries(document_type: DocumentTypeRef, document: &Document, property: &str) -> bool {
     match document_type.derived_index_properties().get(property) {
         Some(derived) if !document.properties().contains_key(property) => {
-            document_carries(document, &derived.reference_property)
+            document_carries(document, document_type, &derived.reference_property)
         }
-        _ => document_carries(document, property),
+        _ => document_carries(document, document_type, property),
     }
 }
 
@@ -715,16 +716,12 @@ impl Context<'_> {
             });
             // An indexed typed array enters the document once per distinct
             // element (`add_indices_for_index_level_for_contract_operations`
-            // v2); every other property keys it by its single value.
-            let keys = if sub_level.indexes_array_elements() {
-                self.document.get_raw_array_elements_for_document_type(
-                    sub_key,
-                    self.document_type,
-                    self.platform_version,
-                )?
-            } else {
-                vec![self.raw(sub_key)?.unwrap_or_default()]
-            };
+            // v2); every other property keys it by its single value, an absent
+            // one by the null layout's empty key, as that walker does (a level
+            // below the first is never bucketed).
+            let keys = self
+                .level_keys(sub_key, sub_level)?
+                .unwrap_or_else(|| vec![Vec::new()]);
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
             if sub_level.summable_off_count_index_info().is_some() {
@@ -931,6 +928,17 @@ impl Context<'_> {
                         return Ok(());
                     }
                     self.raw(referenced)?
+                        .map(|raw| {
+                            referenced_tree_key_for_referring_property(
+                                raw,
+                                self.document_type,
+                                referenced,
+                                referring,
+                                name,
+                                self.platform_version,
+                            )
+                        })
+                        .transpose()?
                 }
             };
             // A value the document does not carry, or a null one: no entry

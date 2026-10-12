@@ -1343,6 +1343,13 @@ impl Index {
         }
     }
 
+    /// How many windows of the index's `timeRange` or `integerRange` grid
+    /// hold one document: 1 for an index without one.
+    pub fn windows_per_document(&self) -> u64 {
+        self.bucketing()
+            .map_or(1, |bucketing| bucketing.overlap_factor().max(1))
+    }
+
     /// Whether this index buckets its first property (`timeRange` or
     /// `integerRange`). A bucketed index stores window starts, not the
     /// property's values, so only a resolved window selection may read it.
@@ -1526,6 +1533,23 @@ impl Index {
     /// group, no entry per document.
     pub fn is_summable_off_count_index(&self) -> bool {
         self.summable_off_count_index.is_some()
+    }
+
+    /// Whether this index is `rangeSummable` and ends with `property`. The
+    /// tree holding `property`'s values then keeps a signed sum in every node,
+    /// so `serialize_value_for_key` 1 keys such a property, when unsigned, as
+    /// generation 0 at every protocol version: values of both signs whose
+    /// sums fit every node in the earlier key order can leave the signed
+    /// 64-bit range in every balanced tree of value order, and a summed
+    /// property's type does not tell its stored values are never negative
+    /// (an update before protocol version 14 can make a property holding
+    /// negative values unsigned).
+    pub fn ends_range_summable_with(&self, property: &str) -> bool {
+        self.range_summable
+            && self
+                .properties
+                .last()
+                .is_some_and(|last| last.name == property)
     }
 
     /// The position of the shallowest level of this index's count chain: the

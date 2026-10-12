@@ -290,7 +290,7 @@ fn should_hold_the_elements_to_the_key_limits_of_their_type() {
                 "rankedCountable": true
             }]),
         ))),
-        "hashtags.maxLength"
+        "hashtags.items.maxLength"
     );
 }
 
@@ -435,6 +435,40 @@ fn should_let_an_update_raise_an_indexed_array_within_the_limits() {
     );
 }
 
+/// A type with a time to live prepaid each document's cleanup by its indexed
+/// arrays' `maxItems`, so an update may not raise one there; a bound that
+/// stays, or a type without a time to live, is unaffected.
+#[test]
+fn should_hold_an_indexed_array_bound_on_a_type_with_a_time_to_live() {
+    let expiring = |max_items: u16| {
+        let mut schema = post_schema(
+            hashtags(max_items),
+            platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]),
+        );
+        schema
+            .insert("ttl".to_string(), 86_400u32.into())
+            .expect("a time to live");
+        parse(schema).expect("an expiring post type")
+    };
+    let old = expiring(4);
+    let update = |new: &DocumentType| {
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, PlatformVersion::latest())
+            .expect("validate_update runs")
+    };
+
+    let raised = update(&expiring(8));
+    assert!(!raised.is_valid(), "a raised bound is refused");
+    assert!(
+        format!("{:?}", raised.errors)
+            .contains("can not raise the maxItems of indexed typed array 'hashtags' from 4 to 8"),
+        "{:?}",
+        raised.errors
+    );
+    let kept = update(&expiring(4));
+    assert!(kept.is_valid(), "{:?}", kept.errors);
+}
+
 /// The key codec by protocol version, through its dispatchers: generation 1
 /// (protocol version 14) keys a scalar exactly as generation 0 does, so no
 /// stored key moves, and keys a typed array property as one element, which
@@ -513,5 +547,113 @@ fn should_key_scalars_alike_and_elements_only_from_protocol_version_14() {
             .get_raw_array_elements_for_document_type("hashtags", document_type, latest)
             .expect("the elements, sorted and distinct"),
         vec![b"dash".to_vec(), b"news".to_vec()]
+    );
+}
+
+#[test]
+fn should_refuse_an_index_on_a_typed_array_inside_an_object() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "team": {
+                "type": "object",
+                "position": 0,
+                "properties": {
+                    "leads": {
+                        "type": "array",
+                        "maxItems": 4,
+                        "items": { "type": "string", "minLength": 1, "maxLength": 20 },
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "indices": [{ "name": "byLead", "properties": [{ "team.leads": "asc" }] }],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse(schema),
+        "must be a top-level property of the document type",
+    );
+}
+
+#[test]
+fn should_refuse_a_contested_index_on_a_typed_array() {
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "properties": { "hashtags": hashtags(10) },
+        "indices": [{
+            "name": "byHashtag",
+            "properties": [{ "hashtags": "asc" }],
+            "unique": true,
+            "contested": {
+                "fieldMatches": [{ "field": "hashtags", "regexPattern": "^[a-z]{3,}$" }],
+                "resolution": 0
+            }
+        }],
+        "additionalProperties": false
+    });
+    expect_structure_error(parse(schema), "a contested index is over one value");
+}
+
+#[test]
+fn should_key_an_unsigned_element_in_value_order() {
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use crate::document::document_methods::DocumentMethodsV0;
+    use crate::document::{Document, DocumentV0};
+    use platform_value::Identifier;
+
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "array",
+                "maxItems": 4,
+                "items": { "type": "integer", "minimum": 0, "maximum": 1000 },
+                "position": 0
+            }
+        },
+        "indices": [{ "name": "byScore", "properties": [{ "scores": "asc" }] }],
+        "additionalProperties": false
+    });
+    let document_type = parse(schema).expect("the scored type");
+    let document_type = document_type.as_ref();
+    let latest = PlatformVersion::latest();
+
+    // An element is keyed as a property of its type is: from protocol version 14 an
+    // unsigned integer by its plain big-endian bytes, so the keys sort as the values do.
+    let key = document_type
+        .serialize_value_for_key("scores", &Value::U16(300), latest)
+        .expect("an element keys");
+    assert_eq!(key, 300u16.to_be_bytes().to_vec());
+    assert_eq!(
+        document_type
+            .deserialize_value_for_key("scores", &key, latest)
+            .expect("the key decodes"),
+        Value::U16(300)
+    );
+    let document = Document::V0(DocumentV0 {
+        id: Identifier::from([1; 32]),
+        owner_id: Identifier::from([2; 32]),
+        properties: [(
+            "scores".to_string(),
+            Value::Array(vec![Value::U16(300), Value::U16(2), Value::U16(128)]),
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    });
+    assert_eq!(
+        document
+            .get_raw_array_elements_for_document_type("scores", document_type, latest)
+            .expect("the elements"),
+        vec![
+            2u16.to_be_bytes().to_vec(),
+            128u16.to_be_bytes().to_vec(),
+            300u16.to_be_bytes().to_vec()
+        ],
+        "the element keys sort as the scores do"
     );
 }

@@ -375,7 +375,9 @@ pub struct SystemLimits {
     /// The most work the document expiry cleanup does in one block, beside
     /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
     /// index levels of its type (every index counts its properties, times the overlapping
-    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// windows of a `timeRange` or `integerRange` index, an index naming a typed array its
+    /// levels from the array on once per element `maxItems` allows), the measure its prepaid
+    /// deletion fee is sized by.
     /// The cleanup stops before a document that would pass it, except the block's first, so
     /// the backlog always drains.
     ///
@@ -432,6 +434,30 @@ pub struct SystemLimits {
     /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
     /// typed array.
     pub max_index_entries_per_document: Option<u16>,
+    /// The most documents a create reads for a `refersTo` `chooseFirst`, the competitors of
+    /// the commitment its `findBy` found: the documents of the referenced type holding the found
+    /// commitment's value at `among`, read in the order its `by` lists through the type's index
+    /// over that property and the ordered properties, in one query, as far as the found
+    /// commitment. The create is refused at the first valid one before the found commitment,
+    /// and stands when none of the first this many is one, so documents that are no valid
+    /// competitor can make a create cost more, never refuse it. `findBy` finds through a
+    /// unique index over the referenced type's `$ownerId` and `among`, so each of them is
+    /// another identity's, and ordering this many before a valid commitment takes this many
+    /// identities. Read by
+    /// document reference validation 0 (protocol version 14); the earlier tables carry the
+    /// same number, which nothing reads there.
+    pub max_choose_first_candidates: u16,
+    /// How many key moves the rewrite of unsigned integer index value keys on the first block
+    /// of protocol version 14 (`Drive::rekey_unsigned_integer_index_values`) gathers into one
+    /// GroveDB batch, across trees and contracts, and how many keys it reads in one page: one
+    /// batch per moved key, or per tree with moved keys, would propagate to the root once per
+    /// key or tree. Two values that trade keys always move in the same batch, so a batch can
+    /// hold one move more, and a batch is applied early when a tree is to move its own keys
+    /// while it holds moves below them. Part of what that block writes, since the batch
+    /// boundaries shape the Merk trees holding the moved keys.
+    ///
+    /// `None` in the tables of protocol versions that never run the rewrite.
+    pub max_rekey_batch_moves: Option<u32>,
 }
 
 #[cfg(test)]

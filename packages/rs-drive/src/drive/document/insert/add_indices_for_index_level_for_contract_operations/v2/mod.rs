@@ -1,7 +1,7 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, document_takes_part_in_index,
-    index_level_tree_types_with_continuation_demotion, level_reaches_entry,
+    index_level_tree_types_with_continuation_demotion, level_keys, level_reaches_entry, LevelKeys,
 };
 use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
@@ -133,6 +133,7 @@ impl Drive {
             if document_takes_part_in_index(
                 &index_type.skip_if_absent_properties,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 self.add_reference_for_index_level_for_contract_operations(
                     document_and_contract_info,
@@ -204,6 +205,7 @@ impl Drive {
             if !level_reaches_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 continue;
             }
@@ -244,28 +246,18 @@ impl Drive {
             // The sub-level is only reached for a document holding at least one element (the
             // array is in the skip set of every index naming it). Every other property keys
             // the document by its single value.
-            let document_index_fields: Vec<DriveKeyInfo> = if sub_level.indexes_array_elements() {
-                document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_raw_array_elements_for_document_type(
-                        name,
-                        document_type,
-                        Some((sub_level, event_id)),
-                        platform_version,
-                    )?
-            } else {
-                vec![document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_raw_for_document_type(
-                        name,
-                        document_type,
-                        document_and_contract_info.owned_document_info.owner_id,
-                        Some((sub_level, event_id)),
-                        platform_version,
-                    )?
-                    .unwrap_or_default()]
+            let document_index_fields: Vec<DriveKeyInfo> = match level_keys(
+                &document_and_contract_info.owned_document_info.document_info,
+                sub_level,
+                name,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                Some((sub_level, event_id)),
+                platform_version,
+            )? {
+                LevelKeys::Elements(element_keys) => element_keys,
+                // An absent value keeps its null-layout empty key
+                LevelKeys::Value(value) => vec![value.unwrap_or_default()],
             };
 
             let path_key_info = index_property_key
@@ -380,8 +372,18 @@ impl Drive {
                 );
             }
 
-            for document_index_field in document_index_fields {
-                let mut value_index_path_info = sub_level_index_path_info.clone();
+            // The final value takes the path; earlier ones (only an indexed typed array's
+            // elements are several) clone it.
+            let value_count = document_index_fields.len();
+            for (position, document_index_field) in document_index_fields.into_iter().enumerate() {
+                let mut value_index_path_info = if position + 1 == value_count {
+                    std::mem::replace(
+                        &mut sub_level_index_path_info,
+                        PathInfo::PathAsVec(Vec::new()),
+                    )
+                } else {
+                    sub_level_index_path_info.clone()
+                };
                 // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 

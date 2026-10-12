@@ -5,7 +5,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, PropertyConstraint, SystemChange,
+    data_with_referenced_documents, DocumentSystemValues, PropertyConstraint, SystemChange,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -787,6 +787,94 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         }
     }
 
+    /// The type of the property an index key names, when it is one whose key
+    /// generation 1 changes: a property, or a derived index property, keyed
+    /// as an unsigned integer, or a typed array whose elements are (an index
+    /// naming a typed array keys the document by each element, as a property
+    /// of the element's type). `None` for the `$` system fields, which keep
+    /// their encoding, for a property that ends a `rangeSummable` index
+    /// ([`Index::ends_range_summable_with`]), which keeps generation 0's keys
+    /// in every index naming it, and for every other name.
+    ///
+    /// The answer can't change for a stored document type after the upgrade
+    /// reads it: an update can't change its indexes, and from protocol
+    /// version 14 can't change any integer property's width or signedness
+    /// (`validate_integer_encoding_stability`). No index names a typed array
+    /// before protocol version 14, so the upgrade's rewrite meets none.
+    fn unsigned_integer_tree_key_property_type(&self, key: &str) -> Option<&DocumentPropertyType> {
+        if key.starts_with('$') {
+            return None;
+        }
+        self.flattened_properties()
+            .get(key)
+            .map(|property| match &property.property_type {
+                DocumentPropertyType::TypedArray(typed_array) => typed_array.item_type.as_ref(),
+                property_type => property_type,
+            })
+            .or_else(|| self.derived_index_property_type(key))
+            .filter(|property_type| property_type.has_unsigned_integer_tree_key())
+            .filter(|_| {
+                !self
+                    .indexes()
+                    .values()
+                    .any(|index| index.ends_range_summable_with(key))
+            })
+    }
+
+    /// Generation 1 keys a property or derived index property of an unsigned
+    /// integer type by its plain big-endian bytes
+    /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
+    /// sort as its values do, except one that keeps generation 0's keys
+    /// because it ends a `rangeSummable` index
+    /// ([`Self::unsigned_integer_tree_key_property_type`]). The key of a typed
+    /// array property is one of its elements, keyed exactly as a property of
+    /// the element's type is: an index naming the array keys the document by
+    /// each element, and a `contains` query keys the element it looks for
+    /// (generation 0 refuses an array key, which no index or query before
+    /// protocol version 14 can name). Every other key is generation 0's, the
+    /// `$` system fields included: the timestamps and heights they hold never
+    /// reach the top bit that generation 0 flips, so their keys already sort
+    /// as their values do (a query bound past that bit still sorts out of
+    /// place, as before).
+    fn serialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &Value,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        if let Some(property_type) = self.unsigned_integer_tree_key_property_type(key) {
+            return property_type.encode_value_for_tree_keys_v1(value);
+        }
+        let Some(typed_array) = typed_array_property(self.flattened_properties(), key) else {
+            return self.serialize_value_for_key_v0(key, value);
+        };
+        let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
+        if bytes.len() > MAX_INDEX_SIZE {
+            Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet(
+                    "value must be less than 256 bytes long".to_string(),
+                ),
+            ))
+        } else {
+            Ok(bytes)
+        }
+    }
+
+    /// Reads a key [`Self::serialize_value_for_key_v1`] wrote, a typed array
+    /// key decoding to one element.
+    fn deserialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &[u8],
+    ) -> Result<Value, ProtocolError> {
+        if let Some(property_type) = self.unsigned_integer_tree_key_property_type(key) {
+            return property_type.decode_value_for_tree_keys_v1(value);
+        }
+        match typed_array_property(self.flattened_properties(), key) {
+            Some(typed_array) => typed_array.item_type.decode_value_for_tree_keys(value),
+            None => self.deserialize_value_for_key_v0(key, value),
+        }
+    }
+
     fn deserialize_value_for_key_v0(
         &self,
         key: &str,
@@ -829,45 +917,6 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 };
                 property_type.decode_value_for_tree_keys(value)
             }
-        }
-    }
-
-    /// `serialize_value_for_key` generation 1 (protocol version 14): generation 0, except
-    /// that the key of a typed array property is one of its elements, encoded exactly as a
-    /// property of the element's type is. An index naming a typed array keys the document by
-    /// each of its elements, and a `contains` query keys the element it looks for. Generation
-    /// 0 refuses an array key, which no index or query before protocol version 14 can name.
-    fn serialize_value_for_key_v1(
-        &self,
-        key: &str,
-        value: &Value,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        let Some(typed_array) = typed_array_property(self.flattened_properties(), key) else {
-            return self.serialize_value_for_key_v0(key, value);
-        };
-        let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
-        if bytes.len() > MAX_INDEX_SIZE {
-            Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet(
-                    "value must be less than 256 bytes long".to_string(),
-                ),
-            ))
-        } else {
-            Ok(bytes)
-        }
-    }
-
-    /// `deserialize_value_for_key` generation 1 (protocol version 14): generation 0, except
-    /// that the key of a typed array property decodes to one element, the inverse of
-    /// [`Self::serialize_value_for_key_v1`].
-    fn deserialize_value_for_key_v1(
-        &self,
-        key: &str,
-        value: &[u8],
-    ) -> Result<Value, ProtocolError> {
-        match typed_array_property(self.flattened_properties(), key) {
-            Some(typed_array) => typed_array.item_type.decode_value_for_tree_keys(value),
-            None => self.deserialize_value_for_key_v0(key, value),
         }
     }
 
@@ -927,9 +976,60 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     where
         Self: DocumentTypeV2Getters,
     {
-        for (name, constraint) in self.property_constraints() {
+        // A rule reading a referenced document waits for the values, and no
+        // total of it is read before
+        for (name, constraint) in self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.is_judged_with(system))
+        {
             self.expect_every_aggregate_read(name, constraint, system)?;
             if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// `validate_referencing_property_constraints` version 0: every rule of the document
+    /// type's `propertyConstraints` reading a document one of its references points at is
+    /// evaluated, in name order, against `data` with `referenced` under `$referenced`
+    /// ([`data_with_referenced_documents`]), and the first one broken is reported. The data
+    /// is copied only when such a rule exists. The type's other rules are not judged again.
+    /// A rule reading a total consensus did not read is an error.
+    fn validate_referencing_property_constraints_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        referenced: BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        let mut rules = self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_referenced())
+            .peekable();
+        if rules.peek().is_none() {
+            return Ok(SimpleConsensusValidationResult::default());
+        }
+        let data = data_with_referenced_documents(data, referenced)?;
+        // The values the rules read are now in the data
+        let system = DocumentSystemValues {
+            referenced_documents: true,
+            ..system.clone()
+        };
+        for (name, constraint) in rules {
+            self.expect_every_aggregate_read(name, constraint, &system)?;
+            if let Some(violation) = constraint.violation(&data, &system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
@@ -1009,7 +1109,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut changed_rules = self
             .property_constraints()
             .iter()
-            .filter(|(_, constraint)| constraint.reads_change(change))
+            .filter(|(_, constraint)| {
+                constraint.reads_change(change) && constraint.is_judged_with(system)
+            })
             .peekable();
         if changed_rules.peek().is_none() {
             return Ok(SimpleConsensusValidationResult::default());

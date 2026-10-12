@@ -137,7 +137,7 @@ A meta-schema violation is refused with `JsonSchemaError` (10101) and the other 
 - `items` may not be added or removed, so a byte array cannot become a typed array or the reverse (10246).
 - Inside `items`, each keyword follows its own update rule (see [Property Schemas](property-schemas.md)): for example `maxLength` and `maxBytes` may be raised, and `enum` may gain values. `refersTo` and `distinctFrom` are fixed.
 - A change to how an element is stored is refused (`DocumentTypeUpdateError`, 40212): an integer element whose width or sign would change (by its bounds or its `enum`), or a byte array element that would switch between fixed and variable size or change its fixed size.
-- On the array, `maxItems` may be raised, up to 1024 and within the reference limit, and `minItems` lowered. `uniqueItems` may be removed, not added. An indexed array's `maxItems` stays within the index limits (16, or 4 under a window, and 256 entries per document).
+- On the array, `maxItems` may be raised, up to 1024 and within the reference limit, and `minItems` lowered. `uniqueItems` may be removed, not added. An indexed array's `maxItems` stays within the index limits (16, or 4 under a window, and 256 entries per document), and on a type with a [`ttl`](ttl.md), whose documents prepaid their cleanup by it, is not raised at all (`DocumentTypeUpdateError`, 40212).
 - The element bounds of an indexed array stay within the index key limits (a string's `maxLength` at most 63, a byte array element's `minItems` at least 1).
 
 ## See also
