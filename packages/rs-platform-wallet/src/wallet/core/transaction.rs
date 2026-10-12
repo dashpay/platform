@@ -265,8 +265,10 @@ impl FinalizeOptions {
 /// the builder's copy over the clone's, so one not final there stays out of
 /// the trial as it stays out of the build (choose it through
 /// `FinalizeOptions::inputs` instead). The clones share the reservation sets, so what the trial
-/// reserves is released before returning. Nothing is signed (a payload
-/// finalizer on the configuration does run, as in the build). Runs
+/// reserves is released before returning. No input is signed. A payload
+/// finalizer on the configuration does run, as in the build: for a
+/// ProUpServTx it computes the operator-BLS payload signature, which is
+/// dropped with the trial transaction. Runs
 /// under the caller's wallet-manager write guard, on the failure path only.
 pub(crate) fn trial_with_waiting_coins(
     make: &BuilderFactory<'_>,
@@ -1115,8 +1117,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// shortfall is [`PlatformWalletError::CoreFundsAwaitingNetwork`] —
     /// key-wallet's own verdict, at the build's fee rate, outputs, payload and
     /// strategy; otherwise it stays insufficient funds. A `reservation_only`
-    /// build gets no trial: it spends only the chosen inputs, which are final
-    /// by then (or refused), so nothing it could spend is waiting.
+    /// build gets no trial: coins chosen through [`FinalizeOptions::inputs`]
+    /// are final by then (or refused by name), so nothing it could spend is
+    /// waiting. That does not hold for coins seeded on the builder itself
+    /// with `TransactionBuilder::add_inputs`: one that is not final in the
+    /// caller's copy is dropped by key-wallet before selection, without an
+    /// error. The build then spends the remaining seeds, or fails as
+    /// insufficient funds (`available: Some(0)`) when none is left; it is
+    /// never reported as waiting. Choose such coins through
+    /// `FinalizeOptions::inputs` instead.
     ///
     /// `make` is called once before the wallet-manager lock is taken and, on a
     /// shortfall when the funding accounts hold a spendable coin that is not
@@ -1305,7 +1314,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 builder.build_unsigned_reserved().map_err(|error| {
                     // Only a shortfall or too many inputs can turn on coins
                     // that are not final, and a `reservation_only` build spends
-                    // only its seeds, which are final by now.
+                    // only its seeds: the ones chosen by outpoint are final by
+                    // now, and a builder seed that is not final was dropped by
+                    // key-wallet, which no trial can report.
                     let trial = make
                         .as_deref()
                         .filter(|_| waiting_may_help(&error) && !reservation_only);
@@ -3678,6 +3689,53 @@ mod tests {
                 .await
                 .unwrap_or_else(|error| panic!("{case}: {error:?}"));
         }
+    }
+
+    /// A coin seeded on the builder with `add_inputs` is the caller's copy:
+    /// one that is not final in it is dropped by key-wallet before selection,
+    /// even while the wallet's own copy is final, and a `reservation_only`
+    /// build has nothing else to spend. It fails as insufficient funds with
+    /// nothing available, never as waiting; chosen by outpoint, the same coin
+    /// builds.
+    #[tokio::test]
+    async fn should_drop_a_builder_seed_that_is_not_final_in_the_callers_copy() {
+        let (core, signer, _manager, _wallet_id) = dual_core(&[1_500_000], &[700_000]).await;
+        let mut seeded = bip44_coin(&core).await;
+        let outpoint = seeded.outpoint;
+        seeded.is_confirmed = false;
+        seeded.is_instantlocked = false;
+        let sources = [preference(StandardAccountType::BIP44Account)];
+        let reservation_only = FinalizeOptions::default().with_reservation_only(true);
+
+        let result = core
+            .finalize_transaction_with_options(
+                payment_builder(80).add_inputs([seeded]),
+                reservation_only.clone(),
+                &sources,
+                0,
+                &FailingSigner,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreInsufficientFunds {
+                    available: Some(0),
+                    ..
+                })
+            ),
+            "got {result:?}"
+        );
+
+        core.finalize_transaction_with_options(
+            payment_builder(81),
+            reservation_only.with_inputs(vec![outpoint]),
+            &sources,
+            0,
+            &signer,
+        )
+        .await
+        .expect("the wallet's own copy is final");
     }
 
     /// A coin seeded on the builder while final and unlocked, then locked —

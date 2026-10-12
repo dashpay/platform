@@ -156,15 +156,29 @@ Spending only final coins brings these Rust source and behaviour changes:
   (coins the build may spend, by outpoint — the wallet's current copy of each
   is seeded under the write guard). `finalize_transaction` keeps its
   signature.
+- Migrating a batched drain: the old
+  `finalize_transaction_with_options(builder.add_inputs(batch), sources,
+  source_index, signer, true)` spent every seeded coin. With final-inputs
+  funding, a coin seeded with `add_inputs` that is not final in the caller's
+  copy is dropped before selection, without an error: the batch sweeps less
+  than asked, or fails with `CoreInsufficientFunds { available: Some(0), .. }`
+  when none of it is final. It is never `CoreFundsAwaitingNetwork`. Pass the
+  batch as
+  `FinalizeOptions::default().with_inputs(outpoints).with_reservation_only(true)`
+  instead: each coin is then looked up in the wallet as it is now, and one
+  that is not final is refused by name with `CoreFundsAwaitingNetwork`.
 - New `CoreWallet::finalize_transaction_from(make, options, sources,
   source_index, signer)` takes a factory (`Fn() ->
   Result<TransactionBuilder, PlatformWalletError> + Send + Sync`, by value,
   dropped before the signer runs) instead of a builder. It
   builds `make()`, and on a shortfall builds `make()` once more as a trial,
-  without signing or keeping a reservation, with the coins that are not final
-  yet treated as final: if key-wallet builds that, the shortfall is
+  without signing any input or keeping a reservation (a payload finalizer set
+  on the builder still runs, so a ProUpServTx trial computes its operator-BLS
+  payload signature and discards it), with the coins that are not final yet
+  treated as final: if key-wallet builds that, the shortfall is
   `CoreFundsAwaitingNetwork` (not for a `reservation_only` build, which spends
-  only its final chosen inputs). A finalizer handed a plain builder cannot make
+  only its chosen inputs; see the drain note above for coins seeded with
+  `add_inputs`). A finalizer handed a plain builder cannot make
   it again, so its shortfall stays insufficient funds.
 - `FinalizeOptions` is `#[non_exhaustive]`: build it with
   `FinalizeOptions::default()`, `with_inputs` and `with_reservation_only`.

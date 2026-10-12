@@ -529,7 +529,7 @@ impl WalletGeneration {
     /// under the still-held write guard) and refuse the build. In the normal
     /// case a fenced input is still *reserved* and never reaches selection at
     /// all; this check is the backstop for exactly the post-sweep window. (The
-    /// waiting-coins trial, which signs nothing, also uses it after releasing
+    /// waiting-coins trial, which signs no input, also uses it after releasing
     /// its own trial reservation.)
     ///
     /// # No height parameter, deliberately
