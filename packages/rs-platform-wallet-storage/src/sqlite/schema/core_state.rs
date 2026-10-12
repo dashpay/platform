@@ -769,12 +769,14 @@ fn apply_sweep(
     // query even if nothing had marked it spent yet (upstream sweeps only
     // unconfirmed records, whose spends this schema does not mark).
     // `spent_in_txid` moves with `spent`: a released input clears back to
-    // NULL (nobody's claim), a held one is attributed to `superseded_by` so
-    // the claim outlives this row's own deletion below.
+    // NULL (nobody's claim), a held one is attributed to its claimant (see
+    // `held_claimant`) so the claim outlives this row's own deletion below.
     // A held, never-materialised claim (`is_sweep_placeholder = 1`) is re-stamped
-    // with the NEW winner's mined height when this sweep has one — the
-    // claim now belongs to that winner, and its height is what the
-    // collector compares against the finality boundary. An IS-locked
+    // with the NEW winner's mined height when this sweep has one and the
+    // claim now belongs to that winner — its height is what the
+    // collector compares against the finality boundary. A claim left with
+    // a surviving spender is not stamped: the winner's height says nothing
+    // about a coin the winner does not spend. An IS-locked
     // winner (`?5` NULL) re-points the claim but keeps the existing stamp:
     // the earlier block-context observation stands, exactly as upstream's
     // `observed_spent_outpoints` entry is never retracted by an
@@ -806,6 +808,9 @@ fn apply_sweep(
             (wallet_id, outpoint, value, script, is_sweep_placeholder, spent, spent_in_txid, \
              winner_mined_height) \
          VALUES (?1, ?2, 0, X'', 1, 1, ?3, ?4)",
+    )?;
+    let mut spenders_stmt = tx.prepare_cached(
+        "SELECT txid FROM core_transaction_inputs WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
     for input in &loser.transaction.input {
         let outpoint = input.previous_output;
@@ -842,17 +847,27 @@ fn apply_sweep(
         }
         let key = blob::encode_outpoint(&outpoint)?;
         let freed = released.contains(&outpoint);
-        let spent_in_txid: Option<&[u8]> = if freed {
+        let claimant = if freed {
             None
         } else {
-            Some(AsRef::<[u8]>::as_ref(superseded_by))
+            Some(held_claimant(
+                &mut spenders_stmt,
+                wallet_id,
+                &key[..],
+                superseded_by,
+                swept_txids,
+            )?)
         };
+        let stamp = winner_mined_height
+            .filter(|_| claimant.as_ref() == Some(superseded_by))
+            .map(i64::from);
+        let spent_in_txid = claimant.as_ref().map(AsRef::<[u8]>::as_ref);
         let affected = spend_stmt.execute(params![
             wallet_id.as_slice(),
             &key[..],
             !freed,
             spent_in_txid,
-            winner_mined_height.map(i64::from)
+            stamp
         ])?;
         if affected == 0 && !freed {
             // A held input with no row gets a placeholder in EVERY sweep
@@ -865,13 +880,40 @@ fn apply_sweep(
             tombstone_stmt.execute(params![
                 wallet_id.as_slice(),
                 &key[..],
-                AsRef::<[u8]>::as_ref(superseded_by),
-                winner_mined_height.map(i64::from)
+                spent_in_txid,
+                stamp
             ])?;
         }
     }
 
     Ok(())
+}
+
+/// The claimant of an input a sweep holds back. `winner` when it spends the
+/// coin or no surviving stored transaction does; otherwise that surviving
+/// spender (the smallest txid of several), so removing it can release the coin.
+fn held_claimant(
+    spenders: &mut rusqlite::CachedStatement<'_>,
+    wallet_id: &WalletId,
+    outpoint: &[u8],
+    winner: &dashcore::Txid,
+    swept_txids: &HashSet<dashcore::Txid>,
+) -> Result<dashcore::Txid, WalletStorageError> {
+    use dashcore::hashes::Hash;
+
+    let mut survivor: Option<dashcore::Txid> = None;
+    let mut rows = spenders.query(params![wallet_id.as_slice(), outpoint])?;
+    while let Some(row) = rows.next()? {
+        let bytes: Vec<u8> = row.get(0)?;
+        let spender = dashcore::Txid::from_slice(&bytes)?;
+        if spender == *winner {
+            return Ok(*winner);
+        }
+        if !swept_txids.contains(&spender) {
+            survivor = Some(survivor.map_or(spender, |known| known.min(spender)));
+        }
+    }
+    Ok(survivor.unwrap_or(*winner))
 }
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \

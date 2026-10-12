@@ -2082,6 +2082,148 @@ async fn should_recompute_unsafe_mempool_record_when_its_funding_arrives_after_r
 }
 
 #[tokio::test]
+async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_a_live_sweep() {
+    assert_extra_input_follows_its_surviving_spender(true).await;
+}
+
+#[tokio::test]
+async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_startup_repair() {
+    assert_extra_input_follows_its_surviving_spender(false).await;
+}
+
+/// The loser spends a shared and an extra coin, a second unconfirmed spend
+/// takes the extra coin and a third one, and the confirmed winner spends only
+/// the shared coin. `live_sweep` persists the sweep the running wallet reported;
+/// otherwise the conflict is stored unsettled and repaired at load.
+async fn assert_extra_input_follows_its_surviving_spender(live_sweep: bool) {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let owned = |value| TxOut {
+        value,
+        script_pubkey: address.script_pubkey(),
+    };
+    let foreign = |marker, value| TxOut {
+        value,
+        script_pubkey: foreign_address(marker).script_pubkey(),
+    };
+    let funding = spend_of(
+        OutPoint::new(Txid::from_byte_array([90; 32]), 0),
+        vec![owned(100_000), owned(20_000), owned(5_000)],
+    );
+    let coin = |vout| OutPoint::new(funding.txid(), vout);
+    let also_spending = |mut transaction: Transaction, previous_output| {
+        transaction.input.push(TxIn {
+            previous_output,
+            ..Default::default()
+        });
+        transaction
+    };
+    let loser = also_spending(spend_of(coin(0), vec![foreign(91, 119_000)]), coin(1));
+    let survivor = also_spending(spend_of(coin(1), vec![foreign(92, 24_000)]), coin(2));
+    let winner = spend_of(coin(0), vec![owned(99_000)]);
+    let final_spend = spend_of(coin(2), vec![foreign(93, 4_000)]);
+
+    let mut records = Vec::new();
+    for (transaction, context) in [
+        (&funding, block(100)),
+        (&loser, TransactionContext::Mempool),
+        (&survivor, TransactionContext::Mempool),
+    ] {
+        records.extend(
+            info.check_core_transaction(transaction, context, &mut wallet, true, true)
+                .await
+                .new_records,
+        );
+    }
+    assert_eq!(
+        records.len(),
+        3,
+        "one wallet records both unconfirmed spenders of the extra coin"
+    );
+    let settled = info
+        .check_core_transaction(&winner, block(101), &mut wallet, true, true)
+        .await;
+    assert_eq!(settled.swept_transactions, vec![loser.txid()]);
+    assert!(
+        settled.released_outpoints.is_empty(),
+        "the survivor still spends the extra coin"
+    );
+    let running = info
+        .clone()
+        .check_core_transaction(&final_spend, block(102), &mut wallet.clone(), true, true)
+        .await;
+    assert_eq!(
+        running.released_outpoints,
+        vec![coin(1)],
+        "the running wallet frees the extra coin with its surviving spender"
+    );
+    let coins: Vec<_> = (0..3)
+        .map(|vout| stored_utxo(&funding, vout, address.clone()))
+        .collect();
+    let seen = CoreChangeSet {
+        records,
+        new_utxos: coins.clone(),
+        spent_utxos: coins,
+        ..Default::default()
+    };
+    let settlement = CoreChangeSet {
+        records: settled.new_records,
+        new_utxos: vec![stored_utxo(&winner, 0, address.clone())],
+        sweeps: vec![SweepBatch {
+            txids: settled.swept_transactions,
+            superseded_by: winner.txid(),
+            winner_mined_height: Some(101),
+            released_outpoints: settled.released_outpoints,
+        }],
+        ..Default::default()
+    };
+    assert_eq!(settlement.records.len(), 1);
+    let (persister, _dir) = if live_sweep {
+        let (persister, dir) = store_then_reopen(&wallet, seen);
+        persister
+            .store(
+                wallet.wallet_id,
+                PlatformWalletChangeSet {
+                    core: Some(settlement),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        (persister, dir)
+    } else {
+        let mut unsettled = seen;
+        unsettled.records.extend(settlement.records);
+        unsettled.new_utxos.extend(settlement.new_utxos);
+        store_then_reopen(&wallet, unsettled)
+    };
+
+    let mut state = persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&final_spend, block(102), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(result.swept_transactions, vec![survivor.txid()]);
+    assert_eq!(
+        result.released_outpoints,
+        vec![coin(1)],
+        "the extra coin is free once its surviving spender is gone"
+    );
+    loaded
+        .wallet_info
+        .check_core_transaction(&funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    assert!(
+        loaded.wallet_info.accounts.standard_bip44_accounts[&0]
+            .utxos
+            .contains_key(&coin(1)),
+        "funding redelivery returns the released coin"
+    );
+}
+
+#[tokio::test]
 async fn should_report_wallet_scoped_unconverged_replay() {
     assert_conflict_restart(ConflictCase::Unconverged).await;
 }

@@ -408,8 +408,10 @@ it:
 - the spend writer (`schema::core_state::apply`), naming the record stored in
   the same round when it turns a row from unspent to spent, mempool spends
   included; a row that is already spent keeps its claim, known or unknown;
-- `apply_sweep`, naming the winner that took an input a swept loser claimed
-  but this store had no released record for;
+- `apply_sweep`, for an input a swept loser claimed that the sweep does not
+  release: the winner when it spends that input or no surviving stored
+  transaction does, otherwise the surviving stored spender (the smallest txid
+  of several), so that removing that spender can release the coin;
 - the runtime history repair (`schema::core_history`), which marks an owned
   output `spent = 1` for each non-mempool stored record that spends it,
   including a record stored before the output itself was known;
@@ -447,7 +449,8 @@ the same way instead of marking it in place.
 
 `winner_mined_height` (V007) stamps that claim with the mined height of the
 winner named in `spent_in_txid`, and decides the placeholder's lifetime
-rather than its existence. A block-context sweep stamps the winner's own
+rather than its existence. A row held for a surviving spender instead of the
+winner is not stamped. A block-context sweep stamps the winner's own
 height and `collect_finalized_tombstones` evicts the row once
 `min(chainlock_height, synced_height)` reaches it — upstream's
 `prune_finalized_observed_spends` boundary verbatim. An InstantSend-locked
