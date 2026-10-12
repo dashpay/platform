@@ -2,14 +2,15 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_immutable_property_changed_error::DocumentImmutablePropertyChangedError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::property_constraints::{
     DocumentSystemValues, StoredDocument, StoredVersion,
 };
+use std::collections::BTreeMap;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use std::collections::BTreeMap;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{
@@ -139,10 +140,18 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             }
         }
 
+        // The document the replace writes keeps its creation and last transfer and is
+        // updated in this block, for every time and height a `where` entry reads; the values
+        // the type's rules read of the documents its references point at are collected from
+        // those documents, every such reference being checked on every replace; and the
+        // document it replaces, which a rule reads through `$old.`
+        let system = self.condition_system_values(owner_id, self.stored_system_values());
+        let mut referenced_documents = BTreeMap::new();
         let reference_result = self.base().validate_document_references(
             self.data(),
             owner_id,
             self.creator_id(),
+            &system,
             Some(self.changed_data_fields()),
             Some(self.stored_changed_values()),
             platform,
@@ -150,12 +159,31 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             // A replace consumes nothing: a lookup that could is judged on a create only
             &mut Vec::new(),
             None,
+            &mut referenced_documents,
             transaction,
             execution_context,
             platform_version,
         )?;
         if !reference_result.is_valid() {
             return Ok(reference_result);
+        }
+
+        // The rules reading a document a reference points at (protocol version 14), judged
+        // once the references hold, with the values their checks read, as on a create: every
+        // replace judges every rule, and the structure validation judged the others
+        let result = document_type
+            .validate_referencing_property_constraints(
+                self.data(),
+                referenced_documents,
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..system
+                },
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         Ok(SimpleConsensusValidationResult::new())
@@ -187,11 +215,19 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
         stored_system: Option<&DocumentSystemValues>,
     ) -> StoredVersion;
 
-    /// The properties the replace writes, with the stored document's under
-    /// `$old`, and the system values of the document it writes, as a
+    /// The system values of the document the replace writes, as a
     /// `propertyConstraints` rule judges a replace: the stored creation and
     /// transfer, this block as the update, its revision, `owner_id`, the writer,
-    /// and the stored version ([`Self::stored_version`]).
+    /// and, with `stored_system`, the stored version ([`Self::stored_version`]).
+    fn condition_system_values(
+        &self,
+        owner_id: Identifier,
+        stored_system: Option<&DocumentSystemValues>,
+    ) -> DocumentSystemValues;
+
+    /// The properties the replace writes, with the stored document's under
+    /// `$old`, and [`Self::condition_system_values`] with the stored version,
+    /// what a condition judging the replace is judged against.
     fn condition_inputs(
         &self,
         owner_id: Identifier,
@@ -246,6 +282,21 @@ impl ReplaceConditionInputs for DocumentReplaceTransitionAction {
         stored_system: Option<&DocumentSystemValues>,
     ) -> (Value, DocumentSystemValues) {
         let system = DocumentSystemValues {
+            stored: Some(self.stored_version(owner_id, stored_system)),
+            ..self.condition_system_values(owner_id, None)
+        };
+        let data = system
+            .judged_data(&Value::from(self.data().clone()))
+            .into_owned();
+        (data, system)
+    }
+
+    fn condition_system_values(
+        &self,
+        owner_id: Identifier,
+        stored_system: Option<&DocumentSystemValues>,
+    ) -> DocumentSystemValues {
+        DocumentSystemValues {
             owner_id: Some(owner_id),
             created_at: self.created_at(),
             updated_at: self.updated_at(),
@@ -258,12 +309,9 @@ impl ReplaceConditionInputs for DocumentReplaceTransitionAction {
             transferred_at_core_block_height: self.transferred_at_core_block_height(),
             revision: Some(self.revision()),
             aggregates: None,
-            stored: Some(self.stored_version(owner_id, stored_system)),
+            stored: stored_system.map(|system| self.stored_version(owner_id, Some(system))),
             changed_fields: None,
-        };
-        let data = system
-            .judged_data(&Value::from(self.data().clone()))
-            .into_owned();
-        (data, system)
+            referenced_documents: false,
+        }
     }
 }

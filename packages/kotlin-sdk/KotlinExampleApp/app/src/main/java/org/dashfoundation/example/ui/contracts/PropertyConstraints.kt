@@ -201,6 +201,29 @@ internal const val PROPERTY_CONSTRAINT_TOTALS_NOTE =
     "The platform reads these totals when the document is sent; the check before sending " +
         "does not, so it cannot catch this rule."
 
+/**
+ * The line naming the values [rule] reads of referenced documents, each once,
+ * as `reference.path (kind)`:
+ * `Reads referenced documents: pollId.status (text), pollId.$ownerId (identifier)`.
+ * `null` for a rule reading none. The SwiftExampleApp builds the same text.
+ */
+internal fun propertyConstraintReferencedReadsText(rule: DocumentPropertyConstraint): String? =
+    rule.readsReferenced
+        .map { "${it.reference}.${it.path} (${it.kind.name})" }
+        .distinct()
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(", ", prefix = "Reads referenced documents: ")
+
+/**
+ * The note under a rule reading a referenced document
+ * ([propertyConstraintReferencedReadsText] not `null`): the check before
+ * sending has no referenced document, so it cannot catch the rule. The same
+ * text as the SwiftExampleApp's, for cross-platform UAT.
+ */
+internal const val PROPERTY_CONSTRAINT_REFERENCED_NOTE =
+    "The platform reads the referenced documents when it checks the references; the check " +
+        "before sending does not, so it cannot catch this rule."
+
 /** Title of the alert a broken rule raises instead of a broadcast. */
 internal const val PROPERTY_CONSTRAINT_BROKEN_TITLE = "Not sent: a property constraint is broken"
 

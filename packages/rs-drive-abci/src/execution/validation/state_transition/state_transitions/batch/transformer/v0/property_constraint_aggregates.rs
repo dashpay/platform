@@ -98,7 +98,10 @@ pub(super) fn attach_property_constraint_reads(
             .map(DocumentSystemValues::of_document)
     };
     let stored = stored.map(DocumentVersion::of);
-    let mut read = |document_type_name: &str, written: DocumentVersion, change| {
+    // A create or a replace judges the rules reading a referenced document,
+    // once its references hold; a transfer, a purchase or a price update does
+    // not
+    let mut read = |document_type_name: &str, written: DocumentVersion, change: Option<_>| {
         read_property_constraint_aggregates(
             drive,
             contract,
@@ -106,6 +109,7 @@ pub(super) fn attach_property_constraint_reads(
             written,
             stored,
             change,
+            change.is_none(),
             block_info,
             execution_context,
             transaction,
@@ -209,6 +213,7 @@ pub(crate) fn read_property_constraint_aggregates_for_moderator_change(
         DocumentVersion::of(written),
         Some(DocumentVersion::of(stored)),
         None,
+        false,
         block_info,
         execution_context,
         transaction,
@@ -236,6 +241,7 @@ pub(crate) fn read_property_constraint_aggregates_for_restore(
         DocumentVersion::of(document),
         None,
         None,
+        false,
         block_info,
         execution_context,
         transaction,
@@ -248,7 +254,9 @@ pub(crate) fn read_property_constraint_aggregates_for_restore(
 /// `stored` (`None` for a create), each as it will be once the write is done: the total the
 /// count or sum tree keeps now, less what `stored` adds to it, plus what `written` adds. For
 /// a transfer, a purchase or a price update (`change`), only the rules the change can break
-/// are judged, so only their totals are read. The reads are billed to `execution_context`.
+/// are judged, so only their totals are read, and a rule reading a referenced document only
+/// where `referencing_rules_judged`: a create or a replace judges it, a moderator's change
+/// or restore and the system changes do not. The reads are billed to `execution_context`.
 ///
 /// Consensus reads them when it builds the action, before judging the rules
 /// ([`DocumentSystemValues::aggregates`]), so that the rules stay a structure check. Added
@@ -270,6 +278,7 @@ fn read_property_constraint_aggregates(
     written: DocumentVersion,
     stored: Option<DocumentVersion>,
     change: Option<SystemChange>,
+    referencing_rules_judged: bool,
     block_info: &BlockInfo,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
@@ -283,6 +292,7 @@ fn read_property_constraint_aggregates(
         .property_constraints()
         .values()
         .filter(|rule| change.is_none_or(|change| rule.reads_change(change)))
+        .filter(|rule| referencing_rules_judged || !rule.reads_referenced())
         .flat_map(|rule| rule.aggregate_reads())
         .collect::<BTreeSet<_>>();
     if reads.is_empty() {

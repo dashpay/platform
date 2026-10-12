@@ -2208,8 +2208,8 @@ fn should_refuse_a_malformed_size_operand() {
         (
             platform_value!({ "size": "title" }),
             "names \"size\", which is not one of add, subtract, multiply, divide, modulo, \
-             power, min, max, abs, ifAbsent, length, byteLength, count, countPresent, byteAt, countOf \
-             or sumOf",
+             power, min, max, abs, ifAbsent, length, byteLength, count, countPresent, byteAt, countOf, \
+             sumOf or referenced",
         ),
     ] {
         expect_refusal(
@@ -2606,6 +2606,7 @@ fn should_read_the_system_values_the_rule_is_judged_with() {
         aggregates: None,
         stored: None,
         changed_fields: None,
+        referenced_documents: false,
     };
     for (index, property) in SystemProperty::ALL.into_iter().enumerate() {
         let expected = i128::try_from(index + 1).expect("small");
@@ -4282,6 +4283,7 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     let cheap = data(&[("price", Value::U64(5))]);
     let with_total = |total: i128| DocumentSystemValues {
         aggregates: Some(BTreeMap::from([(read.clone(), total)])),
+        referenced_documents: false,
         ..DocumentSystemValues::default()
     };
 

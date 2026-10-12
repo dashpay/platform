@@ -75,6 +75,12 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
                 .stored_system_values()
                 .map(|system| self.stored_version(owner_id, Some(system))),
             changed_fields: None,
+            // The rules reading a referenced document wait for replace state
+            // validation 1, once the references hold. Added in place at protocol
+            // version 14, inert for every earlier version this generation serves:
+            // no rule parses before 14 (`parse_property_constraints` is `None`),
+            // so no rule reads a referenced document there
+            referenced_documents: false,
         };
         let result = data_contract
             .validate_document_properties(

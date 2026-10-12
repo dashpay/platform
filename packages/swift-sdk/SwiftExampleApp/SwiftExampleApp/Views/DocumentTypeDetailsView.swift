@@ -478,8 +478,8 @@ struct ExpandableIndexRowView: View {
 
 /// One `propertyConstraints` rule: its name, the rule as declared, what it
 /// reads (properties, `$ownerId`, system times, heights and revisions, the
-/// stored version through `$old.`, `countOf` and `sumOf` totals), and whether
-/// an owner change is judged against it too.
+/// stored version through `$old.`, `countOf` and `sumOf` totals, values of
+/// referenced documents), and whether an owner change is judged against it too.
 struct PropertyConstraintRowView: View {
     let rule: DocumentPropertyConstraint
 
@@ -551,11 +551,21 @@ struct PropertyConstraintRowView: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+
+            if !referencedReadsText.isEmpty {
+                Label("Reads referenced documents: \(referencedReadsText)", systemImage: "link")
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsReferenced")
+                Text("The platform reads the referenced documents when it checks the references; the check before sending does not, so it cannot catch this rule.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 4)
         // Keeps the row's identifier on the row and the readsSystem,
-        // readsStored and readsTotals lines' on those lines, rather than the
-        // row's on every child
+        // readsStored, readsTotals and readsReferenced lines' on those lines,
+        // rather than the row's on every child
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
     }
@@ -599,6 +609,18 @@ struct PropertyConstraintRowView: View {
             }
             .filter { seen.insert($0).inserted }
             .joined(separator: "; ")
+    }
+
+    /// The values the rule reads of referenced documents, repeats dropped,
+    /// each as `<reference>.<path> (<kind>)`: `pollId.status (text),
+    /// pollId.$ownerId (identifier)`. The Android example app builds the same
+    /// text, for cross-platform UAT: keep the two identical.
+    private var referencedReadsText: String {
+        var seen = Set<String>()
+        return rule.readsReferenced
+            .map { "\($0.reference).\($0.path) (\($0.kind.name))" }
+            .filter { seen.insert($0).inserted }
+            .joined(separator: ", ")
     }
 }
 

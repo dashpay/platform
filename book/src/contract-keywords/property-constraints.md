@@ -1,6 +1,6 @@
 # propertyConstraints
 
-`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner, a payment address whose first byte names a known type. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)), and compare a write with the stored version it replaces, through `$old.` (see [The stored version](#the-stored-version-old)).
+`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner, a payment address whose first byte names a known type. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)), a value of the document one of its references points at, which the reference's check reads anyway (see [Values of a referenced document](#values-of-a-referenced-document)), and the stored version a write replaces, through `$old.` (see [The stored version](#the-stored-version-old)).
 
 | | |
 |---|---|
@@ -49,13 +49,13 @@
 
 - **Create and replace.** The rules run after the JSON schema validation of the document's properties (and after [maxBytes](max-bytes.md)), so every value a rule reads has passed its property's schema. A replace is judged on the whole new document, not only on what changed, with the document it replaces under `$old.`; a create has none.
 - **Name order, first failure.** Rules are checked in the order of their names, and the first rule the document breaks refuses the transition with `DocumentPropertyConstraintViolatedError` (10422). The error names the document type, the rule, and why it failed (below).
-- **Transfer and purchase.** These change only the owner, the transfer's time and heights, and `$revision`. Rules that read `$ownerId`, `$transferredAt…`, `$revision` or a total that depends on the owner, of the document or of the stored version under `$old.`, are judged again, against the stored document with its new owner and transfer values, `$old.` reading it as it was before; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
+- **Transfer and purchase.** These change only the owner, the transfer's time and heights, and `$revision`. Rules that read `$ownerId`, `$transferredAt…`, `$revision` or a total that depends on the owner, of the document or of the stored version under `$old.`, are judged again, against the stored document with its new owner and transfer values, `$old.` reading it as it was before; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422. A rule reading a referenced document is never among them (see [Values of a referenced document](#values-of-a-referenced-document)).
 - **Price updates** change only the update's time and heights and `$revision`, so the rules that read `$updatedAt…` or `$revision`, of either version, are judged again the same way; other rules are not.
-- **Moderator field changes.** A moderator's change of the fields the type keeps for its moderators (see [moderatorAbilities.changeFields](moderator-abilities.md#changefields)) is judged as a replace is, with the document it changes under `$old.`, but only against the rules that read a field it changes, of either version, `$revision`, which it moves, or a total. It keeps the document's owner, times and heights. The other rules read only what the owner last wrote, and gave their verdict then.
-- **Moderator restores.** The rules of the restored type that read a total are judged on the retained document, with its original owner, times, heights and revision, and `$old.` reading the retained document itself. Totals include the restored document as an insertion into the live trees; its removal record is not counted. Another write while it was deleted may make a cap, lower bound or cross-type prerequisite fail. The other rules read only what the document held when it was last written, and gave their verdict then: a type's rules never change once it is registered. Uniqueness is checked first. A refusal in a block charges the moderator and consumes its nonce, while the document stays deleted and its removal record stays unrestored. Mempool admission refuses the same invalid restore without persisting fees or a nonce change. Restore does not revalidate the full property schema or judge `deleteConstraints`.
+- **Moderator field changes.** A moderator's change of the fields the type keeps for its moderators (see [moderatorAbilities.changeFields](moderator-abilities.md#changefields)) is judged as a replace is, with the document it changes under `$old.`, but only against the rules that read a field it changes, of either version, `$revision`, which it moves, or a total, and never against a rule reading a referenced document, which registration keeps from depending on those fields. It keeps the document's owner, times and heights. The other rules read only what the owner last wrote, and gave their verdict then.
+- **Moderator restores.** The rules of the restored type that read a total are judged on the retained document, with its original owner, times, heights and revision, and `$old.` reading the retained document itself, except a rule reading a referenced document: a restore checks no reference, and registration keeps such a rule from reading a total over the restored type's own documents. Totals include the restored document as an insertion into the live trees; its removal record is not counted. Another write while it was deleted may make a cap, lower bound or cross-type prerequisite fail. The other rules read only what the document held when it was last written, and gave their verdict then: a type's rules never change once it is registered. Uniqueness is checked first. A refusal in a block charges the moderator and consumes its nonce, while the document stays deleted and its removal record stays unrestored. Mempool admission refuses the same invalid restore without persisting fees or a nonce change. Restore does not revalidate the full property schema or judge `deleteConstraints`.
 - **Immutable properties.** The same grammar is the condition of an [`immutable`](mutability.md#immutable) entry, which freezes a property while it holds. It reads the stored document through `$old.` as a rule does.
 - **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time, height or revision, which is why an index-only type may not have a rule reading `$ownerId`, a system time or height, `$revision` or `$old.`. What may be deleted is the job of [`deleteConstraints`](deletion.md#deleteconstraints), rules in this grammar the stored document must meet for its owner to delete it, which read it by their plain paths.
-- **State and fees.** A rule reads the document, its owner, its times, heights and revision, and the stored version the write replaces, which the write has already fetched; a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total, which they cannot read, and those reading the stored version when they are not given it (see [The stored version](#the-stored-version-old)).
+- **State and fees.** A rule reads the document, its owner, its times, heights and revision, and the stored version the write replaces, which the write has already fetched; a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. A value of a referenced document comes from the read the reference's check makes. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total or a referenced document, which they cannot read, and those reading the stored version when they are not given it (see [The stored version](#the-stored-version-old)).
 
 Why a rule fails, as the error reports it:
 
@@ -123,6 +123,7 @@ An integer expression is one of:
 | `byteAt` | `{ "byteAt": ["address", 0] }` | The byte, 0 to 255, at an index (counted from 0) of a byte array property, 0 when the array does not hold it or the document leaves it out (see [Byte arrays](#byte-arrays)) |
 | system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
 | `countOf`, `sumOf` | `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` | A total of documents of a type of the same contract, read from state (see [Totals of other documents](#totals-of-other-documents)) |
+| `referenced` | `{ "referenced": ["pollId", "endsAt"] }` | A value of the document a reference points at, read as a path is (see [Values of a referenced document](#values-of-a-referenced-document)) |
 
 Where `maxLength`, `maxBytes` and `maxItems` bound one property by a fixed number, a size can be compared with another property or bounded only under a condition: `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit. A size never breaks a rule by itself: a property left out or null has size 0, and so would a value of another type, which the schema validation refuses first.
 
@@ -133,7 +134,7 @@ Two more forms appear only in string and identifier comparisons, never inside ar
 | `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier, or, tested against a byte array property, hex digits |
 | `{ "ifAbsent": ["status", "open"] }` | A string property, read as the given string when the document leaves it out |
 
-A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`.
+A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`. A `{ "referenced": [reference, field] }` stands wherever a path does.
 
 A `number` property (a float) cannot be read by a rule, which keeps every result exact.
 
@@ -292,6 +293,38 @@ A filter maps each key, a property of the counted type or `$ownerId`, to the val
 - **Every earlier write counts.** A document batch carries one transition, and each state transition of a block is applied before the next is validated, so a total includes every write before it.
 - **SDK pre-checks** cannot read state, so they do not judge a rule reading a total.
 
+## Values of a referenced document
+
+`{ "referenced": [reference, field] }` reads a value of the document a reference of the type points at: `reference` names a property of the type carrying a [`refersTo`](refers-to.md), by its dotted path when it sits inside an object (`"meta.pollId"`), and `field` a value of the document it finds. It stands wherever a path stands, and reads that value as a path reads a property of the type: as an integer operand, a side of a string or identifier comparison, the operand of an `in`, the path of an `ifAbsent`, `present` or `absent`, a size, a `byteAt`, a `startsWith` or `endsWith`, or either side of a `contains`. It is one node.
+
+```json
+"propertyConstraints": {
+  "atLeastReserve": {
+    "greaterThanOrEqual": ["amount", { "referenced": ["auctionId", "reservePrice"] }]
+  },
+  "deliveredOrder": {
+    "equal": [{ "referenced": ["orderId", "status"] }, { "const": "delivered" }]
+  },
+  "memberWrites": { "contains": [{ "referenced": ["groupId", "members"] }, "$ownerId"] }
+}
+```
+
+A bid meets its auction's reserve price, a review names an order that was delivered, and only a member of a group writes to it.
+
+- **The field** is a property of the referenced type by its dotted path, its `$id`, `$ownerId` or `$creatorId` (compared as identifiers, `$creatorId` on a type that records it), or a time or height it lists in `required` (`"$createdAt"`, read as an integer).
+- **Absence** reads as a property of the type left out does: an integer reads 0 (or an `ifAbsent` default), a string or an identifier equals nothing, `present` does not hold. A reference the document leaves out leaves every value read through it absent. A `where` [condition](refers-to.md#conditions) reads absence its own way, so the same check written there and here can treat a value left out differently.
+- **Which comparison.** The field's type decides, as a property of the type's does. A rule names another type's property, maybe another contract's, so beside a property of the type or `$ownerId` it compares as that property does, and beside a string constant, in an `in` listing strings, or as an array `contains` looks a string up in, the field is read as what it holds: a string is a string, an identifier is written base58, and a byte array hex, the only one of the three with a start and an end a `startsWith` or `endsWith` tests. Two fields of referenced documents compared by `equal` or `notEqual` compare by value whatever they hold, one left out equalling nothing (wrap an integer in `ifAbsent` to read it as 0 instead); an ordering compares two integers. Registration checks the field holds what the rule reads it as, that each constant spells a value of its type, and that two fields compared hold the same kind of value. The referenced document's own `$id`, `$ownerId` and `$creatorId` are identifiers.
+
+**Which references.** The reference holds one document: a `permanentDocument` or `deletableDocument` reference found by id or by a [`findBy`](refers-to-lookup.md) without a function, or a `moderatedDocument` one, into this contract or another. Not the elements of a typed array, an `anyOf` or `allOf`, an `inList`, or a `findBy` function, which is judged on the create alone. Through a `moderatedDocument` reference a rule reads only `$id`, `$ownerId` and the fields the referenced type keeps under [`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields): once a moderator removes the document its [removal record](../data-model/contract-moderation.md#deleting-documents) is all there is to read, and a rule is judged on every replace.
+
+**When it is judged.** A rule reading a referenced document is judged once the type's references hold, with the documents their checks read, after the type's other rules; a missing target refuses the write with `ReferencedEntityNotFoundError` (40120) before it. A broken rule is `DocumentPropertyConstraintViolatedError` (10422), as any rule. Every replace judges every rule, so a reference a rule reads through is [checked again on every replace](refers-to.md#on-replace), its `where` included, and the rule reads the document as it is at the replace: a `permanentDocument` target replaced since is read with its new values. Each such check costs the read the reference's first check made, billed the same way. A kept `moderatedDocument` reference whose document a moderator removed is read from the removal record.
+
+Transfers, purchases, price updates, a moderator's change of fields and a moderator's restore check no reference, and do not judge such a rule. Registration keeps that sound: on a type whose documents can be transferred or traded, a rule reading a referenced document may not read what those writes change (`$ownerId`, `$transferredAt` and its heights, a total depending on the owner, and on a tradeable type `$updatedAt` and its heights), and it may not depend on a field the type keeps for its [moderators to change](moderator-abilities.md#changefields): neither read it nor total the type's own documents by it, as a key of a `countOf` or `sumOf` over them, since a moderator's change moves such a total. On a type whose moderators' deletions keep records it may read no `countOf` or `sumOf` over the type's own documents at all: a restore brings a document back into those totals.
+
+**Time against a referenced value.** A create records its block for every time and height; a replace keeps the stored creation and transfer and records its block as the update. So `$createdAt` below a referenced `endsAt` holds the create to the deadline and lets a later replace through, while `$updatedAt` holds every write to it: a vote that may be changed only while its poll is open reads `$updatedAt`. On a type whose documents are never replaced the two are the same.
+
+**SDK pre-checks** cannot read the referenced document, so they do not judge such a rule, and list what it reads in `readsReferenced`.
+
 ## How many of a group
 
 `countPresent` counts the properties of a group that the document holds, each as `present` tests it, so a rule compares the count with a number. A seller is reached by exactly one of three contacts:
@@ -341,7 +374,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - every condition and every operator object has exactly one key;
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings; a `countPresent` two or more distinct paths;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
-- a path matches `$ownerId`, `$revision`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, any of them optionally after `$old.`, so `$id` and other system properties are refused;
+- a path matches `$ownerId`, `$revision`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, any of them optionally after `$old.`, so `$id` and other system properties are refused; a `referenced` lists a property name, then a dotted path, `$id`, `$ownerId`, `$creatorId` or a time or height;
 - a `byteAt` lists a path and an integer index from 0 to 65535;
 - a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer or a `{ "const": ... }` string.
 
@@ -361,7 +394,9 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - no condition or operand nests more than 64 levels deep;
 - once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, and not its own type when that has a contested index, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range, integer-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;
 - every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, and its value is of the same kind (`$ownerId` and `$id` are identifiers); a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
-- every property a filter value reads is listed in `required`, with every object around it, so a write always has the value; an index-only type has no rule reading a total.
+- every property a filter value reads is listed in `required`, with every object around it, so a write always has the value; an index-only type has no rule reading a total;
+- a `referenced` reads through a property of the type holding one reference to one document, as set out in [Values of a referenced document](#values-of-a-referenced-document), only in `propertyConstraints` (not `deleteConstraints`, an `immutable` condition or `retractedWhen`, whose writes check no reference), not on an index-only type, not beside what a transfer, purchase or price update of the type changes, not beside a field the type keeps for its moderators to change, read or deciding a total over the type's own documents, and, on a type whose moderators' deletions keep records, not beside a total over the type's own documents;
+- once every document type of the contract is parsed, what a rule reads of a referenced type of the same contract is a field that type gives it: one it has, stored, of the kind the rule reads, a time or height it records, a `$creatorId` it records, a constant its `enum` lists, and through a `moderatedDocument` reference a field its removal record keeps. A referenced type of another contract is checked at registration against the stored contract, refused with `ReferencedDocumentRuleReadInvalidError` (40148).
 
 Three limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
 
@@ -387,6 +422,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `countPresent` | 1, plus 1 per path |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |
 | `countOf`, `sumOf` | 1, plus 1 per filter key |
+| `referenced` | 1, as a path |
 
 `depositCoversOrder` above is 7 nodes (the comparison, `multiply`, `add` and four paths), and `closedNeedsClosedAt` is 5. An `in` fits up to 30 values in 32 nodes.
 
@@ -515,6 +551,47 @@ Four nodes: the `in`, the `byteAt` and two values. An address starting with `0x0
 
 `startsWith` is the one to reach for when a run of bytes is checked: `{ "startsWith": ["content", { "const": "1220" }] }` holds a multihash of a SHA-256 digest in 3 nodes, where two `byteAt` comparisons in an `allOf` take 7.
 
+**A vote on a poll.** A single-choice ballot names its poll and an option by index. The poll holds two to three options, may close at `endsAt`, and may take several choices from one voter (`multiChoice`):
+
+```json
+"vote": {
+  "type": "object",
+  "documentsMutable": false,
+  "properties": {
+    "pollId": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+      "contentMediaType": "application/x.dash.dpp.identifier",
+      "refersTo": { "type": "deletableDocument", "documentType": "poll" },
+      "position": 0
+    },
+    "choice": { "type": "integer", "minimum": 0, "maximum": 9, "position": 1 }
+  },
+  "required": ["pollId", "choice", "$createdAt"],
+  "propertyConstraints": {
+    "castBeforeTheEnd": {
+      "lessThan": [
+        "$createdAt",
+        { "ifAbsent": [{ "referenced": ["pollId", "endsAt"] }, 9007199254740991] }
+      ]
+    },
+    "singleChoicePoll": { "equal": [{ "referenced": ["pollId", "multiChoice"] }, 0] },
+    "choiceIsAnOption": {
+      "lessThan": [
+        "choice",
+        { "countPresent": [
+          { "referenced": ["pollId", "option0"] },
+          { "referenced": ["pollId", "option1"] },
+          { "referenced": ["pollId", "option2"] }
+        ] }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+A vote lands before the poll closes (one without `endsAt` stays open), only on a poll taking one choice (`multiChoice` left out reads as 0), and for an option the poll holds, its options filled from the first. The three rules read the poll the reference check fetched, so they add no read. A vote is never replaced, so `$createdAt` and `$updatedAt` are the same here.
+
 **A flag in arithmetic.** A boolean reads as 1 or 0, so a waived fee must be 0:
 
 ```json
@@ -527,6 +604,7 @@ Four nodes: the `in`, the `byteAt` and two values. An address starting with `0x0
 
 - [Property Constraints](../data-model/documents.md#property-constraints-propertyconstraints), the deep dive
 - [deleteConstraints](deletion.md#deleteconstraints), rules in this grammar judged on the owner's delete
+- [References (refersTo)](refers-to.md), whose `where` checks the referenced document with an equality, a literal, an inequality, a list or an ordering, each when the reference is checked
 - [distinctFrom](distinct-from.md), a single-keyword way to keep two identifiers apart
 - [Property Schemas](property-schemas.md), for the one-property bounds JSON Schema gives
 - [transient](transient.md), [Index-Only Types](index-only.md)

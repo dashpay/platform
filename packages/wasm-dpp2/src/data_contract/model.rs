@@ -897,9 +897,11 @@ impl DataContractWasm {
     /// for the system times the device clock in place of the block time the
     /// write will record (the document's stored creation and transfer times
     /// when it has them). A rule reading a block height the write records is
-    /// not judged, since the height is unknown until the block, and neither is
-    /// a rule reading a `countOf` or `sumOf` total, which only the platform
-    /// reads from state (a rule's `readsTotals` lists them).
+    /// not judged, since the height is unknown until the block, a rule reading
+    /// a `countOf` or `sumOf` total, which only the platform reads from state
+    /// (a rule's `readsTotals` lists them), or a rule reading a value of the
+    /// document a reference points at, which the platform reads with the
+    /// reference (a rule's `readsReferenced` lists them).
     /// `undefined` when it meets every rule of its document type.
     ///
     /// `storedDocument` is the stored version the write replaces, which a rule

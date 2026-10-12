@@ -57,7 +57,8 @@ data class DocumentPropertyConstraint(
      * through `$old.`, is listed under that path (`$old.status`): see
      * [readsStored]. `$ownerId`, `$old.$ownerId` and the system times,
      * heights and revisions are no properties and are not listed: see
-     * [readsOwner] and [readsSystem], which cover every branch too.
+     * [readsOwner] and [readsSystem], which cover every branch too. Nor is a
+     * value of a document a reference points at: see [readsReferenced].
      */
     val reads: List<PropertyConstraintRead>,
     /**
@@ -91,6 +92,30 @@ data class DocumentPropertyConstraint(
      */
     val readsSystem: List<String> = emptyList(),
     /**
+     * The `countOf` and `sumOf` totals the rule reads, in declared order, one
+     * read twice listed twice: how many documents of a type of the same
+     * contract match a filter, or the total of their integer property. The
+     * platform reads them from state when the document is sent; the pre-check
+     * ([Contracts.checkPropertyConstraints]) reads no state and does not judge
+     * a rule reading one.
+     *
+     * Empty for a rule reading none, and for every rule when the native
+     * library predates the field.
+     */
+    val readsTotals: List<PropertyConstraintTotalRead> = emptyList(),
+    /**
+     * The values the rule reads of the documents the type's references point
+     * at (`{ "referenced": [reference, path] }`), in declared order, one read
+     * twice listed twice, every branch included as in [reads], which leaves
+     * them out. The platform reads the referenced document when it checks the
+     * reference; the pre-check ([Contracts.checkPropertyConstraints]) has no
+     * referenced document and does not judge a rule reading one.
+     *
+     * Empty for a rule reading none, and for every rule when the native
+     * library predates the field.
+     */
+    val readsReferenced: List<PropertyConstraintReferencedRead> = emptyList(),
+    /**
      * Whether the rule reads the stored version of the document a write
      * replaces, through `$old.`: one of its properties (listed in [reads]),
      * its owner, `$old.$ownerId` ([readsOwner]), or one of its system values
@@ -108,18 +133,6 @@ data class DocumentPropertyConstraint(
      * library predates the field.
      */
     val readsStored: Boolean = false,
-    /**
-     * The `countOf` and `sumOf` totals the rule reads, in declared order, one
-     * read twice listed twice: how many documents of a type of the same
-     * contract match a filter, or the total of their integer property. The
-     * platform reads them from state when the document is sent; the pre-check
-     * ([Contracts.checkPropertyConstraints]) reads no state and does not judge
-     * a rule reading one.
-     *
-     * Empty for a rule reading none, and for every rule when the native
-     * library predates the field.
-     */
-    val readsTotals: List<PropertyConstraintTotalRead> = emptyList(),
 ) {
     /** [ruleJson] indented for display, or [ruleJson] itself should it not parse back. */
     val prettyRuleJson: String
@@ -133,8 +146,8 @@ data class DocumentPropertyConstraint(
         /**
          * Decode the JSON array `dash_sdk_data_contract_get_property_constraints`
          * returns, keeping its order (name order). A rule without
-         * `readsSystem`, `readsStored` or `readsTotals`, from a native library
-         * built before the key, reads as reading none.
+         * `readsSystem`, `readsStored`, `readsTotals` or `readsReferenced`, from a
+         * native library built before the key, reads as reading none of those.
          *
          * @throws DashSdkError.SerializationError for text that is not such an array.
          */
@@ -152,8 +165,10 @@ data class DocumentPropertyConstraint(
                 val readsSystem = rule?.let(::readsSystemOf)
                 val readsStored = rule?.let(::readsStoredOf)
                 val readsTotals = rule?.let(::readsTotalsOf)
+                val readsReferenced = rule?.let(::readsReferencedOf)
                 if (name == null || declaration == null || reads == null || readsOwner == null ||
-                    readsSystem == null || readsStored == null || readsTotals == null
+                    readsSystem == null || readsStored == null || readsTotals == null ||
+                    readsReferenced == null
                 ) {
                     throw DashSdkError.SerializationError("Malformed propertyConstraints rule: $entry")
                 }
@@ -165,6 +180,7 @@ data class DocumentPropertyConstraint(
                     readsSystem = readsSystem,
                     readsStored = readsStored,
                     readsTotals = readsTotals,
+                    readsReferenced = readsReferenced,
                 )
             }
         }
@@ -173,11 +189,8 @@ data class DocumentPropertyConstraint(
          * The names [rule]'s `readsSystem` lists: empty when the key is
          * missing, `null` when it is anything but an array of strings.
          */
-        private fun readsSystemOf(rule: JsonObject): List<String>? {
-            val value = rule["readsSystem"] ?: return emptyList()
-            val names = value as? JsonArray ?: return null
-            return names.map { it.jsonStringOrNull() ?: return null }
-        }
+        private fun readsSystemOf(rule: JsonObject): List<String>? =
+            listOrNull(rule, "readsSystem") { it.jsonStringOrNull() }
 
         /**
          * [rule]'s `readsStored`: `false` when the key is missing, `null` when
@@ -192,10 +205,29 @@ data class DocumentPropertyConstraint(
          * The totals [rule]'s `readsTotals` lists: empty when the key is
          * missing, `null` when it or an entry is malformed.
          */
-        private fun readsTotalsOf(rule: JsonObject): List<PropertyConstraintTotalRead>? {
-            val value = rule["readsTotals"] ?: return emptyList()
+        private fun readsTotalsOf(rule: JsonObject): List<PropertyConstraintTotalRead>? =
+            listOrNull(rule, "readsTotals", PropertyConstraintTotalRead::fromJsonOrNull)
+
+        /**
+         * The reads [rule]'s `readsReferenced` lists: empty when the key is
+         * missing, `null` when it or an entry is malformed.
+         */
+        private fun readsReferencedOf(rule: JsonObject): List<PropertyConstraintReferencedRead>? =
+            listOrNull(rule, "readsReferenced", PropertyConstraintReferencedRead::fromJsonOrNull)
+
+        /**
+         * The entries [rule]'s optional [key] lists, each read by [read]:
+         * empty when the key is missing (a native library built before it),
+         * `null` when the value is not an array or [read] refuses an entry.
+         */
+        private fun <T> listOrNull(
+            rule: JsonObject,
+            key: String,
+            read: (JsonElement) -> T?,
+        ): List<T>? {
+            val value = rule[key] ?: return emptyList()
             val entries = value as? JsonArray ?: return null
-            return entries.map { PropertyConstraintTotalRead.fromJsonOrNull(it) ?: return null }
+            return entries.map { read(it) ?: return null }
         }
     }
 }
@@ -260,6 +292,40 @@ data class PropertyConstraintTotalRead(
             val keys = total["filter"] as? JsonArray ?: return null
             val filter = keys.map { it.jsonStringOrNull() ?: return null }
             return PropertyConstraintTotalRead(Kind.fromName(kind), documentType, property, filter)
+        }
+    }
+}
+
+/**
+ * A value a `propertyConstraints` rule reads of the document a reference of the
+ * type points at, `{ "referenced": [reference, path] }`. The fields mirror
+ * wasm-dpp2's `PropertyConstraintReferencedRead` and the Swift SDK's.
+ */
+data class PropertyConstraintReferencedRead(
+    /** The top-level property of the document type holding the reference. */
+    val reference: String,
+    /**
+     * The field of the referenced document: a dotted property path of its
+     * type, `$id`, `$ownerId`, `$creatorId`, or a time or height it records
+     * (`$createdAt`, ...).
+     */
+    val path: String,
+    /**
+     * How the rule reads the field, by the kinds [PropertyConstraintRead] uses:
+     * an identifier (`$id`, `$ownerId`, `$creatorId`) as
+     * [PropertyConstraintRead.Kind.Identifier], a time or height as
+     * [PropertyConstraintRead.Kind.Value].
+     */
+    val kind: PropertyConstraintRead.Kind,
+) {
+    internal companion object {
+        /** The read [entry] describes, or `null` when it is malformed. */
+        fun fromJsonOrNull(entry: JsonElement): PropertyConstraintReferencedRead? {
+            val read = entry as? JsonObject ?: return null
+            val reference = read["reference"]?.jsonStringOrNull() ?: return null
+            val path = read["path"]?.jsonStringOrNull() ?: return null
+            val kind = read["kind"]?.jsonStringOrNull() ?: return null
+            return PropertyConstraintReferencedRead(reference, path, PropertyConstraintRead.Kind.fromName(kind))
         }
     }
 }
@@ -366,8 +432,8 @@ data class PropertyConstraintRead(
  * Rust judges the document (`dash_sdk_data_contract_check_property_constraints`,
  * through [Contracts.checkPropertyConstraints]) with the check consensus runs,
  * the device clock standing in for the times the create records, and a rule
- * reading a block height or a `countOf` or `sumOf` total left unjudged; this
- * type only carries the verdict.
+ * reading a block height, a `countOf` or `sumOf` total or a value of a
+ * referenced document left unjudged; this type only carries the verdict.
  * The fields mirror wasm-dpp2's `DocumentPropertyConstraintViolation` and the
  * Swift SDK's `PropertyConstraintViolation`.
  */

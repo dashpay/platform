@@ -63,7 +63,7 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// Get the `propertyConstraints` rules of a document type as a JSON array
 ///
 /// Each element is
-/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsStored": bool, "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }] }`:
+/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsStored": bool, "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }], "readsReferenced": [{ "reference": string, "path": string, "kind": string }] }`:
 /// the rule's name (its key in `propertyConstraints`), the rule exactly as the
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
@@ -82,8 +82,12 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// pre-check judges), and the `countOf` and `sumOf` totals it reads in declared order (`kind`
 /// `"countOf"` or `"sumOf"`, the type of the contract it totals, the summed `property` of
 /// a `sumOf` only, and the keys its `filter` matches documents by; a total the platform
-/// reads from state when the document is sent, which the pre-check does not). Rules
-/// are listed in name order, the order
+/// reads from state when the document is sent, which the pre-check does not), and the
+/// values it reads of the documents the type's references point at in declared order
+/// (`{ "referenced": [reference, path] }`: the reference property of the type, the field
+/// of the referenced document and the `kind` it is read as, which `reads` leaves out; the
+/// platform reads the referenced document when it checks the reference, and the pre-check
+/// does not judge such a rule). Rules are listed in name order, the order
 /// consensus checks them in. A document type declaring none gives `[]`, and so
 /// does every document type when the SDK's protocol version is below 14.
 ///
@@ -152,7 +156,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule reading a block
 /// height is not judged, since the height is unknown until the block, and
 /// neither is a rule reading a `countOf` or `sumOf` total (`"readsTotals"`),
-/// which the platform reads from state when the document is sent.
+/// which the platform reads from state when the document is sent, nor one
+/// reading a value of a document a reference points at (`"readsReferenced"`),
+/// which the platform reads when it checks the reference.
 /// Nothing but the rules is checked: not the JSON schema, not the state.
 ///
 /// The result is the first rule broken, as
@@ -325,9 +331,16 @@ fn property_constraints_json(
             )
         })?;
         let reads: Vec<serde_json::Value> = constraint
-            .property_reads()
+            .own_property_reads()
             .into_iter()
             .map(|(path, read)| json!({ "path": path, "kind": read_kind_name(read) }))
+            .collect();
+        let reads_referenced: Vec<serde_json::Value> = constraint
+            .referenced_reads()
+            .into_iter()
+            .map(|(reference, path, read)| {
+                json!({ "reference": reference, "path": path, "kind": read_kind_name(read) })
+            })
             .collect();
         rules.push(json!({
             "name": name,
@@ -345,6 +358,7 @@ fn property_constraints_json(
                 .into_iter()
                 .map(total_read_json)
                 .collect::<Vec<_>>(),
+            "readsReferenced": reads_referenced,
         }));
     }
     Ok(serde_json::Value::Array(rules))
@@ -670,7 +684,8 @@ mod tests {
                     "readsOwner": false,
                     "readsSystem": [],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "discountBelowPrice",
@@ -682,7 +697,8 @@ mod tests {
                     "readsOwner": false,
                     "readsSystem": [],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "perUnitFee",
@@ -694,7 +710,8 @@ mod tests {
                     "readsOwner": false,
                     "readsSystem": [],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "sellerIsOwner",
@@ -706,7 +723,8 @@ mod tests {
                     "readsOwner": true,
                     "readsSystem": [],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "tieredFee",
@@ -715,7 +733,8 @@ mod tests {
                     "readsOwner": false,
                     "readsSystem": [],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 }
             ])
         );
@@ -1199,7 +1218,8 @@ mod tests {
                     "readsOwner": false,
                     "readsSystem": [],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "openEndedSoldByOwner",
@@ -1218,7 +1238,8 @@ mod tests {
                     "readsOwner": true,
                     "readsSystem": ["$createdAt"],
                     "readsStored": false,
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 }
             ])
         );
