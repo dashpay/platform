@@ -15,14 +15,8 @@ pub use balance_handler::BalanceUpdateHandler;
 pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
 pub use generation::{TeardownGuard, WalletGeneration};
 pub use spend_observer::SpendObservationHandler;
-pub(crate) use transaction::{
-    build_error_awaiting_network, resolve_source_accounts, trial_with_waiting_coins,
-    waiting_may_help,
-};
-pub use transaction::{
-    check_chosen_inputs, check_fee_rate, in_broadcast_outpoints, FinalizeOptions,
-    SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
-};
+pub(crate) use transaction::resolve_source_accounts;
+pub use transaction::{SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES};
 pub use wallet::CoreWallet;
 
 use key_wallet::managed_account::transaction_record::TransactionRecord;
