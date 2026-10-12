@@ -5,7 +5,7 @@
 //! and re-deriving private keys.
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -532,10 +532,12 @@ pub(crate) fn final_lock_input_claims<'a>(
 /// A store may keep the funding's record as unconfirmed and no lock beside it,
 /// while the lock's proof carries the real one. A lock is taken only when it,
 /// the proof's transaction and the tracked funding name one transaction the
-/// history holds, and a lock the store supplied itself stands. Its signature
-/// is not verified at load, like the locks a store keeps for its own records.
+/// history holds (`recorded`, its txids), and a lock the store supplied itself
+/// stands. Its signature is not verified at load, like the locks a store keeps
+/// for its own records.
 pub(crate) fn add_tracked_instant_locks<'a>(
     history: &mut RecordedHistory,
+    recorded: &HashSet<Txid>,
     locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
 ) {
     for lock in locks {
@@ -545,10 +547,7 @@ pub(crate) fn add_tracked_instant_locks<'a>(
         let funding = lock.transaction.txid();
         if proof.instant_lock.txid == funding
             && proof.transaction.txid() == funding
-            && history
-                .transactions
-                .iter()
-                .any(|stored| stored.txid == funding)
+            && recorded.contains(&funding)
         {
             history
                 .instant_locks
@@ -4011,7 +4010,12 @@ mod tests {
             instant_locks: BTreeMap::from([(supplied.txid(), kept.clone())]),
         };
 
-        super::add_tracked_instant_locks(&mut history, &locks);
+        let recorded = history
+            .transactions
+            .iter()
+            .map(|stored| stored.txid)
+            .collect();
+        super::add_tracked_instant_locks(&mut history, &recorded, &locks);
 
         assert_eq!(
             history.instant_locks,

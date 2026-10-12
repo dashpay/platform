@@ -162,11 +162,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &recorded_history,
             );
 
-            add_tracked_instant_locks(
-                &mut recorded_history,
-                unused_asset_locks.values().flat_map(BTreeMap::values),
-            );
-
             // Replay the stored history first, in chain order, so every spend
             // the wallet ever saw guards its outpoint again. The persisted
             // UTXO set stays authoritative for credits; see
@@ -176,6 +171,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .iter()
                 .map(|stored| stored.txid)
                 .collect();
+            add_tracked_instant_locks(
+                &mut recorded_history,
+                &history_txids,
+                unused_asset_locks.values().flat_map(BTreeMap::values),
+            );
             if !recorded_history.is_empty() {
                 let offered = recorded_history.transactions.len();
                 let outcome =
