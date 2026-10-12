@@ -12,7 +12,7 @@ authors = [
 ]
 
 [dependencies]
-dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "e6402ced257c370a586ade9840ebbf545a4b7926", default-features = false, features = ["bls"], optional = true }
+dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "33fcc59e1868c803f9608e0e78ee8bddf3abcee7", default-features = false, features = ["bls"], optional = true }
 # Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
 blst = { version = "0.3.17", default-features = false, optional = true }

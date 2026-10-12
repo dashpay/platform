@@ -19,7 +19,7 @@ use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
-    ApplyChainLockOutcome, WalletInfoInterface,
+    ApplyChainLockOutcome, Truncation, WalletInfoInterface,
 };
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
@@ -159,6 +159,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_synced_height(&mut self, current_height: u32) {
         self.core_wallet.update_synced_height(current_height);
+    }
+
+    fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        self.core_wallet.truncate_above(height)
     }
 
     fn matured_coinbase_records(
