@@ -162,7 +162,8 @@ Spending only final coins brings these Rust source and behaviour changes:
   funding, a coin seeded with `add_inputs` that is not final in the caller's
   copy is dropped before selection, without an error: the batch sweeps less
   than asked, or fails with `CoreInsufficientFunds { available: Some(0), .. }`
-  when none of it is final. It is never `CoreFundsAwaitingNetwork`. Pass the
+  (`CorePooledInsufficientFunds` over several sources) when none of it is
+  final. It is never `CoreFundsAwaitingNetwork`. Pass the
   batch as
   `FinalizeOptions::default().with_inputs(outpoints).with_reservation_only(true)`
   instead: each coin is then looked up in the wallet as it is now, and one
@@ -187,7 +188,9 @@ Spending only final coins brings these Rust source and behaviour changes:
   the refusal when the coins are picked. The FFI coin-control setter
   (`core_wallet_tx_builder_add_inputs_from_outpoints`) goes through it, so an
   outpoint the named account does not hold is now `ErrorInvalidParameter`
-  (`ChosenInputUnavailable`) there too, where it was `ErrorWalletOperation`.
+  (`ChosenInputUnavailable`) there too, and an account the wallet does not
+  have is `ErrorUnknown` (`WalletNotFound`, which has no code of its own yet),
+  as from the finalizer; both were `ErrorWalletOperation`.
 - FFI: `core_wallet_tx_builder_set_fee_rate` refuses a rate whose fee
   arithmetic would overflow (`ErrorInvalidParameter`, above about 42.9 DASH
   per kB); `core_wallet_tx_builder_set_current_height` is accepted and ignored
@@ -209,9 +212,10 @@ Spending only final coins brings these Rust source and behaviour changes:
   shielded and platform-address funding) return `CoreFundsAwaitingNetwork`
   for the same condition, where they returned `AssetLockInsufficientFunds`
   (FFI code 29): a caller that matched 29 to offer "add funds" should treat 59
-  as "wait". A drain reports it only when no coin is final and the waiting
-  coins exceed the minimum lock floor (their fee aside); one that builds from
-  a few final coins and lands under the floor is still refused as before.
+  as "wait". A drain reports it when the build itself fails (no final coin
+  it can select, or only dust under the fee) and the waiting coins exceed the
+  minimum lock floor (their fee aside); one that builds from a few final
+  coins and lands under the floor is still refused as before.
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
   InstantSend-locked coins. A coin in `FinalizeOptions::inputs` that a

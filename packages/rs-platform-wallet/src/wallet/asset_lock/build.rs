@@ -323,6 +323,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // within a fee of the floor can read as waiting and still
                 // land under the floor once final.
                 .filter(|waiting| !drain || *waiting > required);
+                let floor = required;
                 let too_many_inputs = matches!(
                     error,
                     AssetLockError::Builder(BuilderError::TooManyInputs { .. })
@@ -337,9 +338,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     ) => PlatformWalletError::CoreFundsAwaitingNetwork {
                         available: Some(available),
                         waiting,
-                        // A drain without a floor names no amount: its zero
-                        // placeholder is not what the lock needs.
-                        required: Some(required).filter(|required| *required > 0),
+                        // A drain needs its floor, not the fee-and-dust figure
+                        // key-wallet names for a few final duffs; without a
+                        // floor it names no amount.
+                        required: if drain {
+                            Some(floor).filter(|floor| *floor > 0)
+                        } else {
+                            Some(required)
+                        },
                         outpoint: None,
                     },
                     // Too many inputs: fewer, larger coins are on their way.
@@ -2000,6 +2006,49 @@ mod tests {
             }
         }
         total
+    }
+
+    /// No source named funds from key-wallet's default pair, and so does the
+    /// trial: waiting BIP44 coins are waiting on the network. Once they are
+    /// final the same lock builds, so the trial left nothing reserved.
+    #[tokio::test]
+    async fn should_fund_the_trial_from_the_default_sources_when_none_is_named() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let balance = make_coins_wait(&manager).await;
+        let build = || {
+            manager.build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::Exact(balance / 2),
+                &[],
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                &signer,
+            )
+        };
+
+        let waiting = build().await;
+        assert!(
+            matches!(
+                waiting,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork { .. })
+            ),
+            "got {waiting:?}"
+        );
+
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let (_, info) = wm
+                .get_wallet_mut_and_info_mut(&manager.wallet_id)
+                .expect("wallet");
+            for account in info.core_wallet.accounts.all_funding_accounts_mut() {
+                for utxo in account.utxos.values_mut() {
+                    utxo.is_confirmed = true;
+                }
+            }
+        }
+        build().await.expect("final coins fund the lock");
     }
 
     /// The same for a CoinJoin drain, the form the shielded flow funds with:

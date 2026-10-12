@@ -977,8 +977,9 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// `platform_wallet_account_utxos` returns). An outpoint not owned by the
 /// account is refused by name (`ErrorInvalidParameter`, "not a coin of any
 /// funding account"), as the finalizer refuses it; an account the wallet does
-/// not have is `ErrorWalletOperation`. One owned is refused by name, in the
-/// finalizer's order: unspendable — a locked coin, or an immature
+/// not have crosses as it does from the finalizer (`ErrorUnknown` until
+/// "wallet account not found" has a code of its own). One owned is refused by
+/// name, in the finalizer's order: unspendable — a locked coin, or an immature
 /// coinbase output (spendable once it matures, 100 blocks after its block;
 /// neither is cured by the InstantSend lock or confirmation code 59 waits for)
 /// — (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
@@ -1047,22 +1048,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
     // Refused by name as soon as they are named, by the finalizer's own
     // check and in its order. The finalizers check again against the coins
     // as they are then.
-    match runtime().block_on(wallet.core().check_chosen_outpoints(
+    unwrap_result_or_return!(runtime().block_on(wallet.core().check_chosen_outpoints(
         &[source],
         account_index,
-        &requested,
-    )) {
-        Ok(()) => {}
-        // No such account (or wallet): keeps the code this call always
-        // reported it with.
-        Err(PlatformWalletError::WalletNotFound(what)) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                format!("add_inputs_from_outpoints failed: {what}"),
-            )
-        }
-        Err(error) => return error.into(),
-    }
+        &requested
+    )));
 
     // Validation succeeded — only now record them.
     (*builder).state().inputs.extend(requested);
@@ -2102,9 +2092,10 @@ mod real_finalizer_tests {
         unsafe { core_wallet_tx_builder_destroy(builder) };
     }
 
-    /// An account the wallet does not have stays `ErrorWalletOperation`.
+    /// An account the wallet does not have is reported as the finalizer
+    /// reports it, by the same typed error.
     #[test]
-    fn should_report_a_missing_account_as_a_wallet_operation_error() {
+    fn should_report_a_missing_account_as_the_finalizer_does() {
         let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
         let platform_wallet = runtime()
             .block_on(manager.get_wallet(&wallet_id))
@@ -2123,10 +2114,9 @@ mod real_finalizer_tests {
             )
         };
         PLATFORM_WALLET_STORAGE.remove(wallet);
-        assert_eq!(
-            added.code,
-            PlatformWalletFFIResultCode::ErrorWalletOperation
-        );
+        assert_eq!(added.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        let message = unsafe { CStr::from_ptr(added.message) }.to_string_lossy();
+        assert!(message.contains("not found"), "{message}");
         assert!(unsafe { (*builder).state() }.inputs.is_empty());
         unsafe { core_wallet_tx_builder_destroy(builder) };
     }

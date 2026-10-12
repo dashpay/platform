@@ -1575,7 +1575,10 @@ class PlatformWalletManager(
      * rejects a drain whose balance could not clear the Type 18 pool fee, so an
      * unrecoverable dust lock is never broadcast; a drain of an empty account
      * fails with the typed asset-lock shortfall
-     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockInsufficientFunds]).
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockInsufficientFunds]),
+     * or, when coins that are not confirmed yet would clear the floor, with
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.CoreFundsAwaitingNetwork]:
+     * wait, don't add funds.
      * A stuck lock resumes via [shieldedResumeFundFromAssetLock] exactly like a
      * BIP44-funded one.
      *

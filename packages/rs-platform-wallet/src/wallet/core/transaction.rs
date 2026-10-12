@@ -861,6 +861,35 @@ pub(crate) fn resolved_funding_accounts(
     Ok(resolved)
 }
 
+/// The accounts a build over `sources` funds from, with the refusals of a
+/// source list that funds nothing: the one resolution behind the finalizer
+/// and [`CoreWallet::check_chosen_outpoints`].
+///
+/// A single-source call is an explicit request for THAT account: it keeps the
+/// strict not-found error the one-account API had. A pooled call skips missing
+/// sources (a wallet without a BIP32 account or without DashPay contacts
+/// still sends) and errors only if NOTHING funds.
+fn build_funding_accounts(
+    accounts: &ManagedAccountCollection,
+    wallet: &Wallet,
+    sources: &[AccountTypePreference],
+    source_index: u32,
+) -> Result<Vec<AccountType>, PlatformWalletError> {
+    if sources.is_empty() {
+        return Err(PlatformWalletError::TransactionBuild(
+            "no funding sources named".into(),
+        ));
+    }
+    let resolved =
+        resolved_funding_accounts(accounts, wallet, sources, source_index, sources.len() == 1)?;
+    if resolved.is_empty() {
+        return Err(PlatformWalletError::WalletNotFound(format!(
+            "no funding account of any named source at index {source_index}"
+        )));
+    }
+    Ok(resolved)
+}
+
 /// The concrete accounts `preference` resolves to at `source_index` — the
 /// platform mirror of key-wallet's private `account_types_for`: the single
 /// account at `source_index` for the standard families, and every DashPay
@@ -923,35 +952,22 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// ([`CoreFundsAwaitingNetwork`](PlatformWalletError::CoreFundsAwaitingNetwork)).
     ///
     /// Advisory: the finalizer checks again, against the coins as they are
-    /// when it runs.
+    /// when it runs. And not the whole of it: a coin another in-flight build
+    /// holds reserved passes here and is left out by key-wallet's reservation
+    /// filter at the build, as reservations are not readable from
+    /// platform-wallet.
     pub async fn check_chosen_outpoints(
         &self,
         sources: &[AccountTypePreference],
         source_index: u32,
         outpoints: &[OutPoint],
     ) -> Result<(), PlatformWalletError> {
-        // The finalizer's own refusals for a source list that funds nothing.
-        if sources.is_empty() {
-            return Err(PlatformWalletError::TransactionBuild(
-                "no funding sources named".into(),
-            ));
-        }
         let manager = self.wallet_manager.read().await;
         let (wallet, info) = manager
             .get_wallet_and_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
-        let resolved = resolved_funding_accounts(
-            &info.core_wallet.accounts,
-            wallet,
-            sources,
-            source_index,
-            sources.len() == 1,
-        )?;
-        if resolved.is_empty() {
-            return Err(PlatformWalletError::WalletNotFound(format!(
-                "no funding account of any named source at index {source_index}"
-            )));
-        }
+        let resolved =
+            build_funding_accounts(&info.core_wallet.accounts, wallet, sources, source_index)?;
         let height = info.core_wallet.last_processed_height();
         resolve_chosen_inputs(info, &resolved, outpoints, height).map(|_| ())
     }
@@ -1267,10 +1283,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let primary = *sources.first().ok_or_else(|| {
             PlatformWalletError::TransactionBuild("no funding sources named".into())
         })?;
-        // A single-source call is an explicit request for THAT account: keep
-        // the strict not-found error the one-account API had. A pooled call
-        // skips missing sources (a wallet without a BIP32 account or without
-        // DashPay contacts still sends) and errors only if NOTHING funds.
+        // A single source is an explicit request for that one account (see
+        // `build_funding_accounts`).
         let strict = sources.len() == 1;
 
         let (unsigned, fee, selected, paths, height, reservation_token, funding_accounts) = {
@@ -1298,18 +1312,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // Only final coins (InstantSend-locked or mined) are spent; see
             // `is_final` and `fund`.
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
-            let resolved = resolved_funding_accounts(
-                &info.core_wallet.accounts,
-                wallet,
-                sources,
-                source_index,
-                strict,
-            )?;
-            if resolved.is_empty() {
-                return Err(PlatformWalletError::WalletNotFound(format!(
-                    "no funding account of any named source at index {source_index}"
-                )));
-            }
+            let resolved =
+                build_funding_accounts(&info.core_wallet.accounts, wallet, sources, source_index)?;
 
             // Inputs chosen by outpoint are seeded from the wallet's current
             // copies, under this guard, before any funding call (which then

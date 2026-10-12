@@ -407,8 +407,8 @@ pub enum PlatformWalletError {
         required: Option<u64>,
     },
 
-    /// A Core payment the wallet's balance covers, but only with coins the
-    /// network has not confirmed yet — neither InstantSend-locked nor mined.
+    /// A Core payment or asset lock the wallet's balance covers, but only with
+    /// coins the network has not confirmed yet — neither InstantSend-locked nor mined.
     /// Builds spend only final coins (`require_final_inputs`): the change of
     /// a send that never reached the network never becomes final, so building
     /// on it would make a transaction no node accepts. Coins become spendable
@@ -420,7 +420,8 @@ pub enum PlatformWalletError {
     /// spend once they are final; with `outpoint` set, of that one coin, which
     /// the caller chose as an input itself and which is not final.
     /// `available` / `required` are key-wallet's figures for the build when it
-    /// names them.
+    /// names them; an asset lock that found no final coin names the requested
+    /// amount (for a drain, its minimum lock floor) as `required`.
     #[error(
         "Core funds are waiting for network confirmation: {} DASH not yet confirmed{}{}{}",
         dash_amount(*waiting),

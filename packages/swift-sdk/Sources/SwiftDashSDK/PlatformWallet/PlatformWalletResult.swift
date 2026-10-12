@@ -576,8 +576,10 @@ public enum PlatformWalletError: LocalizedError {
     /// the funding form: an exact-amount build can confirm a smaller amount,
     /// while a whole-account drain takes no amount to lower and instead needs
     /// funds added to the drained account (or a lower minimum lock floor).
-    /// The `available` / `required` duff figures are in the message. Kotlin
-    /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
+    /// The `available` / `required` duff figures are in the message. When
+    /// coins that are not confirmed yet would fund the lock, the same call
+    /// throws `coreFundsAwaitingNetwork` instead: wait, don't add funds.
+    /// Kotlin parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
