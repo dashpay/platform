@@ -719,8 +719,8 @@ impl<C> Platform<C> {
         // type is keyed by its big-endian bytes (`serialize_value_for_key` 1), which sort as
         // the values do. Every key written before is rewritten first, under the contracts
         // that wrote it. The rewrite flips keys, so running it again would flip them back:
-        // it runs only while the withdrawal limit trees, which this transition inserts last,
-        // are absent, as they are on every chain before its first block of version 14.
+        // it runs only while the withdrawal limit trees, which this transition inserts, are
+        // absent, as they are on every chain before its first block of version 14.
         let transitioned_before = self.drive.grove_has_raw(
             SubtreePath::from(&get_withdrawal_root_path()),
             &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
