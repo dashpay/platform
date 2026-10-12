@@ -85,6 +85,7 @@ use dpp::consensus::state::document::referenced_document_type_moderated_error::R
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
+use dpp::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
 use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
@@ -803,6 +804,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentRuleReadInvalidError(e) => {
             generic_consensus_error!(ReferencedDocumentRuleReadInvalidError, e).into()
+        }
+        StateError::ReferencedDocumentPrecededError(e) => {
+            generic_consensus_error!(ReferencedDocumentPrecededError, e).into()
         }
     }
 }

@@ -197,6 +197,67 @@ mod referenced_rules_tests {
         assert_where_refused(&result, "{ \"in\": [\"open\", \"extended\"] }");
     }
 
+    /// A rule reading both the referenced document and, through `$old.`, the
+    /// document a replace replaces: each raise must top the stored amount by
+    /// the auction's reserve, a create topping nothing, as its stored amount
+    /// is absent. A replace is refused or accepted by both values together,
+    /// the auction read as it is at each replace.
+    #[tokio::test]
+    async fn should_judge_a_rule_reading_the_referenced_and_the_stored_document() {
+        let mut setup = ReferenceTestSetup::new(CONTRACT_PATH, 6110);
+        let (mut auction, result) = setup
+            .create(
+                "auction",
+                &[
+                    ("reservePrice", Value::U32(100)),
+                    ("status", Value::Text("open".to_string())),
+                ],
+            )
+            .await;
+        assert_successful(&result, "the auction must be created");
+
+        // A create has no stored amount: the reserve alone
+        let (_, result) = setup
+            .create(
+                "raise",
+                &[
+                    ("auctionId", id_value(&auction)),
+                    ("amount", Value::U32(50)),
+                ],
+            )
+            .await;
+        assert_rule_broken(&result, "raisesByTheReserve");
+        let (mut raise, result) = setup
+            .create(
+                "raise",
+                &[
+                    ("auctionId", id_value(&auction)),
+                    ("amount", Value::U32(120)),
+                ],
+            )
+            .await;
+        assert_successful(&result, "a first raise over the reserve holds");
+
+        // Over the reserve, yet not 100 over the stored 120
+        raise.set("amount", Value::U32(200));
+        let result = setup.replace("raise", &mut raise).await;
+        assert_rule_broken(&result, "raisesByTheReserve");
+        raise.set("amount", Value::U32(220));
+        let result = setup.replace("raise", &mut raise).await;
+        assert_successful(&result, "a raise 100 over the stored 120 holds");
+
+        // The reserve as it is now, over the stored 220
+        auction.set("reservePrice", Value::U32(10));
+        let result = setup.replace("auction", &mut auction).await;
+        assert_successful(&result, "the auction's owner lowers the reserve");
+        raise.set("amount", Value::U32(229));
+        let result = setup.replace("raise", &mut raise).await;
+        assert_rule_broken(&result, "raisesByTheReserve");
+        raise.set("amount", Value::U32(230));
+        let result = setup.replace("raise", &mut raise).await;
+        assert_successful(&result, "a raise 10 over the stored 220 holds");
+    }
+
     /// The `where` entries that are not an equality: a literal the referenced
     /// side must equal, a value it must differ from, and an ordering bounded by
     /// the time of the write, which holds only when both sides have a value.

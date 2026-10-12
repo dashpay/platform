@@ -477,9 +477,9 @@ struct ExpandableIndexRowView: View {
 }
 
 /// One `propertyConstraints` rule: its name, the rule as declared, what it
-/// reads (properties, `$ownerId`, system times and heights, `countOf` and
-/// `sumOf` totals, values of referenced documents), and whether an owner
-/// change is judged against it too.
+/// reads (properties, `$ownerId`, system times, heights and revisions, the
+/// stored version through `$old.`, `countOf` and `sumOf` totals, values of
+/// referenced documents), and whether an owner change is judged against it too.
 struct PropertyConstraintRowView: View {
     let rule: DocumentPropertyConstraint
 
@@ -515,7 +515,7 @@ struct PropertyConstraintRowView: View {
 
             if rule.readsOwner {
                 Label(
-                    "Reads $ownerId, the document's owner: transfers and purchases are judged against this rule too.",
+                    "Reads the owner ($ownerId, $old.$ownerId, the owner before the write, or a total that depends on the owner): transfers and purchases are judged against this rule too.",
                     systemImage: "person.crop.circle.badge.checkmark"
                 )
                 .font(.caption2)
@@ -527,7 +527,17 @@ struct PropertyConstraintRowView: View {
                     .font(.caption2)
                     .foregroundColor(.teal)
                     .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsSystem")
-                Text("A price update is judged against the rules reading $updatedAt or its block heights, and a transfer or purchase against those reading $transferredAt or its block heights.")
+                Text("A price update is judged against the rules reading $updatedAt or its block heights, a transfer or purchase against those reading $transferredAt or its block heights, and each of them against those reading $revision.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if rule.readsStored {
+                Label("Reads the stored version ($old.), the one a write replaces", systemImage: "clock.arrow.circlepath")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsStored")
+                Text("A create has no stored version: there, and in the check before sending, every $old. read is absent.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -554,8 +564,8 @@ struct PropertyConstraintRowView: View {
         }
         .padding(.vertical, 4)
         // Keeps the row's identifier on the row and the readsSystem,
-        // readsTotals and readsReferenced lines' on those lines, rather than
-        // the row's on every child
+        // readsStored, readsTotals and readsReferenced lines' on those lines,
+        // rather than the row's on every child
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
     }

@@ -35,8 +35,10 @@ pub enum ArrayItemType {
 /// scalar property of `item_type` is. So an identifier element is 32 raw
 /// bytes, a byte array element whose bounds pin one size is raw, an integer
 /// element takes the width its schema's bounds give it, and a string or a
-/// variable-size byte array element carries a varint length. Nothing is
-/// indexed per element, so a typed array cannot be an index property.
+/// variable-size byte array element carries a varint length. An index may
+/// name a top-level typed array, keying the document once by each distinct
+/// element, each encoded as a property of `item_type` is
+/// (`serialize_value_for_key` 1).
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct TypedArrayProperty {
     /// The scalar type of every element, parsed from `items` exactly as a

@@ -50,9 +50,9 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 | `identity` | the id of an existing identity | none |
 | `contract` | the id of an existing data contract | `contractRequirements` |
 | `token` | the id of an existing token | none |
-| `permanentDocument` | the id of an existing document of a type whose documents can never disappear; with `findBy`, one part of the key that finds it; with `inList`, one of the identifiers a list on it holds | `documentType` (required), `contractId`, `findBy`, `where`, `inList`, and beside a `findBy` function `minimumAgeBlocks` |
+| `permanentDocument` | the id of an existing document of a type whose documents can never disappear; with `findBy`, one part of the key that finds it; with `inList`, one of the identifiers a list on it holds | `documentType` (required), `contractId`, `findBy`, `where`, `inList`, and beside a `findBy` function `constraints` (`minimumAgeBlocks`) |
 | `moderatedDocument` | the id of an existing document of a type whose documents disappear only when the contract's moderators remove them, on the record | `documentType` (required), `contractId`, `where` |
-| `deletableDocument` | the id of an existing document of a type whose documents can disappear in any other way; with `findBy`, one part of the key that finds it | `documentType` (required), `contractId`, `findBy`, `where`, and beside a `findBy` function `minimumAgeBlocks` and `consume` |
+| `deletableDocument` | the id of an existing document of a type whose documents can disappear in any other way; with `findBy`, one part of the key that finds it | `documentType` (required), `contractId`, `findBy`, `where`, and beside a `findBy` function `consume` and `constraints` (`minimumAgeBlocks`, `chooseFirst`) |
 | `identityPublicKey` | an identity key that exists and is not disabled | `keyIdProperty` or `identityProperty` (one of them, required), `keyRequirements` |
 
 A key that belongs to another target is refused when the contract is registered.
@@ -285,7 +285,7 @@ At registration `boundTo` must name a document type of the contract, and one a k
 
 ### `findBy`, `inList`, `anyOf` and `allOf`
 
-- [`findBy`](refers-to-lookup.md) finds a `permanentDocument` or `deletableDocument` through the unique index of its type over exactly the properties it names, with the value as one part of the key. One entry may be a function, for a [commit and reveal](refers-to-lookup.md#commit-and-reveal), beside which the `refersTo` may declare `minimumAgeBlocks` and `consume`.
+- [`findBy`](refers-to-lookup.md) finds a `permanentDocument` or `deletableDocument` through the unique index of its type over exactly the properties it names, with the value as one part of the key. One entry may be a function, for a [commit and reveal](refers-to-lookup.md#commit-and-reveal), beside which the `refersTo` may declare `constraints` (`minimumAgeBlocks`, and on a `deletableDocument` [`chooseFirst`](refers-to-lookup.md#choosing-the-first-commitment-choosefirst)) and, on a `deletableDocument`, `consume`.
 - [`inList`](refers-to-list-element.md), on a `permanentDocument` whose `findBy` is `{ "$id": <property> }`, names the list on that document the value must be in.
 - [`anyOf` and `allOf`](refers-to-expressions.md) combine several targets in one declaration.
 
@@ -376,6 +376,7 @@ A contract's declarations are checked when it is registered, and again for the w
 | `ReferencedDocumentRemovedError` | 40145 | Write: a replace kept a `moderatedDocument` reference whose document a moderator removed, and a `where` entry checked again compares a property the removal record does not keep. |
 | `ReferencedDocumentTypeIndexOnlyError` | 40146 | Registration: a reference that finds its document by id (no `findBy`, or with `inList`) names an `indexOnly` type, whose documents can not be fetched by id. |
 | `ReferencedDocumentRuleReadInvalidError` | 40148 | Registration: a [`propertyConstraints` rule](property-constraints.md#values-of-a-referenced-document) reads, through a reference into another contract's document type, a field that type can not give it. A rule reading a type of the declaring contract is refused by the contract parse instead (10231). |
+| `ReferencedDocumentPrecededError` | 40149 | Write: the commitment a [`chooseFirst`](refers-to-lookup.md#choosing-the-first-commitment-choosefirst) reference found is preceded, in its `by` order, by a valid, unexpired commitment of another identity holding the same value at `among`. |
 
 The registration errors name the declaration as `<documentType>.<property>`, `<documentType>.<property>[]` for typed array elements, `<documentType>.$ownerId` or `<documentType>.$creatorId` for the writer and creator references, and add the operand for a leaf of an expression (`resignation.memberId.anyOf[1]`). When a document is written, the referenced document type is looked up and its kind checked again as a safeguard (40121, 40122, 40131, 40143), but a registered contract cannot fail those checks later: contracts and document types are never removed, and neither the deletion flags nor `ttl` nor `moderatorAbilities` can change. Nor can `indexOnly`, so the indexOnly rule (40146) is checked at registration only. The other codes in the range (40128 to 40130, 40132 to 40134, 40139 to 40142, 40147) belong to other keywords. See [Error Codes](../error-handling/error-codes.md).
 

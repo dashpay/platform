@@ -12,6 +12,7 @@
 //!   the same proto type, for versioned ones (today: documents) they differ.
 
 use crate::mock::MockResponse;
+use crate::sdk::ProofResponseMetadata;
 use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::mock::Mockable;
@@ -87,7 +88,7 @@ where
     /// protocol-version-aware wire encoding using `&Sdk`. Its response is
     /// `Clone` so that a proof whose quorum key had to be fetched can be
     /// verified again without asking the network a second time.
-    type Request: TransportRequest<Response: Clone>;
+    type Request: TransportRequest<Response: Clone + ProofResponseMetadata>;
 
     /// Fetch single object from Platform.
     ///

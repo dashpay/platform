@@ -1,6 +1,7 @@
 //! Query Conditions
 //!
 
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::where_clause_grouping::group_where_clauses;
@@ -8,7 +9,11 @@ use crate::query::{QuerySyntaxSimpleValidationResult, QuerySyntaxValidationResul
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentType, DocumentTypeRef};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::MAX_INDEX_SIZE;
+use dpp::data_contract::document_type::{
+    typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef,
+};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -20,8 +25,8 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use WhereOperator::{
-    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
-    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
+    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Contains, ContainsAny,
+    Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 
 /// Converts SQL values to CBOR.
@@ -74,6 +79,15 @@ pub enum WhereOperator {
     In,
     /// Starts with
     StartsWith,
+    /// An element of a typed array equals the value (protocol version 14): the
+    /// array is read through an index naming it, which keys a document once by
+    /// each of its distinct elements, so the clause is an equality on that key.
+    Contains,
+    /// An element of a typed array is one of the values (protocol version 14):
+    /// an `In` on the elements an index keys the array by. A document holding
+    /// several of the values is under each of them; a documents query returns
+    /// it once, at its first.
+    ContainsAny,
 }
 
 impl WhereOperator {
@@ -91,6 +105,8 @@ impl WhereOperator {
             BetweenExcludeRight => false,
             In => false,
             StartsWith => false,
+            Contains => false,
+            ContainsAny => false,
         }
     }
 
@@ -120,6 +136,12 @@ impl WhereOperator {
             StartsWith => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Startswith clause order invalid",
             ))),
+            Contains => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
+                "Contains clause order invalid",
+            ))),
+            ContainsAny => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
+                "ContainsAny clause order invalid",
+            ))),
         }
     }
 }
@@ -128,12 +150,27 @@ impl WhereOperator {
     /// Returns true if the where operator result is a range
     pub const fn is_range(self) -> bool {
         match self {
-            Equal => false,
+            Equal | Contains => false,
             GreaterThan | GreaterThanOrEquals | LessThan | LessThanOrEquals | Between
-            | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight | In | StartsWith => {
-                true
-            }
+            | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight | In | StartsWith
+            | ContainsAny => true,
         }
+    }
+
+    /// The operator this one keys an index level like: an element of a typed
+    /// array is an index key of its own, so `Contains` keys like `Equal` and
+    /// `ContainsAny` like `In`. Every other operator keys as itself.
+    pub const fn as_key_operator(self) -> Self {
+        match self {
+            Contains => Equal,
+            ContainsAny => In,
+            other => other,
+        }
+    }
+
+    /// Whether the operator reads the elements of a typed array.
+    pub const fn reads_array_elements(self) -> bool {
+        matches!(self, Contains | ContainsAny)
     }
 
     /// Matches the where operator as a string and returns it as a proper `WhereOperator`
@@ -159,6 +196,8 @@ impl WhereOperator {
             | "between_exclude_right" => Some(BetweenExcludeRight),
             "In" | "in" => Some(In),
             "StartsWith" | "startsWith" | "startswith" | "starts_with" => Some(StartsWith),
+            "Contains" | "contains" => Some(Contains),
+            "ContainsAny" | "containsAny" | "containsany" | "contains_any" => Some(ContainsAny),
             &_ => None,
         }
     }
@@ -233,6 +272,18 @@ impl WhereOperator {
                 (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
                 _ => false,
             },
+            Contains => match left_value {
+                Value::Array(elements) => elements.contains(right_value),
+                _ => false,
+            },
+            // An element matches as the `in` it keys like, so u8 elements
+            // also match a list given as bytes.
+            ContainsAny => match left_value {
+                Value::Array(elements) => {
+                    elements.iter().any(|element| In.eval(element, right_value))
+                }
+                _ => false,
+            },
         }
     }
 
@@ -243,6 +294,9 @@ impl WhereOperator {
             Equal => true,
             In => matches!(value, Value::Array(_) | Value::Bytes(_)),
             StartsWith => matches!(value, Value::Text(_)),
+            // One element, of the array's element type (checked with the type).
+            Contains => !matches!(value, Value::Array(_) | Value::Null),
+            ContainsAny => matches!(value, Value::Array(_)),
             GreaterThan | GreaterThanOrEquals | LessThan | LessThanOrEquals => {
                 match property_type {
                     DocumentPropertyType::F64 => is_numeric_value(value),
@@ -308,6 +362,8 @@ impl Display for WhereOperator {
             BetweenExcludeRight => "BetweenExcludeRight",
             In => "In",
             StartsWith => "StartsWith",
+            Contains => "Contains",
+            ContainsAny => "ContainsAny",
         };
 
         write!(f, "{}", s)
@@ -639,7 +695,9 @@ impl<'a> WhereClause {
         };
 
         let mut query = Query::new_with_direction(left_to_right);
-        match self.operator {
+        // An element of a typed array keys its index level like a value does:
+        // `Contains` is the equality on that key and `ContainsAny` the `In`.
+        match self.operator.as_key_operator() {
             Equal => {
                 let key = document_type.serialize_value_for_key(
                     self.field.as_str(),
@@ -980,6 +1038,12 @@ impl<'a> WhereClause {
                     }
                 }
             }
+            // Mapped to `Equal` and `In` by `as_key_operator` above.
+            Contains | ContainsAny => {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "an element operator keys as an equality or an in",
+                )))
+            }
         }
         Ok(query)
     }
@@ -1194,6 +1258,84 @@ impl<'a> WhereClause {
         self.operator.eval(value, &self.value)
     }
 
+    /// Judge a clause that names a typed array or reads its elements (protocol
+    /// version 14): a typed array is read with `contains` or `containsAny` and
+    /// nothing else, those two read a typed array, and each value they name
+    /// must key as an element of the array's element type. A value is judged
+    /// the way a value of any other indexed property is, by whether it
+    /// serializes as an index key of the type, so an identifier element may
+    /// be given as its bytes or its base58 text. A clause on any other field
+    /// passes.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn validate_array_element_clause(
+        &self,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let names_typed_array =
+            typed_array_property(document_type.flattened_properties(), &self.field).is_some();
+        if let Some(error) = self.element_operator_mismatch(names_typed_array) {
+            return Err(Error::Query(error));
+        }
+        if !names_typed_array {
+            return Ok(());
+        }
+        self.validate_element_values(|value| {
+            document_type
+                .serialize_value_for_key(&self.field, value, platform_version)
+                .is_ok()
+        })
+        .map_err(Error::Query)
+    }
+
+    /// The refusal of a clause that names a typed array without an element
+    /// operator, or uses one on any other field.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn element_operator_mismatch(&self, names_typed_array: bool) -> Option<QuerySyntaxError> {
+        (names_typed_array != self.operator.reads_array_elements()).then_some(
+            QuerySyntaxError::InvalidWhereClauseComponents(if names_typed_array {
+                "a typed array is read with contains or containsAny, and no other operator"
+            } else {
+                "contains and containsAny read the elements of a typed array"
+            }),
+        )
+    }
+
+    /// Judge the values of an element clause, `keys_as_element` telling
+    /// whether one value keys as an element of the array: `contains` names
+    /// one element, `containsAny` a list of them given as an `in` list is (1
+    /// to 100 distinct values, or bytes for u8 elements). Documents queries and
+    /// subscription filters judge element values by this one rule rather than
+    /// by the operators the element type admits as a property, so a boolean
+    /// array is read with `containsAny` though a boolean property takes no `in`.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn validate_element_values(
+        &self,
+        keys_as_element: impl Fn(&Value) -> bool,
+    ) -> Result<(), QuerySyntaxError> {
+        let listed;
+        let values: &[Value] = if self.operator == ContainsAny {
+            let in_values = self.in_values();
+            if let Some(error) = in_values.errors.into_iter().next() {
+                return Err(error);
+            }
+            listed = in_values.data.unwrap_or_default();
+            &listed
+        } else {
+            std::slice::from_ref(&self.value)
+        };
+        if values
+            .iter()
+            .all(|value| !value.is_null() && keys_as_element(value))
+        {
+            Ok(())
+        } else {
+            Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "invalid value type for an element of the typed array",
+            ))
+        }
+    }
+
     /// Validate this where clause against the document schema
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn validate_against_schema(
@@ -1213,8 +1355,40 @@ impl<'a> WhereClause {
             Cow::Borrowed(&property.property_type)
         };
 
-        // Check operator is allowed for field type
+        // A typed array is read with an element operator and nothing else, and
+        // each value it names is judged as `validate_array_element_clause`
+        // judges it for documents queries: it must key as an element, as
+        // generation 1 of `serialize_value_for_key` keys one. Any other clause
+        // is judged by the operator rules of its field's type.
         let property_type = property_type_cow.as_ref();
+        let element_type = match property_type {
+            DocumentPropertyType::TypedArray(typed_array) => Some(&typed_array.item_type),
+            _ => None,
+        };
+        if let Some(error) = self.element_operator_mismatch(element_type.is_some()) {
+            return QuerySyntaxSimpleValidationResult::new_with_error(error);
+        }
+        if let Some(element_type) = element_type {
+            return match self.validate_element_values(|value| {
+                element_type
+                    .encode_value_for_tree_keys(value)
+                    .is_ok_and(|key| key.len() <= MAX_INDEX_SIZE)
+            }) {
+                Ok(()) => QuerySyntaxSimpleValidationResult::new(),
+                Err(error) => QuerySyntaxSimpleValidationResult::new_with_error(error),
+            };
+        }
+
+        self.validate_against_property_type(property_type)
+    }
+
+    /// Validate the operator and value of this where clause against the type
+    /// of the field it names: the value shape, the bounds and the value types.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn validate_against_property_type(
+        &self,
+        property_type: &DocumentPropertyType,
+    ) -> QuerySyntaxSimpleValidationResult {
         if !allowed_ops_for_type(property_type).contains(&self.operator) {
             return QuerySyntaxSimpleValidationResult::new_with_error(
                 QuerySyntaxError::InvalidWhereClauseComponents(
@@ -1471,10 +1645,12 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
         }
         DocumentPropertyType::ByteArray(_) => &[Equal, In],
         DocumentPropertyType::Boolean => &[Equal],
+        // A typed array is read by its elements (protocol version 14): only an
+        // index naming it can serve the clause, and none could before.
+        DocumentPropertyType::TypedArray(_) => &[Contains, ContainsAny],
         DocumentPropertyType::Object(_)
         | DocumentPropertyType::Array(_)
-        | DocumentPropertyType::VariableTypeArray(_)
-        | DocumentPropertyType::TypedArray(_) => &[],
+        | DocumentPropertyType::VariableTypeArray(_) => &[],
     }
 }
 

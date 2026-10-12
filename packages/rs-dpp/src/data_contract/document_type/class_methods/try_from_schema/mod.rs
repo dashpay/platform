@@ -5,19 +5,21 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property::reference_where::{
     WHERE_CONST, WHERE_IN, WHERE_NOT_EQUAL,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_delete_constraints, parse_property_constraints, referenced_path, referenced_read,
-    whole_integer, AffixPosition, AggregateBinding, AggregateKind, AggregateRead, ElementKind,
-    EqualityKind, PropertyConstraint, PropertyRead, SystemChange, SystemProperty,
-    REFERENCED_DOCUMENT_PREFIX, STORED_DOCUMENT_PREFIX,
+    either_version_path, parse_delete_constraints, parse_property_constraints, referenced_path,
+    referenced_read, stored_version_path, whole_integer, AffixPosition, AggregateBinding,
+    AggregateKind, AggregateRead, ElementKind, EqualityKind, PropertyConstraint, PropertyRead,
+    SystemChange, SystemProperty, SystemRead, SystemValue, REFERENCED_DOCUMENT_PREFIX,
+    STORED_DOCUMENT_PREFIX, STORED_OWNER_ID,
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, owner_can_change,
-    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS,
-    MAX_LOOKUP_PATH_LENGTH,
+    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_CHOOSE_FIRST_ORDER,
+    MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -25,15 +27,16 @@ use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_path_listed, is_referenced_system_agreement_property,
     is_referring_system_agreement_property, is_transient, property_at_path, property_names,
-    ContractReferenceModeration, ContractReferenceOwner, ContractReferenceRequirements,
-    DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration, DocumentReferenceKind,
-    DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient,
-    EncryptionScheme, GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements,
-    KeyIdReference, KeyReferenceIdentityProperty, ListElementReference, LookupHashKey,
-    LookupKeySource, PropertyReference, ReferenceCombinator, ReferenceOperands, SystemFunction,
-    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
-    WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
+    ChooseFirstOrder, ContractReferenceModeration, ContractReferenceOwner,
+    ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration,
+    DocumentReferenceKind, DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor,
+    EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
+    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
+    ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
+    ReferenceCombinator, ReferenceOperands, SystemFunction, WhereBoundRead, WhereCondition,
+    WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1201,14 +1204,26 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks` and `consume` describe the document `findBy` finds
-    // when the referring document is created: they sit beside `findBy` and need
-    // it. That the reference is judged on the create alone (a function in
-    // `findBy`, or a declaring type whose documents are never replaced) needs
-    // the declaring type, and is checked once it is parsed
-    // (`validate_reference_lookup_sources`); `inList` refuses both
-    // (`parse_list_element_reference`)
-    if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
+    // `minimumAgeBlocks` and `chooseFirst` sit in `constraints`, not beside it
+    if let Some(keyword) = [
+        property_names::MINIMUM_AGE_BLOCKS,
+        property_names::CHOOSE_FIRST,
+    ]
+    .into_iter()
+    .find(|keyword| refers_to_map.contains_key(*keyword))
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo declares {keyword} inside its constraints, \
+             {{ \"constraints\": {{ \"{keyword}\": ... }} }}, not beside findBy"
+        )));
+    }
+    // `constraints` and `consume` describe the document `findBy` finds when the
+    // referring document is created: they sit beside `findBy` and need it. That
+    // the reference is judged on the create alone (a function in `findBy`, or a
+    // declaring type whose documents are never replaced) needs the declaring
+    // type, and is checked once it is parsed (`validate_reference_lookup_sources`);
+    // `inList` refuses both (`parse_list_element_reference`)
+    if let Some(keyword) = [property_names::CONSTRAINTS, property_names::CONSUME]
         .into_iter()
         .find(|keyword| refers_to_map.contains_key(*keyword))
     {
@@ -1381,6 +1396,16 @@ fn parse_reference_target(
                             "permanentDocument refersTo cannot consume the document findBy \
                              finds, which is never deleted: consume needs a deletableDocument \
                              reference"
+                                .to_string(),
+                        ));
+                    }
+                    // `chooseFirst` reads commitments that expire (`ttl`), which a permanent
+                    // document never does
+                    if lookup.choose_first.is_some() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "permanentDocument refersTo does not take chooseFirst: the \
+                             commitments it reads must expire, and a permanent document never \
+                             leaves state: chooseFirst needs a deletableDocument reference"
                                 .to_string(),
                         ));
                     }
@@ -1707,8 +1732,8 @@ fn parse_where_condition(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
-/// `minimumAgeBlocks` and `consume` are refused on every parse: they describe
-/// a document `findBy` finds by a key, which a list element reference has no
+/// `constraints` and `consume` are refused on every parse: they describe a
+/// document `findBy` finds by a key, which a list element reference has no
 /// field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
@@ -1718,11 +1743,11 @@ fn parse_list_element_reference(
     mut property_agreement: BTreeMap<String, String>,
     where_conditions: BTreeMap<String, WhereCondition>,
 ) -> Result<ListElementReference, DataContractError> {
-    if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
+    if refers_to_map.contains_key(property_names::CONSTRAINTS)
         || refers_to_map.contains_key(property_names::CONSUME)
     {
         return Err(DataContractError::InvalidContractStructure(
-            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume: they \
+            "permanentDocument refersTo inList does not take constraints or consume: they \
              describe a document findBy finds by a key, and inList checks that a list holds the \
              value"
                 .to_string(),
@@ -2107,9 +2132,10 @@ pub(super) fn parse_doctype_reference(
 /// `ownerRefersTo` or `creatorRefersTo` one (checked with the other
 /// referring-side rules). `$id` finds a document by id only for a list
 /// ([`parse_list_element_reference`]): without `findBy` the value is the id.
-/// Beside a function the `refersTo`, `refers_to_map`, may declare
-/// `minimumAgeBlocks` and `consume`, what the commitment the key finds must be
-/// and whether the create deletes it, held on the parsed lookup. What the
+/// Beside a function the `refersTo`, `refers_to_map`, may declare `consume` and
+/// `constraints` (`minimumAgeBlocks`, `chooseFirst`), what the commitment the key
+/// finds must be, whether the create deletes it and which commitments to the
+/// same values it must precede, held on the parsed lookup. What the
 /// names resolve to is checked once the document types are parsed: the
 /// sources against the declaring type ([`validate_reference_lookup_sources`]),
 /// the index against the referenced one (at contract level for a type of the
@@ -2189,10 +2215,36 @@ fn parse_find_by(
         )));
     }
 
-    // What the commitment a computed key finds must be, and whether the create
-    // deletes it, declared beside `findBy`: a key read as is finds no
-    // commitment
-    let minimum_age_blocks = refers_to_map
+    // What the commitment a computed key finds must meet, its `constraints`,
+    // and whether the create deletes it, declared beside `findBy`
+    let constraints = match refers_to_map.get(property_names::CONSTRAINTS) {
+        None => BTreeMap::new(),
+        Some(value) => {
+            let constraints = value.to_btree_ref_string_map().map_err(|_| {
+                DataContractError::InvalidContractStructure(
+                    "refersTo constraints is an object holding minimumAgeBlocks, chooseFirst or \
+                     both"
+                        .to_string(),
+                )
+            })?;
+            if constraints.is_empty() {
+                return Err(DataContractError::InvalidContractStructure(
+                    "refersTo constraints holds minimumAgeBlocks, chooseFirst or both".to_string(),
+                ));
+            }
+            if let Some(unknown) = constraints.keys().find(|key| {
+                key.as_str() != property_names::MINIMUM_AGE_BLOCKS
+                    && key.as_str() != property_names::CHOOSE_FIRST
+            }) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "refersTo constraints holds minimumAgeBlocks and chooseFirst only, not \
+                     {unknown:?}"
+                )));
+            }
+            constraints
+        }
+    };
+    let minimum_age_blocks = constraints
         .get(property_names::MINIMUM_AGE_BLOCKS)
         .map(|value| {
             let blocks: u32 = value.to_integer().map_err(|_| {
@@ -2217,10 +2269,154 @@ fn parse_find_by(
             ))
         }
     };
+    let choose_first = constraints
+        .get(property_names::CHOOSE_FIRST)
+        .map(|value| parse_choose_first(value))
+        .transpose()?;
     Ok(DocumentReferenceLookup {
         minimum_age_blocks,
         consume,
+        choose_first,
         ..lookup
+    })
+}
+
+/// The `chooseFirst` in a document reference's `constraints`, `choose_first_value`:
+/// `{ "among", "validWhen", "by" }`. `among` is a schema property of the referenced document
+/// type, the one the `findBy` function fills; `validWhen` holds exactly one entry, a schema
+/// property of the referenced type mapped to an owner-bound function of the shape of a
+/// `findBy` function; `by` lists the properties the commitments are ordered by, each a name
+/// (ascending) or `{ "<name>": "asc" | "desc" }`, at most [`MAX_CHOOSE_FIRST_ORDER`], each once,
+/// `$id` only last and never `among` itself. What the functions may read and what they name
+/// are checked once the document types are parsed, beside the `findBy` they complement
+/// ([`DocumentReferenceLookup::referring_side_error`], on every parse), and against the
+/// referenced type ([`DocumentReferenceLookup::referenced_side_error`]).
+fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, DataContractError> {
+    let refused = |reason: String| {
+        DataContractError::InvalidContractStructure(format!("refersTo chooseFirst {reason}"))
+    };
+    let schema_property = |value: Option<&&Value>| match value {
+        Some(Value::Text(property))
+            if !property.is_empty()
+                && property.len() <= MAX_LOOKUP_PATH_LENGTH
+                && !property.starts_with('$') =>
+        {
+            Some(property.clone())
+        }
+        _ => None,
+    };
+    let choose_first_map = choose_first_value.to_btree_ref_string_map()?;
+    if let Some(unknown) = choose_first_map
+        .keys()
+        .find(|key| !matches!(key.as_str(), "among" | "validWhen" | "by"))
+    {
+        return Err(refused(format!(
+            "holds \"among\", \"validWhen\" and \"by\" only, not {unknown:?}"
+        )));
+    }
+    let Some(among) = schema_property(choose_first_map.get("among")) else {
+        return Err(refused(format!(
+            "names in \"among\" the schema property of the referenced document type, of 1 to \
+             {MAX_LOOKUP_PATH_LENGTH} characters, that the findBy function fills"
+        )));
+    };
+    let valid_when_map = match choose_first_map.get("validWhen") {
+        Some(value @ Value::Map(_)) => value.to_btree_ref_string_map()?,
+        _ => BTreeMap::new(),
+    };
+    let mut valid_when_entries = valid_when_map.into_iter();
+    let (Some((valid_when_property, function @ Value::Map(_))), None) =
+        (valid_when_entries.next(), valid_when_entries.next())
+    else {
+        return Err(refused(format!(
+            "among \"{among}\" holds in \"validWhen\" exactly one entry, a schema property of the \
+             referenced document type mapped to a function, {{ \"function\", \"params\" }}"
+        )));
+    };
+    if schema_property(Some(&&Value::Text(valid_when_property.clone()))).is_none() {
+        return Err(refused(format!(
+            "among \"{among}\" names in \"validWhen\" a schema property of the referenced \
+             document type of 1 to {MAX_LOOKUP_PATH_LENGTH} characters, not {valid_when_property:?}"
+        )));
+    }
+    let Some(Value::Array(entries)) = choose_first_map.get("by") else {
+        return Err(refused(format!(
+            "among \"{among}\" lists in \"by\" the properties commitments are ordered by"
+        )));
+    };
+    if entries.is_empty() || entries.len() > MAX_CHOOSE_FIRST_ORDER {
+        return Err(refused(format!(
+            "among \"{among}\" orders by 1 to {MAX_CHOOSE_FIRST_ORDER} properties"
+        )));
+    }
+    let mut by: Vec<ChooseFirstOrder> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let order = match entry {
+            Value::Text(name) => Some((name.clone(), true)),
+            Value::Map(map) => match map.as_slice() {
+                [(Value::Text(name), Value::Text(direction))] => match direction.as_str() {
+                    "asc" => Some((name.clone(), true)),
+                    "desc" => Some((name.clone(), false)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some((name, ascending)) =
+            order.filter(|(name, _)| !name.is_empty() && name.len() <= MAX_LOOKUP_PATH_LENGTH)
+        else {
+            return Err(refused(format!(
+                "among \"{among}\" orders by a property name, ascending, or by {{ \"<name>\": \
+                 \"asc\" }} or {{ \"<name>\": \"desc\" }}"
+            )));
+        };
+        if name == among || by.iter().any(|order| order.property == name) {
+            return Err(refused(format!(
+                "among \"{among}\" orders by \"{name}\" twice, or by the property it groups by"
+            )));
+        }
+        if by.last().is_some_and(|order| order.property == ID) {
+            return Err(refused(format!(
+                "among \"{among}\" orders by {ID} last only: the entries of an index are kept by \
+                 it after every one of its properties"
+            )));
+        }
+        by.push(ChooseFirstOrder {
+            property: name,
+            ascending,
+        });
+    }
+    // The index keeps the documents equal on its properties by id in the direction of its last
+    // (ascending under an equal value alone), and the scan, cut at its candidate limit, reads
+    // them that way: a last `$id` running the other way would leave out the ones before the
+    // commitment found, read last
+    if let Some((last, before)) = by.split_last() {
+        let ids_ascending = before.last().is_none_or(|order| order.ascending);
+        if last.property == ID && last.ascending != ids_ascending {
+            let direction = |ascending: bool| if ascending { "asc" } else { "desc" };
+            let after = match before.last() {
+                Some(order) => format!(
+                    "after \"{}\" {}",
+                    order.property,
+                    direction(order.ascending)
+                ),
+                None => "alone".to_string(),
+            };
+            return Err(refused(format!(
+                "among \"{among}\" orders by {ID} {} {after}: an index keeps the documents equal \
+                 on its properties by {ID} in the direction of its last, and the scan reads them \
+                 that way, so a last {ID} runs in the direction of the property before it \
+                 (asc alone)",
+                direction(last.ascending)
+            )));
+        }
+    }
+    Ok(LookupChooseFirst {
+        among,
+        valid_when_property,
+        valid_when: LookupHashKey::from_value_of(function, property_names::CHOOSE_FIRST)?,
+        by,
     })
 }
 
@@ -2247,10 +2443,13 @@ pub(super) fn validate_reference_lookup_sources(
     // element, and the owner or creator reference's `"."` is that identity,
     // named by the path `$ownerId` or `$creatorId`, which no property source
     // can be
+    // At most one `chooseFirst` on the type, so a create reads one set of competitors
+    let mut choose_first_declared = false;
     for (holder, reference) in document_type.reference_declarations() {
         let Some(target) = reference.target() else {
             continue;
         };
+        let on_elements = matches!(reference, PropertyReference::Elements { .. });
         // Each leaf of a reference expression reads its key as it would
         // alone, and the error names the leaf (`refersTo anyOf[1] findBy`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
@@ -2260,8 +2459,20 @@ pub(super) fn validate_reference_lookup_sources(
             let Some(lookup) = declaration.lookup else {
                 continue;
             };
-            if let Some(reason) = lookup
-                .referring_side_error(document_type, holder.path())
+            let choose_first_error = lookup.choose_first.as_ref().and_then(|_| {
+                let error = choose_first_declaration_error(
+                    on_elements,
+                    &leaf_path,
+                    &declaration,
+                    choose_first_declared,
+                );
+                choose_first_declared = true;
+                error
+            });
+            // Where a `chooseFirst` sits is judged first: on the elements of a typed array its
+            // findBy, which may read the element in no function, would be refused for that
+            if let Some(reason) = choose_first_error
+                .or_else(|| lookup.referring_side_error(document_type, holder.path()))
                 .or_else(|| create_only_leaf_error(document_type, &leaf_path, lookup, &declaration))
                 .or_else(|| age_or_consume_error(document_type, lookup))
             {
@@ -2278,6 +2489,65 @@ pub(super) fn validate_reference_lookup_sources(
         }
     }
     Ok(())
+}
+
+/// Why a `chooseFirst` cannot sit where it is declared; `None` when it can. A create reads
+/// the commitments a `chooseFirst` precedes once per value it judges, up to
+/// `SystemLimits::max_choose_first_candidates` documents, so a document type declares at most
+/// one (`already_declared` is whether an earlier declaration of the type held one), on a
+/// single reference: not on the elements of a typed array (`on_elements`), each element of
+/// which would read them again, nor on an operand of a reference expression (`leaf_path`
+/// not empty). A `where` beside it compares nothing but the writer with the commitment's
+/// owner (the declaration's `property_agreement`) and holds no other condition
+/// (`where_conditions`): a competitor is judged on its key alone, so a commitment differing
+/// from the create's in a `where` value, or failing a condition the found one meets, could
+/// precede it.
+fn choose_first_declaration_error(
+    on_elements: bool,
+    leaf_path: &str,
+    declaration: &DocumentReferenceDeclaration,
+    already_declared: bool,
+) -> Option<String> {
+    if already_declared {
+        return Some(
+            "a document type declares at most one chooseFirst: a create reads the competitors \
+             of each"
+                .to_string(),
+        );
+    }
+    if on_elements {
+        return Some(
+            "chooseFirst may not sit on the elements of a typed array: every element would read \
+             the competitors of its commitment again"
+                .to_string(),
+        );
+    }
+    if !leaf_path.is_empty() {
+        return Some(
+            "chooseFirst may not sit on an operand of a reference expression: it describes the \
+             one commitment a reference reveals"
+                .to_string(),
+        );
+    }
+    if let Some(referenced) = declaration.where_conditions.keys().next() {
+        return Some(format!(
+            "where \"{referenced}\" holds a condition beside chooseFirst: a competitor is judged \
+             on its key alone, so where may compare nothing but \"{OWNER_ID}\" with the writer"
+        ));
+    }
+    declaration
+        .property_agreement
+        .iter()
+        .find(|(referring, referenced)| {
+            referring.as_str() != OWNER_ID || referenced.as_str() != OWNER_ID
+        })
+        .map(|(referring, referenced)| {
+            format!(
+                "where \"{referenced}\": \"{referring}\" beside chooseFirst: a competitor is \
+                 judged on its key alone, so where may compare nothing but \"{OWNER_ID}\" with \
+                 the writer"
+            )
+        })
 }
 
 /// Why a lookup declared on `document_type` may not declare `minimumAgeBlocks` or `consume`;
@@ -2953,7 +3223,7 @@ fn apply_property_constraints_v0(
             schema_defs,
             &format!("rule \"{name}\""),
             constraint,
-            false,
+            true,
             true,
             &structure_error,
         )?;
@@ -3026,7 +3296,10 @@ fn validate_rule_limits(
 /// stored document must meet for its owner to delete it
 /// ([`parse_delete_constraints`]). A rule reads what a `propertyConstraints`
 /// rule may read, checked the same way ([`validate_property_constraint_reads`]),
-/// and under full validation the keyword is held to the same limits, counted
+/// except two refused there: `$old.`, since a delete rule is judged on the
+/// stored document itself and its plain paths already read it ([`stored_path`]),
+/// and a document a reference points at, which a delete does not check; under
+/// full validation the keyword is held to the same limits, counted
 /// apart from `propertyConstraints`. Which type a `countOf` or `sumOf` totals,
 /// and by which keys, is checked with the contract's other types
 /// ([`validate_property_constraint_aggregates`]).
@@ -3129,26 +3402,92 @@ pub(super) fn property_equality_kind(
     }
 }
 
+/// Checks the reads of the type's `propertyConstraints` and `deleteConstraints`
+/// rules that depend on which writes the type has, once its moderator abilities
+/// are parsed: a rule reading `$revision`, of either version, needs a type that
+/// keeps a revision, and a `propertyConstraints` rule reading the stored
+/// version through `$old.` needs a write that replaces one (a
+/// `deleteConstraints` rule reads none: [`stored_path`] refused it). Both are
+/// the types whose documents are mutable, transferable, sold at a price their
+/// owner sets, or keep fields for their moderators (`requires_revision`): on
+/// any other a create is the only write a rule judges, and it has no stored
+/// version and the first revision. On every parse; the keywords arrive with
+/// protocol version 14, so no stored contract breaks it.
+pub(super) fn validate_stored_version_reads(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    if document_type.requires_revision() {
+        return Ok(());
+    }
+    let has_no_later_write = "its documents are immutable, not transferable, not sold at a \
+                              price their owner sets, and keep no fields for their moderators";
+    for (keyword, rules) in [
+        (
+            property_names::PROPERTY_CONSTRAINTS,
+            &document_type.property_constraints,
+        ),
+        (
+            property_names::DELETE_CONSTRAINTS,
+            &document_type.delete_constraints,
+        ),
+    ] {
+        for (name, rule) in rules {
+            if let Some(read) = rule
+                .system_reads()
+                .into_iter()
+                .find(|read| read.value == SystemValue::Revision)
+            {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "document type \"{document_type_name}\" {keyword} rule \"{name}\" reads {}, \
+                     but the type keeps no revision: {has_no_later_write}",
+                    read.name()
+                )));
+            }
+        }
+    }
+    if let Some(name) = document_type
+        .property_constraints
+        .iter()
+        .find_map(|(name, rule)| rule.reads_stored().then_some(name))
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "document type \"{document_type_name}\" {} rule \"{name}\" reads the stored \
+             version through {STORED_DOCUMENT_PREFIX}, but no write of the type replaces one: \
+             {has_no_later_write}, so a create, which has none, is the only write a rule judges",
+            property_names::PROPERTY_CONSTRAINTS
+        )));
+    }
+    Ok(())
+}
+
 /// A path a condition reads, as the document type names it: `path` itself,
-/// or, with `allow_stored_reads`, what follows the `$old.` a condition judging
-/// a replace (an `immutable` entry's, or `retractedWhen`) reads the stored
-/// document through ([`STORED_DOCUMENT_PREFIX`]). A rule of
-/// `propertyConstraints` judges the document written, so there is no stored
-/// document for it to read.
+/// or, with `allow_stored_reads`, what follows the `$old.` a rule of
+/// `propertyConstraints`, an `immutable` entry's condition or `retractedWhen`
+/// reads the stored version through ([`STORED_DOCUMENT_PREFIX`]): a property,
+/// since `$old.$ownerId` and the stored system values are no property paths.
+/// A rule of `deleteConstraints` is judged on the stored document itself, so
+/// its plain paths read it and `$old.` is refused there.
 fn stored_path<'a>(
     path: &'a str,
     subject: &str,
     allow_stored_reads: bool,
 ) -> Result<&'a str, String> {
-    match path.strip_prefix(STORED_DOCUMENT_PREFIX) {
-        Some(stored) if allow_stored_reads => Ok(stored),
-        Some(_) => Err(format!(
-            "{subject} reads \"{path}\", but only a condition judging a replace (an \
-             `immutable` entry's, or `retractedWhen`) reads the stored document through \
-             `{STORED_DOCUMENT_PREFIX}`"
-        )),
+    match stored_version_path(path) {
+        Some(_) if !allow_stored_reads => Err(stored_read_in_delete_rule(subject, path)),
+        Some(stored) => Ok(stored),
         None => Ok(path),
     }
+}
+
+/// The refusal of a `deleteConstraints` rule, `subject`, reading `path` through
+/// `$old.`: such a rule is judged on the stored document itself.
+fn stored_read_in_delete_rule(subject: &str, path: &str) -> String {
+    format!(
+        "{subject} reads \"{path}\", but a deleteConstraints rule is judged on the stored \
+         document itself, so its plain paths read it: name it without \
+         `{STORED_DOCUMENT_PREFIX}`"
+    )
 }
 
 /// Why `document_type` has no property at `lookup` a rule `subject` can read
@@ -3434,8 +3773,13 @@ pub(super) fn property_read_error(
 /// object, a system time or height the type records, and a constant or a
 /// default its string property's `enum` admits. `subject` names the condition
 /// in the errors (`rule "fee"`), and `structure_error` wraps them. With
-/// `allow_stored_reads` (the condition of an `immutable` entry) a path may read
-/// the stored document through `$old.` and is judged as the path after it.
+/// `allow_stored_reads` (a rule of `propertyConstraints`, the condition of an
+/// `immutable` entry or `retractedWhen`) a path may read the stored version
+/// through `$old.` and is judged as the path after it, and a stored system
+/// value as the value after it; without it (a rule of `deleteConstraints`)
+/// neither is admitted. Whether the type keeps the revision `$revision` reads,
+/// and has a write replacing a stored version at all, is checked once its
+/// moderator abilities are parsed ([`validate_stored_version_reads`]).
 /// With `allow_referenced_reads` (a `propertyConstraints` rule) a
 /// `referenced` operand may read a document one of the type's references
 /// points at: what it reads is checked against the referenced type once it is
@@ -3469,29 +3813,50 @@ pub(super) fn validate_property_constraint_reads(
             return Err(structure_error(error));
         }
     }
-    // An indexOnly type's delete carries its row's values but not its owner, so
-    // a rule reading the owner could not be judged there
+    // `$old.$ownerId` is no property path, so its refusal in a delete rule is here
+    if !allow_stored_reads && constraint.reads_stored() {
+        let path = constraint
+            .system_reads()
+            .into_iter()
+            .find(|read| read.stored)
+            .map_or_else(|| STORED_OWNER_ID.to_string(), SystemRead::name);
+        return Err(structure_error(stored_read_in_delete_rule(subject, &path)));
+    }
+    // An indexOnly type keeps no stored version: its documents are never
+    // replaced. Checked first, so that a rule reading `$old.$ownerId` is told so
+    if document_type.index_only && constraint.reads_stored() {
+        return Err(structure_error(format!(
+            "{subject} reads the stored version through {STORED_DOCUMENT_PREFIX}, which an \
+             indexOnly type does not keep: its documents are never replaced"
+        )));
+    }
+    // Its delete carries its row's values but not its owner, so a rule reading
+    // the owner could not be judged there
     if document_type.index_only && constraint.reads_owner() {
         return Err(structure_error(format!(
             "{subject} compares $ownerId, which a delete of an indexOnly document \
              does not carry"
         )));
     }
-    for system_property in constraint.system_reads() {
-        let system_name = system_property.name();
-        // Nor its times and heights
+    for read in constraint.system_reads() {
+        let system_name = read.name();
+        // Nor its times, heights and revision
         if document_type.index_only {
             return Err(structure_error(format!(
                 "{subject} reads {system_name}, which a delete of an indexOnly \
                  document does not carry"
             )));
         }
-        // A stored document holds only the times and heights its type requires
-        if !document_type.required_fields.contains(system_name) {
-            return Err(structure_error(format!(
-                "{subject} reads {system_name}, which the document type does not \
-                 record: list it in required"
-            )));
+        // A stored document holds only the times and heights its type requires;
+        // whether it keeps a revision is known once its moderator abilities are
+        if let SystemValue::Property(property) = read.value {
+            if !document_type.required_fields.contains(property.name()) {
+                let listed = if read.stored { property.name() } else { "it" };
+                return Err(structure_error(format!(
+                    "{subject} reads {system_name}, which the document type does not \
+                     record: list {listed} in required"
+                )));
+            }
         }
     }
     // Which type an aggregate totals, and by which of its keys, is checked once
@@ -3569,14 +3934,16 @@ pub(super) fn validate_property_constraint_reads(
 ///   read what a transfer or a purchase changes, nor, on a type whose prices
 ///   can be set, what a price update changes: those writes check no reference,
 ///   so they could not judge it;
-/// * it depends on no field the type keeps for its moderators to change,
-///   neither reading it nor totalling the type's own documents by it (a key
-///   of a `countOf` or `sumOf`), which their change judges without the
-///   references either;
-/// * on a type whose moderators' deletions keep records, it reads no total
-///   over the type's own documents: a moderator's restore brings a document
-///   back into those totals and checks no reference, so it could not judge
-///   the rule.
+/// * on a type keeping fields for its moderators to change, it reads nothing
+///   their change can break, which their change is judged against
+///   ([`PropertyConstraint::reads_changed_fields`]): such a field, of either
+///   version, `$revision`, or any total, which may have moved since the
+///   document was last written; their change checks no reference either;
+/// * on a type whose moderators' deletions keep records, it reads no total: a
+///   moderator's restore is judged against every rule reading one
+///   ([`PropertyConstraint::reads_change`]), the totals having perhaps moved
+///   while the document was gone, and checks no reference, so it could not
+///   judge the rule.
 ///
 /// What it reads of the referenced type is checked once that type is in hand
 /// ([`referenced_reads_error`]). Registration only, like the rest of a rule's
@@ -3615,52 +3982,67 @@ pub(super) fn validate_referencing_rules(
         if can_change_owner && constraint.reads_change(SystemChange::Transfer) {
             return Err(error(
                 "reads a document a reference points at and what a transfer or a purchase \
-                 changes ($ownerId, $transferredAt and its heights, or a total depending on the \
-                 owner): a transfer or a purchase checks no reference, so it could not judge \
-                 the rule"
+                 changes ($ownerId, $transferredAt and its heights or $revision, of either \
+                 version, or a total depending on the owner): a transfer or a purchase checks \
+                 no reference, so it could not judge the rule"
                     .to_string(),
             ));
         }
         if can_change_price && constraint.reads_change(SystemChange::PriceUpdate) {
             return Err(error(
                 "reads a document a reference points at and what a price update changes \
-                 ($updatedAt and its heights): a price update checks no reference, so it could \
-                 not judge the rule"
+                 ($updatedAt and its heights or $revision, of either version): a price update \
+                 checks no reference, so it could not judge the rule"
                     .to_string(),
             ));
         }
-        // A moderator's change of a key of a total over the type's own
-        // documents moves the total, the rule reading the key itself or not
-        let moderated_field = constraint
-            .own_property_reads()
-            .into_iter()
-            .map(|(path, _)| path)
-            .chain(
-                constraint
-                    .aggregate_reads()
-                    .into_iter()
-                    .flat_map(AggregateRead::own_type_keys),
-            )
-            .find(|path| is_path_listed(document_type.moderator_changeable_fields(), path));
-        if let Some(field) = moderated_field {
+        // What a moderator's change of the fields the type keeps for them is
+        // judged against, the reason named as precisely as the rule allows: a
+        // field it reads, of either version, or keys a total over the type's
+        // own documents by, `$revision`, or a total
+        let moderator_fields = document_type.moderator_changeable_fields();
+        if !moderator_fields.is_empty() && constraint.reads_changed_fields(moderator_fields) {
+            let moderated_field = constraint
+                .own_property_reads()
+                .into_iter()
+                .map(|(path, _)| either_version_path(path))
+                .chain(
+                    constraint
+                        .aggregate_reads()
+                        .into_iter()
+                        .flat_map(AggregateRead::own_type_keys),
+                )
+                .find(|path| is_path_listed(moderator_fields, path));
+            let reads_revision = constraint
+                .system_reads()
+                .into_iter()
+                .any(|read| read.value == SystemValue::Revision);
+            let reason = match (moderated_field, reads_revision) {
+                (Some(field), _) => format!(
+                    "depends on \"{field}\" (a property it reads, of either version, or a key \
+                     of a total over the type's own documents), which the type keeps for its \
+                     moderators to change"
+                ),
+                (None, true) => "$revision, which a moderator's change of the fields the type \
+                                 keeps for them moves"
+                    .to_string(),
+                (None, false) => "a total, which a moderator's change of the fields the type \
+                                  keeps for them is judged against, since it may have moved \
+                                  since the document was last written"
+                    .to_string(),
+            };
             return Err(error(format!(
-                "reads a document a reference points at and depends on \"{field}\" (a property \
-                 it reads, or a key of a total over the type's own documents), which the type \
-                 keeps for its moderators to change: their change checks no reference, so it \
-                 could not judge the rule"
+                "reads a document a reference points at and {reason}: their change checks no \
+                 reference, so it could not judge the rule"
             )));
         }
-        if let Some(total) = constraint
-            .aggregate_reads()
-            .into_iter()
-            .find(|read| can_restore && read.of_own_type)
-        {
-            return Err(error(format!(
-                "reads a document a reference points at and a {} of the type's own documents, \
-                 which a moderator's restore brings a document back into: a restore checks no \
-                 reference, so it could not judge the rule",
-                total.wire_name()
-            )));
+        if can_restore && constraint.reads_change(SystemChange::Restore) {
+            return Err(error(
+                "reads a document a reference points at and a total, which a moderator's \
+                 restore is judged against, since it may have moved while the document was \
+                 gone: a restore checks no reference, so it could not judge the rule"
+                    .to_string(),
+            ));
         }
     }
     Ok(())

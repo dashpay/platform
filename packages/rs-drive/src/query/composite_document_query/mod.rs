@@ -109,8 +109,8 @@ use crate::query::moderated_join::{
     decode_removals, pair_missing_with_removals, removals_path_query,
 };
 use crate::query::{
-    DriveDocumentCountQuery, DriveDocumentQuery, InternalClauses, OrderClause, SplitCountEntry,
-    WhereClause, WhereOperator,
+    key_array_element_clauses, DriveDocumentCountQuery, DriveDocumentQuery, InternalClauses,
+    OrderClause, SplitCountEntry, WhereClause, WhereOperator,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -370,7 +370,7 @@ fn sorted_values(values: &[Identifier]) -> Vec<Identifier> {
 /// The document reference a property type declares, of either kind. Only
 /// a scalar reference counts: a binding reads one identifier out of the
 /// property, and a typed array whose elements are references holds many,
-/// is no index property and so is never a join field.
+/// read only by their elements (`contains`), so it is never a join field.
 fn document_reference_of(
     property_type: &DocumentPropertyType,
 ) -> Option<DocumentReferenceDeclaration<'_>> {
@@ -481,6 +481,22 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let label = |message: &str| unsupported(format!("sub-query {}: {}", index, message));
+
+        // A sub-query's documents are read out of the merged proof as they
+        // were walked, without the repeats a `containsAny` walk reaches a
+        // document under (`DriveDocumentQuery::drop_repeated_element_matches`
+        // runs on a page only), and a count sub-query answers per bound
+        // value, not per element. So a sub-query reads one element at most.
+        if sub_query
+            .where_clauses
+            .iter()
+            .any(|clause| clause.operator == WhereOperator::ContainsAny)
+        {
+            return Err(label(
+                "containsAny is not supported in a sub-query: a document holding several of \
+                 the elements would be returned or counted once per element; use contains",
+            ));
+        }
 
         let Some(binding) = &sub_query.binding else {
             // A sibling: an independent documents query.
@@ -1200,12 +1216,20 @@ impl<'a> DriveDocumentQuery<'a> {
         &'b self,
         sub_query: &'b DriveSubQuery<'a>,
         values: &[Identifier],
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<DriveDocumentCountQuery<'b>, Error> {
         let Some(binding) = &sub_query.binding else {
             return Err(unsupported("a count sub-query must be bound".to_string()));
         };
-        let mut where_clauses = sub_query.where_clauses.clone();
+        // A typed array's `contains` pin is keyed as the equality its index
+        // level holds, as the count surface keys it; a sub-query reads one
+        // element at most (see `validate_sub_query`).
+        let mut where_clauses = key_array_element_clauses(
+            sub_query.where_clauses.clone(),
+            sub_query.document_type,
+            false,
+            platform_version,
+        )?;
         where_clauses.push(WhereClause {
             field: binding.field.clone(),
             operator: WhereOperator::In,

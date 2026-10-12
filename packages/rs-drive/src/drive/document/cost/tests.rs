@@ -16,6 +16,7 @@ use crate::util::test_helpers::setup_contract;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier};
@@ -1188,4 +1189,64 @@ fn should_price_a_document_with_a_ttl_by_its_lifetime() {
     )
     .expect("expected to insert the document");
     assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+}
+
+/// The worst-case document holds `maxItems` distinct elements of an indexed
+/// typed array, even of one-character strings, whatever their `minLength`
+/// (a middle length of 0 would leave every element empty, one key), so the
+/// estimate prices one entry per element.
+#[test]
+fn should_size_an_indexed_typed_array_with_distinct_elements() {
+    let platform_version = PlatformVersion::latest();
+    for items in [
+        platform_value!({"type": "string", "minLength": 1, "maxLength": 1}),
+        platform_value!({"type": "string", "minLength": 0, "maxLength": 1}),
+        platform_value!({"type": "string", "maxLength": 1}),
+    ] {
+        let contract = DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory")
+            .create_with_value_config(
+                Identifier::from([9; 32]),
+                0,
+                platform_value!({"note": {
+                    "type": "object",
+                    "properties": {
+                        "letters": {
+                            "type": "array",
+                            "maxItems": 16,
+                            "items": items.clone(),
+                            "position": 0
+                        }
+                    },
+                    "indices": [{"name": "byLetter", "properties": [{"letters": "asc"}]}],
+                    "additionalProperties": false
+                }}),
+                None,
+                None,
+            )
+            .expect("contract")
+            .data_contract_owned();
+        let document_type = contract.document_type_for_name("note").expect("note");
+        let choices = BTreeMap::from([(
+            "letters".to_string(),
+            FieldChoice {
+                present: Some(true),
+                length: Some(16),
+            },
+        )]);
+        let (document, _) = sized_document(&contract, document_type, &choices, platform_version)
+            .expect("a sized document");
+        assert_eq!(
+            document
+                .get_raw_array_elements_for_document_type(
+                    "letters",
+                    document_type,
+                    platform_version
+                )
+                .expect("element keys")
+                .len(),
+            16,
+            "{items:?}"
+        );
+    }
 }

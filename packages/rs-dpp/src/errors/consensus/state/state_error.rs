@@ -85,6 +85,7 @@ use crate::consensus::state::document::referenced_document_type_moderated_error:
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
+use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
@@ -739,6 +740,11 @@ pub enum StateError {
     // reference, that the type can not give it (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRuleReadInvalidError(ReferencedDocumentRuleReadInvalidError),
+    // The commitment a create's `refersTo` found is preceded, in its `chooseFirst` order, by a
+    // valid one of another identity holding the same value at the property the reference's
+    // `chooseFirst` groups by (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -844,6 +850,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             }),
             6
@@ -874,6 +881,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             }),
             10
@@ -1652,6 +1660,19 @@ mod tests {
                 )
             )),
             174
+        );
+        // A create's commitment preceded by an older valid one of another identity
+        // (`chooseFirst`, protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentPrecededError(
+                ReferencedDocumentPrecededError::new(
+                    identity_id,
+                    identity_id,
+                    "nameHash".to_string(),
+                    "$creatorId".to_string(),
+                )
+            )),
+            175
         );
     }
 }
