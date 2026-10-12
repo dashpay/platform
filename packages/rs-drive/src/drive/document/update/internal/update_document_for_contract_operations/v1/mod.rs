@@ -50,6 +50,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -1342,14 +1343,14 @@ impl Drive {
         let top_value_tree_type = top_level_tree_types.value_tree_type;
         let doc_id = document.id();
 
-        let new_set: HashSet<&Vec<Vec<u8>>> = new_entries.iter().collect();
-        let old_set: HashSet<&Vec<Vec<u8>>> = old_entries.iter().collect();
+        let new_set: HashSet<&Vec<&[u8]>> = new_entries.iter().collect();
+        let old_set: HashSet<&Vec<&[u8]>> = old_entries.iter().collect();
 
         // Insert/refresh new entries FIRST (see the ordering note on the
         // delete loop below): added entries are inserted; common entries are
         // refreshed.
         for entry in &new_entries {
-            let Some((entry_key, entry_values)) = entry.split_first() else {
+            let Some((&entry_key, entry_values)) = entry.split_first() else {
                 continue;
             };
             if old_set.contains(entry) {
@@ -1360,10 +1361,10 @@ impl Drive {
                 // non-empty key), so the old and new layouts coincide and
                 // either verdict describes the entry on disk.
                 let mut path: Vec<Vec<u8>> = base_index_path.to_vec();
-                path.push(entry_key.clone());
+                path.push(entry_key.to_vec());
                 for (index_property, value) in index.properties.iter().skip(1).zip(entry_values) {
                     path.push(index_property.name.as_bytes().to_vec());
-                    path.push(value.clone());
+                    path.push(value.to_vec());
                 }
                 let (refresh_key, refresh_path) = if new_terminator_is_unique {
                     // Unique layout: the reference lives AT `[0]`.
@@ -1396,10 +1397,10 @@ impl Drive {
             // rather than the property name.
             let mut path: Vec<Vec<u8>> = base_index_path.to_vec();
             let mut qualified_path = path.clone();
-            qualified_path.push(entry_key.clone());
+            qualified_path.push(entry_key.to_vec());
             if !batch_insertion_cache.contains(&qualified_path) {
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
-                    PathKeyInfo::PathKeyRef::<0>((path.clone(), entry_key.as_slice())),
+                    PathKeyInfo::PathKeyRef::<0>((path.clone(), entry_key)),
                     top_value_tree_type,
                     storage_flags,
                     BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -1412,7 +1413,7 @@ impl Drive {
                     batch_insertion_cache.insert(qualified_path);
                 }
             }
-            path.push(entry_key.clone());
+            path.push(entry_key.to_vec());
 
             let mut parent_value_tree_type = top_value_tree_type;
             // A prefix-ranking chain level (`rankedCountable: { at }`)
@@ -1481,10 +1482,10 @@ impl Drive {
                 path.push(property_name.clone());
 
                 let mut qualified_path = path.clone();
-                qualified_path.push(value.clone());
+                qualified_path.push(value.to_vec());
                 if !batch_insertion_cache.contains(&qualified_path) {
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
-                        PathKeyInfo::PathKeyRef::<0>((path.clone(), value.as_slice())),
+                        PathKeyInfo::PathKeyRef::<0>((path.clone(), *value)),
                         sub_level_tree_types.value_tree_type,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -1497,7 +1498,7 @@ impl Drive {
                         batch_insertion_cache.insert(qualified_path);
                     }
                 }
-                path.push(value.clone());
+                path.push(value.to_vec());
 
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
                 parent_counts_continuations = level.is_ranked_chain_level();
@@ -1560,7 +1561,7 @@ impl Drive {
         // Deletes first would emit a delete of that ancestor alongside
         // inserts into it, which grovedb's batch consistency check rejects.
         for entry in &old_entries {
-            let Some((entry_key, entry_values)) = entry.split_first() else {
+            let Some((&entry_key, entry_values)) = entry.split_first() else {
                 continue;
             };
             if new_set.contains(entry) {
@@ -1591,10 +1592,10 @@ impl Drive {
                     continue;
                 }
                 let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
-                entry_path_segments.push(entry_key.clone());
+                entry_path_segments.push(entry_key.to_vec());
                 for (index_property, value) in index.properties.iter().skip(1).zip(entry_values) {
                     entry_path_segments.push(index_property.name.as_bytes().to_vec());
-                    entry_path_segments.push(value.clone());
+                    entry_path_segments.push(value.to_vec());
                 }
                 if !old_terminator_is_unique {
                     entry_path_segments.push(vec![0]);
@@ -1615,10 +1616,10 @@ impl Drive {
                 .iter()
                 .map(|s| KnownKey(s.clone()))
                 .collect();
-            key_info_path.push(KnownKey(entry_key.clone()));
+            key_info_path.push(KnownKey(entry_key.to_vec()));
             for (index_property, value) in index.properties.iter().skip(1).zip(entry_values) {
                 key_info_path.push(KnownKey(index_property.name.as_bytes().to_vec()));
-                key_info_path.push(KnownKey(value.clone()));
+                key_info_path.push(KnownKey(value.to_vec()));
             }
             // The entry is removed under the layout the OLD document wrote it
             // with: under the unique layout `[0]` IS the reference and is the
@@ -1653,23 +1654,16 @@ impl Drive {
 }
 
 /// The entries an index holds for a document whose keys at each position of
-/// the index are `key_sets`: every combination of one key per position, in
-/// order of the first position's keys, then the next position's. A position
-/// with no key (a document before the origin of a window grid) leaves the
-/// document no entry.
-fn index_entries(key_sets: &[Vec<Vec<u8>>]) -> Vec<Vec<Vec<u8>>> {
-    key_sets.iter().fold(vec![Vec::new()], |entries, keys| {
-        entries
-            .iter()
-            .flat_map(|entry| {
-                keys.iter().map(move |key| {
-                    let mut entry = entry.clone();
-                    entry.push(key.clone());
-                    entry
-                })
-            })
-            .collect()
-    })
+/// the index are `key_sets`, borrowed from them: every combination of one key
+/// per position, in order of the first position's keys, then the next
+/// position's. A position with no key (a document before the origin of a
+/// window grid) leaves the document no entry.
+fn index_entries(key_sets: &[Vec<Vec<u8>>]) -> Vec<Vec<&[u8]>> {
+    key_sets
+        .iter()
+        .map(|keys| keys.iter().map(Vec::as_slice))
+        .multi_cartesian_product()
+        .collect()
 }
 
 /// Whether `index`, whose first level is `top_index_level`, names an indexed
