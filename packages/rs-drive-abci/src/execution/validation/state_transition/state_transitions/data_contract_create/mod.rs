@@ -6557,7 +6557,7 @@ mod tests {
                         schema.remove("moderatorAbilities");
                     }
                     contract["documentSchemas"]["permanentPost"] = permanent_post;
-                    for document_type in ["like", "copy", "tagged", "subset"] {
+                    for document_type in ["like", "copy", "tagged", "subset", "scoreSubset"] {
                         contract["documentSchemas"][document_type]["properties"]["postId"]
                             ["refersTo"]["documentType"] = json!("permanentPost");
                     }

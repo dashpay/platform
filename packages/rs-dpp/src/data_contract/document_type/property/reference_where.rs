@@ -482,6 +482,20 @@ impl WhereCondition {
             .is_some_and(WhereBoundRead::changes_without_a_write)
     }
 
+    /// How many list elements [`Self::holds`] reads for `referenced` and
+    /// `bound`: the referenced list's for a `contains`, and the bound list's
+    /// too for a `containsAll`; none for a condition comparing one value. What
+    /// document reference validation bills before checking the condition.
+    pub fn list_elements_read(&self, referenced: Option<&Value>, bound: Option<&Value>) -> usize {
+        match self {
+            WhereCondition::Contains(_) => where_list_len(referenced),
+            WhereCondition::ContainsAll(_) => {
+                where_list_len(referenced).saturating_add(where_list_len(bound))
+            }
+            _ => 0,
+        }
+    }
+
     /// Whether the condition holds for `referenced`, the referenced side's
     /// value (`None` when the document leaves it out) of `kind` (`None` for a
     /// property no literal reads as, which registration refuses a literal
@@ -555,26 +569,36 @@ impl WhereCondition {
 }
 
 /// Whether `held` has, for every element of `wanted`, an element equal to it
-/// as `Value::same_scalar_data` compares two single values. The held elements
-/// go in a set ([`ListElement`]), each wanted one looked up in it, so two lists
-/// of up to `max_typed_array_items` elements each are compared in time near
-/// their length, not its square. A float, which compares with any number by
-/// its bits and so has no place in that order, is compared one by one.
+/// as `Value::same_scalar_data` compares two single values, each wanted one
+/// looked up in a set of the held ones, so two lists of up to
+/// `max_typed_array_items` elements each are compared in time near their
+/// length, not its square, whatever they hold. Every value but a float is
+/// looked up by the order [`ListElement`] gives it. A float equals a number,
+/// a float or an integer, exactly when the two read as the same `f64` bits
+/// (`Value::as_float`), so a wanted float is looked up among the bits of every
+/// held number, and a wanted integer, beside its order, among those of every
+/// held float. A map or a list of anything but bytes equals nothing.
 fn list_holds_all(held: &[Value], wanted: &[Value]) -> bool {
     let keyed: BTreeSet<ListElement> = held.iter().filter_map(ListElement::of).collect();
-    let floats: Vec<&Value> = held
+    let number_bits: BTreeSet<u64> = held
         .iter()
-        .filter(|element| matches!(element, Value::Float(_)))
+        .filter_map(|element| element.as_float().map(f64::to_bits))
         .collect();
-    wanted.iter().all(|element| match ListElement::of(element) {
-        Some(key) => {
-            keyed.contains(&key) || floats.iter().any(|float| float.same_scalar_data(element))
-        }
-        None if matches!(element, Value::Float(_)) => {
-            held.iter().any(|other| other.same_scalar_data(element))
-        }
-        // A map, or a list of anything but bytes, equals nothing
-        None => false,
+    let float_bits: BTreeSet<u64> = held
+        .iter()
+        .filter_map(|element| match element {
+            Value::Float(float) => Some(float.to_bits()),
+            _ => None,
+        })
+        .collect();
+    wanted.iter().all(|element| match element {
+        Value::Float(float) => number_bits.contains(&float.to_bits()),
+        element => ListElement::of(element).is_some_and(|key| {
+            keyed.contains(&key)
+                || element
+                    .as_float()
+                    .is_some_and(|number| float_bits.contains(&number.to_bits()))
+        }),
     })
 }
 
@@ -588,6 +612,18 @@ pub fn where_list_elements(value: Option<&Value>) -> Option<&[Value]> {
         Some(Value::Array(elements)) => Some(elements),
         Some(_) => None,
     }
+}
+
+/// How many elements a `where` entry reads of the typed array `value`: its
+/// length, none for a list left out or a value that is no list.
+fn where_list_len(value: Option<&Value>) -> usize {
+    where_list_elements(value).map_or(0, <[Value]>::len)
+}
+
+/// How many elements [`where_lists_equal`] reads of `a` and `b`, both lists':
+/// what document reference validation bills before comparing them.
+pub fn where_lists_elements_read(a: Option<&Value>, b: Option<&Value>) -> usize {
+    where_list_len(a).saturating_add(where_list_len(b))
 }
 
 /// Whether two typed array values are equal as a `where` equality between two
@@ -974,24 +1010,47 @@ mod tests {
         let sample = [
             Value::Null,
             Value::Bool(true),
+            Value::Bool(false),
             Value::U8(0),
-            Value::I64(0),
+            Value::I8(0),
+            Value::I8(-4),
             Value::U16(3),
+            Value::I16(3),
+            Value::U32(3),
+            Value::I32(-4),
+            Value::I64(0),
+            Value::U64(3),
+            Value::U128(3),
             Value::I128(-4),
             Value::U128(u128::MAX),
+            Value::I128(i128::MAX),
             Value::Float(0.0),
             Value::Float(-0.0),
             Value::Float(3.0),
             Value::Float(3.5),
+            Value::Float(f64::NAN),
             Value::Float(9007199254740992.0),
             Value::U64(9007199254740993),
             Value::Text("a".to_string()),
+            Value::Text(String::new()),
             Value::Bytes(vec![7; 32]),
+            Value::Bytes(vec![7; 20]),
+            Value::Bytes(vec![7; 36]),
+            Value::Bytes(vec![]),
+            Value::Bytes20([7; 20]),
+            Value::Bytes32([7; 32]),
+            Value::Bytes36([7; 36]),
             Value::Identifier([7; 32]),
+            Value::Array(vec![Value::U8(7); 20]),
             Value::Array(vec![Value::U8(7); 32]),
+            Value::Array(vec![Value::U8(7); 36]),
+            Value::Array(vec![]),
             Value::Array(vec![Value::Text("a".to_string())]),
             Value::Map(vec![]),
             Value::EnumU8(vec![1]),
+            Value::EnumU8(vec![7; 32]),
+            Value::EnumString(vec!["a".to_string()]),
+            Value::EnumString(vec![]),
         ];
         let all_tags = WhereCondition::ContainsAll("tags".to_string());
         let tag = WhereCondition::Contains(WhereContainsBound::Property("tag".to_string()));
@@ -1018,6 +1077,41 @@ mod tests {
                 );
             }
         }
+        // Every value held at once, floats among them, each looked up in the set
+        let everything = Value::Array(sample.to_vec());
+        for wanted in &sample {
+            assert_eq!(
+                all_tags.holds(
+                    Some(&everything),
+                    None,
+                    Some(&Value::Array(vec![wanted.clone()]))
+                ),
+                sample.iter().any(|held| held.same_scalar_data(wanted)),
+                "containsAll of {wanted:?} among the whole sample"
+            );
+        }
+    }
+
+    /// What document reference validation bills before comparing: every
+    /// element of both lists for an equality and a `containsAll`, the held
+    /// list's for a `contains`, a list left out none, and nothing for an entry
+    /// comparing single values.
+    #[test]
+    fn should_count_the_list_elements_an_entry_reads() {
+        let three = texts(&["a", "b", "c"]);
+        let two = texts(&["a", "b"]);
+        assert_eq!(where_lists_elements_read(Some(&three), Some(&two)), 5);
+        assert_eq!(where_lists_elements_read(None, Some(&two)), 2);
+        let all_tags = WhereCondition::ContainsAll("tags".to_string());
+        assert_eq!(all_tags.list_elements_read(Some(&three), Some(&two)), 5);
+        assert_eq!(all_tags.list_elements_read(Some(&three), None), 3);
+        let tag = WhereCondition::Contains(WhereContainsBound::Property("tag".to_string()));
+        assert_eq!(
+            tag.list_elements_read(Some(&three), Some(&Value::Text("a".to_string()))),
+            3
+        );
+        let constant = WhereCondition::Constant(WhereLiteral::Text("a".to_string()));
+        assert_eq!(constant.list_elements_read(Some(&three), None), 0);
     }
 
     #[test]

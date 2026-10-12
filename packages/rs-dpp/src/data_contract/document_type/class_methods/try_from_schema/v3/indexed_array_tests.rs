@@ -555,6 +555,71 @@ fn should_refuse_an_index_only_array_index_no_other_index_keeps_apart() {
     }
 }
 
+/// An index of a typed array has no entry for a like without tags, so it can not
+/// be the only index keeping a required property: `postAuthor`, held only by
+/// `byTagPostAuthor`, would be committed and stored nowhere for an untagged
+/// like. It still keeps the array itself.
+#[test]
+fn should_refuse_a_required_property_only_an_index_only_array_index_holds() {
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": identifier(0),
+            "tags": like_tags(true),
+            "postAuthor": identifier(2)
+        },
+        "required": ["postId", "postAuthor"],
+        "indices": [
+            by_post(),
+            {
+                "name": "byTagPostAuthor",
+                "properties": [{ "tags": "asc" }, { "postId": "asc" }, { "postAuthor": "asc" }]
+            }
+        ],
+        "additionalProperties": false
+    });
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
+            "property \"postAuthor\" on indexOnly document type \"charter\" does not appear \
+             in any index that neither sets skipIfAbsent nor outlivesDelete, nor names a typed \
+             array other than the property",
+        );
+    }
+
+    // A required array is kept by its own index
+    let mut required_tags = schema;
+    required_tags
+        .set_value(
+            "required",
+            platform_value!(["postId", "postAuthor", "tags"]),
+        )
+        .expect("keyword applies");
+    required_tags
+        .set_value(
+            "indices",
+            platform_value!([
+                by_post(),
+                by_tag_post(),
+                {
+                    "name": "byAuthorPost",
+                    "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }]
+                }
+            ]),
+        )
+        .expect("keyword applies");
+    for full_validation in [true, false] {
+        parse_dispatched(
+            required_tags.clone(),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .expect("a required array its own index holds parses");
+    }
+}
+
 /// Each element of a like's tags has an entry of its own: an array that may
 /// repeat an element is refused.
 #[test]

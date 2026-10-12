@@ -198,6 +198,39 @@
       "required": ["postId"],
       "additionalProperties": false
     },
+    "scoreSubset": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "scores": { "containsAll": "scores" }
+            }
+          }
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "maxItems": 4,
+          "position": 1
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    },
     "subset": {
       "type": "object",
       "documentsMutable": false,
