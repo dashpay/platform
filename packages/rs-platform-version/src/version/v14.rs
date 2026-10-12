@@ -2576,6 +2576,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `worst_case_sum_item_cost_size` 1). Applied fees are unchanged. Inert
 ///     before this version: `GROVE_V1` to `GROVE_V3` keep the old sizing.
 ///
+/// 94. **`where` entries over typed arrays**: a `refersTo` `where` (63) may
+///     compare a referenced typed array as a list. An equality between two
+///     typed arrays (`"tags": "tags"`, kept in `property_agreement`) holds for
+///     the same elements in the same order; `{ "contains": b }`
+///     (`WhereCondition::Contains`, appended) for a list holding an element
+///     equal to `b`, a referring property of the element kind or `"$ownerId"`
+///     (a writer gate on identifier elements, asked about on every replace);
+///     `{ "containsAll": b }` (`WhereCondition::ContainsAll`, appended) for a
+///     list holding every element of the referring typed array `b`. Elements
+///     compare by value (`where_lists_equal`): an identifier equals its 32
+///     bytes and an integer is the same at any width; a list left out is the
+///     empty one, so two left out are equal and every list holds all of one
+///     left out, while a `contains` value left out is held by no list. Meta-schema
+///     v3 and parser generation 3 (in place) read both keys, refusing them on
+///     `$ownerId`, `$creatorId` and `$id` and a `containsAll` of the writer.
+///     Contract create and update state validation (data contract reference
+///     validation 0, in place) admits a typed array pair, until now refused
+///     with 40126, when both sides are stored typed arrays whose elements share
+///     one value kind other than a float, and refuses with 40126: a typed array
+///     paired with anything else, a `contains` or `containsAll` of a property
+///     that is no typed array, of float elements, bounded by the reference
+///     property itself or by a value of another kind (the writer only among
+///     identifiers), a `moderatedDocument` `contains` of the writer whose list
+///     no removal record keeps, and a pair any preallocated or
+///     `summableOffCountIndex` index would be keyed through. `const`, `in`,
+///     `notEqual` and the orderings still refuse a typed array. Document
+///     reference validation 0 (in place) checks them against the document
+///     found or the removal record, refusing with 40127. Inert before this
+///     version: only parser generation 3 reads a `where`, and this module and
+///     that validation are reached from this version only.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

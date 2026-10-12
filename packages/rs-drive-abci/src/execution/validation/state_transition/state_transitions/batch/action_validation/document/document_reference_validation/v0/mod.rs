@@ -24,7 +24,9 @@ use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemo
 use dpp::data_contract::document_type::property_constraints::{
     referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
 };
-use dpp::data_contract::document_type::{WhereBoundRead, WhereCondition, WhereLiteralKind};
+use dpp::data_contract::document_type::{
+    typed_array_property, where_lists_equal, WhereBoundRead, WhereCondition, WhereLiteralKind,
+};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -1528,6 +1530,25 @@ fn validate_reference_target_v0(
                     else {
                         return Ok(mismatch());
                     };
+                    // Two typed arrays, which registration pairs with nothing
+                    // else, are equal as lists: the same elements in the same
+                    // order, each compared by value, a list either document
+                    // leaves out the empty one. In place in generation 0: a
+                    // pair of lists registers from protocol version 14 only
+                    let lists = typed_array_property(
+                        referenced_document_type.flattened_properties(),
+                        referenced_property,
+                    )
+                    .is_some();
+                    if lists {
+                        if !where_lists_equal(
+                            referring_value.as_deref(),
+                            referenced_value.as_deref(),
+                        ) {
+                            return Ok(mismatch());
+                        }
+                        continue;
+                    }
                     let (referring_value, referenced_value) =
                         match (referring_value, referenced_value) {
                             (Some(referring_value), Some(referenced_value)) => {
@@ -2288,12 +2309,23 @@ fn validate_pairs_against_removal(
                 Err(_) => None,
             }
         };
-        let holds = match (referring_value, referenced_value) {
-            (Some(referring_value), Some(referenced_value)) => {
-                referring_value.same_scalar_data(&referenced_value)
+        // Two typed arrays are equal as lists, a list the record holds none of
+        // the empty one, as against a document in state
+        let lists = typed_array_property(
+            referenced_document_type.flattened_properties(),
+            referenced_property,
+        )
+        .is_some();
+        let holds = if lists {
+            where_lists_equal(referring_value.as_deref(), referenced_value.as_ref())
+        } else {
+            match (referring_value, referenced_value) {
+                (Some(referring_value), Some(referenced_value)) => {
+                    referring_value.same_scalar_data(&referenced_value)
+                }
+                (None, None) => true,
+                (Some(_), None) | (None, Some(_)) => false,
             }
-            (None, None) => true,
-            (Some(_), None) | (None, Some(_)) => false,
         };
         if !holds {
             return Ok(SimpleConsensusValidationResult::new_with_error(
