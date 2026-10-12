@@ -102,7 +102,8 @@ fn function(params: serde_json::Value) -> serde_json::Value {
     json!({ "function": "sys.hash.sha256d", "params": params })
 }
 
-/// The `findBy` function: the writer's id and the name.
+/// The `validWhen` function: the writer's id and the name, which only an identity knowing
+/// the name can compute.
 fn owner_name_function() -> serde_json::Value {
     function(json!([
         "$ownerId",
@@ -112,7 +113,7 @@ fn owner_name_function() -> serde_json::Value {
     ]))
 }
 
-/// The `chooseFirst` function: the name alone.
+/// The `findBy` function: the name alone, which every commitment to it holds.
 fn name_function() -> serde_json::Value {
     function(json!([
         "normalizedLabel",
@@ -121,20 +122,26 @@ fn name_function() -> serde_json::Value {
     ]))
 }
 
-/// The `chooseFirst` of the name, ordered by `by`.
+/// The `chooseFirst` among the commitments to the name, ordered by `by`.
 fn choose_first_by(by: serde_json::Value) -> serde_json::Value {
-    json!({ "property": "nameHash", "value": name_function(), "by": by })
+    json!({
+        "among": "nameHash",
+        "validWhen": { "ownerNameHash": owner_name_function() },
+        "by": by
+    })
 }
 
-/// The domain's reveal: the writer's own preorder, from an earlier block, chosen first
-/// among those to the same name by their creation height.
+/// The domain's reveal: the writer's own preorder of the name, from an earlier block,
+/// chosen first among those to the same name by their creation height.
 fn reveal() -> serde_json::Value {
     json!({
         "type": "deletableDocument",
         "documentType": "preorder",
-        "findBy": { "$ownerId": "$ownerId", "ownerNameHash": owner_name_function() },
-        "chooseFirst": choose_first_by(json!(["$createdAtBlockHeight"])),
-        "minimumAgeBlocks": 1
+        "findBy": { "$ownerId": "$ownerId", "nameHash": name_function() },
+        "constraints": {
+            "minimumAgeBlocks": 1,
+            "chooseFirst": choose_first_by(json!(["$createdAtBlockHeight"]))
+        }
     })
 }
 
@@ -211,7 +218,7 @@ fn assert_refused_by_the_parser_on_every_parse(contract_value: serde_json::Value
 }
 
 #[test]
-fn should_parse_choose_first_beside_a_find_by_function_reading_the_writer() {
+fn should_parse_choose_first_in_the_constraints_of_a_find_by_function() {
     for full_validation in [true, false] {
         let parsed = contract_on(
             contract_revealing(reveal()),
@@ -223,10 +230,12 @@ fn should_parse_choose_first_beside_a_find_by_function_reading_the_writer() {
         assert_eq!(
             lookup.choose_first,
             Some(LookupChooseFirst {
-                property: "nameHash".to_string(),
-                key: LookupHashKey {
+                among: "nameHash".to_string(),
+                valid_when_property: "ownerNameHash".to_string(),
+                valid_when: LookupHashKey {
                     function: HashFunction::Sha256d,
                     params: vec![
+                        LookupKeyParam::Writer,
                         LookupKeyParam::Property("normalizedLabel".to_string()),
                         LookupKeyParam::Const(".".to_string()),
                         LookupKeyParam::Property("normalizedParentDomainName".to_string()),
@@ -240,40 +249,72 @@ fn should_parse_choose_first_beside_a_find_by_function_reading_the_writer() {
         );
         assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
         assert!(matches!(
-            lookup.keys.get("ownerNameHash"),
-            Some(LookupKeySource::Hash(key)) if key.params[0] == LookupKeyParam::Writer
+            lookup.keys.get("nameHash"),
+            Some(LookupKeySource::Hash(key))
+                if key.params[0] == LookupKeyParam::Property("normalizedLabel".to_string())
         ));
         assert!(lookup.is_checked_on_create_only(true));
         assert_eq!(lookup.minimum_age_blocks, Some(1));
     }
 }
 
-/// The parsed model serializes `chooseFirst` as the schema spells it.
+/// The parsed model serializes its `constraints` as the schema spells them.
 #[test]
-fn should_serialize_choose_first_as_the_schema_spells_it() {
+fn should_serialize_the_constraints_as_the_schema_spells_them() {
     let lookup = creator_lookup(&contract(contract_revealing(reveal())).expect("parses"));
     let serialized = serde_json::to_value(&lookup).expect("the lookup serializes");
     assert_eq!(
-        serialized["chooseFirst"],
+        serialized["constraints"],
         json!({
-            "property": "nameHash",
-            "value": name_function(),
-            "by": [{ "$createdAtBlockHeight": "asc" }]
-        })
-    );
-    assert_eq!(
-        serialized["keys"]["ownerNameHash"],
-        owner_name_function(),
+            "minimumAgeBlocks": 1,
+            "chooseFirst": {
+                "among": "nameHash",
+                "validWhen": { "ownerNameHash": owner_name_function() },
+                "by": [{ "$createdAtBlockHeight": "asc" }]
+            }
+        }),
         "the writer param serializes as \"$ownerId\""
     );
+    assert_eq!(serialized["keys"]["nameHash"], name_function());
+    assert!(serialized.get("minimumAgeBlocks").is_none());
 }
 
+/// `minimumAgeBlocks` and `chooseFirst` sit in `constraints`, which holds one of them at
+/// least and nothing else.
 #[test]
-fn should_refuse_choose_first_without_a_find_by_function_reading_the_writer() {
-    // A findBy function hashing the name alone: a competitor cannot be judged
+fn should_refuse_malformed_constraints() {
+    for (change, fragment) in [
+        (
+            json!({ "constraints": {} }),
+            "refersTo constraints holds minimumAgeBlocks, chooseFirst or both",
+        ),
+        (
+            json!({ "constraints": { "minimumAgeBlocks": 1, "consume": true } }),
+            "refersTo constraints holds minimumAgeBlocks and chooseFirst only",
+        ),
+        (
+            json!({ "minimumAgeBlocks": 1 }),
+            "refersTo declares minimumAgeBlocks inside its constraints",
+        ),
+        (
+            json!({ "chooseFirst": choose_first_by(json!(["$createdAtBlockHeight"])) }),
+            "refersTo declares chooseFirst inside its constraints",
+        ),
+    ] {
+        let reveal = reveal_with(|reveal| {
+            for (key, value) in change.as_object().expect("an object") {
+                reveal[key] = value.clone();
+            }
+        });
+        assert_refused_by_the_parser(contract_revealing(reveal), fragment);
+    }
+}
+
+/// A commitment is valid when its owner could compute `validWhen`, which reads the owner.
+#[test]
+fn should_refuse_a_valid_when_not_reading_the_writer() {
     let without_writer = reveal_with(|reveal| {
-        reveal["findBy"]["ownerNameHash"] = name_function();
-        reveal["chooseFirst"]["value"] = function(json!([
+        reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] = function(json!([
             "normalizedLabel",
             { "const": "/" },
             "normalizedParentDomainName"
@@ -281,29 +322,30 @@ fn should_refuse_choose_first_without_a_find_by_function_reading_the_writer() {
     });
     assert_refused_by_the_parser_on_every_parse(
         contract_revealing(without_writer),
-        "findBy must hold a function reading \"$ownerId\"",
+        "chooseFirst validWhen \"ownerNameHash\" must read \"$ownerId\"",
     );
 }
 
-/// `findBy` beside `chooseFirst` holds the writer entry and its function and nothing
-/// else: without the writer entry the commitment found need not be the writer's own,
-/// and another entry (a property or `"."` source) would be a part of the commitment a
-/// competitor is never compared on.
+/// `findBy` beside `chooseFirst` holds the writer entry and a function filling `among`, and
+/// nothing else: without the writer entry the commitment found need not be the writer's own,
+/// another entry would be a part of the commitment a competitor is never compared on, and a
+/// function filling another property would not tie the group to the values revealed.
 #[test]
 fn should_refuse_choose_first_beside_a_find_by_other_than_the_writer_and_its_function() {
+    let fragment = "needs findBy to hold exactly the entry \"$ownerId\": \"$ownerId\" and a \
+                    function filling \"nameHash\"";
     let without_owner_entry = reveal_with(|reveal| {
-        reveal["findBy"] = json!({ "ownerNameHash": owner_name_function() });
+        reveal["findBy"] = json!({ "nameHash": name_function() });
     });
     assert_refused_by_the_parser_on_every_parse(
         contract_with(without_owner_entry, |preorder| {
-            preorder["indices"][0] = json!({
-                "name": "ownerNameHash",
-                "properties": [{ "ownerNameHash": "asc" }],
+            preorder["indices"][1] = json!({
+                "name": "nameHashAlone",
+                "properties": [{ "nameHash": "asc" }],
                 "unique": true
             });
         }),
-        "needs findBy to hold the entry \"$ownerId\": \"$ownerId\" beside its function and \
-         nothing else",
+        fragment,
     );
 
     // The parent read as is beside the function: a commitment under another parent
@@ -312,15 +354,16 @@ fn should_refuse_choose_first_beside_a_find_by_other_than_the_writer_and_its_fun
         reveal["findBy"] = json!({
             "$ownerId": "$ownerId",
             "note": "normalizedParentDomainName",
-            "ownerNameHash": function(json!(["$ownerId", "normalizedLabel"]))
+            "nameHash": function(json!(["normalizedLabel"]))
         });
-        reveal["chooseFirst"]["value"] = function(json!(["normalizedLabel"]));
+        reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] =
+            function(json!(["$ownerId", "normalizedLabel"]));
     });
     assert_refused_by_the_parser_on_every_parse(
         contract_with(with_parent_entry, |preorder| {
-            preorder["indices"][0] = json!({
-                "name": "ownerParentAndNameHash",
-                "properties": [{ "$ownerId": "asc" }, { "note": "asc" }, { "ownerNameHash": "asc" }],
+            preorder["indices"][1] = json!({
+                "name": "ownerParentAndName",
+                "properties": [{ "$ownerId": "asc" }, { "note": "asc" }, { "nameHash": "asc" }],
                 "unique": true
             });
             preorder["required"] = json!([
@@ -331,9 +374,15 @@ fn should_refuse_choose_first_beside_a_find_by_other_than_the_writer_and_its_fun
                 "note"
             ]);
         }),
-        "needs findBy to hold the entry \"$ownerId\": \"$ownerId\" beside its function and \
-         nothing else",
+        fragment,
     );
+
+    // A findBy function filling another property than among
+    let filling_another = reveal_with(|reveal| {
+        reveal["findBy"] =
+            json!({ "$ownerId": "$ownerId", "ownerNameHash": owner_name_function() });
+    });
+    assert_refused_by_the_parser_on_every_parse(contract_revealing(filling_another), fragment);
 }
 
 /// A `where` beside `chooseFirst` compares nothing but the writer with the
@@ -363,12 +412,30 @@ fn should_refuse_a_where_entry_beside_choose_first_other_than_the_writer() {
     );
 }
 
+/// The `findBy` function groups the commitments to the same values, so its value is the same
+/// for every identity: it reads neither the writer nor `"."` (on the creator, the creator).
 #[test]
-fn should_refuse_a_find_by_function_reading_dot_beside_choose_first() {
-    // On the creator "." is the creator, which a competitor's owner can not
-    // stand in for
+fn should_refuse_a_find_by_function_reading_the_writer_or_dot_beside_choose_first() {
+    for params in [
+        json!(["$ownerId", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]),
+        json!([".", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]),
+    ] {
+        let reveal = reveal_with(|reveal| {
+            reveal["findBy"]["nameHash"] = function(params.clone());
+        });
+        assert_refused_by_the_parser_on_every_parse(
+            contract_revealing(reveal),
+            "groups commitments by the findBy function, which may read neither \"$ownerId\" nor \
+             \".\"",
+        );
+    }
+}
+
+/// `validWhen` is computed for every commitment, with its owner: it reads no `"."`.
+#[test]
+fn should_refuse_a_valid_when_reading_dot() {
     let reads_dot = reveal_with(|reveal| {
-        reveal["findBy"]["ownerNameHash"] = function(json!([
+        reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] = function(json!([
             "$ownerId",
             ".",
             "normalizedLabel",
@@ -378,58 +445,33 @@ fn should_refuse_a_find_by_function_reading_dot_beside_choose_first() {
     });
     assert_refused_by_the_parser_on_every_parse(
         contract_revealing(reads_dot),
-        "so the function may not read \".\"",
+        "chooseFirst validWhen \"ownerNameHash\" is computed for every commitment, so it may not \
+         read \".\"",
     );
 }
 
-#[test]
-fn should_refuse_a_choose_first_function_reading_the_writer_or_dot() {
-    for params in [
-        json!([
-            "$ownerId",
-            "normalizedLabel",
-            { "const": "." },
-            "normalizedParentDomainName"
-        ]),
-        json!([
-            ".",
-            "normalizedLabel",
-            { "const": "." },
-            "normalizedParentDomainName"
-        ]),
-    ] {
-        let reveal = reveal_with(|reveal| {
-            reveal["chooseFirst"]["value"] = function(params.clone());
-        });
-        assert_refused_by_the_parser_on_every_parse(
-            contract_revealing(reveal),
-            "may read neither \"$ownerId\" nor \".\"",
-        );
-    }
-}
-
-/// The two functions read the same properties: a salt only the findBy function
-/// read would make every competitor look like a copy, a `tag` only the
-/// chooseFirst function read would let a later committer pick another one and
-/// stand where no competitor exists, and a findBy function over the writer
-/// alone would let anyone copying a pending commitment's name hash, without
-/// knowing the name, hold a valid competitor.
+/// The two functions read the same properties: a salt only `validWhen` read would make every
+/// competitor look like a copy, a `tag` only the `findBy` function read would let a later
+/// committer pick another one and stand where no competitor exists, and a `validWhen` over the
+/// writer alone would let anyone copying a pending commitment's name hash, without knowing the
+/// name, hold a valid competitor.
 #[test]
 fn should_refuse_functions_reading_different_properties() {
-    let owner_only = reveal_with(|reveal| {
-        reveal["findBy"]["ownerNameHash"] = function(json!(["$ownerId"]));
-    });
-    let salted = reveal_with(|reveal| {
-        reveal["findBy"]["ownerNameHash"] = function(json!([
-            "$ownerId",
-            "salt",
-            "normalizedLabel",
-            { "const": "." },
-            "normalizedParentDomainName"
-        ]));
-    });
+    let set_valid_when = |params: serde_json::Value| {
+        reveal_with(move |reveal| {
+            reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] = function(params);
+        })
+    };
+    let owner_only = set_valid_when(json!(["$ownerId"]));
+    let salted = set_valid_when(json!([
+        "$ownerId",
+        "salt",
+        "normalizedLabel",
+        { "const": "." },
+        "normalizedParentDomainName"
+    ]));
     let tagged = reveal_with(|reveal| {
-        reveal["chooseFirst"]["value"] = function(json!([
+        reveal["findBy"]["nameHash"] = function(json!([
             "normalizedLabel",
             { "const": "." },
             "normalizedParentDomainName",
@@ -445,47 +487,61 @@ fn should_refuse_functions_reading_different_properties() {
         assert_refused_by_the_parser_on_every_parse(
             contract_revealing(reveal),
             &format!(
-                "must read the properties the findBy function \"ownerNameHash\" reads and no \
-                 others, and \"{only_one_reads}\" is read by one of them only"
+                "must read the properties the findBy function \"nameHash\" reads and no others, \
+                 and \"{only_one_reads}\" is read by one of them only"
             ),
         );
     }
 }
 
 #[test]
-fn should_refuse_choose_first_params_the_referring_type_cannot_supply() {
+fn should_refuse_valid_when_params_the_referring_type_cannot_supply() {
     for (params, fragment) in [
         (
-            json!(["count", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]),
+            json!([
+                "$ownerId",
+                "count",
+                "normalizedLabel",
+                { "const": "." },
+                "normalizedParentDomainName"
+            ]),
             "param \"count\" is not a string, a byte array or an identifier",
         ),
         (
-            json!(["normalizedLabel", { "const": "." }, "ghost", "normalizedParentDomainName"]),
+            json!([
+                "$ownerId",
+                "normalizedLabel",
+                { "const": "." },
+                "ghost",
+                "normalizedParentDomainName"
+            ]),
             "param \"ghost\" is not a property of the referring document type",
         ),
         (
-            json!(["normalizedLabel", "normalizedParentDomainName"]),
+            json!(["$ownerId", "normalizedLabel", "normalizedParentDomainName"]),
             "param \"normalizedLabel\" has no fixed length and another such param follows it",
         ),
     ] {
         let reveal = reveal_with(|reveal| {
-            reveal["chooseFirst"]["value"] = function(params.clone());
+            reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] =
+                function(params.clone());
         });
         assert_refused_by_the_parser_on_every_parse(
             contract_revealing(reveal),
-            &format!("chooseFirst function \"nameHash\" {fragment}"),
+            &format!("chooseFirst validWhen function \"ownerNameHash\" {fragment}"),
         );
     }
 }
 
 #[test]
-fn should_refuse_choose_first_naming_a_property_find_by_names() {
+fn should_refuse_a_valid_when_naming_a_property_find_by_names() {
     let overlapping = reveal_with(|reveal| {
-        reveal["chooseFirst"]["property"] = json!("ownerNameHash");
+        reveal["constraints"]["chooseFirst"]["validWhen"] =
+            json!({ "nameHash": owner_name_function() });
     });
     assert_refused_by_the_parser_on_every_parse(
         contract_revealing(overlapping),
-        "chooseFirst \"ownerNameHash\" names a property findBy names",
+        "chooseFirst validWhen \"nameHash\" names a property findBy names",
     );
 }
 
@@ -493,86 +549,111 @@ fn should_refuse_choose_first_naming_a_property_find_by_names() {
 #[test]
 fn should_refuse_malformed_choose_first_declarations() {
     let by_height = json!(["$createdAtBlockHeight"]);
+    let valid_when = json!({ "ownerNameHash": owner_name_function() });
     for (choose_first, fragment) in [
         (
-            json!({ "property": "nameHash", "value": name_function(), "by": by_height, "extra": 1 }),
-            "chooseFirst holds \"property\", \"value\" and \"by\" only",
+            json!({ "among": "nameHash", "validWhen": valid_when, "by": by_height, "extra": 1 }),
+            "chooseFirst holds \"among\", \"validWhen\" and \"by\" only",
         ),
         (
-            json!({ "value": name_function(), "by": by_height }),
-            "chooseFirst names in \"property\" a schema property",
+            json!({ "validWhen": valid_when, "by": by_height }),
+            "chooseFirst names in \"among\" the schema property",
         ),
         (
-            json!({ "property": "$createdAt", "value": name_function(), "by": by_height }),
-            "chooseFirst names in \"property\" a schema property",
+            json!({ "among": "$createdAt", "validWhen": valid_when, "by": by_height }),
+            "chooseFirst names in \"among\" the schema property",
         ),
         (
-            json!({ "property": "nameHash", "value": "normalizedLabel", "by": by_height }),
-            "chooseFirst \"nameHash\" takes in \"value\" a function",
-        ),
-        (
-            json!({ "property": "nameHash", "value": name_function() }),
-            "chooseFirst \"nameHash\" lists in \"by\" the properties",
-        ),
-        (
-            json!({ "property": "nameHash", "value": name_function(), "by": [] }),
-            "chooseFirst \"nameHash\" orders by 1 to 10 properties",
-        ),
-        (
-            choose_first_by(json!([{ "$createdAtBlockHeight": "up" }])),
-            "chooseFirst \"nameHash\" orders by a property name, ascending",
-        ),
-        (
-            choose_first_by(json!([{ "$createdAtBlockHeight": "asc", "$id": "asc" }])),
-            "chooseFirst \"nameHash\" orders by a property name, ascending",
-        ),
-        (
-            choose_first_by(json!(["$createdAtBlockHeight", "$createdAtBlockHeight"])),
-            "chooseFirst \"nameHash\" orders by \"$createdAtBlockHeight\" twice",
-        ),
-        (
-            choose_first_by(json!(["nameHash"])),
-            "chooseFirst \"nameHash\" orders by \"nameHash\" twice, or by the property it fills",
-        ),
-        (
-            choose_first_by(json!(["$id", "$createdAtBlockHeight"])),
-            "chooseFirst \"nameHash\" orders by $id last only",
+            json!({ "among": "nameHash", "by": by_height }),
+            "chooseFirst among \"nameHash\" holds in \"validWhen\" exactly one entry",
         ),
         (
             json!({
-                "property": "nameHash",
-                "value": { "function": "sys.hash.sha256d", "params": [] },
+                "among": "nameHash",
+                "validWhen": { "ownerNameHash": owner_name_function(), "nameHash": name_function() },
+                "by": by_height
+            }),
+            "chooseFirst among \"nameHash\" holds in \"validWhen\" exactly one entry",
+        ),
+        (
+            json!({ "among": "nameHash", "validWhen": { "ownerNameHash": "label" }, "by": by_height }),
+            "chooseFirst among \"nameHash\" holds in \"validWhen\" exactly one entry",
+        ),
+        (
+            json!({
+                "among": "nameHash",
+                "validWhen": { "$ownerId": owner_name_function() },
+                "by": by_height
+            }),
+            "chooseFirst among \"nameHash\" names in \"validWhen\" a schema property",
+        ),
+        (
+            json!({ "among": "nameHash", "validWhen": valid_when }),
+            "chooseFirst among \"nameHash\" lists in \"by\" the properties",
+        ),
+        (
+            json!({ "among": "nameHash", "validWhen": valid_when, "by": [] }),
+            "chooseFirst among \"nameHash\" orders by 1 to 10 properties",
+        ),
+        (
+            choose_first_by(json!([{ "$createdAtBlockHeight": "up" }])),
+            "chooseFirst among \"nameHash\" orders by a property name, ascending",
+        ),
+        (
+            choose_first_by(json!([{ "$createdAtBlockHeight": "asc", "$id": "asc" }])),
+            "chooseFirst among \"nameHash\" orders by a property name, ascending",
+        ),
+        (
+            choose_first_by(json!(["$createdAtBlockHeight", "$createdAtBlockHeight"])),
+            "chooseFirst among \"nameHash\" orders by \"$createdAtBlockHeight\" twice",
+        ),
+        (
+            choose_first_by(json!(["nameHash"])),
+            "chooseFirst among \"nameHash\" orders by \"nameHash\" twice, or by the property it \
+             groups by",
+        ),
+        (
+            choose_first_by(json!(["$id", "$createdAtBlockHeight"])),
+            "chooseFirst among \"nameHash\" orders by $id last only",
+        ),
+        (
+            json!({
+                "among": "nameHash",
+                "validWhen": { "ownerNameHash": { "function": "sys.hash.sha256d", "params": [] } },
                 "by": by_height
             }),
             "a refersTo chooseFirst function lists between 1 and 16 params",
         ),
         (
             json!({
-                "property": "nameHash",
-                "value": { "function": "sys.hash.sha256d", "params": ["$creatorId"] },
+                "among": "nameHash",
+                "validWhen": {
+                    "ownerNameHash": { "function": "sys.hash.sha256d", "params": ["$creatorId"] }
+                },
                 "by": by_height
             }),
             "a refersTo chooseFirst function param is",
         ),
     ] {
-        let reveal = reveal_with(|reveal| reveal["chooseFirst"] = choose_first.clone());
+        let reveal =
+            reveal_with(|reveal| reveal["constraints"]["chooseFirst"] = choose_first.clone());
         assert_refused_by_the_parser(contract_revealing(reveal), fragment);
     }
 }
 
-/// `chooseFirst` describes the document `findBy` finds, and needs it; beside `inList` it is
-/// refused with `minimumAgeBlocks` and `consume` (`list_element_reference_tests`). It reads
-/// commitments that expire, so only on a `deletableDocument` reference.
+/// `constraints` describes the document `findBy` finds, and needs it; beside `inList` it is
+/// refused with `consume` (`list_element_reference_tests`). `chooseFirst` reads commitments
+/// that expire, so only on a `deletableDocument` reference.
 #[test]
 fn should_refuse_choose_first_without_find_by_or_on_a_permanent_reference() {
     let without_find_by = json!({
         "type": "deletableDocument",
         "documentType": "preorder",
-        "chooseFirst": choose_first_by(json!(["$createdAtBlockHeight"]))
+        "constraints": { "chooseFirst": choose_first_by(json!(["$createdAtBlockHeight"])) }
     });
     assert_refused_by_the_parser(
         contract_revealing(without_find_by),
-        "does not take chooseFirst without findBy",
+        "does not take constraints without findBy",
     );
 
     let permanent = reveal_with(|reveal| reveal["type"] = json!("permanentDocument"));
@@ -614,9 +695,9 @@ fn should_refuse_choose_first_on_elements_operands_or_twice() {
         reveal(),
         |domain| {
             domain["properties"]["claim"]["refersTo"] = reveal_with(|reveal| {
-                reveal["findBy"]["ownerNameHash"] =
+                reveal["findBy"]["nameHash"] = function(json!(["claim", "normalizedLabel"]));
+                reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] =
                     function(json!(["$ownerId", "claim", "normalizedLabel"]));
-                reveal["chooseFirst"]["value"] = function(json!(["claim", "normalizedLabel"]));
             });
         },
         |_| {},
@@ -656,19 +737,29 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
     let cases: Vec<(PreorderChange, &str)> = vec![
         (
             Box::new(|preorder| {
-                preorder["properties"]["nameHash"] =
-                    json!({ "type": "string", "maxLength": 63, "position": 1 })
+                preorder["properties"]["ownerNameHash"] =
+                    json!({ "type": "string", "maxLength": 63, "position": 0 })
             }),
-            "\"nameHash\" must be a byte array of exactly 32 bytes of \"preorder\"",
+            "chooseFirst validWhen \"ownerNameHash\" is a sys.hash.sha256d hash, so it must be a \
+             byte array of exactly 32 bytes of \"preorder\"",
         ),
         (
             Box::new(|preorder| {
-                preorder["properties"]["nameHash"] = json!({
+                preorder["properties"]["ownerNameHash"] = json!({
                     "type": "array", "byteArray": true, "minItems": 20, "maxItems": 32,
-                    "position": 1
+                    "position": 0
                 })
             }),
-            "\"nameHash\" must be a byte array of exactly 32 bytes of \"preorder\"",
+            "chooseFirst validWhen \"ownerNameHash\" is a sys.hash.sha256d hash",
+        ),
+        // `among` is what the findBy function fills, judged with the rest of findBy
+        (
+            Box::new(|preorder| {
+                preorder["properties"]["nameHash"] =
+                    json!({ "type": "string", "maxLength": 63, "position": 1 })
+            }),
+            "findBy function \"nameHash\" is a sys.hash.sha256d hash, so the index property must be a \
+             byte array of exactly 32 bytes",
         ),
         (
             Box::new(|preorder| {
@@ -698,9 +789,10 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
         (
             Box::new(|preorder| {
                 preorder["documentsMutable"] = json!(true);
-                preorder["immutable"] = json!(["ownerNameHash"]);
+                preorder["immutable"] = json!(["nameHash"]);
             }),
-            "chooseFirst names \"nameHash\" of \"preorder\", which a replace can change",
+            "chooseFirst validWhen names \"ownerNameHash\" of \"preorder\", which a replace can \
+             change",
         ),
         // Without a ttl a commitment never revealed would precede every later one for good
         (
@@ -712,11 +804,14 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
         // A copy of a pending commitment's value landing first would keep it out
         (
             Box::new(|preorder| {
-                preorder["indices"][1] = json!({
-                    "name": "nameHashAndNote",
-                    "properties": [{ "nameHash": "asc" }, { "note": "asc" }],
-                    "unique": true
-                })
+                preorder["indices"]
+                    .as_array_mut()
+                    .expect("an array")
+                    .push(json!({
+                        "name": "nameHashAndNote",
+                        "properties": [{ "nameHash": "asc" }, { "note": "asc" }],
+                        "unique": true
+                    }))
             }),
             "index \"nameHashAndNote\" of \"preorder\" is unique over \"nameHash\" without \
              $ownerId",
@@ -736,13 +831,13 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
             "index \"ownerNameHashAlone\" of \"preorder\" is unique over \"ownerNameHash\" \
              without $ownerId",
         ),
-        // One identity could hold many commitments to one value
+        // findBy finds the writer's commitment through the unique index over $ownerId and
+        // among, which holds an identity to one commitment to a value
         (
             Box::new(|preorder| {
                 preorder["indices"][1]["unique"] = json!(false);
             }),
-            "chooseFirst \"nameHash\" needs a unique index of \"preorder\" over exactly \
-             ($ownerId, nameHash)",
+            "index \"ownerAndName\" of \"preorder\" over ($ownerId, nameHash) is not unique",
         ),
     ];
     for (change, fragment) in cases {
@@ -752,7 +847,7 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
     // Without `$createdAtBlockHeight` the commitments have no order (and no
     // minimum age to meet, so the reveal declares none here)
     let without_age = reveal_with(|reveal| {
-        reveal
+        reveal["constraints"]
             .as_object_mut()
             .expect("an object")
             .remove("minimumAgeBlocks");
@@ -761,8 +856,8 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
         contract(contract_with(without_age, |preorder| {
             preorder["required"] = json!(["$createdAt", "ownerNameHash", "nameHash"])
         })),
-        "chooseFirst \"nameHash\" orders by \"$createdAtBlockHeight\" of \"preorder\", which is \
-         not recorded on every document",
+        "chooseFirst among \"nameHash\" orders by \"$createdAtBlockHeight\" of \"preorder\", \
+         which is not recorded on every document",
     );
 }
 
@@ -771,8 +866,9 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
 /// stands outside that index, which must then not be unique.
 #[test]
 fn should_order_choose_first_through_its_index() {
-    let ordered_by =
-        |by: serde_json::Value| reveal_with(move |reveal| reveal["chooseFirst"]["by"] = by);
+    let ordered_by = |by: serde_json::Value| {
+        reveal_with(move |reveal| reveal["constraints"]["chooseFirst"]["by"] = by)
+    };
     for by in [
         json!([{ "$createdAtBlockHeight": "desc" }]),
         json!(["$createdAtBlockHeight", "$id"]),
@@ -828,8 +924,8 @@ fn should_order_choose_first_through_its_index() {
         contract(contract_with(ordered_by(json!(["note"])), |preorder| {
             preorder["indices"][2]["properties"] = json!([{ "nameHash": "asc" }, { "note": "asc" }])
         })),
-        "chooseFirst \"nameHash\" orders by \"note\" of \"preorder\", which is not recorded on \
-         every document",
+        "chooseFirst among \"nameHash\" orders by \"note\" of \"preorder\", which is not \
+         recorded on every document",
     );
     // A property a replace can change orders nothing for good
     assert_refused(
@@ -845,7 +941,8 @@ fn should_order_choose_first_through_its_index() {
             ]);
             preorder["indices"][2]["properties"] = json!([{ "nameHash": "asc" }, { "note": "asc" }])
         })),
-        "chooseFirst \"nameHash\" orders by \"note\" of \"preorder\", which a replace can change",
+        "chooseFirst among \"nameHash\" orders by \"note\" of \"preorder\", which a replace can \
+         change",
     );
 }
 
@@ -855,13 +952,14 @@ fn should_order_choose_first_through_its_index() {
 fn should_refuse_an_update_adding_removing_or_changing_choose_first() {
     let platform_version = PlatformVersion::latest();
     let without_choose_first = reveal_with(|reveal| {
-        reveal
+        reveal["constraints"]
             .as_object_mut()
             .expect("an object")
             .remove("chooseFirst");
     });
     let reordered = reveal_with(|reveal| {
-        reveal["chooseFirst"]["value"] = function(json!([
+        reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] = function(json!([
+            "$ownerId",
             "normalizedParentDomainName",
             { "const": "." },
             "normalizedLabel"
@@ -906,12 +1004,13 @@ fn should_refuse_choose_first_below_protocol_version_14_and_accept_it_at_14() {
 }
 
 /// The two functions read the same properties but may join them with other separators, so
-/// a create can hold a value the `findBy` function takes and the `chooseFirst` function
-/// refuses, which is refused before any read, naming the `chooseFirst` function.
+/// a create can hold a value the `findBy` function takes and `validWhen` refuses, which is
+/// refused before any read, naming `validWhen`.
 #[test]
-fn should_refuse_a_create_holding_a_separator_of_the_choose_first_function() {
+fn should_refuse_a_create_holding_a_separator_of_the_valid_when_function() {
     let slashed = reveal_with(|reveal| {
-        reveal["chooseFirst"]["value"] = function(json!([
+        reveal["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"] = function(json!([
+            "$ownerId",
             "normalizedLabel",
             { "const": "/" },
             "normalizedParentDomainName"
@@ -941,7 +1040,7 @@ fn should_refuse_a_create_holding_a_separator_of_the_choose_first_function() {
         Some((path, error))
             if path == "$creatorId"
                 && error.param == "normalizedLabel"
-                && error.reason.contains("the chooseFirst function")
+                && error.reason.contains("the chooseFirst validWhen function")
     ));
     assert_eq!(
         first_unrevealable_lookup_key(domain, &data("al1ce"), writer),

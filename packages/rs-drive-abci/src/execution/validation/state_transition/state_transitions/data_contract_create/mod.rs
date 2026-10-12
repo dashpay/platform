@@ -7255,7 +7255,8 @@ mod tests {
                     ..
                 } if e.path() == "name.$creatorId"
                     && e.reason().contains(
-                        "chooseFirst \"nameHash\" reads the commitments holding the same value"
+                        "chooseFirst among \"nameHash\" reads the commitments holding the same \
+                         value"
                     )
                     && e.reason().contains("which it does not have")
             );

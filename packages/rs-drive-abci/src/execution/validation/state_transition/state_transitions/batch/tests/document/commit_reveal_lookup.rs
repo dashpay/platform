@@ -1382,7 +1382,7 @@ mod commit_reveal_lookup_tests {
                             "documentType": "voucher",
                             "findBy": { "serial": "." },
                             "where": { "$ownerId": "$ownerId" },
-                            "minimumAgeBlocks": 1,
+                            "constraints": { "minimumAgeBlocks": 1 },
                             "consume": true
                         }
                     }
@@ -2049,38 +2049,40 @@ mod commit_reveal_lookup_tests {
                 "documentType": "namePreorder",
                 "findBy": name_find_by(),
                 "where": { "$ownerId": "$ownerId" },
-                "chooseFirst": name_choose_first(),
-                "minimumAgeBlocks": 1,
+                "constraints": { "minimumAgeBlocks": 1, "chooseFirst": name_choose_first() },
                 "consume": true
             }),
             unique_names,
         );
     }
 
-    /// The `findBy` of a name's reveal: the writer's own preorder, by the hash of the
-    /// writer's id and the name.
+    /// The `findBy` of a name's reveal: the writer's own preorder of the name, by the hash of
+    /// the name alone, which every preorder of it holds.
     fn name_find_by() -> serde_json::Value {
         serde_json::json!({
             "$ownerId": "$ownerId",
-            "ownerNameHash": {
+            "nameHash": {
                 "function": "sys.hash.sha256d",
-                "params": ["$ownerId", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+                "params": ["normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
             }
         })
     }
 
-    /// The `chooseFirst` of a name's reveal: the hash of the name alone.
+    /// The `chooseFirst` of a name's reveal, ordering its preorders by creation height.
     fn name_choose_first() -> serde_json::Value {
         name_choose_first_by(serde_json::json!(["$createdAtBlockHeight"]))
     }
 
-    /// The `chooseFirst` of a name's reveal, ordering its preorders by `by`.
+    /// The `chooseFirst` of a name's reveal, ordering its preorders by `by`: valid when a
+    /// preorder holds the hash of its owner's id and the name.
     fn name_choose_first_by(by: serde_json::Value) -> serde_json::Value {
         serde_json::json!({
-            "property": "nameHash",
-            "value": {
-                "function": "sys.hash.sha256d",
-                "params": ["normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+            "among": "nameHash",
+            "validWhen": {
+                "ownerNameHash": {
+                    "function": "sys.hash.sha256d",
+                    "params": ["$ownerId", "normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
+                }
             },
             "by": by
         })
@@ -2227,7 +2229,7 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// The type in the fixture parses `chooseFirst` beside the writer's `findBy` function.
+    /// The type in the fixture parses `chooseFirst` in the constraints beside `findBy`.
     #[test]
     fn should_parse_the_fixture_name_as_choose_first_its_preorders() {
         let fixture = choose_first_fixture(true);
@@ -2246,11 +2248,11 @@ mod commit_reveal_lookup_tests {
             .and_then(|declaration| declaration.lookup)
             .expect("expected the creator's lookup");
         assert_eq!(
-            lookup
-                .choose_first
-                .as_ref()
-                .map(|choose_first| choose_first.property.as_str()),
-            Some("nameHash")
+            lookup.choose_first.as_ref().map(|choose_first| (
+                choose_first.among.as_str(),
+                choose_first.valid_when_property.as_str()
+            )),
+            Some(("nameHash", "ownerNameHash"))
         );
     }
 
@@ -2343,7 +2345,7 @@ mod commit_reveal_lookup_tests {
     fn choose_first_fixture_by(by: serde_json::Value) -> CommitRevealFixture {
         CommitRevealFixture::new_with(move |contract| {
             add_name_registration(contract, true);
-            contract["documentSchemas"]["name"]["creatorRefersTo"]["chooseFirst"] =
+            contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]["chooseFirst"] =
                 name_choose_first_by(by);
         })
     }
@@ -2421,8 +2423,33 @@ mod commit_reveal_lookup_tests {
         assert_written(result);
     }
 
-    /// The found preorder must hold the `chooseFirst` value of the create: one holding another
-    /// name hash is no commitment to the name.
+    /// The writer's own preorder must be valid too: Mallory copies Alice's pending preorder,
+    /// her copy landing first, then learns the name from Alice's reveal. Her copy holds the
+    /// name's hash, so `findBy` finds it, but not the hash of her own id and the name, so her
+    /// reveal finds no commitment, and her copy precedes nobody: Alice's reveal stands.
+    #[tokio::test]
+    async fn should_refuse_revealing_from_a_copied_commitment() {
+        let mut fixture = choose_first_fixture(true);
+        let alice_id = fixture.id(Who::Alice);
+        let copy = preorder_name(
+            &mut fixture,
+            Who::Mallory,
+            owner_name_hash(alice_id),
+            COMMIT_HEIGHT - 1,
+        )
+        .await;
+        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+        assert_no_name_commitment(result);
+        assert!(fixture.document_exists("namePreorder", copy.id()));
+
+        let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        assert_written(result);
+    }
+
+    /// `findBy` finds the writer's preorder by the name's hash: one holding another name hash
+    /// is no commitment to the name.
     #[tokio::test]
     async fn should_refuse_a_reveal_whose_commitment_holds_another_name_hash() {
         let mut fixture = choose_first_fixture(true);
@@ -2658,17 +2685,18 @@ mod commit_reveal_lookup_tests {
         // of earlier blocks holding the name's hash
         assert_eq!(
             (lookup.processing_fee, competitors.processing_fee),
-            (46_440, 106_160),
+            (46_340, 106_160),
             "the lookup and the competitors query bill what they read"
         );
         assert!(consumed.is_empty(), "a refused reveal consumes nothing");
     }
 
     /// The fees of a reveal choosing the first of the preorders of its name, refused and
-    /// accepted: the `chooseFirst` hash, the competitors query and a competitor's `findBy`
-    /// hash are processing, on top of what a reveal without `chooseFirst` costs.
+    /// accepted: the found preorder's `validWhen` hash, the competitors query and each
+    /// competitor's `validWhen` hash are processing, on top of what a reveal without
+    /// `chooseFirst` costs.
     #[tokio::test]
-    async fn should_pin_the_fees_of_a_reveal_judged_choose_first_its_preorders() {
+    async fn should_pin_the_fees_of_a_reveal_choosing_the_first_of_its_preorders() {
         let mut fixture = choose_first_fixture(true);
         commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
@@ -2679,7 +2707,7 @@ mod commit_reveal_lookup_tests {
         };
         assert_eq!(
             (actual_fees.processing_fee, actual_fees.storage_fee),
-            (639_260, 0),
+            (639_160, 0),
             "the refused reveal pays the reads and hashes it made"
         );
 
@@ -2689,7 +2717,7 @@ mod commit_reveal_lookup_tests {
         };
         assert_eq!(
             (fee_result.processing_fee, fee_result.storage_fee),
-            (3_574_820, 25_299_000),
+            (3_574_720, 25_299_000),
             "the accepted reveal"
         );
     }
@@ -2856,8 +2884,8 @@ mod commit_reveal_lookup_tests {
             { "const": "." },
             "normalizedParentDomainName"
         ]);
-        let mut find_by_params = name_params.clone();
-        find_by_params
+        let mut valid_when_params = name_params.clone();
+        valid_when_params
             .as_array_mut()
             .expect("an array")
             .insert(0, serde_json::json!("$ownerId"));
@@ -2867,14 +2895,18 @@ mod commit_reveal_lookup_tests {
                 "documentType": "namePreorder",
                 "findBy": {
                     "$ownerId": "$ownerId",
-                    "ownerNameHash": { "function": "sys.hash.sha256d", "params": find_by_params }
+                    "nameHash": { "function": "sys.hash.sha256d", "params": name_params }
                 },
-                "chooseFirst": {
-                    "property": "nameHash",
-                    "value": { "function": "sys.hash.sha256d", "params": name_params },
-                    "by": ["$createdAtBlockHeight"]
-                },
-                "minimumAgeBlocks": 1
+                "constraints": {
+                    "minimumAgeBlocks": 1,
+                    "chooseFirst": {
+                        "among": "nameHash",
+                        "validWhen": {
+                            "ownerNameHash": { "function": "sys.hash.sha256d", "params": valid_when_params }
+                        },
+                        "by": ["$createdAtBlockHeight"]
+                    }
+                }
             }),
             false,
         );
@@ -3034,8 +3066,7 @@ mod commit_reveal_lookup_tests {
                 "contractId": fixture.contract.id().to_string(Encoding::Base58),
                 "documentType": "namePreorder",
                 "findBy": name_find_by(),
-                "chooseFirst": name_choose_first(),
-                "minimumAgeBlocks": 1
+                "constraints": { "minimumAgeBlocks": 1, "chooseFirst": name_choose_first() }
             }),
             true,
         );

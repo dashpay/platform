@@ -158,12 +158,14 @@ type Reference = {
     string | { function: string; params: Array<string | { const: string }> }
   >;
   where?: Record<string, string | Record<string, unknown>>;
-  minimumAgeBlocks?: number;
   consume?: boolean;
-  chooseFirst?: {
-    property: string;
-    value: { function: string; params: Array<string | { const: string }> };
-    by: Array<Record<string, 'asc' | 'desc'>>;
+  constraints?: {
+    minimumAgeBlocks?: number;
+    chooseFirst?: {
+      among: string;
+      validWhen: Record<string, { function: string; params: Array<string | { const: string }> }>;
+      by: Array<Record<string, 'asc' | 'desc'>>;
+    };
   };
   inList?: string;
 };
@@ -488,7 +490,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
                     },
                   },
                   where: { $ownerId: '$ownerId' },
-                  minimumAgeBlocks: 1,
+                  constraints: { minimumAgeBlocks: 1 },
                   consume: true,
                 },
               },
@@ -515,7 +517,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         },
       });
       expect(salted.where).to.deep.equal({ $ownerId: '$ownerId' });
-      expect(salted.minimumAgeBlocks).to.equal(1);
+      expect(salted.constraints).to.deep.equal({ minimumAgeBlocks: 1 });
       expect(salted.consume).to.equal(true);
     });
 
@@ -584,17 +586,21 @@ describe('DataContract — refersTo declarations (v14)', () => {
             documentType: 'namePreorder',
             findBy: {
               $ownerId: '$ownerId',
-              ownerNameHash: {
-                function: 'sys.hash.sha256d',
-                params: ['$ownerId', ...nameParams],
+              nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+            },
+            constraints: {
+              minimumAgeBlocks: 1,
+              chooseFirst: {
+                among: 'nameHash',
+                validWhen: {
+                  ownerNameHash: {
+                    function: 'sys.hash.sha256d',
+                    params: ['$ownerId', ...nameParams],
+                  },
+                },
+                by: [{ [orderProperty]: 'asc' }],
               },
             },
-            chooseFirst: {
-              property: 'nameHash',
-              value: { function: 'sys.hash.sha256d', params: nameParams },
-              by: [{ [orderProperty]: 'asc' }],
-            },
-            minimumAgeBlocks: 1,
           },
           additionalProperties: false,
         },
@@ -610,36 +616,37 @@ describe('DataContract — refersTo declarations (v14)', () => {
       platformVersion: new PlatformVersion(14),
     });
 
-    it('should report chooseFirst beside a findBy function reading the writer', () => {
+    it('should report chooseFirst in the constraints beside findBy', () => {
       const contract = chooseFirstContract(chooseFirstSchemas());
       const [creator] = contract.documentTypeReferences('name') as Reference[];
 
-      // The writer is the "$ownerId" param of the findBy function, and
-      // chooseFirst is reported as the schema spells it
+      // The constraints are reported as the schema spells them, the writer
+      // being the "$ownerId" param of validWhen
       expect(creator.path).to.equal('$creatorId');
       expect(creator.findBy).to.deep.equal({
         $ownerId: '$ownerId',
-        ownerNameHash: {
-          function: 'sys.hash.sha256d',
-          params: ['$ownerId', ...nameParams],
+        nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+      });
+      expect(creator.constraints).to.deep.equal({
+        minimumAgeBlocks: 1,
+        chooseFirst: {
+          among: 'nameHash',
+          validWhen: {
+            ownerNameHash: { function: 'sys.hash.sha256d', params: ['$ownerId', ...nameParams] },
+          },
+          by: [{ $createdAtBlockHeight: 'asc' }],
         },
       });
-      expect(creator.chooseFirst).to.deep.equal({
-        property: 'nameHash',
-        value: { function: 'sys.hash.sha256d', params: nameParams },
-        by: [{ $createdAtBlockHeight: 'asc' }],
-      });
-      expect(creator.minimumAgeBlocks).to.equal(1);
     });
 
     it('should report a chooseFirst order by a property named __proto__ as an own entry', () => {
       // A computed key, unlike a literal `__proto__:`, makes an own property
       const contract = chooseFirstContract(chooseFirstSchemas('__proto__'));
       const [creator] = contract.documentTypeReferences('name') as Reference[];
-      const [order] = creator.chooseFirst!.by;
+      const { by } = creator.constraints!.chooseFirst!;
 
-      expect(Object.keys(order)).to.deep.equal(['__proto__']);
-      expect(JSON.stringify(creator.chooseFirst!.by)).to.equal('[{"__proto__":"asc"}]');
+      expect(Object.keys(by[0])).to.deep.equal(['__proto__']);
+      expect(JSON.stringify(by)).to.equal('[{"__proto__":"asc"}]');
     });
 
     it('should refuse findBy naming exactly the properties of an index that is not unique', () => {

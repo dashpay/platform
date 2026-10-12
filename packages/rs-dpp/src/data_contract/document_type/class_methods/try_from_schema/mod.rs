@@ -1202,20 +1202,28 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks`, `consume` and `chooseFirst` describe the document
-    // `findBy` finds when the referring document is created: they sit beside
-    // `findBy` and need it. That the reference is judged on the create alone (a
-    // function in `findBy`, or a declaring type whose documents are never
-    // replaced) needs the declaring type, and is checked once it is parsed
-    // (`validate_reference_lookup_sources`); `inList` refuses all three
-    // (`parse_list_element_reference`)
+    // `minimumAgeBlocks` and `chooseFirst` sit in `constraints`, not beside it
     if let Some(keyword) = [
         property_names::MINIMUM_AGE_BLOCKS,
-        property_names::CONSUME,
         property_names::CHOOSE_FIRST,
     ]
     .into_iter()
     .find(|keyword| refers_to_map.contains_key(*keyword))
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo declares {keyword} inside its constraints, \
+             {{ \"constraints\": {{ \"{keyword}\": ... }} }}, not beside findBy"
+        )));
+    }
+    // `constraints` and `consume` describe the document `findBy` finds when the
+    // referring document is created: they sit beside `findBy` and need it. That
+    // the reference is judged on the create alone (a function in `findBy`, or a
+    // declaring type whose documents are never replaced) needs the declaring
+    // type, and is checked once it is parsed (`validate_reference_lookup_sources`);
+    // `inList` refuses both (`parse_list_element_reference`)
+    if let Some(keyword) = [property_names::CONSTRAINTS, property_names::CONSUME]
+        .into_iter()
+        .find(|keyword| refers_to_map.contains_key(*keyword))
     {
         if !refers_to_map.contains_key(property_names::FIND_BY) {
             return Err(DataContractError::InvalidContractStructure(format!(
@@ -1722,9 +1730,9 @@ fn parse_where_condition(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
-/// `minimumAgeBlocks`, `consume` and `chooseFirst` are refused on every parse:
-/// they describe a document `findBy` finds by a key, which a list element
-/// reference has no field for, so they would be dropped unenforced.
+/// `constraints` and `consume` are refused on every parse: they describe a
+/// document `findBy` finds by a key, which a list element reference has no
+/// field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
     find_by_value: &Value,
@@ -1733,14 +1741,13 @@ fn parse_list_element_reference(
     mut property_agreement: BTreeMap<String, String>,
     where_conditions: BTreeMap<String, WhereCondition>,
 ) -> Result<ListElementReference, DataContractError> {
-    if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
+    if refers_to_map.contains_key(property_names::CONSTRAINTS)
         || refers_to_map.contains_key(property_names::CONSUME)
-        || refers_to_map.contains_key(property_names::CHOOSE_FIRST)
     {
         return Err(DataContractError::InvalidContractStructure(
-            "permanentDocument refersTo inList does not take minimumAgeBlocks, consume or \
-             chooseFirst: they describe a document findBy finds by a key, and inList checks that a \
-             list holds the value"
+            "permanentDocument refersTo inList does not take constraints or consume: they \
+             describe a document findBy finds by a key, and inList checks that a list holds the \
+             value"
                 .to_string(),
         ));
     }
@@ -2123,8 +2130,8 @@ pub(super) fn parse_doctype_reference(
 /// `ownerRefersTo` or `creatorRefersTo` one (checked with the other
 /// referring-side rules). `$id` finds a document by id only for a list
 /// ([`parse_list_element_reference`]): without `findBy` the value is the id.
-/// Beside a function the `refersTo`, `refers_to_map`, may declare
-/// `minimumAgeBlocks`, `consume` and `chooseFirst`, what the commitment the key
+/// Beside a function the `refersTo`, `refers_to_map`, may declare `consume` and
+/// `constraints` (`minimumAgeBlocks`, `chooseFirst`), what the commitment the key
 /// finds must be, whether the create deletes it and which commitments to the
 /// same values it must precede, held on the parsed lookup. What the
 /// names resolve to is checked once the document types are parsed: the
@@ -2206,10 +2213,36 @@ fn parse_find_by(
         )));
     }
 
-    // What the commitment a computed key finds must be, and whether the create
-    // deletes it, declared beside `findBy`: a key read as is finds no
-    // commitment
-    let minimum_age_blocks = refers_to_map
+    // What the commitment a computed key finds must meet, its `constraints`,
+    // and whether the create deletes it, declared beside `findBy`
+    let constraints = match refers_to_map.get(property_names::CONSTRAINTS) {
+        None => BTreeMap::new(),
+        Some(value) => {
+            let constraints = value.to_btree_ref_string_map().map_err(|_| {
+                DataContractError::InvalidContractStructure(
+                    "refersTo constraints is an object holding minimumAgeBlocks, chooseFirst or \
+                     both"
+                        .to_string(),
+                )
+            })?;
+            if constraints.is_empty() {
+                return Err(DataContractError::InvalidContractStructure(
+                    "refersTo constraints holds minimumAgeBlocks, chooseFirst or both".to_string(),
+                ));
+            }
+            if let Some(unknown) = constraints.keys().find(|key| {
+                key.as_str() != property_names::MINIMUM_AGE_BLOCKS
+                    && key.as_str() != property_names::CHOOSE_FIRST
+            }) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "refersTo constraints holds minimumAgeBlocks and chooseFirst only, not \
+                     {unknown:?}"
+                )));
+            }
+            constraints
+        }
+    };
+    let minimum_age_blocks = constraints
         .get(property_names::MINIMUM_AGE_BLOCKS)
         .map(|value| {
             let blocks: u32 = value.to_integer().map_err(|_| {
@@ -2234,7 +2267,7 @@ fn parse_find_by(
             ))
         }
     };
-    let choose_first = refers_to_map
+    let choose_first = constraints
         .get(property_names::CHOOSE_FIRST)
         .map(|value| parse_choose_first(value))
         .transpose()?;
@@ -2246,57 +2279,72 @@ fn parse_find_by(
     })
 }
 
-/// The `chooseFirst` of a document reference, `choose_first_value`:
-/// `{ "property", "value", "by" }`. `property` is a schema property of the referenced document
-/// type that `value`, a function of the shape of a `findBy` function, fills; `by` lists the
-/// properties the commitments to the same values are ordered by, each a name (ascending) or
-/// `{ "<name>": "asc" | "desc" }`, at most [`MAX_CHOOSE_FIRST_ORDER`], each once, `$id` only
-/// last and never `property` itself. What the function may read is checked once the document
-/// types are parsed, beside the `findBy` function it complements
-/// ([`DocumentReferenceLookup::referring_side_error`], on every parse); the property, the
-/// order and their index against the referenced type
-/// ([`DocumentReferenceLookup::referenced_side_error`]).
+/// The `chooseFirst` in a document reference's `constraints`, `choose_first_value`:
+/// `{ "among", "validWhen", "by" }`. `among` is a schema property of the referenced document
+/// type, the one the `findBy` function fills; `validWhen` holds exactly one entry, a schema
+/// property of the referenced type mapped to an owner-bound function of the shape of a
+/// `findBy` function; `by` lists the properties the commitments are ordered by, each a name
+/// (ascending) or `{ "<name>": "asc" | "desc" }`, at most [`MAX_CHOOSE_FIRST_ORDER`], each once,
+/// `$id` only last and never `among` itself. What the functions may read and what they name
+/// are checked once the document types are parsed, beside the `findBy` they complement
+/// ([`DocumentReferenceLookup::referring_side_error`], on every parse), and against the
+/// referenced type ([`DocumentReferenceLookup::referenced_side_error`]).
 fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, DataContractError> {
     let refused = |reason: String| {
         DataContractError::InvalidContractStructure(format!("refersTo chooseFirst {reason}"))
     };
-    let choose_first_map = choose_first_value.to_btree_ref_string_map()?;
-    if let Some(unknown) = choose_first_map
-        .keys()
-        .find(|key| !matches!(key.as_str(), "property" | "value" | "by"))
-    {
-        return Err(refused(format!(
-            "holds \"property\", \"value\" and \"by\" only, not {unknown:?}"
-        )));
-    }
-    let property = match choose_first_map.get("property") {
+    let schema_property = |value: Option<&&Value>| match value {
         Some(Value::Text(property))
             if !property.is_empty()
                 && property.len() <= MAX_LOOKUP_PATH_LENGTH
                 && !property.starts_with('$') =>
         {
-            property.clone()
+            Some(property.clone())
         }
-        _ => {
-            return Err(refused(format!(
-                "names in \"property\" a schema property of the referenced document type of 1 \
-                 to {MAX_LOOKUP_PATH_LENGTH} characters, which its function fills"
-            )))
-        }
+        _ => None,
     };
-    let Some(function @ Value::Map(_)) = choose_first_map.get("value") else {
+    let choose_first_map = choose_first_value.to_btree_ref_string_map()?;
+    if let Some(unknown) = choose_first_map
+        .keys()
+        .find(|key| !matches!(key.as_str(), "among" | "validWhen" | "by"))
+    {
         return Err(refused(format!(
-            "\"{property}\" takes in \"value\" a function, {{ \"function\", \"params\" }}"
+            "holds \"among\", \"validWhen\" and \"by\" only, not {unknown:?}"
+        )));
+    }
+    let Some(among) = schema_property(choose_first_map.get("among")) else {
+        return Err(refused(format!(
+            "names in \"among\" the schema property of the referenced document type, of 1 to \
+             {MAX_LOOKUP_PATH_LENGTH} characters, that the findBy function fills"
         )));
     };
+    let valid_when_map = match choose_first_map.get("validWhen") {
+        Some(value @ Value::Map(_)) => value.to_btree_ref_string_map()?,
+        _ => BTreeMap::new(),
+    };
+    let mut valid_when_entries = valid_when_map.into_iter();
+    let (Some((valid_when_property, function @ Value::Map(_))), None) =
+        (valid_when_entries.next(), valid_when_entries.next())
+    else {
+        return Err(refused(format!(
+            "among \"{among}\" holds in \"validWhen\" exactly one entry, a schema property of the \
+             referenced document type mapped to a function, {{ \"function\", \"params\" }}"
+        )));
+    };
+    if schema_property(Some(&&Value::Text(valid_when_property.clone()))).is_none() {
+        return Err(refused(format!(
+            "among \"{among}\" names in \"validWhen\" a schema property of the referenced \
+             document type of 1 to {MAX_LOOKUP_PATH_LENGTH} characters, not {valid_when_property:?}"
+        )));
+    }
     let Some(Value::Array(entries)) = choose_first_map.get("by") else {
         return Err(refused(format!(
-            "\"{property}\" lists in \"by\" the properties commitments are ordered by"
+            "among \"{among}\" lists in \"by\" the properties commitments are ordered by"
         )));
     };
     if entries.is_empty() || entries.len() > MAX_CHOOSE_FIRST_ORDER {
         return Err(refused(format!(
-            "\"{property}\" orders by 1 to {MAX_CHOOSE_FIRST_ORDER} properties"
+            "among \"{among}\" orders by 1 to {MAX_CHOOSE_FIRST_ORDER} properties"
         )));
     }
     let mut by: Vec<ChooseFirstOrder> = Vec::with_capacity(entries.len());
@@ -2317,19 +2365,19 @@ fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, D
             order.filter(|(name, _)| !name.is_empty() && name.len() <= MAX_LOOKUP_PATH_LENGTH)
         else {
             return Err(refused(format!(
-                "\"{property}\" orders by a property name, ascending, or by {{ \"<name>\": \"asc\" \
-                 }} or {{ \"<name>\": \"desc\" }}"
+                "among \"{among}\" orders by a property name, ascending, or by {{ \"<name>\": \
+                 \"asc\" }} or {{ \"<name>\": \"desc\" }}"
             )));
         };
-        if name == property || by.iter().any(|order| order.property == name) {
+        if name == among || by.iter().any(|order| order.property == name) {
             return Err(refused(format!(
-                "\"{property}\" orders by \"{name}\" twice, or by the property it fills"
+                "among \"{among}\" orders by \"{name}\" twice, or by the property it groups by"
             )));
         }
         if by.last().is_some_and(|order| order.property == ID) {
             return Err(refused(format!(
-                "\"{property}\" orders by {ID} last only: the entries of an index are kept by it \
-                 after every one of its properties"
+                "among \"{among}\" orders by {ID} last only: the entries of an index are kept by \
+                 it after every one of its properties"
             )));
         }
         by.push(ChooseFirstOrder {
@@ -2338,8 +2386,9 @@ fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, D
         });
     }
     Ok(LookupChooseFirst {
-        property,
-        key: LookupHashKey::from_value_of(function, property_names::CHOOSE_FIRST)?,
+        among,
+        valid_when_property,
+        valid_when: LookupHashKey::from_value_of(function, property_names::CHOOSE_FIRST)?,
         by,
     })
 }

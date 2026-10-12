@@ -33,10 +33,9 @@
         "documentType": "copyablePreorder",
         "findBy": {
           "$ownerId": "$ownerId",
-          "ownerNameHash": {
+          "nameHash": {
             "function": "sys.hash.sha256d",
             "params": [
-              "$ownerId",
               "normalizedLabel",
               {
                 "const": "."
@@ -45,23 +44,28 @@
             ]
           }
         },
-        "chooseFirst": {
-          "property": "nameHash",
-          "value": {
-            "function": "sys.hash.sha256d",
-            "params": [
-              "normalizedLabel",
-              {
-                "const": "."
-              },
-              "normalizedParentDomainName"
+        "constraints": {
+          "minimumAgeBlocks": 1,
+          "chooseFirst": {
+            "among": "nameHash",
+            "validWhen": {
+              "ownerNameHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "$ownerId",
+                  "normalizedLabel",
+                  {
+                    "const": "."
+                  },
+                  "normalizedParentDomainName"
+                ]
+              }
+            },
+            "by": [
+              "$createdAtBlockHeight"
             ]
-          },
-          "by": [
-            "$createdAtBlockHeight"
-          ]
-        },
-        "minimumAgeBlocks": 1
+          }
+        }
       },
       "additionalProperties": false
     }

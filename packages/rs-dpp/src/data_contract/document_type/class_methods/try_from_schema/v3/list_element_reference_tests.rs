@@ -816,9 +816,10 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
     );
 }
 
-/// `minimumAgeBlocks`, `consume` and `chooseFirst` describe a document `findBy` finds by a
-/// key. A list element reference has nothing to hold them, so both parses refuse them rather
-/// than drop them unenforced, on a referring type whose documents are never replaced too
+/// `constraints` (`minimumAgeBlocks`, `chooseFirst`) and `consume` describe a document
+/// `findBy` finds by a key. A list element reference has nothing to hold them, so both parses
+/// refuse them rather than drop them unenforced, on a referring type whose documents are never
+/// replaced too
 #[test]
 fn should_refuse_minimum_age_blocks_consume_and_choose_first_beside_in_list() {
     let mut never_replaced = charter_contract(members_of_the_charter());
@@ -826,14 +827,18 @@ fn should_refuse_minimum_age_blocks_consume_and_choose_first_beside_in_list() {
     contract(never_replaced.clone()).expect("the list element reference registers alone");
 
     for (keyword, value) in [
-        ("minimumAgeBlocks", json!(100)),
+        ("constraints", json!({ "minimumAgeBlocks": 100 })),
         ("consume", json!(true)),
         (
-            "chooseFirst",
+            "constraints",
             json!({
-                "property": "nameHash",
-                "value": { "function": "sys.hash.sha256d", "params": ["reason"] },
-                "by": ["$createdAtBlockHeight"]
+                "chooseFirst": {
+                    "among": "nameHash",
+                    "validWhen": {
+                        "ownerNameHash": { "function": "sys.hash.sha256d", "params": ["$ownerId", "reason"] }
+                    },
+                    "by": ["$createdAtBlockHeight"]
+                }
             }),
         ),
     ] {
@@ -843,8 +848,7 @@ fn should_refuse_minimum_age_blocks_consume_and_choose_first_beside_in_list() {
         contract(schema.clone()).expect_err("the meta-schema should refuse it");
         assert_refused(
             contract_on(schema, false, PlatformVersion::latest()),
-            "permanentDocument refersTo inList does not take minimumAgeBlocks, consume or \
-             chooseFirst",
+            "permanentDocument refersTo inList does not take constraints or consume",
         );
     }
 }

@@ -2976,9 +2976,14 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                 if let Some((_, key)) = lookup.hash_key() {
                     read.extend(key.properties_read().map(top_level_property));
                 }
-                // The `chooseFirst` function's params, for the same reason
+                // The `chooseFirst` `validWhen` function's params, for the same reason
                 if let Some(choose_first) = &lookup.choose_first {
-                    read.extend(choose_first.key.properties_read().map(top_level_property));
+                    read.extend(
+                        choose_first
+                            .valid_when
+                            .properties_read()
+                            .map(top_level_property),
+                    );
                 }
             }
             // The `where` of a list element names the property holding its

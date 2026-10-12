@@ -22,7 +22,7 @@
 //!       }
 //!     },
 //!     "where": { "$ownerId": "$ownerId" },
-//!     "minimumAgeBlocks": 1,
+//!     "constraints": { "minimumAgeBlocks": 1 },
 //!     "consume": true
 //!   }
 //! }
@@ -665,20 +665,20 @@ pub fn first_unrevealable_lookup_key(
         {
             return Some((holder.path().to_string(), error));
         }
-        // The `chooseFirst` function reads neither `"."` nor the writer (registration
-        // refuses both) and the properties the `findBy` function reads, which are there by
-        // now, but its separators may differ, so a value may hold one of them only
+        // The `chooseFirst` `validWhen` function reads the writer and no `"."` (registration
+        // refuses it) and the properties the `findBy` function reads, which are there by now,
+        // but its separators may differ, so a value may hold one of them only
         if let Some(choose_first) = &lookup.choose_first {
             if let Err(error) =
                 choose_first
-                    .key
+                    .valid_when
                     .check_preimage(document_type, None, owner_id, document_data)
             {
                 return Some((
                     holder.path().to_string(),
                     LookupPreimageError {
                         reason: format!(
-                            "{}, in the preimage of the chooseFirst function",
+                            "{}, in the preimage of the chooseFirst validWhen function",
                             error.reason
                         ),
                         ..error

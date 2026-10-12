@@ -147,9 +147,10 @@ pub const MAX_LOOKUP_KEYS: usize = 10;
 /// the referenced document type whose properties are exactly the ones `keys`
 /// fills ([`Self::resolve_index`]), with one key part per index property. With
 /// a computed key it also holds what the reference declares, beside `findBy`,
-/// of the document found: `minimumAgeBlocks`, `consume` and `chooseFirst`. It
-/// serializes as the parsed model, those three inside it.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
+/// of the document found: its `constraints` (`minimumAgeBlocks` and
+/// `chooseFirst`) and `consume`. It serializes as the schema spells it, the
+/// constraints inside `constraints`.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct DocumentReferenceLookup {
     /// Every property of the index, by its name on the referenced side
     /// (`$ownerId` among the system ones), mapped to the referring-side source
@@ -163,11 +164,10 @@ pub struct DocumentReferenceLookup {
     /// On a lookup judged on the create alone only
     /// ([`Self::is_checked_on_create_only`]): how many blocks before the create the
     /// document the key finds must have been created (the reference's
-    /// `minimumAgeBlocks`, beside `findBy`), judged on its
+    /// `constraints.minimumAgeBlocks`), judged on its
     /// `$createdAtBlockHeight`, so that 1 keeps a commitment and its reveal out
     /// of the same block. The referenced document type must
     /// record `$createdAtBlockHeight`.
-    #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
     pub minimum_age_blocks: Option<u32>,
     /// On a lookup judged on the create alone only
     /// ([`Self::is_checked_on_create_only`]): whether the create deletes the document the
@@ -177,38 +177,73 @@ pub struct DocumentReferenceLookup {
     /// into a
     /// document type of the declaring contract whose documents their owner
     /// may delete.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub consume: bool,
-    /// On a lookup whose `findBy` function reads the writer (`"$ownerId"`) beside the entry
-    /// `"$ownerId": "$ownerId"`, so judged on the create alone: the reference's
-    /// `chooseFirst`, a second function over values the create reveals, never the writer,
-    /// that the found document must hold at a property every competing commitment holds
-    /// too, and the order commitments are chosen in. The create is refused when a valid
-    /// commitment to the same values comes before the found one, see [`LookupChooseFirst`].
-    #[serde(rename = "chooseFirst", skip_serializing_if = "Option::is_none")]
+    /// On a lookup whose `findBy` holds exactly `"$ownerId": "$ownerId"` and a function of
+    /// the create's values, so judged on the create alone: the reference's
+    /// `constraints.chooseFirst`, which requires the found document to be the first valid
+    /// commitment among those holding the same value there, see [`LookupChooseFirst`].
     pub choose_first: Option<LookupChooseFirst>,
 }
 
-/// A lookup's `chooseFirst`, `{ "property", "value": { "function", "params" }, "by": [...] }`.
+/// As the schema spells it: `keys`, then `constraints` (`minimumAgeBlocks` and
+/// `chooseFirst`) when any is declared, then `consume` when set.
+impl Serialize for DocumentReferenceLookup {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Constraints<'a> {
+            #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
+            minimum_age_blocks: Option<u32>,
+            #[serde(rename = "chooseFirst", skip_serializing_if = "Option::is_none")]
+            choose_first: Option<&'a LookupChooseFirst>,
+        }
+        let has_constraints = self.minimum_age_blocks.is_some() || self.choose_first.is_some();
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("keys", &self.keys)?;
+        if has_constraints {
+            map.serialize_entry(
+                "constraints",
+                &Constraints {
+                    minimum_age_blocks: self.minimum_age_blocks,
+                    choose_first: self.choose_first.as_ref(),
+                },
+            )?;
+        }
+        if self.consume {
+            map.serialize_entry("consume", &true)?;
+        }
+        map.end()
+    }
+}
+
+/// A lookup's `constraints.chooseFirst`, `{ "among", "validWhen": { "<property>": <function> },
+/// "by": [...] }`: the found document must be the first valid commitment among the documents of
+/// the referenced type holding the same value at `among`.
 ///
-/// `value` is a hash of values the referring document reveals that names the thing committed
-/// to (a name) without naming who committed; every commitment to the same thing holds it at
-/// `property`, whoever made it, and anyone may copy it. Such a commitment is valid when the
-/// value its `findBy` property holds is the `findBy` function computed with its owner as
-/// `"$ownerId"`, which takes knowing the values, not just the hash.
+/// `among` is the property the lookup's `findBy` function fills, a hash of values the
+/// referring document reveals that names the thing committed to (a name) without naming who
+/// committed: every commitment to the same thing holds it, whoever made it, and anyone may
+/// copy it, so the found document holds the very value the create reveals. A commitment is
+/// valid when the value it holds at `valid_when_property` is `valid_when`, a function of the
+/// same values and of `"$ownerId"`, computed with that commitment's owner: computing it takes
+/// knowing the values, not just the hash. The found document must be valid itself, with the
+/// writer as its owner, or a copy of a pending commitment landing first would reveal too.
 ///
-/// The commitments to the same thing are ordered by `by`, properties of the referenced
-/// document type each ascending or descending, through its index over `property` followed by
-/// those properties; a last `$id` may stand outside that index when it is not unique, whose
-/// entries are kept by id. The first valid commitment in that order is chosen: a create whose
-/// found commitment is preceded by a valid one is refused (`ReferencedDocumentPrecededError`),
-/// and two commitments equal on every `by` property precede neither other.
+/// The commitments are ordered by `by`, properties of the referenced document type each
+/// ascending or descending, through its index over `among` followed by those properties; a
+/// last `$id` may stand outside that index when it is not unique, whose entries are kept by
+/// id. A create whose found commitment is preceded by a valid one is refused
+/// (`ReferencedDocumentPrecededError`), and two commitments equal on every `by` property
+/// precede neither other.
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct LookupChooseFirst {
-    /// The property of the referenced document type the function fills.
-    pub property: String,
-    /// The function, over values the create reveals and never the writer.
-    pub key: LookupHashKey,
+    /// The property of the referenced document type whose value groups the commitments: the
+    /// one the `findBy` function fills.
+    pub among: String,
+    /// The property of the referenced document type `valid_when` fills.
+    pub valid_when_property: String,
+    /// The owner-bound function a valid commitment holds at `valid_when_property`, reading
+    /// `"$ownerId"` (the commitment's owner) and the values the `findBy` function reads.
+    pub valid_when: LookupHashKey,
     /// The order the commitments to the same values are chosen in, first entry first.
     pub by: Vec<ChooseFirstOrder>,
 }
@@ -253,9 +288,10 @@ impl Serialize for LookupChooseFirst {
                 )])
             })
             .collect();
+        let valid_when = BTreeMap::from([(self.valid_when_property.as_str(), &self.valid_when)]);
         let mut map = serializer.serialize_map(Some(3))?;
-        map.serialize_entry("property", &self.property)?;
-        map.serialize_entry("value", &self.key)?;
+        map.serialize_entry("among", &self.among)?;
+        map.serialize_entry("validWhen", &valid_when)?;
         map.serialize_entry("by", &by)?;
         map.end()
     }
@@ -586,90 +622,91 @@ impl DocumentReferenceLookup {
     }
 
     /// Why this lookup's `chooseFirst`, declared on `declaring`, cannot tell a valid
-    /// competing commitment from a copy; `None` when it can or there is none. A competitor
-    /// is judged by computing the `findBy` function with its owner in place of the writer,
-    /// so:
+    /// commitment from a copy; `None` when it can or there is none:
     ///
-    /// * `findBy` holds exactly two entries, a function reading `"$ownerId"` and
-    ///   `"$ownerId": "$ownerId"`, so a commitment names its owner twice, once in its hash
-    ///   and once as its owner: copying another identity's hash yields a commitment whose
-    ///   owner is not the one hashed. Any other entry (a property or `"."` source) would be
-    ///   a part of the commitment a competitor is never compared on. The function makes the
-    ///   lookup judged on the create alone ([`Self::is_checked_on_create_only`]);
-    /// * the `findBy` function reads no `"."`, which stands for the writer or the creator on
-    ///   an `ownerRefersTo` or `creatorRefersTo`, and could not be put in a competitor's
-    ///   place;
-    /// * the `chooseFirst` function reads neither the writer nor `"."`: its value must be the
-    ///   same for every identity committing to the same values, and its params follow the
-    ///   rules of a `findBy` function's ([`LookupHashKey::referring_side_error`]);
-    /// * the two functions read the same properties. A competitor holding the same
-    ///   `chooseFirst` value then committed to the same values: a property only the `findBy`
-    ///   function read (a salt) would make every competitor look like a copy, and one only
-    ///   the `chooseFirst` function read would let a later committer pick another value for it
-    ///   and stand where no competitor exists;
-    /// * the property `chooseFirst` fills is not one `findBy` names;
+    /// * `findBy` holds exactly `"$ownerId": "$ownerId"` and a function filling `among`, so
+    ///   the found document is the writer's commitment holding the very value the create
+    ///   reveals, the one its competitors hold. Any other entry would be a part of the
+    ///   commitment a competitor is never compared on. The function makes the lookup judged
+    ///   on the create alone ([`Self::is_checked_on_create_only`]);
+    /// * the `findBy` function reads neither the writer nor `"."`: its value must be the same
+    ///   for every identity committing to the same values;
+    /// * `validWhen` reads `"$ownerId"`, standing for each commitment's owner, and no `"."`,
+    ///   so a commitment names its owner twice, once in that hash and once as its owner:
+    ///   copying another identity's hash yields a commitment whose owner is not the one
+    ///   hashed. Its params follow the rules of a `findBy` function's
+    ///   ([`LookupHashKey::referring_side_error`]), and it fills a property `findBy` does not
+    ///   name;
+    /// * the two functions read the same properties: a property only `validWhen` read (a
+    ///   salt) would make every competitor look like a copy, and one only the `findBy`
+    ///   function read (a tag) would let a later committer pick another value for it and
+    ///   stand where no competitor exists;
     /// * a create of `declaring` offers nobody else to pay its gas
     ///   (`documentActionTokenCost` `gasFeesPaidBy`): a create relying on a sponsor is
     ///   judged, state included, before anyone has paid for it, which the competitor scan
     ///   must not be.
     fn choose_first_referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
         let choose_first = self.choose_first.as_ref()?;
-        let property = choose_first.property.as_str();
+        let among = choose_first.among.as_str();
+        let valid_when_property = choose_first.valid_when_property.as_str();
         let reads_writer = |key: &LookupHashKey| {
             key.params
                 .iter()
                 .any(|param| matches!(param, LookupKeyParam::Writer))
         };
-        let Some((find_by_property, find_by_key)) =
-            self.hash_key().filter(|(_, key)| reads_writer(key))
-        else {
-            return Some(format!(
-                "chooseFirst \"{property}\" judges a competitor by computing the findBy function \
-                 with the competitor's owner as \"{OWNER_ID}\", so findBy must hold a function \
-                 reading \"{OWNER_ID}\""
-            ));
+        let find_by_key = match (
+            self.keys.get(among),
+            self.keys.get(OWNER_ID),
+            self.keys.len(),
+        ) {
+            (Some(LookupKeySource::Hash(key)), Some(LookupKeySource::OwnerId), 2) => key,
+            _ => {
+                return Some(format!(
+                    "chooseFirst among \"{among}\" needs findBy to hold exactly the entry \
+                     \"{OWNER_ID}\": \"{OWNER_ID}\" and a function filling \"{among}\", so the \
+                     found document is the writer's commitment to the values the create reveals"
+                ))
+            }
         };
-        if self.keys.len() != 2
-            || !matches!(self.keys.get(OWNER_ID), Some(LookupKeySource::OwnerId))
-        {
+        if reads_writer(find_by_key) || find_by_key.reference_value_uses() > 0 {
             return Some(format!(
-                "chooseFirst \"{property}\" needs findBy to hold the entry \"{OWNER_ID}\": \
-                 \"{OWNER_ID}\" beside its function and nothing else, so a commitment's owner is \
-                 the identity its function hashes and a competitor is judged on all of its key"
+                "chooseFirst among \"{among}\" groups commitments by the findBy function, which \
+                 may read neither \"{OWNER_ID}\" nor \".\": its value is the same for every \
+                 identity committing to the same values"
             ));
         }
-        if find_by_key.reference_value_uses() > 0 {
+        if !reads_writer(&choose_first.valid_when) {
             return Some(format!(
-                "chooseFirst \"{property}\" computes the findBy function \"{find_by_property}\" \
-                 for every competitor, so the function may not read \".\""
+                "chooseFirst validWhen \"{valid_when_property}\" must read \"{OWNER_ID}\", each \
+                 commitment's owner: a commitment is valid when its owner could compute it, which \
+                 a copy of another identity's cannot"
             ));
         }
-        if reads_writer(&choose_first.key) || choose_first.key.reference_value_uses() > 0 {
+        if choose_first.valid_when.reference_value_uses() > 0 {
             return Some(format!(
-                "chooseFirst function \"{property}\" may read neither \"{OWNER_ID}\" nor \".\": \
-                 its value is the same for every identity committing to the same values"
+                "chooseFirst validWhen \"{valid_when_property}\" is computed for every \
+                 commitment, so it may not read \".\""
             ));
         }
-        if let Some(reason) = choose_first.key.referring_side_error(declaring) {
-            return Some(format!("chooseFirst function \"{property}\" {reason}"));
+        if let Some(reason) = choose_first.valid_when.referring_side_error(declaring) {
+            return Some(format!(
+                "chooseFirst validWhen function \"{valid_when_property}\" {reason}"
+            ));
+        }
+        if self.keys.contains_key(valid_when_property) {
+            return Some(format!(
+                "chooseFirst validWhen \"{valid_when_property}\" names a property findBy names: \
+                 it fills a property of its own"
+            ));
         }
         let find_by_reads: BTreeSet<&str> = find_by_key.properties_read().collect();
-        let choose_first_reads: BTreeSet<&str> = choose_first.key.properties_read().collect();
-        if let Some(only_one_reads) = find_by_reads
-            .symmetric_difference(&choose_first_reads)
-            .next()
-        {
+        let valid_when_reads: BTreeSet<&str> = choose_first.valid_when.properties_read().collect();
+        if let Some(only_one_reads) = find_by_reads.symmetric_difference(&valid_when_reads).next() {
             return Some(format!(
-                "chooseFirst function \"{property}\" must read the properties the findBy function \
-                 \"{find_by_property}\" reads and no others, and \"{only_one_reads}\" is read by \
-                 one of them only: a competitor holding the same chooseFirst value must have \
-                 committed to the same values"
-            ));
-        }
-        if self.keys.contains_key(property) {
-            return Some(format!(
-                "chooseFirst \"{property}\" names a property findBy names: the chooseFirst \
-                 function fills a property of its own"
+                "chooseFirst validWhen \"{valid_when_property}\" must read the properties the \
+                 findBy function \"{among}\" reads and no others, and \"{only_one_reads}\" is read \
+                 by one of them only: a valid commitment holding the same value must have committed \
+                 to the same values"
             ));
         }
         if declaring
@@ -677,8 +714,8 @@ impl DocumentReferenceLookup {
             .is_some_and(|cost| cost.gas_fees_paid_by != GasFeesPaidBy::DocumentOwner)
         {
             return Some(format!(
-                "chooseFirst \"{property}\" reads the commitment's competitors when a document is \
-                 created, so its creates may not offer gas sponsorship (gasFeesPaidBy): a create \
+                "chooseFirst among \"{among}\" reads the commitment's competitors when a document \
+                 is created, so its creates may not offer gas sponsorship (gasFeesPaidBy): a create \
                  relying on a sponsor is judged before anyone pays for it"
             ));
         }
@@ -872,50 +909,52 @@ impl DocumentReferenceLookup {
     }
 
     /// Why this lookup's `chooseFirst` cannot find the competitors of a document of
-    /// `referenced`, the referenced document type; `None` when it can or there is none:
+    /// `referenced`, the referenced document type; `None` when it can or there is none. What
+    /// `among` must be is judged with the rest of `findBy`, whose function fills it, and its
+    /// unique index over exactly `$ownerId` and `among` holds an identity to one commitment to
+    /// a value, so filling the competitors a create reads, which stand before an older valid
+    /// one, takes as many identities as are read. Beyond that:
     ///
-    /// * the property it names is a stored byte array exactly as long as its function's
-    ///   output, fixed once written;
+    /// * the property `validWhen` fills is a stored byte array exactly as long as its
+    ///   function's output, fixed once written;
     /// * the type's documents expire (`ttl`): a commitment never revealed would otherwise
     ///   precede every later one for good;
     /// * every property `by` orders commitments by is recorded on each of them and fixed once
-    ///   written ([`choose_first_order_error`]), and an index holds exactly that property
-    ///   followed by them, in that order, through which the commitments are read in order; a
-    ///   last `$id` stands outside it, and then the index is not unique, whose entries are
-    ///   kept by id;
-    /// * every unique index holding the property, or the property the `findBy` function
-    ///   fills, holds `$ownerId` too, or a copy of a pending commitment's value landing
-    ///   first would keep the commitment out of state, without its copier knowing the
-    ///   values; and one is over exactly `$ownerId` and the property, so an identity holds
-    ///   at most one commitment to a value: filling the competitors a create reads, which
-    ///   stand before an older valid one, takes as many identities as are read, and the
-    ///   writer holds none of them but the one found.
+    ///   written ([`choose_first_order_error`]), and an index holds exactly `among` followed
+    ///   by them, in that order, through which the commitments are read in order; a last
+    ///   `$id` stands outside it, and then the index is not unique, whose entries are kept by
+    ///   id;
+    /// * every unique index holding `among`, or the property `validWhen` fills, holds
+    ///   `$ownerId` too, or a copy of a pending commitment's value landing first would keep
+    ///   the commitment out of state, without its copier knowing the values.
     ///
     /// Every flag read here is immutable on contract update, and a type's indexes never
     /// change, so the answer holds for good.
     fn choose_first_referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
         let choose_first = self.choose_first.as_ref()?;
-        let property = choose_first.property.as_str();
+        let among = choose_first.among.as_str();
+        let valid_when_property = choose_first.valid_when_property.as_str();
         let name = referenced.name();
-        if !holds_hash(referenced, property, &choose_first.key) {
+        if !holds_hash(referenced, valid_when_property, &choose_first.valid_when) {
             return Some(format!(
-                "chooseFirst function \"{property}\" is a {} hash, so \"{property}\" must be a \
-                 byte array of exactly {} bytes of \"{name}\"",
-                choose_first.key.function.as_str(),
-                choose_first.key.function.output_length()
+                "chooseFirst validWhen \"{valid_when_property}\" is a {} hash, so it must be a byte \
+                 array of exactly {} bytes of \"{name}\"",
+                choose_first.valid_when.function.as_str(),
+                choose_first.valid_when.function.output_length()
             ));
         }
-        if is_transient(referenced, property) {
+        if is_transient(referenced, valid_when_property) {
             return Some(format!(
-                "chooseFirst names \"{property}\" of \"{name}\", which is transient or inside a \
-                 transient object: its value is never stored, so no competitor could be found"
+                "chooseFirst validWhen names \"{valid_when_property}\" of \"{name}\", which is \
+                 transient or inside a transient object: its value is never stored, so no \
+                 commitment could be found valid"
             ));
         }
-        if let Some(why) = why_value_can_change(referenced, property) {
+        if let Some(why) = why_value_can_change(referenced, valid_when_property) {
             return Some(format!(
-                "chooseFirst names \"{property}\" of \"{name}\", which {why}: a competitor must \
-                 keep the value it committed to, so the property must be fixed once the \
-                 document is written"
+                "chooseFirst validWhen names \"{valid_when_property}\" of \"{name}\", which {why}: \
+                 a commitment must keep the value it committed with, so the property must be \
+                 fixed once the document is written"
             ));
         }
         if referenced.documents_ttl_seconds().is_none() {
@@ -936,12 +975,12 @@ impl DocumentReferenceLookup {
             let by = order.property.as_str();
             if let Some(why) = choose_first_order_error(referenced, by) {
                 return Some(format!(
-                    "chooseFirst \"{property}\" orders by \"{by}\" of \"{name}\", which {why}: \
+                    "chooseFirst among \"{among}\" orders by \"{by}\" of \"{name}\", which {why}: \
                      commitments are ordered by the values they were written with"
                 ));
             }
         }
-        let index_properties: Vec<&str> = iter::once(property)
+        let index_properties: Vec<&str> = iter::once(among)
             .chain(
                 choose_first
                     .index_order()
@@ -958,7 +997,7 @@ impl DocumentReferenceLookup {
         }) {
             None => {
                 return Some(format!(
-                    "chooseFirst \"{property}\" reads the commitments holding the same value in \
+                    "chooseFirst among \"{among}\" reads the commitments holding the same value in \
                      order through an index of \"{name}\" over exactly ({}), in that order, which \
                      it does not have",
                     index_properties.join(", ")
@@ -975,8 +1014,7 @@ impl DocumentReferenceLookup {
             Some(_) => {}
         }
         // Both hashes a commitment holds can be copied from its pending transition
-        let copyable = iter::once(property).chain(self.hash_key().map(|(fills, _)| fills));
-        for copyable_property in copyable {
+        for copyable_property in [among, valid_when_property] {
             if let Some((index_name, _)) = referenced.indexes().iter().find(|(_, index)| {
                 index.unique && holds(index, copyable_property) && !holds(index, OWNER_ID)
             }) {
@@ -986,19 +1024,6 @@ impl DocumentReferenceLookup {
                      would keep the commitment out"
                 ));
             }
-        }
-        if !referenced.indexes().values().any(|index| {
-            index.unique
-                && index.properties.len() == 2
-                && holds(index, OWNER_ID)
-                && holds(index, property)
-        }) {
-            return Some(format!(
-                "chooseFirst \"{property}\" needs a unique index of \"{name}\" over exactly \
-                 ({OWNER_ID}, {property}), in either order: each identity then holds at most one \
-                 commitment to a value, so the competitors a create reads are each another \
-                 identity's"
-            ));
         }
         None
     }

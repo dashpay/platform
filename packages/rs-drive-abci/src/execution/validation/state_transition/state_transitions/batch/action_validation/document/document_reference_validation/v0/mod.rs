@@ -1600,7 +1600,6 @@ fn validate_reference_target_v0(
                 if let Some(choose_first) = &lookup.choose_first {
                     let result = validate_choose_first_v0(
                         choose_first,
-                        lookup,
                         found,
                         referenced_contract,
                         referenced_document_type,
@@ -1751,7 +1750,7 @@ pub(crate) fn choose_first_scan_budget(platform_version: &PlatformVersion) -> Cr
 /// What check tx reserves, on top of the estimated fee of `action`, for the `chooseFirst`
 /// checks of its creates when it does not validate their state: for every create of a
 /// document type declaring `chooseFirst` (registration admits at most one per type), the
-/// double SHA-256s of its `findBy` and `chooseFirst` preimages, priced by the blocks the
+/// double SHA-256s of its `findBy` and `validWhen` preimages, priced by the blocks the
 /// create's own values make them (a transient param counts, though no stored document keeps
 /// it), and [`choose_first_scan_budget`] for the competitor scan. Nothing for anything else,
 /// nor for a create whose preimage cannot be assembled, which structure validation refuses
@@ -1788,7 +1787,7 @@ pub(crate) fn choose_first_reservation(
             lookup
                 .choose_first
                 .as_ref()
-                .map(|choose_first| &choose_first.key),
+                .map(|choose_first| &choose_first.valid_when),
         ) {
             if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
                 reservation.push(ValidationOperation::DoubleSha256(
@@ -1927,35 +1926,37 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 /// * A commitment past its type's `ttl` at the block time is gone, whether or not the cleanup
 ///   has reached it: `found` past it finds no document (`ReferencedEntityNotFoundError`,
 ///   40120, naming `referenced_id`), as a competitor past it precedes nobody.
-/// * The `chooseFirst` function is hashed and billed once, and `found` must hold the hash at
-///   the property `chooseFirst` names (40120 otherwise).
-/// * The documents of `referenced_document_type` holding the same hash are read in one query
+/// * `found` must be a valid commitment of the writer: it holds, at the property `validWhen`
+///   names, that function computed from the create's values with the writer as `"$ownerId"`
+///   (billed as the double SHA-256 it is; 40120 otherwise), or a copy of a pending commitment
+///   landing first would reveal too.
+/// * The documents of `referenced_document_type` holding `found`'s value at `among`, the hash
+///   `findBy` found it by, are read in one query
 ///   in the order `chooseFirst` lists (`by`), through its index, at most
 ///   `SystemLimits::max_choose_first_candidates`, bounded by `found`'s value of the first
 ///   property that index orders: one after it there precedes it on no ordering. Each one
 ///   before `found` in that order, compared by the keys the index holds them under (and by id
 ///   for a last `$id`), and not past its `ttl`, is a competitor, valid when it holds, at the
-///   property the `findBy` function fills, that function computed from the create's values
-///   with the competitor's owner as `"$ownerId"` (billed as the double SHA-256 it is): a copy
-///   of another identity's hash is owned by an identity the hash does not name. The first
-///   valid competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
+///   property `validWhen` names, that function computed from the create's values with the
+///   competitor's owner as `"$ownerId"` (billed as the double SHA-256 it is): a copy of
+///   another identity's hash is owned by an identity the hash does not name. The first valid
+///   competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
 ///   ([`choose_first_scan_budget`]), which check tx reserves ([`choose_first_reservation`]).
 ///
-/// Registration demands a unique index over the referenced type's `$ownerId` and the
-/// `chooseFirst` property, so each competitor is another identity's: the writer's only document
-/// holding the value is `found`. A document equal to `found` on every ordered property is no
+/// `findBy` finds `found` through the referenced type's unique index over `$ownerId` and
+/// `among`, so each competitor is another identity's: the writer's only document holding the
+/// value is `found`. A document equal to `found` on every ordered property is no
 /// competitor (with a last `$id` there is none); the unique index the create writes decides
 /// between them. When none of the documents read is a valid competitor the create stands, so
 /// documents that are none can make a create cost more but never refuse it. A `found` or a
-/// candidate missing an ordered property, or a lookup holding no `findBy` function, are what
-/// registration rules out, so each is an internal error.
+/// candidate missing an ordered property, or a `found` missing `among`, are what registration
+/// rules out, so each is an internal error.
 ///
 /// In place in generation 0: only the protocol version 14 parser produces a `chooseFirst`.
 #[allow(clippy::too_many_arguments)]
 fn validate_choose_first_v0(
     choose_first: &LookupChooseFirst,
-    lookup: &DocumentReferenceLookup,
     found: &Document,
     referenced_contract: &DataContract,
     referenced_document_type: DocumentTypeRef<'_>,
@@ -1984,42 +1985,39 @@ fn validate_choose_first_v0(
     if document_is_expired(referenced_document_type, found.created_at(), block_info)? {
         return Ok(not_found());
     }
-    let property = choose_first.property.as_str();
-    // The `chooseFirst` function reads neither `"."` nor the writer, which registration
-    // refuses, only values of the create
-    let Some(choose_first_key) = hash_lookup_key(
-        &choose_first.key,
-        declaring_document_type,
-        None,
-        owner_id,
-        document_data,
-        execution_context,
-    )
-    .filter(|key| {
-        holds_key_part(
-            referenced_document_type,
-            found,
-            property,
-            &Value::Bytes32(key.digest()),
-        )
-    }) else {
-        return Ok(not_found());
-    };
-    let Some((find_by_property, find_by_key)) = lookup.hash_key() else {
-        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "registration requires a findBy function beside chooseFirst",
-        )));
-    };
-    // The findBy function's preimage for the writer, which found `found`: a competitor's key
-    // is the same bytes with its owner in the `"$ownerId"` slots. The function reads no `"."`,
-    // which registration refuses beside `chooseFirst`
-    let mut find_by_preimage = find_by_key
+    let among = choose_first.among.as_str();
+    let valid_when_property = choose_first.valid_when_property.as_str();
+    // The `validWhen` preimage for the writer: another commitment's is the same bytes with its
+    // owner in the `"$ownerId"` slots. The function reads no `"."`, which registration refuses
+    let mut valid_when_preimage = choose_first
+        .valid_when
         .writer_preimage(declaring_document_type, None, owner_id, document_data)
         .map_err(|_| {
             Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "the findBy preimage assembled for the lookup that found the commitment",
+                "structure validation refuses a create whose validWhen preimage it cannot \
+                 assemble",
             ))
         })?;
+    // `found` must be a valid commitment itself, the writer's: a copy of a pending one landing
+    // first would otherwise reveal too
+    let (found_digest, found_blocks) = valid_when_preimage.key_value_for(owner_id);
+    execution_context.add_operation(ValidationOperation::DoubleSha256(found_blocks));
+    if !holds_key_part(
+        referenced_document_type,
+        found,
+        valid_when_property,
+        &Value::Bytes32(found_digest),
+    ) {
+        return Ok(not_found());
+    }
+    // The value the commitments to the same values hold, which `findBy` found `found` by
+    let group = referenced_document_value(found, among)
+        .ok()
+        .flatten()
+        .map(|value| value.into_owned())
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "findBy found the commitment by the value it holds at among",
+        )))?;
     // Where `found` stands in the order, by the keys its index holds it under
     let found_keys = choose_first_order_keys(
         &choose_first.by,
@@ -2057,8 +2055,8 @@ fn validate_choose_first_v0(
         platform.drive,
         referenced_contract,
         referenced_document_type,
-        property,
-        Value::Bytes32(choose_first_key.digest()),
+        among,
+        group,
         &index_order,
         range,
         platform_version.system_limits.max_choose_first_candidates,
@@ -2095,7 +2093,7 @@ fn validate_choose_first_v0(
         if document_is_expired(referenced_document_type, candidate.created_at(), block_info)? {
             continue;
         }
-        let (digest, blocks) = find_by_preimage.key_value_for(candidate.owner_id());
+        let (digest, blocks) = valid_when_preimage.key_value_for(candidate.owner_id());
         scan_bill.add(
             ValidationOperation::DoubleSha256(blocks),
             execution_context,
@@ -2104,14 +2102,14 @@ fn validate_choose_first_v0(
         if holds_key_part(
             referenced_document_type,
             candidate,
-            find_by_property,
+            valid_when_property,
             &Value::Bytes32(digest),
         ) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ReferencedDocumentPrecededError::new(
                     found.id(),
                     candidate.id(),
-                    property.to_string(),
+                    among.to_string(),
                     path.to_string(),
                 )
                 .into(),

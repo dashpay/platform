@@ -1668,7 +1668,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     beside a `findBy` function, or any `findBy` on a document type whose
 ///     documents are never replaced, `documentsMutable: false`, since a replace
 ///     is the one write that judges a reference again), and not beside
-///     `inList`, may declare `minimumAgeBlocks`, judged by
+///     `inList`, may declare `minimumAgeBlocks` (inside its `constraints`,
+///     beside `findBy`), judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and `consume`, which deletes the found document with the create
@@ -1701,55 +1702,56 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a parent byte for byte; the DPNS contract and its create trigger are
 ///     unchanged. See `book/src/data-model/documents.md`.
 ///
-///     `chooseFirst` (`LookupChooseFirst`) sits on a `deletableDocument`
-///     reference whose `findBy` holds exactly the entry `"$ownerId":
-///     "$ownerId"` and a function reading `"$ownerId"`:
-///     `{ "property", "value", "by" }`, `value` a second function over values
-///     of the create, never the writer or `"."`, reading exactly the
-///     properties the `findBy` function reads, whose hash every commitment to
-///     the same values holds at `property`, whoever made it, and `by` the
-///     order those commitments are chosen in (properties ascending or
-///     descending, `ChooseFirstOrder`, a last `$id` breaking ties). Document
-///     reference validation 0, in place, refuses a found document past its
-///     type's `ttl` (40120), hashes the function once (`DoubleSha256`),
-///     refuses a found document not holding it (40120), and reads in one
-///     billed query the documents holding the same value in `by` order
-///     (`fetch_documents_holding_in_order`, through the index over the
-///     property and the ordered properties), as far as the found one's value
-///     of the first, at most `SYSTEM_LIMITS_V4.max_choose_first_candidates`
-///     (1,000; backfilled into the earlier tables, which nothing reads
-///     there). The first that comes strictly before the found one, by the keys
-///     the index holds them under, is not past its type's `ttl` and holds, at
-///     the `findBy` function's property, that function computed with its
-///     owner as `"$ownerId"` (`DoubleSha256` each, `WriterPreimage`) refuses
-///     the create (`ReferencedDocumentPrecededError`, 40149). A copied hash
-///     names another owner and never refuses, one equal on every `by`
-///     property is no competitor, and when none of the documents read
-///     refuses, the create stands. The query and the competitors' hashes bill
-///     at most `FEE_VERSION3.document_reference.choose_first_credits_per_candidate`
+///     `chooseFirst` (`LookupChooseFirst`), the other entry of a reference's
+///     `constraints`, sits on a `deletableDocument` reference whose `findBy`
+///     holds exactly the entry `"$ownerId": "$ownerId"` and a function filling
+///     `among`, reading neither the writer nor `"."`, whose hash every
+///     commitment to the same values holds, whoever made it:
+///     `{ "among", "validWhen": { "<property>": <function> }, "by" }`,
+///     `validWhen` an owner-bound function (reading `"$ownerId"`, standing for
+///     each commitment's owner, and exactly the properties the `findBy`
+///     function reads) and `by` the order the commitments are chosen in
+///     (properties ascending or descending, `ChooseFirstOrder`, a last `$id`
+///     breaking ties). Document reference validation 0, in place, refuses a
+///     found document past its type's `ttl` (40120) or not holding `validWhen`
+///     computed with the writer (40120, `DoubleSha256`, `WriterPreimage`), and
+///     reads in one billed query the documents holding the found one's value
+///     at `among` in `by` order (`fetch_documents_holding_in_order`, through
+///     the index over `among` and the ordered properties), as far as the found
+///     one's value of the first, at most
+///     `SYSTEM_LIMITS_V4.max_choose_first_candidates` (1,000; backfilled into
+///     the earlier tables, which nothing reads there). The first that comes
+///     strictly before the found one, by the keys the index holds them under,
+///     is not past its type's `ttl` and holds `validWhen` computed with its own
+///     owner (`DoubleSha256` each) refuses the create
+///     (`ReferencedDocumentPrecededError`, 40149). A copied hash names another
+///     owner and never refuses, one equal on every `by` property is no
+///     competitor, and when none of the documents read refuses, the create
+///     stands. The query and the competitors' hashes bill at most
+///     `FEE_VERSION3.document_reference.choose_first_credits_per_candidate`
 ///     (100,000; a new fee group, unread before this version) times that
 ///     limit, and check tx, which validates no state of such a create,
-///     reserves that whole budget and the create's two hashes on top of its
-///     estimated fee (not consensus). Registration, on the same contract and
-///     on another (`DocumentReferenceLookup`'s `referring_side_error` and
-///     `referenced_side_error`, and the parser's
-///     `validate_reference_lookup_sources`), requires the property to be a
-///     stored 32-byte byte array fixed once written; every `by` property to be
-///     recorded on every document, fixed once written and not transient; the
-///     referenced type to expire (`ttl`), to hold the index over the property
-///     and the `by` properties (not unique under a last `$id`), a unique index
-///     over exactly `$ownerId` and the property (so each competitor read is
-///     another identity's) and no unique index holding the property, or the
-///     `findBy` function's, without `$ownerId`; at most one `chooseFirst` per
-///     type, not on typed array elements or expression operands, a `where`
-///     holding nothing but `"$ownerId": "$ownerId"` (no condition), and no
-///     gas sponsorship of the declaring type's creates (a sponsored create is
-///     judged, state included, before anyone pays). Document create structure
-///     validation 1 refuses a create missing a param of the function (10423).
-///     Inert before this version: only meta-schema v3 admits `chooseFirst` and
-///     the `"$ownerId"` param, so the writer reaching `hash_lookup_key` in
-///     place in reference validation 0 and batch state 0 changes nothing
-///     earlier.
+///     reserves that whole budget and the create's `findBy` and `validWhen`
+///     hashes on top of its estimated fee (not consensus). Registration, on
+///     the same contract and on another (`DocumentReferenceLookup`'s
+///     `referring_side_error` and `referenced_side_error`, and the parser's
+///     `validate_reference_lookup_sources`), requires the `validWhen` property
+///     to be a stored 32-byte byte array fixed once written; every `by`
+///     property to be recorded on every document, fixed once written and not
+///     transient; the referenced type to expire (`ttl`), to hold the index over
+///     `among` and the `by` properties (not unique under a last `$id`) and no
+///     unique index holding `among`, or the `validWhen` property, without
+///     `$ownerId`; at most one `chooseFirst` per type, not on typed array
+///     elements or expression operands, a `where` holding nothing but
+///     `"$ownerId": "$ownerId"` (no condition), and no gas sponsorship of the
+///     declaring type's creates (a sponsored create is judged, state included,
+///     before anyone pays). `constraints` holds `minimumAgeBlocks`,
+///     `chooseFirst` or both and nothing else, and either one beside `findBy`
+///     is refused. Document create structure validation 1 refuses a create
+///     missing a param of `validWhen` (10423). Inert before this version: only
+///     meta-schema v3 admits `constraints` and the `"$ownerId"` param, so the
+///     writer reaching `hash_lookup_key` in place in reference validation 0
+///     and batch state 0 changes nothing earlier.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its

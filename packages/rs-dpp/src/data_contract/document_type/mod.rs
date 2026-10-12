@@ -170,18 +170,19 @@ pub(crate) mod property_names {
     /// the referring-side value each must equal. Meta-schema v3+ (protocol
     /// version 14).
     pub const WHERE: &str = "where";
-    /// `refersTo` beside a `findBy` with a computed key: how many blocks
-    /// before the referring document's create the document the key finds
-    /// must have been created.
+    /// `refersTo` beside `findBy`: what the document `findBy` finds must meet
+    /// when the referring document is created, `minimumAgeBlocks` and
+    /// `chooseFirst`. Meta-schema v3+ (protocol version 14).
+    pub const CONSTRAINTS: &str = "constraints";
+    /// In a `refersTo`'s `constraints`: how many blocks before the referring
+    /// document's create the document `findBy` finds must have been created.
     pub const MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
     /// `refersTo` beside a `findBy` with a computed key: whether the create
     /// deletes the document the key finds.
     pub const CONSUME: &str = "consume";
-    /// `refersTo` beside a `findBy` function reading the writer: a second
-    /// function, over the same revealed values without the writer, naming the
-    /// property every commitment to those values holds, so a create is refused
-    /// while another identity holds a valid older one. Meta-schema v3+
-    /// (protocol version 14).
+    /// In a `refersTo`'s `constraints`: the document `findBy` finds must be the
+    /// first valid commitment, in a declared order, among those holding the
+    /// same value. Meta-schema v3+ (protocol version 14).
     pub const CHOOSE_FIRST: &str = "chooseFirst";
     /// `refersTo: permanentDocument` found by its `$id` from a property: the
     /// typed array of identifiers, on the referenced document, the value must
