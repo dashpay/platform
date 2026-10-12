@@ -880,6 +880,88 @@ mod tests {
         assert_eq!(rows, 0, "the guard must refuse before binding the row");
     }
 
+    /// `restore_pools` overlays a persisted row on the entry the load
+    /// projection already built, and a repaired wallet is rebuilt twice in
+    /// one load. The accounting that entry carries must come through
+    /// unchanged: neither reset by the overlay nor counted a second time.
+    #[test]
+    fn restore_pools_keeps_existing_address_accounting_exactly_once() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::address_pool::AddressPool;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::{ManagedWalletInfo, Wallet};
+
+        use crate::sqlite::config::LoadPolicy;
+
+        fn with_pool_of<R>(
+            info: &mut ManagedWalletInfo,
+            address: &dashcore::Address,
+            read: impl Fn(&mut AddressPool, u32) -> R,
+        ) -> R {
+            for mut account in info.accounts.all_accounts_mut() {
+                for pool in account.managed_account_type_mut().address_pools_mut() {
+                    if let Some(index) = pool.address_index.get(address).copied() {
+                        return read(pool, index);
+                    }
+                }
+            }
+            panic!("the address must belong to a pool");
+        }
+
+        let mut conn = migrated_conn();
+        let wallet = Wallet::new_random(
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let wallet_id = wallet.wallet_id;
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![wallet_id.as_slice()],
+        )
+        .unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let persisted = with_pool_of(&mut info, &address, |pool, index| {
+            let entry = pool.addresses.get_mut(&index).unwrap();
+            entry.update_stats(700, 200);
+            entry.balance = 500;
+            AccountAddressPoolEntry {
+                account_type: AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                pool_type: pool.pool_type,
+                addresses: pool.addresses.values().cloned().collect(),
+            }
+        });
+        let tx = conn.transaction().unwrap();
+        apply_pools(&tx, &wallet_id, std::slice::from_ref(&persisted)).unwrap();
+        tx.commit().unwrap();
+
+        let ctx = LoadCtx::new(LoadPolicy::Strict);
+        for round in 1..=2 {
+            restore_pools(&conn, &wallet_id, &mut info, &ctx).unwrap();
+            let accounting = with_pool_of(&mut info, &address, |pool, index| {
+                let entry = &pool.addresses[&index];
+                (
+                    entry.tx_count,
+                    entry.total_received,
+                    entry.total_sent,
+                    entry.balance,
+                )
+            });
+            assert_eq!(accounting, (1, 700, 200, 500), "restore round {round}");
+        }
+    }
+
     #[test]
     fn integer_discriminants_match_migration_domains() {
         use std::collections::BTreeSet;

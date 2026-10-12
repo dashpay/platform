@@ -456,6 +456,77 @@ fn should_reject_a_concurrent_writer_while_a_wallet_load_transaction_is_open() {
     assert_eq!(synced_height(&persister), 200);
 }
 
+/// A failure while rebuilding a wallet reaches the caller as the storage
+/// error that caused it: Strict returns it typed, and Recovery names it as
+/// the dropped wallet's cause rather than an anonymous `backend`.
+#[test]
+fn should_attribute_a_platform_node_pool_failure_to_its_typed_cause() {
+    use platform_wallet::changeset::PersistenceError;
+    use platform_wallet_storage::{LoadPolicy, WalletStorageError};
+
+    let (persister, _tmp, path) = common::fresh_persister();
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let platform_keys =
+        platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
+            &wallet,
+            Network::Testnet,
+            3,
+        )
+        .unwrap();
+    platform_wallet::wallet::provider_key_at_index::populate_platform_node_pool(
+        &mut info,
+        &platform_keys,
+        Network::Testnet,
+    )
+    .unwrap();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    // A well-formed BLS key on the account that only ever holds EdDSA keys.
+    let rewritten = persister
+        .lock_conn_for_test()
+        .execute(
+            "UPDATE core_address_pool SET key_type = 2, public_key = zeroblob(48) \
+             WHERE account_type = 'provider_platform'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(rewritten, platform_keys.len());
+    drop(persister);
+
+    let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let error = strict.load().expect_err("a wrong-curve key must fail");
+    let PersistenceError::Backend { source, .. } = error else {
+        panic!("expected a backend error, got {error:?}")
+    };
+    assert!(
+        matches!(
+            source.downcast_ref::<WalletStorageError>(),
+            Some(WalletStorageError::BlobDecode { reason })
+                if *reason == "provider platform pool row does not carry an EdDSA public key"
+        ),
+        "the platform-node pool reader's own error must survive: {source:?}"
+    );
+    drop(strict);
+
+    let recovery = SqlitePersister::open(
+        SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .unwrap();
+    let state = recovery.load().expect("recovery isolates the wallet");
+    assert!(!state.wallets.contains_key(&wallet.wallet_id));
+    assert_eq!(
+        recovery
+            .last_load_degradation()
+            .wallets_degraded
+            .get(&wallet.wallet_id)
+            .copied(),
+        Some("blob_decode")
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn should_reject_malformed_pool_keys_with_typed_source_before_manager_hydration() {
     use platform_wallet::changeset::PersistenceError;
