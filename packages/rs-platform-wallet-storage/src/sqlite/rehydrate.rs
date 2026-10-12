@@ -112,8 +112,8 @@ pub(crate) fn restore_provider_platform_node_pool(
         return Ok(());
     }
 
-    // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-    // restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
+    // `reserved_at` is not consumed here: `core_pool::restore_pools` runs next
+    // and overlays each row's reservation state on the entries inserted below.
     for (index, script_bytes, public_key, used) in entries {
         let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(

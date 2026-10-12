@@ -202,9 +202,10 @@ pub fn apply_pools(
     Ok(())
 }
 
-// TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
-// restoring it requires widening `provider_accounts::insert_platform_node_pool_entry`.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
+///
+/// `reserved_at` is not part of the row: [`restore_pools`] restores it for
+/// every pool, this one included.
 pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 
 /// Load typed public-key rows for one account pool, ordered by address index.
