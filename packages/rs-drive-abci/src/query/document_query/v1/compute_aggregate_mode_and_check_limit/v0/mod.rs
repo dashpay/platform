@@ -50,22 +50,10 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v0(
                 | WhereOperator::StartsWith
         )
     };
-    // `containsAny` is an `In` over a typed array's elements (protocol version
-    // 14): grouping by the array gives one group per element.
-    //
-    // In place in this shipped table, which protocol version 13 and earlier
-    // select and 14 reaches through v2 and v1. Before protocol version 14 no
-    // document type has a typed array (the contract tables there parse none),
-    // so a `containsAny` routed here is refused a step later, when Drive keys
-    // it (`key_array_element_clauses`: "contains and containsAny read the
-    // elements of a typed array"). It was refused before too, as an unknown
-    // wire discriminant. Queries only, no state, and pinned by
-    // `should_refuse_element_reads_at_protocol_version_13` in the v1 tests.
     let is_in_field = |field: &str| {
-        where_clauses.iter().any(|wc| {
-            matches!(wc.operator, WhereOperator::In | WhereOperator::ContainsAny)
-                && wc.field == field
-        })
+        where_clauses
+            .iter()
+            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
     };
     let is_range_field = |field: &str| {
         where_clauses
