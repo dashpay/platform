@@ -16,7 +16,7 @@
 //! git worktree add --detach /data/git-worktrees/<name>-base origin/v4.2-dev
 //! cargo build -p platform-wallet-storage --bin platform-wallet-storage --features cli
 //! <target>/debug/platform-wallet-storage --db <dir>/v42.db migrate --no-auto-backup
-//! V4_2_DEV_DB=<dir>/v42.db cargo test -p platform-wallet-storage --test fixture_gen -- --ignored
+//! V4_2_DEV_DB=<dir>/v42.db cargo test -p platform-wallet-storage --test integration fixture_gen:: -- --ignored
 //! ```
 //! The parent directory chain of `<dir>/v42.db` must not be group- or
 //! world-writable, or the persister refuses it as an insecure parent.
