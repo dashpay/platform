@@ -54,8 +54,9 @@ use crate::contact_persistence::{
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{
-    build_sweep_batches_for_callback, build_utxo_credit_verdicts_for_callback,
-    free_wallet_changeset_ffi, SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
+    build_chain_truncations_for_callback, build_sweep_batches_for_callback,
+    build_utxo_credit_verdicts_for_callback, free_wallet_changeset_ffi, ChainTruncationFFI,
+    SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
 };
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
@@ -154,6 +155,12 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS: u64 = 1 <<
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_MASTERNODES: u64 = 1 << 10;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL: u64 = 1 << 11;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS: u64 = 1 << 12;
+// Bit 13 is reserved for `CORE_HISTORY_RESTORE` (dashpay/platform#5220).
+/// Chain truncations are applied before the rest of their round and
+/// atomically with it. Requires the extension slot
+/// `on_persist_wallet_changeset_truncations_fn`, the changeset callback, the
+/// begin/end pair with `ATOMIC_CHANGESETS`, and the host declaring the bit.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_CHAIN_TRUNCATION: u64 = 1 << 14;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -255,6 +262,19 @@ pub type PersistWalletChangesetUtxoVerdictsFn = unsafe extern "C" fn(
     wallet_id: *const u8,
     verdicts: *const UtxoCreditVerdictFFI,
     verdicts_count: usize,
+) -> i32;
+
+/// Carries a round's chain truncations (see [`ChainTruncationFFI`]). Fired
+/// inside the round's begin/end bracket BEFORE every other callback that
+/// carries core wallet state, because the rest of the round describes the
+/// wallet after the last truncation. Fired only on rounds that carry one. A
+/// non-zero return fails the round like any other per-kind callback: a
+/// truncation silently skipped leaves the replaced branch in the store.
+pub type PersistWalletChangesetTruncationsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    truncations: *const ChainTruncationFFI,
+    truncations_count: usize,
 ) -> i32;
 
 /// Persist one identity's optional balance freshness stamp in the same
@@ -406,6 +426,19 @@ pub struct PersistenceCallbacksExtension {
             out_block_time: *mut crate::types::BlockTime,
         ) -> i32,
     >,
+    /// The round's chain truncations (see
+    /// [`PersistWalletChangesetTruncationsFn`]). Appended under the same
+    /// version like the slots above: `struct_size` proves whether a host
+    /// allocated it. A host without it is never handed a truncation and
+    /// cannot attest `CORE_CHAIN_TRUNCATION`.
+    pub on_persist_wallet_changeset_truncations_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            truncations: *const ChainTruncationFFI,
+            truncations_count: usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -423,6 +456,7 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_changeset_utxo_verdicts_fn: None,
             on_persist_identity_balance_block_time_fn: None,
             on_load_identity_balance_block_time_fn: None,
+            on_persist_wallet_changeset_truncations_fn: None,
         }
     }
 }
@@ -441,6 +475,7 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_changeset_utxo_verdicts: Option<PersistWalletChangesetUtxoVerdictsFn>,
     pub persist_identity_balance_block_time: Option<PersistIdentityBalanceBlockTimeFn>,
     pub load_identity_balance_block_time: Option<LoadIdentityBalanceBlockTimeFn>,
+    pub wallet_changeset_truncations: Option<PersistWalletChangesetTruncationsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1372,6 +1407,10 @@ pub struct FFIPersister {
     /// materialises those rows unspent, as every host did before the slot
     /// existed.
     wallet_changeset_utxo_verdicts_callback: Option<PersistWalletChangesetUtxoVerdictsFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated, which is the structural half of
+    /// `CORE_CHAIN_TRUNCATION`.
+    wallet_changeset_truncations_callback: Option<PersistWalletChangesetTruncationsFn>,
     /// Additive tracked-masternode persistence trio (persist / load /
     /// free), likewise extension-negotiated.
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
@@ -1496,6 +1535,7 @@ impl FFIPersister {
             wallet_changeset_chain_lock_height_callback: extensions
                 .wallet_changeset_chain_lock_height,
             wallet_changeset_utxo_verdicts_callback: extensions.wallet_changeset_utxo_verdicts,
+            wallet_changeset_truncations_callback: extensions.wallet_changeset_truncations,
             tracked_masternodes_callbacks: extensions,
             persist_identity_balance_block_time_callback: extensions
                 .persist_identity_balance_block_time,
@@ -1615,6 +1655,20 @@ impl FFIPersister {
                 .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
         {
             capabilities = capabilities.union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
+        }
+        // Same structural proof and same split-transport reasoning as the
+        // sweep bit above: the truncation arrives on its own call, ahead of
+        // the changeset callback whose rows it cuts back, so only a round
+        // that commits or rolls back whole can apply the two together.
+        if self.wallet_changeset_truncations_callback.is_some()
+            && self.callbacks.on_persist_wallet_changeset_fn.is_some()
+            && self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+            && self
+                .declared_capabilities
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::CORE_CHAIN_TRUNCATION);
         }
         #[cfg(feature = "shielded")]
         if self.callbacks.on_persist_shielded_viewing_keys_fn.is_some()
@@ -1987,6 +2041,34 @@ impl PlatformWalletPersistence for FFIPersister {
 
         // Send core wallet changeset (accounts, transactions, UTXOs).
         if let Some(ref core_cs) = changeset.core {
+            // Truncations first: every other callback of this block carries
+            // the wallet as it is after the last of them. A host without
+            // the slot never sees them and cannot attest
+            // `CORE_CHAIN_TRUNCATION`, so the wallet-event adapter withholds
+            // them one layer up.
+            if !core_cs.truncations.is_empty() {
+                if let Some(cb) = self.wallet_changeset_truncations_callback {
+                    let (truncations, _truncation_storage) =
+                        build_chain_truncations_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            truncations.as_ptr(),
+                            truncations.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset chain-truncation persistence callback returned \
+                             error code {}",
+                            result
+                        );
+                        outcome.record(result);
+                    }
+                }
+            }
+
             // Fan out gap-limit-extension addresses BEFORE the wallet
             // changeset itself: the changeset's UTXOs reference these
             // addresses, and the Swift-side `upsertUtxo`'s
@@ -8059,6 +8141,260 @@ mod tests {
         .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
     }
 
+    /// The truncation bit mirrors the sweep bit: the slot is the structural
+    /// proof, and because the truncation travels on its own call it also
+    /// needs the changeset callback it cuts back and a round that commits
+    /// or rolls back whole.
+    #[test]
+    fn should_attest_chain_truncation_only_with_the_slot_the_atomic_round_and_the_declaration() {
+        unsafe extern "C" fn noop_truncations(
+            _ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _truncations: *const ChainTruncationFFI,
+            _truncations_count: usize,
+        ) -> i32 {
+            0
+        }
+        fn attests(
+            callbacks: PersistenceCallbacks,
+            declared: PersistenceCapabilities,
+            truncations: Option<PersistWalletChangesetTruncationsFn>,
+        ) -> bool {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                callbacks,
+                declared,
+                PersistenceExtensionCallbacks {
+                    wallet_changeset_truncations: truncations,
+                    ..Default::default()
+                },
+            )
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::CORE_CHAIN_TRUNCATION)
+        }
+        fn wired_callbacks() -> PersistenceCallbacks {
+            PersistenceCallbacks {
+                on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                ..Default::default()
+            }
+        }
+        let declared = PersistenceCapabilities::CORE_CHAIN_TRUNCATION
+            .union(PersistenceCapabilities::ATOMIC_CHANGESETS);
+
+        assert!(
+            !attests(wired_callbacks(), declared, None),
+            "declared without the slot"
+        );
+        assert!(
+            !attests(
+                PersistenceCallbacks::default(),
+                declared,
+                Some(noop_truncations)
+            ),
+            "no changeset callback to cut back"
+        );
+        assert!(
+            !attests(
+                wired_callbacks(),
+                PersistenceCapabilities::ATOMIC_CHANGESETS,
+                Some(noop_truncations)
+            ),
+            "wired but never declared"
+        );
+        assert!(
+            !attests(
+                wired_callbacks(),
+                PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+                Some(noop_truncations)
+            ),
+            "no atomic round to bracket the two calls"
+        );
+        assert!(
+            !attests(
+                PersistenceCallbacks {
+                    on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                    ..Default::default()
+                },
+                declared,
+                Some(noop_truncations)
+            ),
+            "atomic declared but begin/end not wired"
+        );
+        assert!(attests(wired_callbacks(), declared, Some(noop_truncations)));
+    }
+
+    /// A round's truncations reach the host before anything else it carries
+    /// about core state, in emission order and with payloads intact: the
+    /// changeset that follows describes the wallet after them.
+    #[test]
+    fn should_deliver_truncations_before_the_rest_of_the_round() {
+        use dashcore::hashes::Hash as _;
+        use platform_wallet::changeset::changeset::{ChainTruncation, SweepBatch};
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+            fail_truncations: bool,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let changeset = &*changeset;
+            sink.events.lock().unwrap().push(format!(
+                "changeset synced={:?}",
+                changeset.has_chain.then_some(changeset.chain.synced_height)
+            ));
+            0
+        }
+        unsafe extern "C" fn record_sweeps(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _sweeps: *const SweepBatchFFI,
+            sweeps_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events
+                .lock()
+                .unwrap()
+                .push(format!("sweeps x{sweeps_count}"));
+            0
+        }
+        unsafe extern "C" fn record_truncations(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            truncations: *const ChainTruncationFFI,
+            truncations_count: usize,
+        ) -> i32 {
+            // Null at count 0, as the struct documents.
+            unsafe fn first_bytes(txids: *const [u8; 32], count: usize) -> Vec<u8> {
+                if txids.is_null() {
+                    return Vec::new();
+                }
+                slice::from_raw_parts(txids, count)
+                    .iter()
+                    .map(|txid| txid[0])
+                    .collect()
+            }
+            let sink = &*(ctx as *const Sink);
+            if sink.fail_truncations {
+                return 1;
+            }
+            let mut events = sink.events.lock().unwrap();
+            for truncation in slice::from_raw_parts(truncations, truncations_count) {
+                let restored = if truncation.restored_outpoints.is_null() {
+                    &[][..]
+                } else {
+                    slice::from_raw_parts(
+                        truncation.restored_outpoints,
+                        truncation.restored_outpoints_count,
+                    )
+                };
+                events.push(format!(
+                    "truncation height={} removed={:?} unconfirmed={:?} restored={:?}",
+                    truncation.height,
+                    first_bytes(truncation.txids, truncation.txids_count),
+                    first_bytes(
+                        truncation.unconfirmed_txids,
+                        truncation.unconfirmed_txids_count
+                    ),
+                    restored
+                        .iter()
+                        .map(|o| (o.txid[0], o.vout))
+                        .collect::<Vec<_>>(),
+                ));
+            }
+            0
+        }
+
+        fn txid(byte: u8) -> dashcore::Txid {
+            dashcore::Txid::from_byte_array([byte; 32])
+        }
+        fn round() -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    truncations: vec![
+                        ChainTruncation {
+                            height: 900,
+                            txids: vec![txid(0x11), txid(0x12)],
+                            unconfirmed_txids: vec![txid(0x21)],
+                            restored_outpoints: vec![dashcore::OutPoint::new(txid(0x31), 4)],
+                        },
+                        ChainTruncation {
+                            height: 898,
+                            txids: Vec::new(),
+                            unconfirmed_txids: Vec::new(),
+                            restored_outpoints: Vec::new(),
+                        },
+                    ],
+                    synced_height: Some(899),
+                    sweeps: vec![SweepBatch {
+                        txids: vec![txid(0x41)],
+                        superseded_by: txid(0x42),
+                        winner_mined_height: None,
+                        released_outpoints: Vec::new(),
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }
+        }
+        fn persister(sink: &Sink, with_slot: bool) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: sink as *const Sink as *mut c_void,
+                    on_persist_wallet_changeset_fn: Some(record_changeset),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::NONE,
+                PersistenceExtensionCallbacks {
+                    wallet_changeset_sweeps: Some(record_sweeps),
+                    wallet_changeset_truncations: with_slot.then_some(record_truncations),
+                    ..Default::default()
+                },
+            )
+        }
+
+        let sink = Sink::default();
+        persister(&sink, true)
+            .store([1u8; 32], round())
+            .expect("the round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "truncation height=900 removed=[17, 18] unconfirmed=[33] restored=[(49, 4)]"
+                    .to_string(),
+                "truncation height=898 removed=[] unconfirmed=[] restored=[]".to_string(),
+                "changeset synced=Some(899)".to_string(),
+                "sweeps x1".to_string(),
+            ],
+        );
+
+        // A host whose extension never proved the slot is not handed them.
+        let sink = Sink::default();
+        persister(&sink, false)
+            .store([1u8; 32], round())
+            .expect("the round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset synced=Some(899)".to_string(),
+                "sweeps x1".to_string()
+            ],
+        );
+
+        // A host that could not apply them fails the round.
+        let sink = Sink {
+            fail_truncations: true,
+            ..Sink::default()
+        };
+        assert!(persister(&sink, true).store([1u8; 32], round()).is_err());
+    }
+
     /// The delivery contract of the extension transport itself: a
     /// sweep-carrying round hands its batches to the extension slot AFTER
     /// the changeset callback, within the same round, in emission order and
@@ -8705,6 +9041,16 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_identity_balance_block_time_fn
             ) + std::mem::size_of::<Option<LoadIdentityBalanceBlockTimeFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_truncations_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_truncations_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetTruncationsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -8762,6 +9108,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS,
             PersistenceCapabilities::DASHPAY_PAYMENTS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_CHAIN_TRUNCATION,
+            PersistenceCapabilities::CORE_CHAIN_TRUNCATION.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,

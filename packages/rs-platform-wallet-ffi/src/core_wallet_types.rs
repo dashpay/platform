@@ -420,6 +420,47 @@ pub struct SweepBatchFFI {
     pub winner_mined_height: u32,
 }
 
+/// One chain truncation: a fork replaced the chain above `height` and the
+/// wallet dropped what it recorded from the blocks above it.
+///
+/// Delivered through `PersistenceCallbacksExtension`'s
+/// `on_persist_wallet_changeset_truncations_fn`, for the same layout reason
+/// as [`SweepBatchFFI`]. The entries arrive in the order the wallet emitted
+/// them and **a persister applies them, in sequence, before everything else
+/// the round carries**: the rest of the round describes the wallet after the
+/// last truncation, so a transaction named in `txids` can be stored again,
+/// in its new block, by the changeset callback that follows.
+///
+/// Applying one entry means:
+/// - delete each transaction in `txids` and every UTXO it created;
+/// - keep each transaction in `unconfirmed_txids` as unconfirmed — no block,
+///   outputs unconfirmed and InstantSend-locked, the coins it spent still
+///   spent;
+/// - mark each outpoint in `restored_outpoints` unspent again;
+/// - lower a stored sync height above `height` to `height`.
+///
+/// A transaction or outpoint the persister never stored is a no-op.
+///
+/// # Null at count 0
+///
+/// Each pointer is null when its count is zero. A consumer must check the
+/// pointer before forming a slice from it, as with [`SweepBatchFFI`].
+#[repr(C)]
+pub struct ChainTruncationFFI {
+    /// Height of the last block the fork keeps.
+    pub height: u32,
+    /// Removed transactions, raw 32-byte txids.
+    pub txids: *const [u8; 32],
+    pub txids_count: usize,
+    /// InstantSend-locked transactions kept as unconfirmed, raw 32-byte
+    /// txids.
+    pub unconfirmed_txids: *const [u8; 32],
+    pub unconfirmed_txids_count: usize,
+    /// Coins the removed transactions spent, unspent again.
+    pub restored_outpoints: *const OutPointFFI,
+    pub restored_outpoints_count: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Conversion
 // ---------------------------------------------------------------------------
@@ -775,6 +816,71 @@ pub(crate) fn build_sweep_batches_for_callback(
         .collect();
 
     (batches, storage)
+}
+
+/// Backing storage for one [`ChainTruncationFFI`]'s nested buffers, kept
+/// alive by the caller for the callback window like [`SweepBatchStorage`].
+pub(crate) struct ChainTruncationStorage {
+    txids: Vec<[u8; 32]>,
+    unconfirmed_txids: Vec<[u8; 32]>,
+    restored: Vec<OutPointFFI>,
+}
+
+/// Build the C mirrors of a changeset's truncations for the extension
+/// truncation callback (`on_persist_wallet_changeset_truncations_fn`), in
+/// the wallet's emission order.
+pub(crate) fn build_chain_truncations_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> (Vec<ChainTruncationFFI>, Vec<ChainTruncationStorage>) {
+    fn raw_txids(txids: &[dashcore::Txid]) -> Vec<[u8; 32]> {
+        txids
+            .iter()
+            .map(|txid| {
+                let mut raw = [0u8; 32];
+                raw.copy_from_slice(txid.as_ref());
+                raw
+            })
+            .collect()
+    }
+    // Null at count 0: see `ChainTruncationFFI`.
+    fn ptr_or_null<T>(items: &[T]) -> *const T {
+        if items.is_empty() {
+            std::ptr::null()
+        } else {
+            items.as_ptr()
+        }
+    }
+
+    let storage: Vec<ChainTruncationStorage> = cs
+        .truncations
+        .iter()
+        .map(|truncation| ChainTruncationStorage {
+            txids: raw_txids(&truncation.txids),
+            unconfirmed_txids: raw_txids(&truncation.unconfirmed_txids),
+            restored: truncation
+                .restored_outpoints
+                .iter()
+                .map(OutPointFFI::from)
+                .collect(),
+        })
+        .collect();
+
+    let truncations: Vec<ChainTruncationFFI> = cs
+        .truncations
+        .iter()
+        .zip(storage.iter())
+        .map(|(truncation, backing)| ChainTruncationFFI {
+            height: truncation.height,
+            txids: ptr_or_null(&backing.txids),
+            txids_count: backing.txids.len(),
+            unconfirmed_txids: ptr_or_null(&backing.unconfirmed_txids),
+            unconfirmed_txids_count: backing.unconfirmed_txids.len(),
+            restored_outpoints: ptr_or_null(&backing.restored),
+            restored_outpoints_count: backing.restored.len(),
+        })
+        .collect();
+
+    (truncations, storage)
 }
 
 /// Returns the account "index" the FFI surfaces in `account_index`.
