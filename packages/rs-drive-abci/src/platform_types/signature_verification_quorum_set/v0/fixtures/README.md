@@ -28,21 +28,13 @@ The test decodes the production storage enum and converts it to the runtime
 quorum set, exercising the historical C++-to-DPP key conversion for both lists.
 Expected keys and metadata are asserted independently of the current writer.
 
-To reproduce, copy `generate-quorum-storage-v0.rs` from this directory to
-`packages/rs-drive-abci/examples/generate_quorum_storage_v0.rs` in a separate
-checkout of the commit above, then run from that checkout:
-
-```sh
-cargo run -p drive-abci --example generate_quorum_storage_v0 --all-features --locked -- /data/tmp/quorum-storage-v0.hex
-```
-
-Compare the generated file with the committed fixture. Do not regenerate the
-expected bytes with the migrated backend. The generator explicitly selects V0;
-the ordinary runtime-to-storage conversion writes V2.
+Reproduce all storage fixtures with the [historical generation script](../../../../../../../scripts/historical-test-vectors/README.md).
+Its ignored tests use a pinned checkout; the V0 generator explicitly selects
+V0 while the ordinary runtime-to-storage conversion writes V2.
 
 ## Historical V1/V2 quorum, saved-state and checkpoint records
 
-`generate-quorum-storage.rs` was run against the same pre-migration Platform
+The quorum generator was run against the same pre-migration Platform
 commit above, using `blsful` at `0c34a7a488a0bd1c9a9a2196e793b303ad35c900`.
 The configuration, keys, hashes, indexes and previous-quorum heights are the same
 as the V0 fixture. V1 stores previous keys with the C++ library; V2 stores both
@@ -58,13 +50,6 @@ have identical bytes. `platform-state-v2.hex` contains the per-entry storage
 record; its external collections are empty. These are synthetic historical
 records, not snapshots of a live database.
 
-Copy the generator to `packages/rs-drive-abci/examples/generate_quorum_storage.rs`
-in that historical checkout and run:
-
-```sh
-cargo run -p drive-abci --example generate_quorum_storage --all-features --locked -- /path/to/output-directory
-```
-
 Checksums below include the final newline in each hex file.
 
 | File | Decoded bytes | SHA-256 |
@@ -77,14 +62,9 @@ Checksums below include the final newline in each hex file.
 
 ## Populated GroveDB records
 
-`generate-populated-storage.rs` runs on Platform
+The populated-storage generator runs on Platform
 `6499c680c6bc311e8933f396423a79459e2a88bd`, before #5307, with rust-dashcore
 `40268cc0402a8933ec539f16b2d634c4e25876ad` and the same historical blsful revision.
-Copy it to that checkout's `packages/rs-drive-abci/examples/generate_populated_storage.rs`:
-
-```sh
-cargo run -p drive-abci --example generate_populated_storage --all-features --locked -- /path/to/output
-```
 
 The corresponding `storage_vectors.rs` constants add:
 
