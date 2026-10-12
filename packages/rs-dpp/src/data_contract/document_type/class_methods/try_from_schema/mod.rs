@@ -3296,9 +3296,10 @@ fn validate_rule_limits(
 /// stored document must meet for its owner to delete it
 /// ([`parse_delete_constraints`]). A rule reads what a `propertyConstraints`
 /// rule may read, checked the same way ([`validate_property_constraint_reads`]),
-/// but for the stored version through `$old.`, which its plain paths already
-/// read, and a document a reference points at, which a delete does not check;
-/// under full validation the keyword is held to the same limits, counted
+/// except two refused there: `$old.`, since a delete rule is judged on the
+/// stored document itself and its plain paths already read it ([`stored_path`]),
+/// and a document a reference points at, which a delete does not check; under
+/// full validation the keyword is held to the same limits, counted
 /// apart from `propertyConstraints`. Which type a `countOf` or `sumOf` totals,
 /// and by which keys, is checked with the contract's other types
 /// ([`validate_property_constraint_aggregates`]).
