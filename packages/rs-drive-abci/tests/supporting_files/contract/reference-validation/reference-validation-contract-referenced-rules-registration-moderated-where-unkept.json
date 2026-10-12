@@ -1,0 +1,94 @@
+{
+  "$formatVersion": "1",
+  "id": "FmNtTTiJ9X8sJdKvkpK58yzUAx78PW61bCpwW8dZnpMC",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "moderatorAbilities": {
+        "delete": true,
+        "deleteKeepsFields": [
+          "text"
+        ]
+      },
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "position": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "maxLength": 10,
+          "position": 1
+        }
+      },
+      "required": [
+        "text",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "reply": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "moderatedDocument",
+            "documentType": "post",
+            "where": {
+              "status": {
+                "const": "open"
+              }
+            }
+          },
+          "position": 0
+        },
+        "quote": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId"
+      ],
+      "propertyConstraints": {
+        "quotesThePost": {
+          "anyOf": [
+            {
+              "absent": "quote"
+            },
+            {
+              "equal": [
+                "quote",
+                {
+                  "referenced": [
+                    "postId",
+                    "text"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

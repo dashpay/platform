@@ -28,9 +28,11 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// `{ "startsWith": [a, b] }`, `{ "endsWith": [a, b] }`,
     /// `{ "notIn": [operand, [values]] }`, `{ "min": [a, b, ...] }`,
     /// `{ "max": [a, b, ...] }`, `{ "abs": a }`, `{ "ifThen": [if, then] }`,
-    /// `{ "ifThenElse": [if, then, else] }`, and the totals
+    /// `{ "ifThenElse": [if, then, else] }`, the totals
     /// `{ "countOf": [documentType, filter] }` and
-    /// `{ "sumOf": [documentType, property, filter] }` (the filter optional).
+    /// `{ "sumOf": [documentType, property, filter] }` (the filter optional),
+    /// and `{ "referenced": [reference, path] }`, a value of the document a
+    /// reference of the type points at, wherever a property path stands.
     public let ruleJSON: String
 
     /// Every property the rule reads, in declared order, a property read twice
@@ -40,7 +42,8 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// nor are the system times and heights: see `readsSystem`. A property a
     /// total's filter takes a value from is listed (`category` in
     /// `{ "sumOf": ["listing", "price", { "category": "category" }] }`), the
-    /// total itself is not: see `readsTotals`.
+    /// total itself is not: see `readsTotals`. Nor is a value of a document a
+    /// reference points at: see `readsReferenced`.
     public let reads: [PropertyConstraintRead]
 
     /// Whether the rule reads the document's owner, `$ownerId`, in any branch,
@@ -78,13 +81,28 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// built before the field existed.
     public let readsTotals: [PropertyConstraintTotalRead]
 
+    /// The values the rule reads of the documents the type's references point
+    /// at (`{ "referenced": [reference, path] }`), in declared order, one read
+    /// twice listed twice, every branch included as in `reads`, which leaves
+    /// them out.
+    ///
+    /// The platform reads the referenced document when it checks the
+    /// reference. The pre-check (`SDK.checkDocumentPropertyConstraints`) has
+    /// no referenced document, so it does not judge a rule reading one: such
+    /// a rule can still refuse a document the pre-check passes.
+    ///
+    /// Empty for a rule reading none, and for every rule reported by a library
+    /// built before the field existed.
+    public let readsReferenced: [PropertyConstraintReferencedRead]
+
     public init(
         name: String,
         ruleJSON: String,
         reads: [PropertyConstraintRead],
         readsOwner: Bool,
         readsSystem: [String] = [],
-        readsTotals: [PropertyConstraintTotalRead] = []
+        readsTotals: [PropertyConstraintTotalRead] = [],
+        readsReferenced: [PropertyConstraintReferencedRead] = []
     ) {
         self.name = name
         self.ruleJSON = ruleJSON
@@ -92,6 +110,7 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
         self.readsOwner = readsOwner
         self.readsSystem = readsSystem
         self.readsTotals = readsTotals
+        self.readsReferenced = readsReferenced
     }
 
     /// `ruleJSON` indented for display, or `ruleJSON` itself should it not
@@ -122,7 +141,8 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
                   let reads = rule["reads"] as? [Any],
                   let readsOwner = DocumentTypedArray.jsonBool(rule["readsOwner"]),
                   let readsSystem = systemReads(rule["readsSystem"]),
-                  let readsTotals = totalReads(rule["readsTotals"])
+                  let readsTotals = totalReads(rule["readsTotals"]),
+                  let readsReferenced = referencedReads(rule["readsReferenced"])
             else {
                 throw SDKError.serializationError("Malformed propertyConstraints rule: \(entry)")
             }
@@ -132,7 +152,8 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
                 reads: try reads.map(PropertyConstraintRead.init(jsonEntry:)),
                 readsOwner: readsOwner,
                 readsSystem: readsSystem,
-                readsTotals: readsTotals
+                readsTotals: readsTotals,
+                readsReferenced: readsReferenced
             )
         }
     }
@@ -140,41 +161,41 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// A rule's `readsSystem` names, `[]` when the key is missing (a library
     /// built before it), or `nil` for anything but an array of strings.
     private static func systemReads(_ value: Any?) -> [String]? {
-        guard let value else {
-            return []
-        }
-        guard let entries = value as? [Any] else {
-            return nil
-        }
-        var names: [String] = []
-        names.reserveCapacity(entries.count)
-        for entry in entries {
-            guard let name = entry as? String else {
-                return nil
-            }
-            names.append(name)
-        }
-        return names
+        entries(value) { $0 as? String }
     }
 
     /// A rule's `readsTotals`, `[]` when the key is missing (a library built
     /// before it), or `nil` for anything but an array of well-formed totals.
     private static func totalReads(_ value: Any?) -> [PropertyConstraintTotalRead]? {
+        entries(value, PropertyConstraintTotalRead.init(jsonEntry:))
+    }
+
+    /// A rule's `readsReferenced`, `[]` when the key is missing (a library
+    /// built before it), or `nil` for anything but an array of well-formed
+    /// reads.
+    private static func referencedReads(_ value: Any?) -> [PropertyConstraintReferencedRead]? {
+        entries(value, PropertyConstraintReferencedRead.init(jsonEntry:))
+    }
+
+    /// The entries of a rule's optional `reads...` key, each decoded by
+    /// `make`: `[]` when the key is missing (a library built before it), or
+    /// `nil` when the value is not an array or `make` refuses an entry.
+    private static func entries<T>(_ value: Any?, _ make: (Any) -> T?) -> [T]? {
         guard let value else {
             return []
         }
-        guard let entries = value as? [Any] else {
+        guard let array = value as? [Any] else {
             return nil
         }
-        var totals: [PropertyConstraintTotalRead] = []
-        totals.reserveCapacity(entries.count)
-        for entry in entries {
-            guard let total = PropertyConstraintTotalRead(jsonEntry: entry) else {
+        var decoded: [T] = []
+        decoded.reserveCapacity(array.count)
+        for entry in array {
+            guard let item = make(entry) else {
                 return nil
             }
-            totals.append(total)
+            decoded.append(item)
         }
-        return totals
+        return decoded
     }
 }
 
@@ -258,6 +279,41 @@ public struct PropertyConstraintTotalRead: Equatable, Sendable {
             filter.append(key)
         }
         self.init(kind: Kind(name: kind), documentType: documentType, property: property, filter: filter)
+    }
+}
+
+/// A value a `propertyConstraints` rule reads of the document a reference of
+/// the type points at, `{ "referenced": [reference, path] }`. The fields mirror
+/// wasm-dpp2's `PropertyConstraintReferencedRead` key for key.
+public struct PropertyConstraintReferencedRead: Equatable, Sendable {
+    /// The top-level property of the document type holding the reference.
+    public let reference: String
+    /// The field of the referenced document: a dotted property path of its
+    /// type, `$id`, `$ownerId`, `$creatorId`, or a time or height it records
+    /// (`$createdAt`, ...).
+    public let path: String
+    /// How the rule reads the field, by the kinds `reads` uses: an
+    /// identifier (`$id`, `$ownerId`, `$creatorId`) as `.identifier`, a time
+    /// or height as `.value`.
+    public let kind: PropertyConstraintRead.Kind
+
+    public init(reference: String, path: String, kind: PropertyConstraintRead.Kind) {
+        self.reference = reference
+        self.path = path
+        self.kind = kind
+    }
+
+    /// A `readsReferenced` entry, or `nil` for one that is no object, or
+    /// lacks `reference`, `path` or `kind` or holds one that is not a string.
+    init?(jsonEntry entry: Any) {
+        guard let read = entry as? [String: Any],
+              let reference = read["reference"] as? String,
+              let path = read["path"] as? String,
+              let kind = read["kind"] as? String
+        else {
+            return nil
+        }
+        self.init(reference: reference, path: path, kind: PropertyConstraintRead.Kind(name: kind))
     }
 }
 
@@ -475,12 +531,14 @@ extension SDK {
     /// records as `$createdAt`, `$updatedAt` and `$transferredAt`, and a rule
     /// reading a block height (a `readsSystem` name ending in `BlockHeight`
     /// or `CoreBlockHeight`) is not judged at all. Nor is a rule reading a
-    /// `countOf` or `sumOf` total (its `readsTotals` not empty): the platform
-    /// reads the total from state when the document is sent, and this check
-    /// reads no state. So `nil` does not promise consensus accepts the
-    /// document: a rule reading a block height or a total, or a time rule the
-    /// device clock judges differently from the block time, can still refuse
-    /// it.
+    /// `countOf` or `sumOf` total (its `readsTotals` not empty), or a value of
+    /// a document a reference points at (its `readsReferenced` not empty): the
+    /// platform reads the total from state when the document is sent, and the
+    /// referenced document when it checks the reference, and this check reads
+    /// no state. So `nil` does not promise consensus accepts the document: a
+    /// rule reading a block height, a total or a referenced document, or a
+    /// time rule the device clock judges differently from the block time, can
+    /// still refuse it.
     ///
     /// - Throws: `SDKError.invalidParameter` for an owner id that is not 32
     ///   bytes or properties that are not a JSON object, `SDKError.notFound` for

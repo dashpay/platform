@@ -191,8 +191,8 @@ extension PersistentDocumentType {
     /// `SDK.checkDocumentPropertyConstraints(serializedContract:documentType:propertiesJSON:ownerId:)`
     /// reports for the parent contract's stored platform serialization. As
     /// there, the device clock stands in for the create's block time, and a
-    /// rule reading a block height or a `countOf` or `sumOf` total is not
-    /// judged.
+    /// rule reading a block height, a `countOf` or `sumOf` total or a value of
+    /// a referenced document is not judged.
     ///
     /// - Throws: `SDKError.invalidState` when the parent contract has no
     ///   stored serialization, or what the SDK call throws.

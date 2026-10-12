@@ -48,6 +48,7 @@ use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::document::preallocation_bindings_targeting;
+use crate::drive::document::referenced_tree_key_for_referring_property;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -242,8 +243,9 @@ impl Drive {
                 )))?;
             // `$id` for the referring property; the agreed referenced
             // property otherwise — validated at contract registration to
-            // share one value kind with the referring side, so the encoded
-            // bytes match what an entry insert would write.
+            // share one value kind with the referring side, and keyed below
+            // as the referring type keys it, so the bytes match what an
+            // entry insert would write.
             let (source_property, source_type) = match *key_source {
                 PreallocatedKeySource::ReferencedDocumentId => ("$id", target_document_type),
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced) => {
@@ -298,6 +300,21 @@ impl Drive {
                 // the fallback.
                 return Ok(());
             }
+            let value_key = match (*key_source, value_key) {
+                (PreallocatedKeySource::ReferencedDocumentProperty(referenced), Key(key))
+                    if document_info.get_borrowed_document().is_some() =>
+                {
+                    Key(referenced_tree_key_for_referring_property(
+                        key,
+                        target_document_type,
+                        referenced,
+                        referring_type,
+                        property_name,
+                        platform_version,
+                    )?)
+                }
+                (_, value_key) => value_key,
+            };
             resolved_levels.push((property_name, sub_level, value_key));
             current_level = sub_level;
         }

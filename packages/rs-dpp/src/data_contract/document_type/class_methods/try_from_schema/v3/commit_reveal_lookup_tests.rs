@@ -249,6 +249,7 @@ fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: None,
             document_type_name: "preorder".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
             lookup: dpns_lookup(Some(1), true),
         }
@@ -300,6 +301,7 @@ fn should_parse_an_owner_keyed_reveal_on_a_transferable_type_and_let_it_consume(
             contract_id: None,
             document_type_name: "preorder".to_string(),
             property_agreement: BTreeMap::new(),
+            where_conditions: Default::default(),
             lookup,
         }
     );
@@ -752,6 +754,7 @@ fn should_consume_a_commitment_only_a_consume_deletes() {
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id: None,
             document_type_name: "preorder".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::from([("$ownerId".to_string(), "$ownerId".to_string())]),
             lookup: dpns_lookup(Some(1), true),
         }
@@ -1320,4 +1323,41 @@ fn should_accept_a_find_by_function_reading_the_writer_on_a_type_that_can_change
         assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
         assert!(lookup.is_checked_on_create_only(true));
     }
+}
+
+#[test]
+fn should_refuse_a_where_bound_a_later_write_changes_beside_a_function() {
+    // A reveal is judged when the document is created only, so an ordering
+    // bounded by `$updatedAt`, which every replace moves, would go unchecked
+    // after the create; one bounded by the create's own time is fixed with it
+    let bounded_by = |bound: &str| {
+        contract(dpns_contract_with(
+            salt_reveal(json!({}), json!({ "deadline": { "greaterThan": bound } })),
+            json!({
+                "documentsMutable": true,
+                "immutable": ["label", "normalizedLabel", "parentDomainName"],
+                "required": [
+                    "label", "normalizedLabel", "parentDomainName", "preorderSalt",
+                    "$createdAt", "$updatedAt"
+                ]
+            }),
+            json!({
+                "properties": {
+                    "saltedDomainHash": {
+                        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                        "position": 0
+                    },
+                    "deadline": {
+                        "type": "integer", "minimum": 0, "maximum": 9007199254740991u64,
+                        "position": 1
+                    }
+                }
+            }),
+        ))
+    };
+    assert_refused(
+        bounded_by("$updatedAt"),
+        "is bounded by \"$updatedAt\" beside a findBy function",
+    );
+    bounded_by("$createdAt").expect("a time of the create is fixed with it");
 }
