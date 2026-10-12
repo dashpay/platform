@@ -963,6 +963,141 @@ fn should_count_trees_keyed_by_the_document_id_as_new_and_unrefunded() {
 }
 
 #[test]
+fn should_key_preallocated_trees_as_the_referring_type_does() {
+    // The post's u8 `tier` ends an index range-summing an i8 `weight`, so the
+    // post keys it the earlier way (5 as `0x85`); the like's own `tier`,
+    // which its preallocated index binds to the post's, is keyed big-endian
+    // (`0x05`). The trees the post preallocates are the ones its likes use.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "tier": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "weight": { "type": "integer", "minimum": -100, "maximum": 100, "position": 1 },
+            },
+            "indices": [{
+                "name": "byTier",
+                "properties": [{ "tier": "asc" }],
+                "summable": "weight",
+                "rangeSummable": true,
+            }],
+            "required": ["tier", "weight"],
+            "additionalProperties": false,
+        },
+        "like": {
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "tier": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "where": { "tier": "tier" },
+                    },
+                    "position": 1,
+                },
+            },
+            "indices": [{
+                "name": "byTierPost",
+                "properties": [{ "tier": "asc" }, { "postId": "asc" }],
+                "countable": "countable",
+                "preallocated": true,
+            }],
+            "required": ["tier", "postId"],
+            "additionalProperties": false,
+        },
+    }));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract.document_type_for_name("post").expect("post");
+    let like_type = contract.document_type_for_name("like").expect("like");
+    let tier = Value::U8(5);
+    assert_eq!(
+        post_type
+            .serialize_value_for_key("tier", &tier, platform_version)
+            .expect("expected the post's key"),
+        vec![0x85]
+    );
+
+    let mut post = post_type
+        .random_document(Some(1), platform_version)
+        .expect("expected a post");
+    post.set_properties(BTreeMap::from([
+        ("tier".to_string(), tier.clone()),
+        ("weight".to_string(), Value::I8(-3)),
+    ]));
+    let post_id = post.id().to_vec();
+    let writes = writes_of(&contract, post_type, &post);
+    let preallocated_tiers: Vec<&[u8]> = writes
+        .iter()
+        .filter(|write| write.referring_type.is_some() && write.path == [b"tier".to_vec()])
+        .map(|write| write.key.as_slice())
+        .collect();
+    assert_eq!(preallocated_tiers, [[0x05]], "the like's key for tier 5");
+    let cost = document_create_cost(
+        &contract,
+        post_type,
+        &post,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+    let fee = insert(&drive, &contract, post_type, &post).expect("expected to insert the post");
+    assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+    for write in &writes {
+        assert!(
+            exists(&drive, &contract, "post", write),
+            "expected the insert to write {write:?}"
+        );
+    }
+    assert!(element(&drive, &contract, "like", &[b"tier".to_vec()], &[0x85]).is_none());
+
+    let mut like = like_type
+        .random_document(Some(2), platform_version)
+        .expect("expected a like");
+    like.set_properties(BTreeMap::from([
+        ("tier".to_string(), tier),
+        (
+            "postId".to_string(),
+            Value::Identifier(post.id().to_buffer()),
+        ),
+    ]));
+    insert(&drive, &contract, like_type, &like).expect("expected to insert the like");
+    assert!(
+        element(&drive, &contract, "like", &[b"tier".to_vec()], &[0x85]).is_none(),
+        "the like's entry is under the preallocated trees, not beside them"
+    );
+    assert!(element(
+        &drive,
+        &contract,
+        "like",
+        &[b"tier".to_vec(), vec![0x05], b"postId".to_vec(), post_id],
+        &[0],
+    )
+    .is_some());
+}
+
+#[test]
 fn should_refuse_an_earlier_protocol_version() {
     let platform_version = PlatformVersion::latest();
     let contract = contract_with(platform_value!({ "note": note_schema() }));

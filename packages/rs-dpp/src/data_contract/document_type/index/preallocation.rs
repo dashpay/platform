@@ -56,10 +56,11 @@ pub enum PreallocatedKeySource<'a> {
     /// its value is the named property of the referenced document, which may
     /// be one of its `$ownerId` and `$creatorId` system identifiers as well
     /// as a schema property. The two sides are validated to share one value
-    /// kind, so encoding the referenced document's value yields the same key
-    /// bytes the referring side would produce; the insert path resolves the
-    /// name through the same document accessor the entry walkers key by,
-    /// which serves the two system names alongside the schema properties.
+    /// kind; the insert path resolves the name through the same document
+    /// accessor the entry walkers key by, which serves the two system names
+    /// alongside the schema properties, then keys the value as the referring
+    /// type keys its property (an unsigned integer can be keyed in a
+    /// different generation on each side).
     ReferencedDocumentProperty(&'a str),
 }
 
