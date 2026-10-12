@@ -3180,9 +3180,12 @@ impl DocumentPropertyType {
     /// The tree key of a value as `serialize_value_for_key` 0 (protocol
     /// version 13 and earlier) writes it. It flips the top bit of an unsigned
     /// integer as for a signed one, so an unsigned property's values from the
-    /// middle of its range up sort below the rest; from protocol version 14 a
-    /// property is keyed by [`Self::encode_value_for_tree_keys_v1`]. Still
-    /// the encoding of an indexOnly entry payload, which is a value, not a key.
+    /// middle of its range up sort below the rest; from protocol version 14
+    /// most properties are keyed by [`Self::encode_value_for_tree_keys_v1`].
+    /// Still the key of the `$` system fields, of a property ending an index
+    /// that range-sums values that can be negative, and of a contested
+    /// index's values in its vote poll, and the encoding of an indexOnly
+    /// entry payload, which is a value, not a key.
     pub fn encode_value_for_tree_keys(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
         if value.is_null() {
             return Ok(vec![]);

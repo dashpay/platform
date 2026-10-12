@@ -832,8 +832,11 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// Generation 1 keys a property or derived index property of an unsigned
     /// integer type by its plain big-endian bytes
     /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
-    /// sort as its values do. Every other key is generation 0's, the `$`
-    /// system fields included: the timestamps and heights they hold never
+    /// sort as its values do, except one that keeps generation 0's keys
+    /// because it ends an index range-summing values that can be negative
+    /// ([`Self::unsigned_integer_tree_key_property_type`]). Every other key is
+    /// generation 0's, the `$` system fields included: the timestamps and
+    /// heights they hold never
     /// reach the top bit that generation 0 flips, so their keys already sort
     /// as their values do (a query bound past that bit still sorts out of
     /// place, as before).

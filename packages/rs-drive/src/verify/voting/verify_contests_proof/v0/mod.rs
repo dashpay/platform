@@ -75,6 +75,7 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                     // like this  <------ start index values (path) --->    Key
                     // properties ------- --------- --------- ----------  -------
                     let inner_path_value_bytes = path.remove(result_path_index.unwrap());
+                    // Edited in place, as above: the same values before protocol version 14
                     document_type
                         .deserialize_value_for_vote_poll_key(
                             property_name_being_searched.name.as_str(),

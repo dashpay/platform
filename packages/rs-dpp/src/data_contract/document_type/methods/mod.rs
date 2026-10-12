@@ -774,10 +774,11 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         }
     }
 
-    /// Whether `key_name`, a property or derived index property, is keyed as
-    /// an unsigned integer: the keys the generations of
-    /// [`Self::serialize_value_for_key`] write differently.
-    fn has_unsigned_integer_tree_key(&self, key_name: &str) -> bool {
+    /// Whether the generations of [`Self::serialize_value_for_key`] key
+    /// `key_name`, a property or derived index property, differently: an
+    /// unsigned integer that does not keep generation 0's keys
+    /// ([`Self::unsigned_integer_tree_key_property_type`]).
+    fn tree_keys_differ_between_generations(&self, key_name: &str) -> bool {
         self.unsigned_integer_tree_key_property_type(key_name)
             .is_some()
     }
@@ -1774,11 +1775,22 @@ mod tests {
                 platform_version,
             );
             let document_type = document_type.as_ref();
+            let key = document_type
+                .serialize_value_for_key("grade", &Value::U8(200), platform_version)
+                .expect("a u8 grade is keyed");
+            // The conversions between the generations: the key as generation
+            // 0 wrote it, and the generation-0 key as the current one writes it
+            let in_generation_0 = document_type
+                .tree_key_in_generation_0("grade", &key, platform_version)
+                .expect("a key in generation 0");
+            let from_generation_0 = document_type
+                .tree_key_from_generation_0("grade", &[0x48], platform_version)
+                .expect("a key from generation 0");
             (
-                document_type
-                    .serialize_value_for_key("grade", &Value::U8(200), platform_version)
-                    .expect("a u8 grade is keyed"),
-                document_type.has_unsigned_integer_tree_key("grade"),
+                key,
+                document_type.tree_keys_differ_between_generations("grade"),
+                in_generation_0,
+                from_generation_0,
             )
         };
         let signed =
@@ -1787,17 +1799,17 @@ mod tests {
             platform_value!({"type": "integer", "minimum": 0, "maximum": 10, "position": 1});
         assert_eq!(
             grade_200(signed.clone(), true),
-            (vec![0x48], false),
-            "values of both signs range-summed: generation 0's key"
+            (vec![0x48], false, vec![0x48], vec![0x48]),
+            "values of both signs range-summed: generation 0's key, which the conversions keep"
         );
         assert_eq!(
             grade_200(signed, false),
-            (vec![0xC8], true),
+            (vec![0xC8], true, vec![0x48], vec![0xC8]),
             "summed without range sums: generation 1's key"
         );
         assert_eq!(
             grade_200(unsigned, true),
-            (vec![0xC8], true),
+            (vec![0xC8], true, vec![0x48], vec![0xC8]),
             "range-summed values that are never negative: generation 1's key"
         );
     }
@@ -1931,11 +1943,15 @@ mod tests {
                 .expect("converts"),
             height
         );
-        assert!(at(new).as_ref().has_unsigned_integer_tree_key("grade"));
-        assert!(!at(new).as_ref().has_unsigned_integer_tree_key("delta"));
+        assert!(at(new)
+            .as_ref()
+            .tree_keys_differ_between_generations("grade"));
         assert!(!at(new)
             .as_ref()
-            .has_unsigned_integer_tree_key("$createdAtBlockHeight"));
+            .tree_keys_differ_between_generations("delta"));
+        assert!(!at(new)
+            .as_ref()
+            .tree_keys_differ_between_generations("$createdAtBlockHeight"));
     }
 
     #[test]
