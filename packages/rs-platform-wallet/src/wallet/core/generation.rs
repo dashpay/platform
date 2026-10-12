@@ -38,6 +38,7 @@ impl Drop for TeardownRequest {
 /// [`WalletGeneration::teardown_guard`]). Owned: it may outlive the
 /// `Arc<WalletGeneration>` binding it was taken from.
 #[derive(Debug)]
+#[must_use = "the gate is released as soon as the guard is dropped"]
 pub struct TeardownGuard {
     _gate: OwnedRwLockWriteGuard<()>,
     _request: TeardownRequest,
@@ -505,6 +506,14 @@ impl WalletGeneration {
         let mut leaving = self.leaving.subscribe();
         // Fails only without a sender, which `self` holds: stop then, too.
         let _ = leaving.wait_for(|asking| *asking > 0).await;
+    }
+
+    /// Resolves once no teardown is asking for this generation's gate or
+    /// holding it: the removal is done — the generation is then no longer
+    /// registered — or was given up.
+    pub(crate) async fn teardown_over(&self) {
+        let mut leaving = self.leaving.subscribe();
+        let _ = leaving.wait_for(|asking| *asking == 0).await;
     }
 
     /// Whether some operation is inside the gate right now.
@@ -1614,8 +1623,11 @@ mod teardown_request_tests {
         drop(payment);
         let guard = teardown.await;
         assert!(is_requested(&generation).await, "inside");
+        let mut over = Box::pin(generation.teardown_over());
+        assert!(timeout(SETTLED, &mut over).await.is_err(), "not over yet");
         drop(guard);
         assert!(!is_requested(&generation).await);
+        over.await;
     }
 
     /// A teardown given up while it waits for the gate leaves no trace: the
