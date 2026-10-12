@@ -953,3 +953,149 @@ fn should_reject_a_pool_row_filed_under_a_pool_its_account_does_not_have() {
         "core pool row names a pool its account does not have",
     );
 }
+
+/// Two contacts share an account label, index and key class; only the
+/// identity pair tells their stored pools apart. They are given different
+/// states at the same indices, so a row read under the wrong contact shows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_restore_each_dashpay_contact_pool_under_its_own_identity_pair() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let contact = |friend: u8| AccountType::DashpayReceivingFunds {
+        index: 0,
+        user_identity_id: [0x21; 32],
+        friend_identity_id: [friend; 32],
+    };
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    for friend in [0x31, 0x32] {
+        wallet.add_account(contact(friend), None).unwrap();
+    }
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let mut expected = Vec::new();
+    for (friend, funded, reserved_at) in [(0x31, true, 111), (0x32, false, 222)] {
+        let account_type = contact(friend);
+        let source = account_key_source(&wallet, account_type);
+        let addresses = with_pool(&mut info, account_type, AddressPoolType::Absent, |pool| {
+            if funded {
+                let first = pool.next_unused(&source, true).unwrap();
+                assert!(pool.mark_used(&first));
+            }
+            pool.next_unused_and_reserve(&source, reserved_at).unwrap();
+            pool.addresses.clone()
+        });
+        expected.push((account_type, addresses));
+    }
+    let state_at = |contact: usize, index: u32| expected[contact].1[&index].state;
+    assert_eq!(state_at(0, 0), AddressState::Used);
+    assert_eq!(state_at(0, 1), AddressState::Reserved { at: 111 });
+    assert_eq!(state_at(1, 0), AddressState::Reserved { at: 222 });
+    assert_eq!(state_at(1, 1), AddressState::Available);
+    assert_ne!(expected[0].1[&0].address, expected[1].1[&0].address);
+
+    let (persister, _tmp, path) = common::fresh_persister();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    drop(persister);
+    let manager = manager(SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap()).await;
+    let wm = manager.wallet_manager_arc();
+    let mut wm = wm.write().await;
+    let restored = &mut wm
+        .get_wallet_info_mut(&wallet.wallet_id)
+        .unwrap()
+        .core_wallet;
+    for (account_type, addresses) in expected {
+        with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
+            for (index, expected) in &addresses {
+                let actual = pool.addresses.get(index).expect("stored contact address");
+                assert_eq!(actual.state, expected.state, "{account_type:?} #{index}");
+                assert_eq!(
+                    actual.address, expected.address,
+                    "{account_type:?} #{index}"
+                );
+                assert_eq!(actual.path, expected.path, "{account_type:?} #{index}");
+                assert_eq!(actual.public_key, expected.public_key);
+            }
+        });
+    }
+    drop(wm);
+    assert!(manager.shutdown().await.all_clean());
+}
+
+/// A stored key of another curve than its account's.
+#[test]
+fn should_reject_a_pool_row_whose_key_type_is_not_its_accounts() {
+    assert_pool_corruption_is_typed_and_isolated(
+        |_, _| {
+            "UPDATE core_address_pool SET key_type = 2, public_key = zeroblob(48) \
+             WHERE wallet_id = ?1 AND account_type = 'identity_invitation' AND address_index = 0"
+                .to_string()
+        },
+        "core pool key type does not match its account",
+    );
+}
+
+/// A stored address the account derives differently at that index.
+#[test]
+fn should_reject_a_pool_row_whose_address_is_not_the_derived_one() {
+    assert_pool_corruption_is_typed_and_isolated(
+        |_, _| {
+            format!(
+                "UPDATE core_address_pool SET script = X'76a914{}88ac' \
+                 WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
+                   AND address_index = 0",
+                "42".repeat(20),
+            )
+        },
+        "core pool row conflicts with its derived address or key",
+    );
+}
+
+/// A stored key the account derives differently at that index, under the
+/// right address.
+#[test]
+fn should_reject_a_pool_row_whose_key_is_not_the_derived_one() {
+    assert_pool_corruption_is_typed_and_isolated(
+        |_, _| {
+            format!(
+                "UPDATE core_address_pool SET public_key = X'02{}' \
+                 WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
+                   AND address_index = 0",
+                "11".repeat(32),
+            )
+        },
+        "core pool row conflicts with its derived address or key",
+    );
+}
+
+/// The platform-node pool is hardened, so its rows cannot be re-derived and
+/// are trusted as stored. One address filed at two indices is the
+/// contradiction that can still be caught there.
+#[test]
+fn should_reject_a_platform_node_address_stored_at_two_indices() {
+    assert_pool_corruption_is_typed_and_isolated(
+        |wallet, info| {
+            let keys =
+                platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
+                    wallet,
+                    Network::Testnet,
+                    3,
+                )
+                .unwrap();
+            platform_wallet::wallet::provider_key_at_index::populate_platform_node_pool(
+                info,
+                &keys,
+                Network::Testnet,
+            )
+            .unwrap();
+            "UPDATE core_address_pool SET script = ( \
+                 SELECT script FROM core_address_pool \
+                 WHERE wallet_id = ?1 AND account_type = 'provider_platform' \
+                   AND address_index = 0) \
+             WHERE wallet_id = ?1 AND account_type = 'provider_platform' AND address_index = 1"
+                .to_string()
+        },
+        "core pool address has multiple derivation indices",
+    );
+}
