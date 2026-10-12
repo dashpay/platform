@@ -257,6 +257,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                      does not derive; their accounts will be rebuilt"
                 );
             }
+            // A backend that cannot keep markers durably never had one written
+            // by this process, and one it hands back may name an account it
+            // did not keep: none is trusted, so the sweep rebuilds each
+            // outbound account once, as before the marker was persisted.
+            if !crate::changeset::persists_outbound_account_markers(&*self.persister) {
+                let cleared = clear_restored_outbound_markers(&mut platform_info);
+                if cleared > 0 {
+                    tracing::info!(
+                        wallet_id = %hex::encode(expected_wallet_id),
+                        contacts = cleared,
+                        "load: this backend does not keep outbound-account markers durably; \
+                         restored markers are not trusted"
+                    );
+                }
+            }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
             // chainlock dispatcher promotion-evicts a restored spender
@@ -1419,6 +1434,31 @@ fn distrust_markers_of_foreign_external_pools(
             .and_then(|established| established.external_account_reference.take());
         if marker.is_some() {
             cleared += 1;
+        }
+    }
+    cleared
+}
+
+/// Clear every restored outbound-account marker on `info`. Returns how many
+/// were set.
+fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
+    let mut cleared = 0;
+    for owner in info.identity_manager.identity_ids() {
+        let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+            continue;
+        };
+        let contacts: Vec<Identifier> = managed
+            .dashpay()
+            .established_contacts()
+            .keys()
+            .copied()
+            .collect();
+        for contact in contacts {
+            if let Some(established) = managed.established_contact_mut(&contact) {
+                if established.external_account_reference.take().is_some() {
+                    cleared += 1;
+                }
+            }
         }
     }
     cleared

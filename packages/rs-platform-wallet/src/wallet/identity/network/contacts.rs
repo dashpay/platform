@@ -579,18 +579,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // The payload must still be the contact's live request. The durable
         // marker is bound to it in the same round as the account only where
-        // that round is all-or-nothing: an inline store that attests atomic
-        // changesets. A backend without that guarantee can reject the account
-        // and pool yet keep the contact row, leaving the live request's marker
-        // beside the previous account it still holds — which a restart would
-        // trust. There the marker keeps its old order: the caller stamps it
-        // (`note_external_account_registered`) only after this round succeeded
-        // (dashpay/platform#4302 review).
-        let binds_marker = self.persister.store_commits_inline()
-            && self
-                .persister
-                .persistence_capabilities()
-                .contains(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS);
+        // the backend keeps markers durably at all
+        // (`persists_outbound_account_markers`: an inline, atomic round that
+        // writes accounts and pools). A backend without that guarantee could
+        // reject or drop the account and pool yet keep the contact row,
+        // leaving the live request's marker beside the previous account —
+        // which a restart would trust. There the marker stays in memory only:
+        // the caller stamps it once this round succeeded, and every contact
+        // row written to that backend omits it (dashpay/platform#4302 review).
+        let binds_marker = self.persister.persists_outbound_account_markers();
         let bound_contact = match info
             .identity_manager
             .managed_identity(our_identity_id)

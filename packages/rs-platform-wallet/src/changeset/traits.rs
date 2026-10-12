@@ -172,6 +172,32 @@ impl PersistenceError {
     }
 }
 
+/// Whether a contact's outbound-account marker
+/// (`EstablishedContact::external_account_reference`) can be kept on
+/// `persister` and trusted after a restart.
+///
+/// A restored marker suppresses the cold-start rebuild of the contact's
+/// outbound account, so it may only reach disk where the account it names is
+/// durably written with it: a backend whose `store` is the commit
+/// ([`store_commits_inline`](PlatformWalletPersistence::store_commits_inline)),
+/// whose rounds are all-or-nothing
+/// ([`ATOMIC_CHANGESETS`](PersistenceCapabilities::ATOMIC_CHANGESETS)), and
+/// that persists account registrations and their address pools
+/// ([`ACCOUNT_ADDRESS_POOLS`](PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)).
+/// On any other backend the marker is kept in memory only: contact rows are
+/// written without it and a restored one is not trusted, so each launch
+/// rebuilds the account once — the behaviour before the marker was persisted.
+pub fn persists_outbound_account_markers<P>(persister: &P) -> bool
+where
+    P: PlatformWalletPersistence + ?Sized,
+{
+    persister.store_commits_inline()
+        && persister.persistence_capabilities().contains(
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS),
+        )
+}
+
 /// Storage backend for [`PlatformWalletChangeSet`] deltas.
 ///
 /// The persister persists what the changeset carries — nothing more,

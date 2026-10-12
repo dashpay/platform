@@ -8974,6 +8974,56 @@ mod tests {
         }
     }
 
+    /// An atomic FFI host keeps outbound-account markers on disk only when it
+    /// also wires both account writers: `ACCOUNT_ADDRESS_POOLS` is derived
+    /// from them, and a host without them would acknowledge an account it
+    /// never stored beside a marker naming it (dashpay/platform#4302 review).
+    #[test]
+    fn outbound_markers_need_an_atomic_host_with_account_writers() {
+        use platform_wallet::changeset::persists_outbound_account_markers;
+
+        unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        unsafe extern "C" fn accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn pools(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountAddressPoolFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let declared = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS);
+        let host = |registrations: bool, address_pools: bool| {
+            FFIPersister::new_with_persistence_capabilities(
+                PersistenceCallbacks {
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    on_persist_account_registrations_fn: registrations.then_some(accounts as _),
+                    on_persist_account_address_pools_fn: address_pools.then_some(pools as _),
+                    ..PersistenceCallbacks::default()
+                },
+                declared,
+            )
+        };
+        assert!(!persists_outbound_account_markers(&host(false, false)));
+        assert!(!persists_outbound_account_markers(&host(true, false)));
+        assert!(!persists_outbound_account_markers(&host(false, true)));
+        assert!(persists_outbound_account_markers(&host(true, true)));
+    }
+
     /// Why the outbound-account marker may ride an account's round only on
     /// an atomic host: without begin/end brackets `FFIPersister` cannot claim
     /// `ATOMIC_CHANGESETS` even when the host declares it, and it carries on

@@ -65,5 +65,6 @@ pub use shielded_changeset_disabled::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 pub use traits::{
-    ListedCoreTxid, PersistenceError, PersistenceErrorKind, PlatformWalletPersistence,
+    persists_outbound_account_markers, ListedCoreTxid, PersistenceError, PersistenceErrorKind,
+    PlatformWalletPersistence,
 };

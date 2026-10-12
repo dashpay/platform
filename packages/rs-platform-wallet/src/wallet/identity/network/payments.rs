@@ -1917,6 +1917,9 @@ mod tests {
         fail_flushes: Mutex<bool>,
         /// When set, the backend does not attest `ATOMIC_CHANGESETS`.
         non_atomic: Mutex<bool>,
+        /// When set, the backend does not attest `ACCOUNT_ADDRESS_POOLS`: it
+        /// has no account writer (or only a no-op one).
+        no_account_writer: Mutex<bool>,
         /// When set, a round carrying both a cursor and a backfill record
         /// keeps the record and then fails on the cursor — the partial write
         /// a non-atomic backend is allowed to leave.
@@ -1938,11 +1941,18 @@ mod tests {
         }
 
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
-            if *self.non_atomic.lock().unwrap() {
-                crate::changeset::PersistenceCapabilities::NONE
+            use crate::changeset::PersistenceCapabilities as C;
+            let atomic = if *self.non_atomic.lock().unwrap() {
+                C::NONE
             } else {
-                crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS
-            }
+                C::ATOMIC_CHANGESETS
+            };
+            let accounts = if *self.no_account_writer.lock().unwrap() {
+                C::NONE
+            } else {
+                C::ACCOUNT_ADDRESS_POOLS
+            };
+            atomic.union(accounts)
         }
 
         fn store(
@@ -3355,6 +3365,7 @@ mod tests {
 
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
             crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(crate::changeset::PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
         }
 
         fn store(
@@ -5277,6 +5288,140 @@ mod tests {
             external_account_needs_rebuild(&established, true),
             "the stale marker keeps the repair armed"
         );
+    }
+
+    /// A marker may reach disk only where the account it names is durably
+    /// written with it. A buffering backend can accept the account and the
+    /// marker and then drop both at a failed `flush`, while a later contact
+    /// snapshot re-sends the marker alone; a backend without an account
+    /// writer acknowledges the account without keeping it. On either, every
+    /// contact row is written without the marker and a restored one is not
+    /// trusted, so the sweep rebuilds the account after a restart instead of
+    /// pairing the live request's marker with the previous account
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn outbound_markers_stay_in_memory_where_the_account_is_not_durably_written() {
+        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+        use crate::wallet::identity::network::contacts::ExternalAccountRegistration;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+
+        for buffered in [true, false] {
+            let (manager, persister, wallet_id) = make_wallet().await;
+            if buffered {
+                *persister.buffered.lock().unwrap() = true;
+                *persister.fail_flushes.lock().unwrap() = true;
+            } else {
+                *persister.no_account_writer.lock().unwrap() = true;
+            }
+            let owner = Identifier::from([0xAA; 32]);
+            let contact = Identifier::from([0x01; 32]);
+            let shared_key = [0x55u8; 32];
+            let payload = encrypted_contact_xpub(&owner, &contact, &shared_key);
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let iw = wallet.identity();
+            {
+                let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+                let mut wm = iw.wallet_manager.write().await;
+                let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+                info.identity_manager
+                    .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                    .expect("add owner");
+                let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
+                let incoming =
+                    ContactRequest::new(contact, owner, 0, 0, 8, payload.clone(), 100, 0);
+                info.identity_manager
+                    .managed_identity_mut(&owner)
+                    .expect("managed")
+                    .apply_established_contact(EstablishedContact::new(
+                        contact, outgoing, incoming,
+                    ));
+            }
+            persister.stores.lock().unwrap().clear();
+            assert_eq!(
+                iw.dashpay()
+                    .register_external_contact_account(
+                        &owner,
+                        &bare_identity(contact.to_buffer()),
+                        &payload,
+                        zeroize::Zeroizing::new(shared_key),
+                    )
+                    .await
+                    .expect("register"),
+                ExternalAccountRegistration::Built
+            );
+            iw.dashpay()
+                .note_external_account_registered(&owner, &contact, &payload)
+                .await;
+            // A flush on the buffering backend fails and drops the round.
+            if buffered {
+                assert!(wallet.flush_persist().is_err());
+            }
+
+            // Memory keeps the self-heal marker; no row on disk carries it.
+            let established = {
+                let wm = manager.wallet_manager.read().await;
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("owner")
+                    .dashpay()
+                    .established_contacts()[&contact]
+                    .clone()
+            };
+            assert_eq!(established.external_account_reference, Some(8));
+            let marked_rows = persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|(_, cs)| cs.contacts.as_ref())
+                .flat_map(|contacts| contacts.established.values())
+                .filter(|row| row.external_account_reference.is_some())
+                .count();
+            assert_eq!(marked_rows, 0, "buffered: {buffered}");
+
+            // A cold reload from such a backend does not trust a marker it
+            // hands back, even one an earlier configuration wrote.
+            let snapshot = Arc::new(reload_snapshot(&manager, wallet_id, owner, 1_000, None).await);
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+            let restarted = if buffered {
+                let host = Arc::new(BufferedHost {
+                    inner: Arc::clone(&snapshot),
+                    fail_flushes: std::sync::atomic::AtomicBool::new(false),
+                });
+                let manager = Arc::new(PlatformWalletManager::new(sdk, host, handler));
+                manager.load_from_persistor().await.expect("load");
+                let wm = manager.wallet_manager.read().await;
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("owner")
+                    .dashpay()
+                    .established_contacts()[&contact]
+                    .clone()
+            } else {
+                let host = Arc::new(NonAtomicHost(Arc::clone(&snapshot)));
+                let manager = Arc::new(PlatformWalletManager::new(sdk, host, handler));
+                manager.load_from_persistor().await.expect("load");
+                let wm = manager.wallet_manager.read().await;
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("owner")
+                    .dashpay()
+                    .established_contacts()[&contact]
+                    .clone()
+            };
+            assert_eq!(
+                restarted.external_account_reference, None,
+                "buffered: {buffered}"
+            );
+            assert!(external_account_needs_rebuild(&restarted, true));
+        }
     }
 
     /// A restored outbound-account marker suppresses the startup rebuild, so

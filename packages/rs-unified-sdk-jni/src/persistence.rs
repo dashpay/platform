@@ -247,6 +247,49 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
     })
 }
 
+/// Leave the account-registration and address-pool slots of `vtable` unwired
+/// when the concrete `bridge` inherits `NativePersistenceBridge`'s
+/// success-returning no-op for them (see [`bridge_overrides`]).
+///
+/// Those slots are how `FFIPersister` derives `ACCOUNT_ADDRESS_POOLS`, and a
+/// contact's outbound-account marker is kept on disk only where that
+/// capability holds
+/// ([`persists_outbound_account_markers`](platform_wallet::changeset::persists_outbound_account_markers)).
+/// An inherited no-op would acknowledge an account it never stored, so the
+/// marker naming that account could be trusted after a restart beside the
+/// previous one (dashpay/platform#4302 review). Unwired, the capability is not
+/// derived, account writes are reported as unsupported rather than silently
+/// dropped, and markers stay in memory.
+pub(crate) fn restrict_account_writers(
+    env: &mut JNIEnv,
+    bridge: &JObject,
+    vtable: &mut PersistenceCallbacks,
+) {
+    let registrations = bridge_overrides(
+        env,
+        bridge,
+        "onPersistAccountRegistration",
+        ACCOUNT_REGISTRATION_DESCRIPTOR,
+    );
+    let pools = bridge_overrides(
+        env,
+        bridge,
+        "onPersistAccountAddressPoolEntry",
+        ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR,
+    );
+    gate_account_writers(vtable, registrations, pools);
+}
+
+/// The slot half of [`restrict_account_writers`].
+fn gate_account_writers(vtable: &mut PersistenceCallbacks, registrations: bool, pools: bool) {
+    if !registrations {
+        vtable.on_persist_account_registrations_fn = None;
+    }
+    if !pools {
+        vtable.on_persist_account_address_pools_fn = None;
+    }
+}
+
 /// Which optional `NativePersistenceBridge` callbacks the concrete bridge
 /// supplies its own body for (see [`bridge_overrides`]).
 #[derive(Debug, Clone, Copy)]
@@ -705,7 +748,7 @@ fn call_persist_account_registration(
     env.call_method(
         bridge,
         "onPersistAccountRegistration",
-        "([BBBIII[B[B[B)I",
+        ACCOUNT_REGISTRATION_DESCRIPTOR,
         &[
             wid.into(),
             JValue::Byte(s.type_tag as i8),
@@ -749,7 +792,7 @@ unsafe extern "C" fn tramp_persist_account_address_pools(
                     env.call_method(
                         bridge,
                         "onPersistAccountAddressPoolEntry",
-                        "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
+                        ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR,
                         &[
                             (&wid).into(),
                             JValue::Byte(spec.type_tag as i8),
@@ -900,6 +943,15 @@ const WALLET_CHANGESET_SWEEPS_DESCRIPTOR: &str = "([B[BI[B[BIZI)I";
 /// the descriptor table and the override probe that gates the DashPay
 /// backfill slot on it, so the three cannot drift apart.
 const WALLET_CHANGESET_HEADER_DESCRIPTOR: &str = "([BZIZJJJJ[B)I";
+
+/// `onPersistAccountRegistration`'s descriptor, shared by the `call_method`
+/// site, the descriptor table and the override probe in
+/// [`restrict_account_writers`].
+const ACCOUNT_REGISTRATION_DESCRIPTOR: &str = "([BBBIII[B[B[B)I";
+
+/// `onPersistAccountAddressPoolEntry`'s descriptor, shared the same way.
+const ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR: &str =
+    "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I";
 
 unsafe fn persist_changeset_sweep_batch(
     env: &mut JNIEnv,
@@ -4812,10 +4864,13 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ("onPersistAddressBalance", "([BB[BJIIIJ)I"),
     ("onPersistSyncState", "([BJJJ)I"),
     ("onPersistWalletMetadata", "([BI[BI)I"),
-    ("onPersistAccountRegistration", "([BBBIII[B[B[B)I"),
+    (
+        "onPersistAccountRegistration",
+        ACCOUNT_REGISTRATION_DESCRIPTOR,
+    ),
     (
         "onPersistAccountAddressPoolEntry",
-        "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
+        ACCOUNT_ADDRESS_POOL_ENTRY_DESCRIPTOR,
     ),
     (
         "onWalletChangesetHeader",
@@ -5084,6 +5139,33 @@ mod tests {
         });
         assert!(sweeps_only.on_persist_wallet_changeset_sweeps_fn.is_some());
         assert!(sweeps_only.on_persist_wallet_dashpay_backfill_fn.is_none());
+    }
+
+    /// A bridge inheriting the no-op account writers gets neither account
+    /// slot, so `FFIPersister` cannot derive `ACCOUNT_ADDRESS_POOLS` and does
+    /// not keep outbound-account markers on disk; one implementing both keeps
+    /// both slots.
+    #[test]
+    fn account_writer_slots_follow_the_bridges_overrides() {
+        for (registrations, pools) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut vtable = build_vtable(std::ptr::null_mut());
+            gate_account_writers(&mut vtable, registrations, pools);
+            assert_eq!(
+                vtable.on_persist_account_registrations_fn.is_some(),
+                registrations
+            );
+            assert_eq!(vtable.on_persist_account_address_pools_fn.is_some(), pools);
+            // `release_fn` must not run on the null context when this drops.
+            vtable.release_fn = None;
+        }
+        let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            method_descriptor(
+                &names(&["[B", "byte", "byte", "int", "int", "int", "[B", "[B", "[B"]),
+                "int"
+            ),
+            ACCOUNT_REGISTRATION_DESCRIPTOR
+        );
     }
 
     /// The probe has to recognise a real `onWalletChangesetDashPayBackfill`
