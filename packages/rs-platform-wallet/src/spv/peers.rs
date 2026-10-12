@@ -139,7 +139,7 @@ mod tests {
     }
 
     fn masternode_list(entries: Vec<(SocketAddr, EntryMasternodeType)>) -> MasternodeList {
-        let masternodes = entries
+        let masternodes: dashcore::sml::masternode_list::MasternodeMap = entries
             .into_iter()
             .enumerate()
             .map(|(i, (service, mn_type))| {
@@ -156,12 +156,12 @@ mod tests {
                     is_valid: true,
                     mn_type,
                 };
-                (pro_tx_hash, entry.into())
+                (pro_tx_hash, std::sync::Arc::new(entry.into()))
             })
             .collect();
         MasternodeList::build(
             masternodes,
-            Default::default(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )
@@ -187,7 +187,7 @@ mod tests {
                 evo,
                 EntryMasternodeType::HighPerformance {
                     platform_http_port: 443,
-                    platform_node_id: PlatformNodeId::from_byte_array([0u8; 20]),
+                    platform_node_id: PlatformNodeId::from_canonical_bytes([0u8; 20]),
                 },
             ),
         ]);

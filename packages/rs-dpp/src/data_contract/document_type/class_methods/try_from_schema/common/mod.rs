@@ -38,7 +38,7 @@ use crate::data_contract::document_type::property::{
     KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraint_condition, SystemProperty, STORED_DOCUMENT_PREFIX,
+    parse_property_constraint_condition, PropertyConstraint, SystemProperty, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
     delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD,
@@ -2253,7 +2253,8 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// this generation: a stored contract is read without one. An object, with
 /// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
 /// (booleans), `deleteWithin` (seconds, a u32), `deleteSettled` (an object with
-/// only `leader`, a boolean, and `approvals`, a u16, at least one of them),
+/// only `leader` and `approversPredateDocument`, booleans, and `approvals`, a u16,
+/// at least one of them),
 /// `deleteKeepsFields` (a non-empty list of property paths) and `changeFields`
 /// (a non-empty list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
@@ -2317,24 +2318,31 @@ pub(super) fn parse_moderator_abilities_keyword(
                 )));
             };
             if let Some(unknown) = settled_map.iter().find_map(|(key, _)| match key.as_text() {
-                Some(delete_settled::LEADER | delete_settled::APPROVALS) => None,
+                Some(
+                    delete_settled::LEADER
+                    | delete_settled::APPROVALS
+                    | delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                ) => None,
                 Some(other) => Some(other.to_string()),
                 None => Some(key.to_string()),
             }) {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` has no \
-                     key \"{unknown}\", only `{}` and `{}`",
+                     key \"{unknown}\", only `{}`, `{}` and `{}`",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             if settled_map.is_empty() {
                 return Err(structure_error(format!(
                     "document type \"{name}\": `{MODERATOR_ABILITIES}.{DELETE_SETTLED}` is empty: \
                      say whether the team's leader must approve (`{}`), how many must (`{}`), \
-                     or both",
+                     whether members the leader added after a document approve its deletion \
+                     (`{}`), or any of them",
                     delete_settled::LEADER,
                     delete_settled::APPROVALS,
+                    delete_settled::APPROVERS_PREDATE_DOCUMENT,
                 )));
             }
             let leader = Value::inner_optional_bool_value(settled_map, delete_settled::LEADER)
@@ -2344,7 +2352,19 @@ pub(super) fn parse_moderator_abilities_keyword(
                 Value::inner_optional_integer_value::<u16>(settled_map, delete_settled::APPROVALS)
                     .map_err(consensus_or_protocol_value_error)?
                     .unwrap_or(1);
-            Some(SettledDeletionRule { leader, approvals })
+            let approvers_predate_document = Value::inner_optional_bool_value(
+                settled_map,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+            )
+            .map_err(consensus_or_protocol_value_error)?
+            // On by default only where it protects something: a rule one approval meets, the
+            // leader meets alone, so the members it adds give it nothing.
+            .unwrap_or(approvals > 1);
+            Some(SettledDeletionRule {
+                leader,
+                approvals,
+                approvers_predate_document,
+            })
         }
     };
     let delete_keeps_fields = match Value::get_optional_from_map(abilities_map, DELETE_KEEPS_FIELDS)
@@ -2455,7 +2475,14 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - `approvals` is at least 1 and, under full validation, at most the members
 ///   the declared team can hold: its leader,
 ///   `SystemLimits::max_moderation_charter_elected_members` elected members and
-///   the declaration's `maxAddedModerators`.
+///   the declaration's `maxAddedModerators`;
+/// - while `approversPredateDocument` is on (the default when `approvals` is
+///   above 1), the type must list `$createdAt` in `required` under full
+///   validation: a member the leader added approves only the deletion of
+///   documents created after its addition, and a document without `$createdAt`
+///   says nothing of when it was. A registration rule, as the bound on
+///   `approvals` is: a stored type is read back without it, and a document of it
+///   without `$createdAt` admits no added member.
 ///
 /// `deleteKeepsFields` names what of a deleted document its removal record
 /// keeps, copied from the document as it was deleted: what stays public once
@@ -2688,6 +2715,19 @@ pub(super) fn apply_moderator_abilities(
                  team can hold",
                 delete_settled::APPROVALS,
                 rule.approvals,
+            )));
+        }
+        if full_validation
+            && rule.approvers_predate_document
+            && !document_type.required_fields.contains(CREATED_AT)
+        {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_SETTLED}`, whose \
+                 approvers the leader added must have been added before the document was created \
+                 (`{}`, on by default when more than one approval is needed), which is read from \
+                 `$createdAt`: list `$createdAt` in `required`, or set `{}: false`",
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
+                delete_settled::APPROVERS_PREDATE_DOCUMENT,
             )));
         }
         document_type.moderator_settled_deletion = Some(rule);
@@ -3198,14 +3238,11 @@ pub(super) fn parse_immutable_keyword(
 /// the properties frozen at creation, and the others with their parsed
 /// conditions. Runs after the core parse, whose properties it reads.
 ///
-/// A condition takes the grammar of a `propertyConstraints` rule, and what it
-/// reads is checked as a rule's reads are
-/// ([`super::validate_property_constraint_reads`]), on every parse: a stored
-/// condition reading a property the type does not declare, or a transient one,
-/// could only ever read it as absent. Beyond a rule, a condition may read the
-/// stored document through `$old.`, as a replace judges it on the document it
-/// writes, and may read no `countOf` or `sumOf`: it reads the document alone,
-/// so a replace judges it without reading state.
+/// A condition is parsed by [`parse_replace_condition`]: the grammar of a
+/// `propertyConstraints` rule, its reads checked as a rule's are on every
+/// parse (a stored condition reading a property the type does not declare, or
+/// a transient one, could only ever read it as absent), the stored document
+/// read through `$old.`, and no `countOf` or `sumOf`.
 ///
 /// Under full validation, for contracts entering the chain, the lints: the
 /// type's documents must be mutable; every listed property is a declared
@@ -3237,57 +3274,16 @@ pub(super) fn apply_immutable_fields(
 
     let mut conditions = BTreeMap::new();
     for (property, when) in conditional {
-        let subject = format!("condition of \"{property}\"");
-        let condition_error = |message: String| {
-            DataContractError::InvalidContractStructure(format!(
-                "document type \"{name}\" immutable {message}"
-            ))
-        };
-        let property_kind = |path: &str| {
-            super::property_equality_kind(
-                &document_type.flattened_properties,
-                path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
-            )
-        };
-        let condition = parse_property_constraint_condition(&when, name, &property_kind).map_err(
-            |message| {
-                consensus_or_protocol_data_contract_error(condition_error(format!(
-                    "{subject} {message}"
-                )))
-            },
-        )?;
-        super::validate_property_constraint_reads(
+        let condition = parse_replace_condition(
             document_type,
+            &when,
             schema_defs,
-            &subject,
-            &condition,
-            true,
-            &condition_error,
-        )
-        .map_err(consensus_or_protocol_data_contract_error)?;
-        if !condition.aggregate_reads().is_empty() {
-            return Err(structure_error(format!(
-                "document type \"{name}\" immutable {subject} reads a countOf or sumOf total: \
-                 a condition reads the document alone, so a replace judges it without reading \
-                 state"
-            )));
-        }
-        if full_validation {
-            let max_nodes = platform_version.system_limits.max_property_constraint_nodes;
-            let nodes = condition.node_count();
-            if nodes > usize::from(max_nodes) {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" immutable {subject} has {nodes} nodes, above the \
-                     maximum of {max_nodes}"
-                )));
-            }
-            if let Some((repeat, earlier)) = condition.repeated_condition() {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" immutable {subject} at {repeat} repeats the \
-                     condition at {earlier}"
-                )));
-            }
-        }
+            name,
+            property_names::IMMUTABLE,
+            &format!("condition of \"{property}\""),
+            full_validation,
+            platform_version,
+        )?;
         conditions.insert(property, condition);
     }
 
@@ -3336,6 +3332,157 @@ pub(super) fn apply_immutable_fields(
     document_type.immutable_fields = always;
     document_type.immutable_field_conditions = conditions;
 
+    Ok(())
+}
+
+/// Parses a condition a replace is judged by, the `when` of an `immutable`
+/// entry or a type's `retractedWhen`. It takes the grammar of a
+/// `propertyConstraints` rule, and what it reads is checked as a rule's reads
+/// are ([`super::validate_property_constraint_reads`]), on every parse. Beyond
+/// a rule, it may read the stored document through `$old.`, as a replace
+/// judges it on the document it writes, and may read no `countOf` or `sumOf`:
+/// it reads the document alone, so a replace judges it without reading state.
+/// Under full validation it stays within the node limit of a rule and lists no
+/// condition twice. Every message reads `document type "{name}" {keyword}
+/// {subject} ...`.
+#[allow(clippy::too_many_arguments)]
+fn parse_replace_condition(
+    document_type: &DocumentTypeV2,
+    when: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    keyword: &str,
+    subject: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<PropertyConstraint, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let condition_error = |message: String| {
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{name}\" {keyword} {message}"
+        ))
+    };
+    let property_kind = |path: &str| {
+        super::property_equality_kind(
+            &document_type.flattened_properties,
+            path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
+        )
+    };
+    let condition =
+        parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
+            consensus_or_protocol_data_contract_error(condition_error(format!(
+                "{subject} {message}"
+            )))
+        })?;
+    super::validate_property_constraint_reads(
+        document_type,
+        schema_defs,
+        subject,
+        &condition,
+        true,
+        &condition_error,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    if !condition.aggregate_reads().is_empty() {
+        return Err(structure_error(format!(
+            "document type \"{name}\" {keyword} {subject} reads a countOf or sumOf total: a \
+             condition reads the document alone, so a replace judges it without reading state"
+        )));
+    }
+    if full_validation {
+        let max_nodes = platform_version.system_limits.max_property_constraint_nodes;
+        let nodes = condition.node_count();
+        if nodes > usize::from(max_nodes) {
+            return Err(structure_error(format!(
+                "document type \"{name}\" {keyword} {subject} has {nodes} nodes, above the \
+                 maximum of {max_nodes}"
+            )));
+        }
+        if let Some((repeat, earlier)) = condition.repeated_condition() {
+            return Err(structure_error(format!(
+                "document type \"{name}\" {keyword} {subject} at {repeat} repeats the \
+                 condition at {earlier}"
+            )));
+        }
+    }
+    Ok(condition)
+}
+
+/// Reads the doctype-level `retractedWhen` keyword (protocol version 14) onto
+/// the parsed document type: the condition under which a replace writes a
+/// retracted document. On a moderated contract a banned or suspended owner can
+/// write nothing new, but the batch transformer lets it make this one replace,
+/// refusing each of its replaces whose written document does not meet the
+/// condition. So an author whose documents can not be deleted (`canBeDeleted:
+/// false`) can still take back what it wrote. The condition is parsed as an
+/// `immutable` entry's `when` ([`parse_replace_condition`]) and judged as one,
+/// on the document the replace writes with the stored one under `$old.`.
+///
+/// What a retracted document holds is the type's own rules to say: a
+/// `propertyConstraints` rule that it carries no content, and an `immutable`
+/// entry that keeps it retracted. The condition only picks the replaces a
+/// barred owner may make; every other rule of the type still judges them.
+///
+/// The type's documents must be mutable, or there is no replace, and the
+/// contract must keep a banlist or a suspension list, or no owner is ever
+/// barred. The keyword and the moderation config both arrive with protocol
+/// version 14, so no stored contract breaks either rule and both are checked
+/// on every parse. Runs after the core parse, whose properties it reads.
+pub(super) fn apply_retracted_when(
+    document_type: &mut DocumentTypeV2,
+    data_contract_config: &DataContractConfig,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let keyword = property_names::RETRACTED_WHEN;
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    let Some(when) = document_type
+        .schema
+        .to_map()
+        .ok()
+        .and_then(|schema_map| Value::get_optional_from_map(schema_map, keyword))
+        .cloned()
+    else {
+        return Ok(());
+    };
+    if !document_type.documents_mutable {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{keyword}`, but its documents are not mutable \
+             (documentsMutable: false), so there is no replace to retract with"
+        )));
+    }
+    let bars_anyone = data_contract_config
+        .moderation()
+        .is_some_and(|moderation| moderation.barring_lists().next().is_some());
+    if !bars_anyone {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{keyword}`, which names the replace a banned or \
+             suspended owner may still make, but the contract keeps neither a banlist nor a \
+             suspension list, so no owner is ever barred (moderation can only be declared when \
+             the contract is created)"
+        )));
+    }
+    let condition = parse_replace_condition(
+        document_type,
+        &when,
+        schema_defs,
+        name,
+        keyword,
+        "condition",
+        full_validation,
+        platform_version,
+    )?;
+    document_type.retracted_when = Some(condition);
     Ok(())
 }
 

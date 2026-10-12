@@ -12,6 +12,8 @@ authors = [
 ]
 
 [dependencies]
+blsful = { git = "https://github.com/dashpay/agora-blsful", rev = "0c34a7a488a0bd1c9a9a2196e793b303ad35c900", optional = true }
+ed25519-dalek = { version = "=2.2.0", features = ["rand_core"], optional = true }
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
 base64 = "0.22.1"
@@ -90,6 +92,19 @@ once_cell = "1.7"
 env_logger = { version = "0.11.8" }
 log = { version = "0.4.27" }
 
+# secp256k1 0.33 pulls getrandom 0.3 (via rand 0.9) and key-wallet pulls
+# getrandom 0.4; on wasm32-unknown-unknown both refuse to build without their
+# `wasm_js` feature, so enable it here where every wasm crate picks it up.
+# Unlike getrandom 0.2's `js` (which falls back to Node's `require("crypto")`),
+# `wasm_js` only reads `globalThis.crypto.getRandomValues`, which Node.js
+# exposes by default from v19; the JS packages therefore require Node >= 20.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+[package.metadata.cargo-machete]
+ignored = ["getrandom_03", "getrandom_04"]
+
 [features]
 default = ["state-transitions"]
 core_bincode = ["dashcore/bincode"]
@@ -102,8 +117,8 @@ core_key_wallet_manager = ["dep:key-wallet-manager"]
 core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
 core_spv = ["dep:dash-spv"]
 core_rpc_client = ["dep:dashcore-rpc"]
-bls-signatures = ["dashcore/bls"]
-ed25519-dalek = ["dashcore/eddsa"]
+bls-signatures = ["dashcore/bls", "dep:blsful"]
+ed25519-dalek = ["dashcore/eddsa", "dep:ed25519-dalek"]
 all_features = [
   "json-conversion",
   "all-system_contracts",

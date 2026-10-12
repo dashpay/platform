@@ -5,9 +5,11 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::common::moderators::{
-    next_moderation_action_count, Moderators,
+    next_moderation_action_count, ModeratorSeat, Moderators,
 };
-use crate::execution::validation::state_transition::common::seated_moderation_charter::SeatedModerationCharter;
+use crate::execution::validation::state_transition::common::seated_moderation_charter::{
+    SeatedModerationCharter, TeamSeat,
+};
 use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_not_expired;
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::{
@@ -29,11 +31,11 @@ use dpp::consensus::state::contract_moderation::{
     ContractModerationTeamNotSeatedError, ContractSuspensionNotInFutureError,
     ContractTeamActionAlreadyCompletedError, ContractTeamActionAlreadySignedError,
     ContractTeamActionDocumentChangedError, ContractTeamActionDoesNotExistError,
-    ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
-    ContractUserNotSuspendedError, ContractUserNotWarnedError,
-    ContractUserWarningLimitReachedError, DocumentFieldNotChangeableByModeratorsError,
-    DocumentModerationWindowElapsedError, DocumentNotSettledError,
-    DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
+    ContractTeamMemberAddedAfterDocumentError, ContractUserAlreadyBannedError,
+    ContractUserBannedError, ContractUserNotBannedError, ContractUserNotSuspendedError,
+    ContractUserNotWarnedError, ContractUserWarningLimitReachedError,
+    DocumentFieldNotChangeableByModeratorsError, DocumentModerationWindowElapsedError,
+    DocumentNotSettledError, DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, DocumentTypeNotDeletableOnceSettledError,
     IdentityNotContractModeratorError, SettledDeletionNotRestorableError,
 };
@@ -45,6 +47,7 @@ use dpp::data_contract::config::moderation::{
     encode_kept_fields, ContractDocumentRemoval, ContractDocumentRestoration,
     ContractModerationConfig, ContractModerationList, ContractModerationReason,
     ContractModerationStatus, ContractTeamAction, ContractTeamActionEvent, ModerationAbility,
+    SettledDeletionRule,
 };
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -57,6 +60,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::group::group_action_status::GroupActionStatus;
+use dpp::identity::TimestampMillis;
 use dpp::platform_value::Value;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
@@ -466,7 +470,7 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         tx,
         platform_version,
     )?;
-    if let Some(error) = deletion_authority_refusal(
+    if let Err(error) = deletion_authority(
         &moderators,
         contract,
         moderator_id,
@@ -562,9 +566,11 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
 /// seated team must approve the deletion of its settled documents
 /// (`moderatorAbilities.deleteSettled`), a team is seated on the contract, the signer is on it
 /// and the declaration gives the team `deleteDocuments` on the type, the reason is one the team's
-/// proposal lists, the document exists, its owner is not protected, and it is settled: last
+/// proposal lists, the document exists, its owner is not protected, it is settled: last
 /// modified longer ago than the type's `deleteWithin` window, within which a moderator deletes it
-/// alone. Every refusal is paid for by bumping the signer's contract nonce.
+/// alone, and a signer the leader added was added before the document was created, unless the
+/// rule admits later additions (`approversPredateDocument: false`). Every refusal is paid for by
+/// bumping the signer's contract nonce.
 ///
 /// The proposal is kept as a team action, by the id it commits to
 /// ([`ContractUserModerationTransition::team_action_id`]), naming the document as it is now
@@ -639,7 +645,7 @@ fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
     };
     // Who deletes which document is judged as for a moderator's deletion, the team's own
     // documents as protected from a settled deletion as from any other.
-    if let Some(error) = deletion_authority_refusal(
+    let seat = match deletion_authority(
         &moderators,
         contract,
         moderator_id,
@@ -650,8 +656,9 @@ fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
         tx,
         platform_version,
     )? {
-        return refuse(error);
-    }
+        Ok(seat) => seat,
+        Err(error) => return refuse(error),
+    };
     if let Some(error) = moderators.unlisted_reason(
         transition.action(),
         contract_id,
@@ -692,6 +699,9 @@ fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
             )
             .into(),
         );
+    }
+    if let Some(error) = late_addition_refusal(contract_id, &rule, moderator_id, &seat, &document) {
+        return refuse(error);
     }
 
     let action_id = transition.team_action_id().ok_or(Error::Execution(
@@ -748,15 +758,18 @@ fn transform_settled_deletion_proposal_v0<C: CoreRPCLike>(
 /// The approval of a team action another member proposed: the contract keeps team actions
 /// (a document type of it sets `moderatorAbilities.deleteSettled`), the action exists and has not
 /// run, a team is seated on it, the signer is on the team with the authority the action
-/// needs (for the deletion of a settled document, `deleteDocuments` on its type) and has not
-/// approved it already, and the document the action names still exists, its owner not
-/// protected, as it was when proposed: an approval of a document changed since would approve
-/// the deletion of content the team never saw. Every refusal is paid for by bumping the
-/// signer's contract nonce.
+/// needs (for the deletion of a settled document, `deleteDocuments` on its type), the document
+/// the action names still exists, its owner not protected, as it was when proposed: an approval
+/// of a document changed since would approve the deletion of content the team never saw, a
+/// signer the leader added was added before the document was created, unless the rule admits
+/// later additions, and the signer has not approved it already. Every refusal is paid for by
+/// bumping the signer's contract nonce.
 ///
 /// The approval is added to the action's. When the approvals given could meet the rule, the team
 /// is read: the approvals of members who left since no longer count and are dropped, refunded to
-/// them (one back after that approves again), and when those of members still on the team
+/// them (one back after that approves again), as are those of members the leader took off and
+/// added again after the document was created, under a rule admitting only members from before
+/// it, and when those of members still on the team
 /// (the leader among them, when the rule says so) meet the rule, counting this one, the action
 /// runs: the document is deleted as a moderator's `DeleteDocument` deletes it, for the
 /// proposal's reason, the action closes with the approvals that counted, and every counted
@@ -858,7 +871,7 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
             ),
         )));
     };
-    if let Some(error) = deletion_authority_refusal(
+    let seat = match deletion_authority(
         &moderators,
         contract,
         moderator_id,
@@ -869,8 +882,9 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
         tx,
         platform_version,
     )? {
-        return refuse(error);
-    }
+        Ok(seat) => seat,
+        Err(error) => return refuse(error),
+    };
 
     let (signers_fee, signers) = platform.drive.fetch_contract_team_action_signers_with_fee(
         contract_id,
@@ -881,11 +895,6 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
         platform_version,
     )?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(signers_fee));
-    if signers.contains(&moderator_id) {
-        return refuse(
-            ContractTeamActionAlreadySignedError::new(contract_id, action_id, moderator_id).into(),
-        );
-    }
 
     let document = match fetch_deletable_document(
         &moderators,
@@ -908,6 +917,16 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
     if !action.names_document_as(last_modified_at, document.revision()) {
         return refuse(
             ContractTeamActionDocumentChangedError::new(contract_id, action_id, document_id).into(),
+        );
+    }
+    if let Some(error) = late_addition_refusal(contract_id, &rule, moderator_id, &seat, &document) {
+        return refuse(error);
+    }
+    // After the late addition: a member the leader took off and added again after the document
+    // may still have an approval here, which no longer counts and goes at the next team read.
+    if signers.contains(&moderator_id) {
+        return refuse(
+            ContractTeamActionAlreadySignedError::new(contract_id, action_id, moderator_id).into(),
         );
     }
 
@@ -936,11 +955,14 @@ fn transform_team_action_approval_v0<C: CoreRPCLike>(
     } else {
         // The approvals of members still on the team count, this one among them; those of
         // members who left are dropped, so that a member who comes back after this approves
-        // again.
-        let earlier_counted = still_seated_approvers(
+        // again, and so are those of members the leader took off and added again too late for
+        // the document under a rule admitting only members from before it.
+        let earlier_counted = still_counted_approvers(
             &signers,
             charter,
             elected.max_added_moderators,
+            &rule,
+            document.created_at().unwrap_or_default(),
             platform.drive,
             epoch,
             execution_context,
@@ -1068,9 +1090,10 @@ fn last_modified_and_settled_at(document: &Document, window_seconds: u32) -> (u6
 /// Whether `moderators` let `moderator_id` delete documents of `document_type_name` on
 /// `contract`, for a moderator's deletion and a team's settled deletion alike: the signer
 /// moderates the contract (41101), and a seated team holds `deleteDocuments` on the type
-/// (41201). The refusal, when there is one, is the caller's to pay.
+/// (41201). Where the signer sits when they do, which a settled deletion's rule reads
+/// ([`late_addition_refusal`]); the refusal when they do not, the caller's to pay.
 #[allow(clippy::too_many_arguments)]
-fn deletion_authority_refusal(
+fn deletion_authority(
     moderators: &Moderators,
     contract: &DataContract,
     moderator_id: Identifier,
@@ -1080,9 +1103,9 @@ fn deletion_authority_refusal(
     execution_context: &mut StateTransitionExecutionContext,
     tx: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<Option<ConsensusError>, Error> {
+) -> Result<Result<ModeratorSeat, ConsensusError>, Error> {
     let contract_id = contract.id();
-    if !moderators.may_moderate(
+    let Some(seat) = moderators.seat_of(
         contract.owner_id(),
         moderator_id,
         drive,
@@ -1090,22 +1113,52 @@ fn deletion_authority_refusal(
         execution_context,
         tx,
         platform_version,
-    )? {
-        return Ok(Some(
-            IdentityNotContractModeratorError::new(contract_id, moderator_id).into(),
-        ));
-    }
+    )?
+    else {
+        return Ok(Err(IdentityNotContractModeratorError::new(
+            contract_id,
+            moderator_id,
+        )
+        .into()));
+    };
     if moderators.lacks(ModerationAbility::DeleteDocuments, Some(document_type_name)) {
-        return Ok(Some(
-            ContractModerationAbilityNotGrantedError::new(
-                contract_id,
-                ModerationAbility::DeleteDocuments,
-                Some(document_type_name.to_string()),
-            )
-            .into(),
-        ));
+        return Ok(Err(ContractModerationAbilityNotGrantedError::new(
+            contract_id,
+            ModerationAbility::DeleteDocuments,
+            Some(document_type_name.to_string()),
+        )
+        .into()));
     }
-    Ok(None)
+    Ok(Ok(seat))
+}
+
+/// The refusal of the proposal or approval of `document`'s settled deletion by `member_id`,
+/// sitting in `seat`, when it is a member the leader added no earlier than the document was
+/// created and `rule` admits only members added before it (`approversPredateDocument`,
+/// 41212): the leader could otherwise add members to approve whatever it proposes. The leader
+/// and the elected members always count. A type whose rule says so requires `$createdAt`, so
+/// every document of it records one.
+fn late_addition_refusal(
+    contract_id: Identifier,
+    rule: &SettledDeletionRule,
+    member_id: Identifier,
+    seat: &ModeratorSeat,
+    document: &Document,
+) -> Option<ConsensusError> {
+    let ModeratorSeat::Team(TeamSeat::Added { added_at }) = seat else {
+        return None;
+    };
+    let document_created_at = document.created_at().unwrap_or_default();
+    (!rule.admits_addition(*added_at, document_created_at)).then(|| {
+        ContractTeamMemberAddedAfterDocumentError::new(
+            contract_id,
+            member_id,
+            *added_at,
+            document.id(),
+            document_created_at,
+        )
+        .into()
+    })
 }
 
 /// The document a moderator's deletion, or a team's settled deletion, names, read and
@@ -1159,17 +1212,22 @@ fn fetch_deletable_document(
     Ok(Ok(document))
 }
 
-/// Which of `approvers`, earlier approvals of a team action, are still on the
-/// seated team, in their order. The leader always is. The others are checked one point read
-/// each ([`SeatedModerationCharter::seats`]) while there are no more of them than the queries a
-/// read of the whole team makes, and past that by reading the team once
-/// ([`SeatedModerationCharter::fetch_active_members`]): the same answer either way, for fewer
+/// Which of `approvers`, earlier approvals of a team action deleting a document created at
+/// `document_created_at`, still count toward `rule`, in their order: those still on the seated
+/// team, and of the members the leader added, only those `rule` admits for the document
+/// ([`TeamSeat::counts_toward`]): one taken off and added again since approving sits in a new
+/// addition, which may come too late. The leader always counts. The others are checked one
+/// point read each ([`SeatedModerationCharter::seat_of`]) while there are no more of them than
+/// the queries a read of the whole team makes, and past that by reading the team once
+/// ([`SeatedModerationCharter::fetch_active_seats`]): the same answer either way, for fewer
 /// billed reads.
 #[allow(clippy::too_many_arguments)]
-fn still_seated_approvers(
+fn still_counted_approvers(
     approvers: &[Identifier],
     charter: &SeatedModerationCharter,
     max_added_moderators: u16,
+    rule: &SettledDeletionRule,
+    document_created_at: TimestampMillis,
     drive: &Drive,
     epoch: &Epoch,
     execution_context: &mut StateTransitionExecutionContext,
@@ -1180,12 +1238,12 @@ fn still_seated_approvers(
         .iter()
         .filter(|approver| **approver != charter.leader_id)
         .count();
-    // `fetch_active_members` reads the removals when the charter elected anyone, and the
+    // `fetch_active_seats` reads the removals when the charter elected anyone, and the
     // additions when the declaration allows any.
     let team_read_queries =
         usize::from(!charter.charter.members.is_empty()) + usize::from(max_added_moderators > 0);
     if others > team_read_queries {
-        let active = charter.fetch_active_members(
+        let active = charter.fetch_active_seats(
             drive,
             max_added_moderators,
             epoch,
@@ -1196,23 +1254,29 @@ fn still_seated_approvers(
         return Ok(approvers
             .iter()
             .copied()
-            .filter(|approver| *approver == charter.leader_id || active.contains(approver))
+            .filter(|approver| {
+                *approver == charter.leader_id
+                    || active
+                        .get(approver)
+                        .is_some_and(|seat| seat.counts_toward(rule, document_created_at))
+            })
             .collect());
     }
-    let mut still_seated = Vec::with_capacity(approvers.len() + 1);
+    let mut still_counted = Vec::with_capacity(approvers.len() + 1);
     for approver in approvers.iter().copied() {
-        if charter.seats(
+        let seat = charter.seat_of(
             drive,
             approver,
             epoch,
             execution_context,
             tx,
             platform_version,
-        )? {
-            still_seated.push(approver);
+        )?;
+        if seat.is_some_and(|seat| seat.counts_toward(rule, document_created_at)) {
+            still_counted.push(approver);
         }
     }
-    Ok(still_seated)
+    Ok(still_counted)
 }
 
 /// What Drive needs to delete `document` as a moderator deletes it: the contract, the document's

@@ -2246,7 +2246,7 @@ impl NetworkStrategy {
         IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
-            secret_key.as_ref(),
+            secret_key.as_secret_bytes(),
             0,
             platform_version,
             None,
@@ -2320,7 +2320,7 @@ impl NetworkStrategy {
 
         (
             asset_lock_proof,
-            secret_key.secret_bytes().to_vec(),
+            secret_key.to_secret_bytes().to_vec(),
             funded_amount,
         )
     }

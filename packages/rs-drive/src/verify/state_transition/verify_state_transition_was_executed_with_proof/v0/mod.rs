@@ -61,6 +61,9 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -68,7 +71,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractTeamActionSignature, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedContractTeamActionSignature, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedShieldedNullifiers, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithShieldedNullifiers, VerifiedTokenGroupActionWithShieldedPoolBalance, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -635,15 +638,25 @@ impl Drive {
                             platform_version,
                         )?;
 
-                        let token_history_document_type =
-                            token_transition.historical_document_type(&token_history_contract)?;
-
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
                         )?;
                         let keeps_historical_document = token_config.keeps_history();
 
                         let historical_query = || {
+                            // Resolved here rather than above because the kinds that write into a
+                            // shielded pool keep no history and have no document type in the
+                            // history contract. Only a kind that reaches this closure has one, so
+                            // looking it up any earlier fails for every pool transition, whatever
+                            // the token's history settings say.
+                            //
+                            // Moving the lookup cannot change what a released version verifies:
+                            // every kind those versions admit resolves a document type in both
+                            // schema versions of the history contract, which this change leaves
+                            // untouched, so the lookup that used to run before the branch still
+                            // succeeds here and yields the same type and the same errors.
+                            let token_history_document_type = token_transition
+                                .historical_document_type(&token_history_contract)?;
                             let query = SingleDocumentDriveQuery {
                                 contract_id: token_history_contract.id().into_buffer(),
                                 document_type_name: token_history_document_type_name,
@@ -1112,6 +1125,200 @@ impl Drive {
                             | TokenTransition::EmergencyAction(_)
                             | TokenTransition::ConfigUpdate(_)
                             | TokenTransition::Claim(_) => historical_query(),
+                            TokenTransition::Shield(_) => {
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_balance_for_identity_id(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        owner_id.into_buffer(),
+                                        carries_owner_balance,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token shield)", owner_id))));
+                                };
+                                Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                            }
+                            TokenTransition::Unshield(token_unshield_transition) => {
+                                let recipient_id = token_unshield_transition.recipient_id();
+                                let (root_hash, Some(balance)) =
+                                    Drive::verify_token_balance_for_identity_id(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        recipient_id.into_buffer(),
+                                        carries_owner_balance,
+                                        platform_version,
+                                    )?
+                                else {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token unshield)", recipient_id))));
+                                };
+                                Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+                            }
+                            TokenTransition::ShieldedTransfer(
+                                token_shielded_transfer_transition,
+                            ) => {
+                                let nullifiers: Vec<Vec<u8>> = token_shielded_transfer_transition
+                                    .actions()
+                                    .iter()
+                                    .map(|action| action.nullifier.to_vec())
+                                    .collect();
+                                let (root_hash, statuses) =
+                                    Drive::verify_token_shielded_pool_nullifiers(
+                                        proof,
+                                        token_id.into_buffer(),
+                                        &nullifiers,
+                                        carries_owner_balance,
+                                        platform_version,
+                                    )?;
+                                if statuses.len() != nullifiers.len()
+                                    || statuses.iter().any(|(_, spent)| !spent)
+                                {
+                                    return Err(Error::Proof(ProofError::IncorrectProof(
+                                        "proof did not show every nullifier of the token shielded transfer as spent".to_string(),
+                                    )));
+                                }
+                                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+                            }
+                            TokenTransition::MintToPool(_)
+                            | TokenTransition::ClaimToPool(_)
+                            | TokenTransition::DirectPurchaseToPool(_) => {
+                                // Of these three only a mint into the pool can be proposed as a
+                                // group action; a claim and a direct purchase into the pool
+                                // derive no action id. The branch is on the group info all the
+                                // same, because that is what the prover branches on when it
+                                // decides whether to merge the group signer query into the proof.
+                                if let Some(group_state_transition_info) =
+                                    token_transition.base().using_group_info()
+                                {
+                                    let (_root_hash, status, sum_power) =
+                                        Drive::verify_action_signer_and_total_power(
+                                            proof,
+                                            data_contract_id,
+                                            group_state_transition_info.group_contract_position,
+                                            None,
+                                            group_state_transition_info.action_id,
+                                            owner_id,
+                                            true,
+                                            platform_version,
+                                        )?;
+
+                                    let (root_hash, balance) =
+                                        Drive::verify_token_shielded_pool_state(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            true,
+                                            platform_version,
+                                        )?;
+                                    // A group action creates no notes until the last required
+                                    // signature arrives, so only a closed action must show a
+                                    // pool. While it is active the balance is whatever the pool
+                                    // already held, and is absent for a pool never yet used.
+                                    if status == GroupActionStatus::ActionClosed
+                                        && balance.is_none()
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain the token shielded pool balance expected to exist because the closed group action created notes in the pool".to_string(),
+                                        )));
+                                    }
+
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenGroupActionWithShieldedPoolBalance(
+                                            sum_power, status, balance,
+                                        ),
+                                    ))
+                                } else {
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_shielded_pool_state(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            carries_owner_balance,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain the token shielded pool balance expected to exist because of state transition (notes created in the pool)".to_string(),
+                                        )));
+                                    };
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenShieldedPoolBalance(token_id, balance),
+                                    ))
+                                }
+                            }
+                            TokenTransition::BurnFromPool(token_burn_from_pool_transition) => {
+                                let nullifiers: Vec<Vec<u8>> = token_burn_from_pool_transition
+                                    .actions()
+                                    .iter()
+                                    .map(|action| action.nullifier.to_vec())
+                                    .collect();
+                                if let Some(group_state_transition_info) =
+                                    token_transition.base().using_group_info()
+                                {
+                                    let (_root_hash, status, sum_power) =
+                                        Drive::verify_action_signer_and_total_power(
+                                            proof,
+                                            data_contract_id,
+                                            group_state_transition_info.group_contract_position,
+                                            None,
+                                            group_state_transition_info.action_id,
+                                            owner_id,
+                                            true,
+                                            platform_version,
+                                        )?;
+
+                                    let (root_hash, statuses) =
+                                        Drive::verify_token_shielded_pool_nullifiers(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            &nullifiers,
+                                            true,
+                                            platform_version,
+                                        )?;
+                                    if statuses.len() != nullifiers.len() {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not show the spend status of every nullifier of the token burn from pool".to_string(),
+                                        )));
+                                    }
+                                    // A group action spends nothing until the last required
+                                    // signature arrives, so only a closed action must show every
+                                    // nullifier spent. While it is active they all read unspent,
+                                    // and that is what tells a client the burn has not run.
+                                    if status == GroupActionStatus::ActionClosed
+                                        && statuses.iter().any(|(_, spent)| !spent)
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not show every nullifier of the closed group action burning from the pool as spent".to_string(),
+                                        )));
+                                    }
+
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenGroupActionWithShieldedNullifiers(
+                                            sum_power, status, statuses,
+                                        ),
+                                    ))
+                                } else {
+                                    let (root_hash, statuses) =
+                                        Drive::verify_token_shielded_pool_nullifiers(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            &nullifiers,
+                                            carries_owner_balance,
+                                            platform_version,
+                                        )?;
+                                    if statuses.len() != nullifiers.len()
+                                        || statuses.iter().any(|(_, spent)| !spent)
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not show every nullifier of the token burn from pool as spent".to_string(),
+                                        )));
+                                    }
+                                    Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+                                }
+                            }
                         }
                     }
                 }
@@ -2084,7 +2291,7 @@ impl Drive {
                 use dpp::state_transition::proof_result::StateTransitionProofResult::{
                     VerifiedAssetLockConsumed, VerifiedAssetLockConsumedWithAddressInfos,
                 };
-                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+                use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
                 use grovedb::Element;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
@@ -2094,9 +2301,10 @@ impl Drive {
                 })?;
                 let outpoint_bytes: [u8; 36] = outpoint.into();
 
-                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
-                let ShieldFromAssetLockTransition::V0(v0) = st;
-                let surplus_output = &v0.surplus_output;
+                // Read through the accessor rather than by destructuring the transition, which
+                // stopped compiling once the enum gained a variant. Same field, same value, so
+                // nothing a released version verifies moves.
+                let surplus_output = st.surplus_output();
 
                 // Build the outpoint sub-query exactly as the prove side does (same path, same key).
                 let mut outpoint_query = grovedb::Query::new();
@@ -2470,6 +2678,66 @@ impl Drive {
                     VerifiedIdentityWithShieldedNullifiers(identity, statuses),
                 ))
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
+                use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.token_nullifiers();
+                let (root_hash, statuses) = Drive::verify_token_shielded_pool_nullifiers(
+                    proof,
+                    st.token_id().to_buffer(),
+                    &nullifier_keys,
+                    false,
+                    platform_version,
+                )?;
+                if statuses.len() != nullifier_keys.len()
+                    || statuses.iter().any(|(_, spent)| !spent)
+                {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "proof did not show every nullifier of the token shielded transfer as spent".to_string(),
+                    )));
+                }
+                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
+
+                let recipient_id = st.recipient_id();
+                let (root_hash, Some(balance)) = Drive::verify_token_balance_for_identity_id(
+                    proof,
+                    st.token_id().to_buffer(),
+                    recipient_id.to_buffer(),
+                    false,
+                    platform_version,
+                )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "proof did not contain token balance for identity {} expected to exist because of state transition (token unshield with shielded fee)",
+                        recipient_id
+                    ))));
+                };
+                Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+            }
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+
+                let token_id = st.token_id();
+                let (root_hash, Some(balance)) = Drive::verify_token_shielded_pool_state(
+                    proof,
+                    token_id.to_buffer(),
+                    false,
+                    platform_version,
+                )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "proof did not contain the token shielded pool balance expected to exist because of state transition (token purchase from shielded pool)".to_string(),
+                    )));
+                };
+                Ok((
+                    root_hash,
+                    VerifiedTokenShieldedPoolBalance(token_id, balance),
+                ))
+            }
             StateTransition::IdentityTopUpFromShieldedPool(st) => {
                 use crate::drive::balances::balance_path;
                 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
@@ -2815,6 +3083,8 @@ impl Drive {
                 // specific transition's execution.
                 Some(BatchedTransitionRef::Document(document_transition)) => {
                     use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                    use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+                    use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
                     let data_contract_id = document_transition.data_contract_id();
                     let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
                         Error::Proof(ProofError::UnknownContract(format!(
@@ -2822,10 +3092,21 @@ impl Drive {
                             data_contract_id
                         ))),
                     )?;
-                    !contract
+                    let index_only = contract
                         .document_type_for_name(document_transition.document_type_name())
                         .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
-                        .index_only()
+                        .index_only();
+                    // A document whose token cost is paid from a shielded pool is proven by the
+                    // document and, where one is read, the owner's balance — neither of which
+                    // names the bundle that paid. Two different payments leave the same document
+                    // behind, so a proof of the document is not a proof of the payment the
+                    // request carried, and only the state it affects is proven.
+                    let paid_from_a_shielded_pool = document_transition
+                        .base()
+                        .token_payment_info_ref()
+                        .as_ref()
+                        .is_some_and(|info| info.shielded_payment().is_some());
+                    !index_only && !paid_from_a_shielded_pool
                 }
                 Some(BatchedTransitionRef::Token(token_transition)) => {
                     let data_contract_id = token_transition.data_contract_id();
@@ -2859,6 +3140,30 @@ impl Drive {
                         | TokenTransition::EmergencyAction(_)
                         | TokenTransition::ConfigUpdate(_)
                         | TokenTransition::Claim(_) => true,
+                        // Balance snapshots: the moved amount cannot be tied to one shield, one
+                        // unshield, or one creation of notes in a pool.
+                        TokenTransition::Shield(_)
+                        | TokenTransition::Unshield(_)
+                        | TokenTransition::ClaimToPool(_)
+                        | TokenTransition::DirectPurchaseToPool(_) => false,
+                        // A mint into the pool leaves only the pool's new total behind, which no
+                        // single transition owns. Proposed as a group action it is bound the way
+                        // every other grouped kind is: by the signer's recorded entry under the
+                        // action id this transition derives.
+                        TokenTransition::MintToPool(_) => grouped,
+                        // Only the resulting state. A spend's nullifier comes from the note
+                        // and the viewing key, never from the outputs that replace it, so two
+                        // transfers of the same notes to different recipients carry the same
+                        // nullifiers. Whichever executes leaves evidence that fits both, and
+                        // this proof authenticates no output commitment, ciphertext or bundle
+                        // commitment that would tell them apart.
+                        TokenTransition::ShieldedTransfer(_) => false,
+                        // Grouped, the signer's recorded entry under the action id binds this
+                        // burn, and the id is derived from the digest of its actions. Ungrouped,
+                        // the evidence is the nullifiers alone, which name the notes spent and
+                        // not the amount burned: two burns of the same notes leaving different
+                        // change spend the same nullifiers.
+                        TokenTransition::BurnFromPool(_) => grouped,
                     }
                 }
             },
@@ -2899,8 +3204,11 @@ impl Drive {
             StateTransition::AddressFundingFromAssetLock(_) => false,
             StateTransition::AddressCreditWithdrawal(_) => false,
             StateTransition::Shield(_) => false,
-            // Nullifier-spend proofs bind the exact Orchard actions of this
-            // transition.
+            // A withdrawal's document id derives from its first nullifier and its output
+            // script, so that one binds its destination. The two beneath it rest on the
+            // nullifiers alone, which name the notes spent and not the outputs that replace
+            // them; they are classified the way the token families they mirror are not only
+            // because they are reached from released protocol versions.
             StateTransition::Unshield(_) => true,
             StateTransition::ShieldedTransfer(_) => true,
             StateTransition::ShieldedWithdrawal(_) => true,
@@ -2921,6 +3229,12 @@ impl Drive {
             // identity, and the credited identity's balance is a snapshot at
             // the proof's block.
             StateTransition::IdentityTopUpFromShieldedPool(_) => false,
+            // Only the resulting state, for the reason the batched shielded transfer carries:
+            // its nullifiers name the notes it spends, not the recipients it pays.
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => false,
+            // Balance and pool snapshots at the proof's block: not bindable to one transition.
+            StateTransition::TokenUnshieldWithShieldedFee(_) => false,
+            StateTransition::TokenPurchaseFromShieldedPool(_) => false,
         };
 
         Ok(binds)
@@ -5985,6 +6299,12 @@ mod tests {
         use dpp::state_transition::identity_key_limits_update_transition::IdentityKeyLimitsUpdateTransition;
         use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+        use dpp::state_transition::token_purchase_from_shielded_pool_transition::v0::TokenPurchaseFromShieldedPoolTransitionV0;
+        use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+        use dpp::state_transition::token_unshield_with_shielded_fee_transition::v0::TokenUnshieldWithShieldedFeeTransitionV0;
+        use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
 
         let no_contracts: &ContractLookupFn = &|_id| Ok(None);
 
@@ -6040,6 +6360,79 @@ mod tests {
                 StateTransition::AddressCreditWithdrawal(AddressCreditWithdrawalTransition::V0(
                     Default::default(),
                 )),
+            ),
+            // The token pool families whose evidence is a spent nullifier, a balance or a pool
+            // total. A nullifier names the note a spend consumed, never the outputs that replace
+            // it, so it cannot tell one spend of those notes from another; a balance and a pool
+            // total are what the block committed, not a record of which request moved them.
+            // Built field by field because these carry fixed-width signatures, which no derived
+            // default covers; the classifier reads none of the fields.
+            (
+                "token shielded transfer with a shielded fee",
+                StateTransition::TokenShieldedTransferWithShieldedFee(
+                    TokenShieldedTransferWithShieldedFeeTransition::V0(
+                        TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "token unshield with a shielded fee",
+                StateTransition::TokenUnshieldWithShieldedFee(
+                    TokenUnshieldWithShieldedFeeTransition::V0(
+                        TokenUnshieldWithShieldedFeeTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            recipient_id: Identifier::default(),
+                            amount: 0,
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
+            ),
+            (
+                "token purchase from a shielded pool",
+                StateTransition::TokenPurchaseFromShieldedPool(
+                    TokenPurchaseFromShieldedPoolTransition::V0(
+                        TokenPurchaseFromShieldedPoolTransitionV0 {
+                            data_contract_id: Identifier::default(),
+                            token_contract_position: 0,
+                            token_id: Identifier::default(),
+                            token_count: 0,
+                            total_agreed_price: 0,
+                            token_actions: vec![],
+                            token_anchor: [0; 32],
+                            token_proof: vec![],
+                            token_binding_signature: [0; 64],
+                            fee_actions: vec![],
+                            fee_anchor: [0; 32],
+                            fee_proof: vec![],
+                            fee_binding_signature: [0; 64],
+                            credit_amount: 0,
+                        },
+                    ),
+                ),
             ),
         ];
 

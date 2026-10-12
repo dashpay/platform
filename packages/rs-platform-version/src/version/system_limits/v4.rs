@@ -92,6 +92,15 @@ use crate::version::system_limits::SystemLimits;
 ///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
 ///   block; the end of one that grew past 10,000 before version 14, its first 10,000
 ///   (`maximum_contenders_to_consider`).
+/// * Contested summed types (protocol version 14): a document type with a contested index
+///   and a summed property may only be registered when that property's values lie within
+///   ±2^27 (`max_contested_summed_value_magnitude`), so awarding a contest cannot take a sum
+///   out of `i64`. It joined this table in place while protocol version 14 was unreleased.
+///   `None` in the earlier tables, whose parsers never read it.
+/// * Token pool notes threshold (protocol version 14): a token configuration's
+///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
+///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
+///   configuration able to carry it.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -145,6 +154,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),
@@ -153,4 +163,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
+    max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
 };

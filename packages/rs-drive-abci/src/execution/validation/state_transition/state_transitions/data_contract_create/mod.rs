@@ -5558,6 +5558,7 @@ mod tests {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
         use dpp::data_contract::errors::DataContractError;
+        use dpp::platform_value::string_encoding::Encoding;
         use drive::util::test_helpers::setup_contract;
 
         const FOREIGN_CONTRACT_PATH: &str =
@@ -6683,6 +6684,88 @@ mod tests {
                 } if message.contains(
                     "refersTo inList: \"members\" of \"electedCharter\" can be changed by a replace"
                 )
+            );
+        }
+
+        /// The contract whose indexOnly `like` (deletable) and `vote` (permanent)
+        /// document types the indexOnly registration fixtures reference from another
+        /// contract.
+        const INDEX_ONLY_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-index-only-foreign.json";
+
+        #[tokio::test]
+        async fn should_reject_a_permanent_reference_by_id_to_an_index_only_type_of_the_same_contract(
+        ) {
+            // `pin` forbids deletion, so it admits a permanentDocument reference's kind, but
+            // its documents are index entries alone: no write could fetch one by its id
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-index-only.json",
+                INDEX_ONLY_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeIndexOnlyError(e)
+                    ),
+                    ..
+                } if e.path() == "note.pinId" && e.document_type_name() == "pin"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_deletable_reference_by_id_to_an_index_only_type_of_another_contract(
+        ) {
+            // `like` of the other contract allows deletion, so it admits a deletableDocument
+            // reference's kind, but it is indexOnly
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-index-only.json",
+                INDEX_ONLY_CONTRACT_PATH,
+            )
+            .await;
+
+            let index_only_contract_id = Identifier::from_string(
+                "AwW2H8VLdwJ9crM8utk3Ym5x8GxCurB89HCEEmRRP9fg",
+                Encoding::Base58,
+            )
+            .expect("expected the indexOnly contract's id");
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeIndexOnlyError(e)
+                    ),
+                    ..
+                } if e.path() == "note.likeId"
+                    && e.document_type_name() == "like"
+                    && *e.contract_id() == index_only_contract_id
+            );
+        }
+
+        #[tokio::test]
+        async fn should_keep_refusing_a_find_by_into_an_index_only_type_as_an_invalid_lookup() {
+            // A `findBy` does not resolve by id: the lookup's own check refuses it, since an
+            // indexOnly type has no unique index to find a document through (`byBallot`
+            // covers exactly the key but is not unique)
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-lookup-registration-index-only.json",
+                INDEX_ONLY_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "note.ballotId"
+                    && e.find_by() == "ballotId"
+                    && e.reason().contains("index \"byBallot\" of \"vote\" over (ballotId) is not unique")
             );
         }
     }

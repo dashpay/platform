@@ -22,11 +22,11 @@ use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
 };
 use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::blsful::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchemes};
 use dashcore::hash_types::InputsHash;
 use dashcore::hashes::Hash;
 use dashcore::platform_node_id::PlatformNodeId;
 use dashcore::{Address as DashAddress, Network, Transaction, Txid};
+use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchemes};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -309,7 +309,7 @@ pub(crate) fn prepare_update_service_placeholder(
         })?;
         (
             Some(ProviderMasternodeType::HighPerformance as u16),
-            Some(PlatformNodeId::from_byte_array(node_id)),
+            Some(PlatformNodeId::from_canonical_bytes(node_id)),
             Some(p2p_port),
             Some(http_port),
         )
@@ -418,7 +418,7 @@ pub(crate) fn finalize_update_service_payload(
         )
         .map_err(|e| BuilderError::SigningFailed(format!("BLS payload signing failed: {e}")))?;
     let signature_bytes: [u8; 96] = signature
-        .to_bytes_with_mode(dashcore::blsful::SerializationFormat::Modern)
+        .to_bytes_with_mode(dpp::bls_signatures::SerializationFormat::Modern)
         .as_slice()
         .try_into()
         .map_err(|_| {
@@ -465,7 +465,7 @@ mod tests {
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
     };
-    use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
+    use dpp::bls_signatures::{PublicKey as BlsPublicKey, Signature as BlsSignature};
     use key_wallet::account::StandardAccountType;
     use std::sync::{Arc, Mutex};
 
@@ -631,7 +631,9 @@ mod tests {
         );
         assert_eq!(
             payload.platform_node_id,
-            entry.platform_node_id.map(PlatformNodeId::from_byte_array)
+            entry
+                .platform_node_id
+                .map(PlatformNodeId::from_canonical_bytes)
         );
         assert_eq!(payload.platform_p2p_port, Some(26656));
         assert_eq!(payload.platform_http_port, entry.platform_http_port);
@@ -804,10 +806,12 @@ mod tests {
         )
         .expect("valid test scalar");
         let public_key = BlsPublicKey::from(&secret);
-        let signature: BlsSignature<Bls12381G2Impl> = payload
-            .payload_sig
-            .try_into()
-            .expect("compressed signature decodes");
+        let signature = BlsSignature::<Bls12381G2Impl>::from_bytes_with_mode(
+            payload.payload_sig.as_bytes(),
+            SignatureSchemes::Basic,
+            dpp::bls_signatures::SerializationFormat::Modern,
+        )
+        .expect("compressed signature decodes");
         signature
             .verify(&public_key, payload.base_payload_hash().as_byte_array())
             .expect("operator BLS signature verifies over base_payload_hash");

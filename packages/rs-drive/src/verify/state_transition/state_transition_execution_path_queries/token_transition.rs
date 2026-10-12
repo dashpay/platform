@@ -1,3 +1,6 @@
+use crate::drive::shielded::paths::{
+    token_shielded_pool_nullifiers_path_query, token_shielded_pool_state_path_query,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
@@ -14,10 +17,13 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use dpp::system_data_contracts::load_system_data_contract;
 use grovedb::PathQuery;
 use platform_version::version::PlatformVersion;
@@ -157,6 +163,42 @@ impl TryTransitionIntoPathQuery for TokenTransition {
             | TokenTransition::ConfigUpdate(_)
             | TokenTransition::Claim(_) => {
                 create_token_historical_document_query(self, owner_id, platform_version)?
+            }
+            // Shielded token operations keep no history. A shield or unshield is attested by
+            // the identity balance it moved; a shielded transfer by the nullifiers it spent,
+            // which now exist in the token pool.
+            TokenTransition::Shield(_) => Drive::token_balance_for_identity_id_query(
+                token_id.to_buffer(),
+                owner_id.to_buffer(),
+            ),
+            TokenTransition::Unshield(token_unshield_transition) => {
+                Drive::token_balance_for_identity_id_query(
+                    token_id.to_buffer(),
+                    token_unshield_transition.recipient_id().to_buffer(),
+                )
+            }
+            TokenTransition::ShieldedTransfer(token_shielded_transfer_transition) => {
+                let nullifiers: Vec<[u8; 32]> = token_shielded_transfer_transition
+                    .actions()
+                    .iter()
+                    .map(|action| action.nullifier)
+                    .collect();
+                token_shielded_pool_nullifiers_path_query(token_id.to_buffer(), &nullifiers)
+            }
+            // Notes created straight into the pool show up in the pool's total balance; a burn
+            // from the pool is attested by the nullifiers it spent.
+            TokenTransition::MintToPool(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => {
+                token_shielded_pool_state_path_query(token_id.to_buffer())
+            }
+            TokenTransition::BurnFromPool(token_burn_from_pool_transition) => {
+                let nullifiers: Vec<[u8; 32]> = token_burn_from_pool_transition
+                    .actions()
+                    .iter()
+                    .map(|action| action.nullifier)
+                    .collect();
+                token_shielded_pool_nullifiers_path_query(token_id.to_buffer(), &nullifiers)
             }
         };
 

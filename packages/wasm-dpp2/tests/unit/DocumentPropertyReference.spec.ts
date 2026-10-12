@@ -1030,6 +1030,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotModerated).to.equal(40143);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeIndexOnly).to.equal(40146);
     });
 
     it('should resolve a code back to its name', () => {

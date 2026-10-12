@@ -324,6 +324,37 @@ pub fn compute_shielded_identity_create_fee_v0(
         ))
 }
 
+/// Version 0 of the identity-less token pool transition fee: the base for each of the two
+/// bundles plus `extra_storage_bytes` at the storage rate.
+pub fn compute_token_pool_paid_shielded_fee_v0(
+    token_actions: usize,
+    fee_actions: usize,
+    extra_storage_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+    let fee_bundle = compute_minimum_shielded_fee_v0(fee_actions, platform_version)?;
+    let token_bundle = compute_minimum_shielded_fee_v0(token_actions, platform_version)?;
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let extra_storage_fee =
+        extra_storage_bytes
+            .checked_mul(per_byte_rate)
+            .ok_or(ProtocolError::Overflow(
+                "token pool paid transition storage fee overflow",
+            ))?;
+    fee_bundle
+        .checked_add(token_bundle)
+        .and_then(|fee| fee.checked_add(extra_storage_fee))
+        .ok_or(ProtocolError::Overflow(
+            "token pool paid transition fee overflow",
+        ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -531,5 +562,66 @@ mod tests {
                 "the unshield address-write component must be flat (independent of action count)"
             );
         }
+    }
+
+    /// A token unshield credits the recipient's token balance, and the recipient only has to be an
+    /// existing identity — not an existing holder — so the fee has to cover CREATING that balance
+    /// item, not merely rewriting one. Its component is therefore the insert allowance, strictly
+    /// dearer than the replace-only allowance an `IdentityTopUpFromShieldedPool` needs for a
+    /// balance that already exists. Folding the two back into one constant would either underfund
+    /// the insert or overcharge the top-up, so both halves of that relationship are pinned.
+    ///
+    /// The allowance is flat and identical for every recipient, which is not merely conservatism:
+    /// `credit_amount` is public and must equal this fee exactly, so a component that varied with
+    /// the recipient's holdings would publish whether they hold this token for the first time.
+    #[test]
+    fn compute_token_unshield_with_shielded_fee_fee_prices_a_balance_insert_for_every_recipient() {
+        use crate::shielded::{
+            compute_token_shielded_transfer_with_shielded_fee_fee,
+            compute_token_unshield_with_shielded_fee_fee,
+            SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
+        };
+
+        let platform_version = PlatformVersion::latest();
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let insert_cost = SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES * per_byte_rate;
+
+        for (token_actions, fee_actions) in [(2usize, 2usize), (2, 5), (7, 2), (16, 16)] {
+            let unshield = compute_token_unshield_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )
+            .expect("token unshield fee");
+            // A shielded transfer writes nothing outside the pools, so it is the two bundles alone.
+            let both_bundles = compute_token_shielded_transfer_with_shielded_fee_fee(
+                token_actions,
+                fee_actions,
+                platform_version,
+            )
+            .expect("token shielded transfer fee");
+            assert_eq!(
+                unshield,
+                both_bundles + insert_cost,
+                "a token unshield of {token_actions}+{fee_actions} actions must be the two \
+                 bundles plus exactly one {SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES}-byte \
+                 balance-insert component"
+            );
+            assert_eq!(
+                unshield - both_bundles,
+                insert_cost,
+                "the balance-insert component must be flat (independent of action count)"
+            );
+        }
+
+        // The top-up tops up an identity that already exists, so it keeps the replace-only one.
+        assert_eq!(
+            compute_shielded_identity_top_up_fee_v0(2, platform_version).expect("top up fee"),
+            compute_minimum_shielded_fee_v0(2, platform_version).expect("minimum shielded fee")
+                + SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES * per_byte_rate,
+            "pricing the unshield's insert must not move the top-up off its rewrite allowance"
+        );
     }
 }

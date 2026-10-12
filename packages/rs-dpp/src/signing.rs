@@ -12,8 +12,8 @@ use crate::{BlsModule, ProtocolError};
 use dashcore::signer;
 #[cfg(feature = "bls-signatures")]
 use {
+    crate::bls_signatures::{self, Signature},
     crate::bls_signatures::{Bls12381G2Impl, Pairing},
-    dashcore::{blsful as bls_signatures, blsful::Signature},
 };
 
 impl PlatformMessageSignable for &[u8] {

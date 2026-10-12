@@ -415,7 +415,7 @@ impl SpvRuntime {
 
         let stop_result = match taken {
             Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
-                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+                Ok(()) => Ok(()),
                 Err(_) => {
                     // The client is dropped with the timed-out future. The
                     // data-dir lock may outlive this call, which is strictly
@@ -631,7 +631,7 @@ impl SpvRuntime {
     pub async fn sync_progress(&self) -> Option<SyncProgress> {
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref()?;
-        Some(client.sync_progress().await)
+        Some(client.progress().await)
     }
 
     /// Read the unix-seconds block time of the SPV header storage's
@@ -717,7 +717,7 @@ impl SpvRuntime {
         StorageManager::clear(&mut storage)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        StorageManager::shutdown(&mut storage).await;
+        StorageManager::stop(&mut storage).await;
 
         Ok(())
     }
@@ -788,7 +788,7 @@ mod masternodes_by_voting_key_tests {
     /// Build a list from `(proTxHash-seed, voting-key-id)` pairs so each entry
     /// gets a distinct proTxHash and a caller-chosen voting key.
     fn list_from(entries: Vec<(u8, [u8; 20])>) -> MasternodeList {
-        let masternodes = entries
+        let masternodes: dashcore::sml::masternode_list::MasternodeMap = entries
             .into_iter()
             .map(|(seed, voting_key_id)| {
                 let mut hash_bytes = [0u8; 32];
@@ -807,12 +807,12 @@ mod masternodes_by_voting_key_tests {
                     is_valid: true,
                     mn_type: EntryMasternodeType::Regular,
                 };
-                (pro_tx_hash, entry.into())
+                (pro_tx_hash, std::sync::Arc::new(entry.into()))
             })
             .collect();
         MasternodeList::build(
             masternodes,
-            Default::default(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )

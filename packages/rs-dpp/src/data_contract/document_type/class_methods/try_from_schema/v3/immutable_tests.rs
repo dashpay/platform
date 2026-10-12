@@ -544,8 +544,8 @@ fn should_refuse_a_stored_read_in_a_property_constraints_rule() {
     assert!(parse_with(schema.clone(), PlatformVersion::latest(), true).is_err());
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "rule \"keepsMeta\" reads \"$old.meta\", but only a condition of an `immutable` entry \
-         reads the stored document",
+        "rule \"keepsMeta\" reads \"$old.meta\", but only a condition judging a replace (an \
+         `immutable` entry's, or `retractedWhen`) reads the stored document",
     );
 }
 

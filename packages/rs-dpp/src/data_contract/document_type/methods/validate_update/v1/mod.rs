@@ -76,6 +76,14 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that the type keeps the replace its barred owners may still make (the
+        // keyword arrives with protocol version 14, the only version selecting this generation)
+        let result = self.validate_retracted_when_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that a property the update adds is generated only when one of its
         // params is new too (the keyword arrives with protocol version 14, the only
         // version selecting this generation)
@@ -464,13 +472,22 @@ impl DocumentTypeRef<'_> {
                     let rule = |rule: Option<SettledDeletionRule>| match rule {
                         None => "no deletion once settled".to_string(),
                         Some(SettledDeletionRule {
-                            leader: true,
+                            leader,
                             approvals,
-                        }) => format!("{approvals} approvals, the team's leader among them"),
-                        Some(SettledDeletionRule {
-                            leader: false,
-                            approvals,
-                        }) => format!("{approvals} approvals"),
+                            approvers_predate_document,
+                        }) => format!(
+                            "{approvals} approvals{}{}",
+                            if leader {
+                                ", the team's leader among them"
+                            } else {
+                                ""
+                            },
+                            if approvers_predate_document {
+                                ", added members only from before the document"
+                            } else {
+                                ", added members whenever added"
+                            }
+                        ),
                     };
                     return SimpleConsensusValidationResult::new_with_error(
                         DocumentTypeUpdateError::new(
@@ -587,6 +604,39 @@ impl DocumentTypeRef<'_> {
                     "document type can not change the time to live of its documents: changing from {} to {}",
                     describe(old_ttl),
                     describe(new_ttl)
+                ),
+            )
+            .into(),
+        )
+    }
+
+    /// What a document type's `retractedWhen` lets a banned or suspended owner write is
+    /// fixed when the type is created. Loosening it would let barred owners write what
+    /// their bar was imposed under the promise of refusing, and tightening or removing it
+    /// would take back the one exit an author whose documents can not be deleted was given
+    /// when it wrote them. Whether one condition holds wherever another does can not be
+    /// told in general, so any change is refused. It runs before the schema compatibility
+    /// differ, which only freezes the key's text, so a real change gets this error. A
+    /// document type added by an update declares `retractedWhen` freely.
+    fn validate_retracted_when_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        if self.retracted_when() == new_document_type.retracted_when() {
+            return SimpleConsensusValidationResult::new();
+        }
+        let change = match (self.retracted_when(), new_document_type.retracted_when()) {
+            (None, _) => "add",
+            (_, None) => "remove",
+            _ => "change",
+        };
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not {change} its `retractedWhen` condition: what a banned \
+                     or suspended owner may still write is fixed when the type is created"
                 ),
             )
             .into(),
@@ -1167,7 +1217,7 @@ mod tests {
                     "properties": {
                         "text": { "type": "string", "maxLength": 50, "position": 0 },
                     },
-                    "required": ["$updatedAt"],
+                    "required": ["$createdAt", "$updatedAt"],
                     "additionalProperties": false,
                     "moderatorAbilities": abilities,
                 }),
@@ -1182,22 +1232,28 @@ mod tests {
         };
 
         // Fewer approvals would reach content written under more, and more would take back
-        // what the contract promised its moderators: the rule changes in no direction.
+        // what the contract promised its moderators: the rule changes in no direction. Letting
+        // members added after a document approve its deletion would let the leader add them.
         for (old, new, expected) in [
             (
                 None,
                 Some(platform_value!({ "leader": true })),
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from no deletion once settled to 1 approvals, the team's leader among them, added members whenever added",
             ),
             (
                 Some(platform_value!({ "leader": true, "approvals": 3 })),
                 Some(platform_value!({ "approvals": 3 })),
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from 3 approvals, the team's leader among them to 3 approvals",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 3 approvals, the team's leader among them, added members only from before the document to 3 approvals, added members only from before the document",
             ),
             (
                 Some(platform_value!({ "approvals": 2 })),
                 None,
-                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals to no deletion once settled",
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals, added members only from before the document to no deletion once settled",
+            ),
+            (
+                Some(platform_value!({ "approvals": 2 })),
+                Some(platform_value!({ "approvals": 2, "approversPredateDocument": false })),
+                "document type can not change who must approve a moderator's deletion of a settled document: changing from 2 approvals, added members only from before the document to 2 approvals, added members whenever added",
             ),
         ] {
             let result = make_document_type(old)

@@ -1,6 +1,8 @@
 /// Accessors for Masternode
 pub mod accessors;
 
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dpp::dashcore_rpc::json::MasternodeListItem;
@@ -45,8 +47,10 @@ impl Debug for MasternodeV0 {
     }
 }
 
-impl From<MasternodeListItem> for MasternodeV0 {
-    fn from(value: MasternodeListItem) -> Self {
+impl TryFrom<MasternodeListItem> for MasternodeV0 {
+    type Error = Error;
+
+    fn try_from(value: MasternodeListItem) -> Result<Self, Self::Error> {
         let MasternodeListItem {
             node_type,
             pro_tx_hash,
@@ -57,15 +61,15 @@ impl From<MasternodeListItem> for MasternodeV0 {
             state,
         } = value;
 
-        Self {
+        Ok(Self {
             node_type,
             pro_tx_hash,
             collateral_hash,
             collateral_index,
-            collateral_address,
+            collateral_address: required_legacy_address(collateral_address, "collateralAddress")?,
             operator_reward,
-            state: state.into(),
-        }
+            state: state.try_into()?,
+        })
     }
 }
 
@@ -86,7 +90,7 @@ impl From<MasternodeV0> for MasternodeListItem {
             pro_tx_hash,
             collateral_hash,
             collateral_index,
-            collateral_address,
+            collateral_address: Some(collateral_address),
             operator_reward,
             state: state.into(),
         }
@@ -137,8 +141,11 @@ pub struct MasternodeStateV0 {
     pub platform_http_port: Option<u32>,
 }
 
-impl From<DMNState> for MasternodeStateV0 {
-    fn from(value: DMNState) -> Self {
+#[allow(deprecated)] // Persist the same flat ports as the shipped v0 format.
+impl TryFrom<DMNState> for MasternodeStateV0 {
+    type Error = Error;
+
+    fn try_from(value: DMNState) -> Result<Self, Self::Error> {
         let DMNState {
             service,
             registered_height,
@@ -151,28 +158,30 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
+            ..
         } = value;
 
-        Self {
+        Ok(Self {
             service,
             registered_height,
             pose_revived_height,
             pose_ban_height,
             revocation_reason,
-            owner_address,
+            owner_address: required_legacy_address(owner_address, "ownerAddress")?,
             voting_address,
-            payout_address,
+            payout_address: required_legacy_address(payout_address, "payoutAddress")?,
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
             platform_p2p_port,
             platform_http_port,
-        }
+        })
     }
 }
 
+#[allow(deprecated)] // Restore the shipped flat-port representation.
 impl From<MasternodeStateV0> for DMNState {
     fn from(value: MasternodeStateV0) -> Self {
         let MasternodeStateV0 {
@@ -197,14 +206,38 @@ impl From<MasternodeStateV0> for DMNState {
             pose_revived_height,
             pose_ban_height,
             revocation_reason,
-            owner_address,
+            owner_address: Some(owner_address),
             voting_address,
-            payout_address,
+            payout_address: Some(payout_address),
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
+            payouts: None,
+            addresses: None,
         }
     }
+}
+
+/// Require the addresses that the pre-upgrade RPC parser required. This keeps
+/// shipped identity and storage behavior unchanged for all legacy records.
+pub(crate) fn required_legacy_address(
+    address: Option<[u8; 20]>,
+    field: &str,
+) -> Result<[u8; 20], Error> {
+    address.ok_or_else(|| {
+        ExecutionError::DashCoreBadResponseError(format!(
+            "masternode is missing required legacy {field}"
+        ))
+        .into()
+    })
+}
+
+/// Validate before inserting a newly parsed Core record into Platform state.
+pub(crate) fn validate_legacy_masternode(item: &MasternodeListItem) -> Result<(), Error> {
+    required_legacy_address(item.collateral_address, "collateralAddress")?;
+    required_legacy_address(item.state.owner_address, "ownerAddress")?;
+    required_legacy_address(item.state.payout_address, "payoutAddress")?;
+    Ok(())
 }

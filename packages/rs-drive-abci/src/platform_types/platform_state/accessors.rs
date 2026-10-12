@@ -767,6 +767,7 @@ impl PlatformStateV0Methods for PlatformState {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use super::*;
     use crate::config::PlatformConfig;
@@ -895,7 +896,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array([0u8; 32]),
             collateral_index: 0,
-            collateral_address: [0u8; 20],
+            collateral_address: Some([0u8; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: "1.2.3.4:1234".parse().expect("socket address"),
@@ -903,14 +904,16 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: [0u8; 20],
+                owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
-                payout_address: [0u8; 20],
+                payout_address: Some([0u8; 20]),
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                payouts: None,
+                addresses: None,
             },
         }
     }
@@ -931,8 +934,10 @@ mod tests {
             pub_key_operator: None,
             operator_payout_address: None,
             platform_node_id: None,
-            platform_p2p_port: None,
-            platform_http_port: None,
+            legacy_platform_p2p_port: None,
+            legacy_platform_http_port: None,
+            payouts: None,
+            addresses: None,
         }
     }
 

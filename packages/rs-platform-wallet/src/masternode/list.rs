@@ -72,7 +72,7 @@ impl MasternodeListSummary {
                 platform_node_id,
             } => (
                 Some(*platform_http_port),
-                Some(platform_node_id.to_byte_array()),
+                Some(platform_node_id.to_canonical_bytes()),
                 true,
             ),
         };
@@ -223,12 +223,14 @@ mod tests {
             is_valid: false,
             mn_type: EntryMasternodeType::HighPerformance {
                 platform_http_port: 1443,
-                platform_node_id: PlatformNodeId::from_byte_array([3u8; 20]),
+                platform_node_id: PlatformNodeId::from_canonical_bytes([3u8; 20]),
             },
         };
         let list = MasternodeList::build(
-            [(pro_tx, entry.into())].into_iter().collect(),
-            Default::default(),
+            [(pro_tx, std::sync::Arc::new(entry.into()))]
+                .into_iter()
+                .collect::<dashcore::sml::masternode_list::MasternodeMap>(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )

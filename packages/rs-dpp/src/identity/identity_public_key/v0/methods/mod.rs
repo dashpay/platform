@@ -1,18 +1,17 @@
+#[cfg(feature = "ed25519-dalek")]
+use crate::ed25519_dalek;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
-#[cfg(feature = "ed25519-dalek")]
-use dashcore::ed25519_dalek;
 use dashcore::hashes::Hash;
-use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
 #[cfg(feature = "bls-signatures")]
-use {crate::bls_signatures, dashcore::blsful::Bls12381G2Impl};
+use {crate::bls_signatures, crate::bls_signatures::Bls12381G2Impl};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
@@ -83,14 +82,13 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 ) -> Result<bool, ProtocolError> {
     match key_type {
         KeyType::ECDSA_SECP256K1 => {
-            let secp = Secp256k1::new();
-            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
             let private_key = dashcore::PrivateKey::new(secret_key, network);
 
-            Ok(private_key.public_key(&secp).to_bytes() == data.as_slice())
+            Ok(private_key.public_key().to_bytes() == data.as_slice())
         }
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
@@ -111,15 +109,14 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
             ));
         }
         KeyType::ECDSA_HASH160 => {
-            let secp = Secp256k1::new();
-            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
             let private_key = dashcore::PrivateKey::new(secret_key, network);
 
             Ok(
-                ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).as_slice()
+                ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).as_slice()
                     == data.as_slice(),
             )
         }
@@ -146,8 +143,8 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls_signatures::{Bls12381G2Impl, Pairing, Signature, SignatureSchemes};
     use crate::identity::{Purpose, SecurityLevel};
-    use dashcore::blsful::{Bls12381G2Impl, Pairing, Signature, SignatureSchemes};
     use dashcore::Network;
     use dpp::version::PlatformVersion;
     use rand::rngs::StdRng;
@@ -160,7 +157,7 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
         let decoded_secret_key =
-            dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
+            crate::bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
                 .expect("expected to get secret key");
         let public_key = decoded_secret_key.public_key();
         let decoded_public_key_data = public_key.0.to_compressed();
@@ -177,7 +174,7 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
         let decoded_secret_key =
-            dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
+            crate::bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
                 .expect("expected to get secret key");
         let signature = decoded_secret_key
             .sign(SignatureSchemes::Basic, b"hello")

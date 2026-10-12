@@ -148,9 +148,9 @@ impl ValidatorSetV0Setters for ValidatorSet {
 ))]
 mod json_convertible_tests {
     use super::*;
+    use crate::bls_signatures::{Bls12381G2Impl, SecretKey};
     use crate::core_types::validator::v0::ValidatorV0;
     use crate::core_types::validator_set::v0::ValidatorSetV0;
-    use dashcore::blsful::{Bls12381G2Impl, SecretKey};
     use dashcore::hashes::Hash;
     use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
     use platform_value::{platform_value, Value};

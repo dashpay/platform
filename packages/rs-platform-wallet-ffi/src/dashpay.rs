@@ -769,7 +769,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+        dashcore::secp256k1::SecretKey::from_secret_bytes(*scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
@@ -783,7 +783,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+        dashcore::secp256k1::SecretKey::from_secret_bytes(*scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 

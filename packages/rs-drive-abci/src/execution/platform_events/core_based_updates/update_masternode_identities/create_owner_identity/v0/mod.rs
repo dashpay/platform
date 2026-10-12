@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::platform_types::masternode::v0::required_legacy_address;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
@@ -18,7 +19,7 @@ where
         let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Identity::create_basic_identity(owner_identifier, platform_version)?;
         identity.add_public_keys([Self::get_owner_identity_withdrawal_key(
-            masternode.state.payout_address,
+            required_legacy_address(masternode.state.payout_address, "payoutAddress")?,
             0,
             platform_version,
         )?]);
@@ -34,6 +35,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
@@ -52,7 +54,7 @@ mod tests {
             pro_tx_hash: ProTxHash::from_byte_array(pro_tx),
             collateral_hash: Txid::from_byte_array([0u8; 32]),
             collateral_index: 0,
-            collateral_address: [0u8; 20],
+            collateral_address: Some([0u8; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
@@ -60,14 +62,16 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: [0u8; 20],
+                owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
-                payout_address,
+                payout_address: Some(payout_address),
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                payouts: None,
+                addresses: None,
             },
         }
     }

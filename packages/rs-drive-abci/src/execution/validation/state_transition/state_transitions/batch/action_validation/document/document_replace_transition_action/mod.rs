@@ -15,7 +15,9 @@ use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
 mod state_v0;
-mod state_v1;
+// Its condition inputs are read by the batch transformer too, which judges a barred owner's
+// replace on the type's `retractedWhen`
+pub(in crate::execution::validation::state_transition::state_transitions::batch) mod state_v1;
 
 pub trait DocumentReplaceTransitionActionValidation {
     fn validate_structure(
