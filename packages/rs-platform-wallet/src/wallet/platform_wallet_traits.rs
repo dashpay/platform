@@ -167,7 +167,37 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
-        self.core_wallet.mark_instant_send_utxos(txid, lock)
+        // key-wallet at the pinned revision rewrites the record's context to
+        // `InstantSend` even when the transaction is already in a block. That
+        // context carries no block, so a chain lock no longer promotes the
+        // record and the persister would store a mined send as unconfirmed.
+        // A lock can reach a mined transaction: dash-spv applies one for as
+        // long as its mempool manager tracks the transaction, which ends
+        // only when that manager handles the block's event. Keep the block
+        // context across the call; every slice of a mined transaction is in
+        // that block. As upstream, the mined record then does not carry the
+        // lock: an asset lock mined before its lock is proven by the chain
+        // lock, not by the InstantSend lock. Fixed upstream in
+        // dashpay/rust-dashcore#1037; drop this once the pin carries it.
+        let confirmed = self
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid))
+            .find(|record| record.is_confirmed())
+            .map(|record| record.context.clone());
+        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if let Some(context) = confirmed {
+            for mut account in self.core_wallet.accounts.all_accounts_mut() {
+                if let Some(record) = account.transactions_mut().get_mut(txid) {
+                    if !record.is_confirmed() {
+                        record.update_context(context.clone());
+                    }
+                }
+            }
+        }
+        changed
     }
 
     fn monitor_revision(&self) -> u64 {

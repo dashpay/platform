@@ -449,8 +449,8 @@ impl WalletChangeSetFFI {
     /// only when a re-emitted `TransactionRecord` flows through `records`
     /// with `context = InstantSend(..)`. The standalone IS-lock map is
     /// dropped here. Acceptable as long as the event adapter re-emits
-    /// affected records (it currently does for `TransactionDetected`
-    /// and `BlockProcessed` but NOT for `TransactionInstantLocked`).
+    /// affected records (it does for `TransactionDetected`,
+    /// `BlockProcessed` and `TransactionInstantLocked`).
     /// When the standalone IS-lock event needs to flow to Swift, add
     /// a `BTreeMap`-shaped FFI field here and populate it.
     pub fn from_changeset(cs: &platform_wallet::changeset::CoreChangeSet) -> Self {
