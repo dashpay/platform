@@ -578,6 +578,7 @@ async fn should_restore_provider_key_transaction_history_and_positions() {
         provider_update_registrar::ProviderUpdateRegistrarPayload,
         TransactionPayload,
     };
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
     use key_wallet::managed_account::address_pool::PublicKeyType;
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
@@ -638,7 +639,7 @@ async fn should_restore_provider_key_transaction_history_and_positions() {
             masternode_type: ProviderMasternodeType::Regular,
             masternode_mode: 0,
             collateral_outpoint: OutPoint::null(),
-            service_address: "127.0.0.1:19999".parse().unwrap(),
+            service_address: MasternodeNetInfo::Legacy("127.0.0.1:19999".parse().unwrap()),
             owner_key_hash: owner,
             operator_public_key: operator,
             voting_key_hash: voting,
@@ -649,6 +650,9 @@ async fn should_restore_provider_key_transaction_history_and_positions() {
             platform_node_id: None,
             platform_p2p_port: None,
             platform_http_port: None,
+            // Version 2 predates DIP-0026 payouts and collateral sharing.
+            payouts: None,
+            shared_collateral: None,
         },
     ));
     let pro_tx_hash = registration_tx.txid();
@@ -662,6 +666,7 @@ async fn should_restore_provider_key_transaction_history_and_positions() {
             script_payout: dashcore::ScriptBuf::new(),
             inputs_hash: [0; 32].into(),
             payload_sig: vec![],
+            payouts: None,
         },
     ));
     let (persister, _tmp, path) = common::fresh_persister();
