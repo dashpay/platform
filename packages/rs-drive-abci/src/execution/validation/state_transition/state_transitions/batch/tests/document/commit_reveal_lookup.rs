@@ -2420,6 +2420,65 @@ mod commit_reveal_lookup_tests {
         assert!(result.is_valid(), "{:?}", result.errors);
     }
 
+    /// Ordered through a second index level running the other way, `$createdAtBlockHeight`
+    /// ascending and then `$ownerId` descending (over an index of (`nameHash`,
+    /// `$createdAtBlockHeight`, `$ownerId`)), the preorders of one block are read by owner the
+    /// way `by` orders them: with a limit of 1, the higher owner's commitment is the one read,
+    /// and refuses the lower owner's reveal, while the higher owner's own reveal stands.
+    #[tokio::test]
+    async fn should_read_a_second_index_level_the_way_by_orders_it_within_the_candidate_limit() {
+        let mut fixture = CommitRevealFixture::new_with(|contract| {
+            add_name_registration(contract, true);
+            contract["documentSchemas"]["namePreorder"]["indices"][2]["properties"] = serde_json::json!([
+                { "nameHash": "asc" },
+                { "$createdAtBlockHeight": "asc" },
+                { "$ownerId": "asc" }
+            ]);
+            contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]["chooseFirst"] =
+                name_choose_first_by(serde_json::json!([
+                    "$createdAtBlockHeight",
+                    { "$ownerId": "desc" }
+                ]));
+        });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let ((first_who, first), (second_who, second)) =
+            if fixture.id(Who::Alice) > fixture.id(Who::Mallory) {
+                ((Who::Alice, alice), (Who::Mallory, mallory))
+            } else {
+                ((Who::Mallory, mallory), (Who::Alice, alice))
+            };
+        let data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+        let mut one_candidate = PlatformVersion::latest().clone();
+        one_candidate.system_limits.max_choose_first_candidates = 1;
+
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(second_who),
+            None,
+            REVEAL_HEIGHT,
+            &one_candidate,
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.document_id() == second.id() && *e.preceding_document_id() == first.id()
+        );
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(first_who),
+            None,
+            REVEAL_HEIGHT,
+            &one_candidate,
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
     /// Ordered by `$createdAtBlockHeight` descending, the newest valid preorder comes first:
     /// Alice's older one is preceded by Mallory's, whose reveal stands.
     #[tokio::test]

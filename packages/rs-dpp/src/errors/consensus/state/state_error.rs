@@ -740,9 +740,9 @@ pub enum StateError {
     // reference, that the type can not give it (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRuleReadInvalidError(ReferencedDocumentRuleReadInvalidError),
-    // The commitment a create's `refersTo` found is preceded by a valid one of another
-    // identity, from an earlier block, holding the same value at the property the reference's
-    // `chooseFirst` names (protocol version 14).
+    // The commitment a create's `refersTo` found is preceded, in its `chooseFirst` order, by a
+    // valid one of another identity holding the same value at the property the reference's
+    // `chooseFirst` groups by (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
 }

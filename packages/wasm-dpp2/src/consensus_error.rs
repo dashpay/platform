@@ -119,9 +119,11 @@ pub enum DocumentReferenceErrorCodeWasm {
     ReferencedDocumentRuleReadInvalid = 40148,
     /// The commitment a create's `refersTo` found, its writer's own, is
     /// preceded by another identity's: a commitment to the same values (the
-    /// same value at the property the reference's `chooseFirst` names) from an
-    /// earlier block, not expired, and valid, made by an identity that knew
-    /// the values and not copied. The commitment from the earliest block wins.
+    /// same value at the property the reference's `chooseFirst` groups by)
+    /// ordered before it by the `chooseFirst`'s `by`, not expired, and valid,
+    /// made by an identity that knew the values and not copied. The first
+    /// valid commitment in that order wins (the earliest block's, ordered by
+    /// `$createdAtBlockHeight` ascending).
     ReferencedDocumentPreceded = 40149,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length
