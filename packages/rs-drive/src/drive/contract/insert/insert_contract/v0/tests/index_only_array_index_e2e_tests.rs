@@ -15,9 +15,12 @@ use super::index_only_e2e_tests::{
 };
 use crate::config::DriveConfig;
 use crate::drive::document::index_only_row_commitment;
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::index_only_synthesis::{
+    index_only_proof_index, index_only_transition_entry_path_query,
+};
 use crate::query::{
     key_array_element_clauses, CountMode, DocumentCountRequest, DocumentCountResponse,
     DriveDocumentCountQuery, DriveDocumentQuery, ResolvedTimeRange, WhereClause, WhereOperator,
@@ -29,13 +32,15 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, Index};
+use dpp::data_contract::document_type::{
+    index_only_row_commits_created_at, DocumentPropertyType, DocumentTypeRef, Index,
+};
 use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, GroveDb, TransactionArg};
 use std::collections::BTreeMap;
 
 const POST_A: [u8; 32] = [0xA1; 32];
@@ -56,6 +61,10 @@ enum Trend {
     Outliving,
     /// `byTrendTagPost`, cleared by a delete like every other index.
     Cleared,
+    /// `byTrendTagPost`, whose entries outlive a delete, as the only index
+    /// involving `$createdAt`: the author's index is `byAuthorPost`, without
+    /// it, so the row commits to no timestamp and a delete carries none.
+    OutlivingOnlyTimed,
 }
 
 /// The like type: `byPost` (one like per post and owner), `byTagPost` (an
@@ -63,6 +72,11 @@ enum Trend {
 /// the trending `byTrendTagPost` (a day's window every 6 hours, kept a week)
 /// as `trend` says.
 fn like_contract(trend: Trend) -> DataContract {
+    like_contract_with(trend, "byTagPost")
+}
+
+/// [`like_contract`] with the per-tag index named `tag_index`.
+fn like_contract_with(trend: Trend, tag_index: &str) -> DataContract {
     let identifier = |position: u32| {
         platform_value!({
             "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
@@ -76,18 +90,25 @@ fn like_contract(trend: Trend) -> DataContract {
             "rangeCountable": true
         }),
         platform_value!({
-            "name": "byTagPost", "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+            "name": tag_index, "properties": [{ "tags": "asc" }, { "postId": "asc" }],
             "countable": "countable", "rangeCountable": true
         }),
-        platform_value!({
-            "name": "byAuthorPostTime",
-            "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }],
-            "terminal": "$ownerId"
-        }),
+        match trend {
+            Trend::OutlivingOnlyTimed => platform_value!({
+                "name": "byAuthorPost",
+                "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId"
+            }),
+            _ => platform_value!({
+                "name": "byAuthorPostTime",
+                "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }],
+                "terminal": "$ownerId"
+            }),
+        },
     ];
     let outlives = match trend {
         Trend::None => None,
-        Trend::Outliving => Some(true),
+        Trend::Outliving | Trend::OutlivingOnlyTimed => Some(true),
         Trend::Cleared => Some(false),
     };
     if let Some(outlives) = outlives {
@@ -133,7 +154,10 @@ fn like_contract(trend: Trend) -> DataContract {
 }
 
 fn setup(trend: Trend) -> (Drive, DataContract) {
-    let contract = like_contract(trend);
+    setup_with(like_contract(trend))
+}
+
+fn setup_with(contract: DataContract) -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     drive
         .apply_contract(
@@ -271,7 +295,7 @@ fn delete(
 /// `[DataContractDocuments, contract, 1, "like"]` followed by `segments`.
 fn like_path(contract: &DataContract, segments: &[Vec<u8>]) -> Vec<Vec<u8>> {
     let mut path = vec![
-        vec![crate::drive::RootTree::DataContractDocuments as u8],
+        vec![RootTree::DataContractDocuments as u8],
         contract.id().to_vec(),
         vec![1],
         b"like".to_vec(),
@@ -742,6 +766,128 @@ fn should_drain_the_per_element_entries_of_an_expired_window() {
         .iter()
         .all(|window| !window_stands(&drive, &contract, window)));
     assert_grovedb_is_consistent(&drive);
+}
+
+/// When only the outliving window involves `$createdAt`, the row commits to
+/// no timestamp and a delete carries none: it removes the like's entry under
+/// every tag of `byTagPost` by its values alone, leaves the per-tag window
+/// entries to expire, refuses the tags reordered, and the window drains later.
+#[test]
+fn should_delete_a_like_without_its_time_when_only_an_outliving_window_holds_it() {
+    let (drive, contract) = setup(Trend::OutlivingOnlyTimed);
+    assert!(!index_only_row_commits_created_at(
+        like_type(&contract).required_fields(),
+        like_type(&contract).index_structure(),
+    ));
+    let tags = ["dash", "evo", "news"];
+    let liked = like(POST_A, OWNER_1, Some(&tags), T_MS);
+    insert(&drive, &contract, &liked, true);
+    let windows = trend_windows(&contract, T_MS);
+
+    // The delete carries the values, not the time
+    let mut values = liked.clone();
+    values.set_created_at(None);
+    assert!(is_not_found(delete(
+        &drive,
+        &contract,
+        &with_tags(&values, tags_value(&["news", "dash", "evo"])),
+        true
+    )));
+    delete(&drive, &contract, &values, true).expect("the like deletes by its values");
+    assert!(post_entry(&drive, &contract, POST_A, OWNER_1).is_none());
+    assert!(entry(
+        &drive,
+        &contract,
+        &[
+            text("postAuthor"),
+            AUTHOR.to_vec(),
+            text("postId"),
+            POST_A.to_vec()
+        ],
+        OWNER_1
+    )
+    .is_none());
+    for tag in tags {
+        assert!(tag_entry(&drive, &contract, tag, POST_A, OWNER_1).is_none());
+        for window in windows.iter() {
+            assert!(
+                trend_entry(&drive, &contract, window, tag, POST_A, OWNER_1).is_some(),
+                "the outliving window keeps {tag}"
+            );
+        }
+    }
+
+    // A like again writes over the entries the deleted one left, and a later
+    // like drains the windows
+    insert(&drive, &contract, &liked, true);
+    let later = T_MS + 9 * DAY_MS;
+    insert_at(
+        &drive,
+        &contract,
+        &like(POST_B, OWNER_2, Some(&["dash"]), later),
+        later,
+        true,
+        None,
+    )
+    .expect("a later like inserts");
+    for window in windows.iter() {
+        assert!(read_grove_element(
+            &drive,
+            &like_path(&contract, &[trend_level_key(&contract)]),
+            window
+        )
+        .is_none());
+    }
+    delete_at(&drive, &contract, &values, later, true, None)
+        .expect("the like again deletes after its windows drained");
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// An index on a typed array is never the proof index, though it sorts first:
+/// the executed-transition proof of a like, tagged or not, is its `byPost`
+/// entry, which every like has.
+#[test]
+fn should_prove_a_like_through_its_document_index_when_a_tag_index_sorts_first() {
+    let (drive, contract) = setup_with(like_contract_with(Trend::None, "aTagPost"));
+    let document_type = like_type(&contract);
+    assert_eq!(
+        document_type.indexes().keys().next().map(String::as_str),
+        Some("aTagPost"),
+        "the tag index sorts first"
+    );
+    assert_eq!(
+        index_only_proof_index(&document_type)
+            .expect("a proof index")
+            .name,
+        "byPost"
+    );
+    for (post, tags) in [(POST_A, Some(&["dash", "evo"][..])), (POST_B, None)] {
+        let liked = like(post, OWNER_1, tags, T_MS);
+        insert(&drive, &contract, &liked, true);
+        let path_query = index_only_transition_entry_path_query(
+            contract.id(),
+            document_type,
+            liked.properties(),
+            Identifier::from(OWNER_1),
+            platform_version(),
+        )
+        .expect("the proof query builds from the values");
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version().drive)
+            .expect("the entry proves");
+        let (root_hash, elements) =
+            GroveDb::verify_query(&proof, &path_query, &platform_version().drive.grove_version)
+                .expect("the proof verifies");
+        assert_live_root_hash(&drive, root_hash);
+        let element = elements
+            .into_iter()
+            .next()
+            .and_then(|(_, _, element)| element);
+        assert!(
+            carries(element, &commitment(&contract, &liked)),
+            "{tags:?}: the like's byPost entry is proven"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

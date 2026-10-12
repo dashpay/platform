@@ -112,22 +112,15 @@ pub fn index_only_row_commitment_with_preimage_size(
     let mut preimage: Vec<u8> = Vec::with_capacity(128);
     preimage.extend_from_slice(document.owner_id().as_bytes());
 
-    let mut property_names: Vec<&String> = document_type
+    let mut properties: Vec<_> = document_type
         .flattened_properties()
         .iter()
         .filter(|(_, property)| !matches!(property.property_type, DocumentPropertyType::Object(_)))
-        .map(|(name, _)| name)
         .collect();
-    property_names.sort();
+    properties.sort_by_key(|(name, _)| *name);
 
-    for property_name in property_names {
-        let is_typed_array = document_type
-            .flattened_properties()
-            .get(property_name)
-            .is_some_and(|property| {
-                matches!(property.property_type, DocumentPropertyType::TypedArray(_))
-            });
-        let raw = if is_typed_array {
+    for (property_name, property) in properties {
+        let raw = if matches!(property.property_type, DocumentPropertyType::TypedArray(_)) {
             // The whole list. An empty one is committed as an absent one,
             // required or not: the array's indexes skip both, and the schema
             // enforces `required`
@@ -148,18 +141,10 @@ pub fn index_only_row_commitment_with_preimage_size(
             // through the payload encoding, which carries no 255-byte key cap
             // (the parser bounds it by the field value limit instead).
             match document.properties().get(property_name.as_str()) {
-                Some(value) => {
-                    let property = document_type
-                        .flattened_properties()
-                        .get(property_name)
-                        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "an entryPayload property must be a property of its document type",
-                        )))?;
-                    Some(encode_index_only_entry_payload_value(
-                        &property.property_type,
-                        value,
-                    )?)
-                }
+                Some(value) => Some(encode_index_only_entry_payload_value(
+                    &property.property_type,
+                    value,
+                )?),
                 None => None,
             }
         } else {

@@ -12,7 +12,8 @@
 //!   (protocol version 14) has one entry per element and is no such rule:
 //!   registration makes another index's whole key part of its key without
 //!   the array, so a create colliding on one of its elements collides on
-//!   that index's entry too.
+//!   that index's entry too, and the create's state validation does not
+//!   probe it (the storage insert's if-not-exists stays the backstop).
 //! * **delete**: probe every surviving index entry. Only paths already
 //!   drained from expired buckets are exempt. Every index
 //!   embeds `$ownerId` (the parser enforces it), so each probe — computed
@@ -25,7 +26,9 @@
 //! drift from the write path.
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_level_tree_types::{
+    document_carries, takes_part_in_index_by, terminal_member_tree_type,
+};
 use crate::drive::document::index_only_item_estimated_value_size;
 pub(crate) use crate::drive::document::index_only_member_key;
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
@@ -136,48 +139,32 @@ impl Drive {
                 )))
         };
 
+        // A skipIfAbsent index participates only when the document carries
+        // every property of its skip set (the parser guarantees those are the
+        // only properties of the index that may be absent), an indexed typed
+        // array included, which a list without elements does not carry. The
+        // walkers' own definition (`document_takes_part_in_index`): a document
+        // the index skips has no entries in it.
+        if !takes_part_in_index_by(&index.skip_if_absent_properties, &mut |property| {
+            Ok(document_carries(document, document_type, property))
+        })? {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
         // An index of a typed array (protocol version 14) enters the document
         // under each distinct element of its list, the keys the walkers write
-        // it under (`level_keys`). The array is in the index's skip set, and a
-        // list without elements is not carried, so the index has no entry for
-        // it.
+        // it under (`level_keys`).
         let array_elements = match index.indexed_array.as_deref() {
-            Some(array) => {
-                let elements = document.get_raw_array_elements_for_document_type(
+            Some(array) => Some((
+                array,
+                document.get_raw_array_elements_for_document_type(
                     array,
                     document_type,
                     platform_version,
-                )?;
-                if elements.is_empty() {
-                    return Ok((Vec::new(), Vec::new()));
-                }
-                Some((array, elements))
-            }
+                )?,
+            )),
             None => None,
         };
-
-        // A skipIfAbsent index participates only when the document carries
-        // every property of its skip set (the parser guarantees those are the
-        // only properties of the index that may be absent). Mirror the write
-        // walkers' skip exactly (`document_takes_part_in_index`): a document
-        // the index skips has no entries in it.
-        for skip_property in index.skip_if_absent_properties.iter() {
-            // Judged by its elements above
-            if index.indexed_array.as_ref() == Some(skip_property) {
-                continue;
-            }
-            if document
-                .get_raw_for_document_type(
-                    skip_property,
-                    document_type,
-                    owner_id,
-                    platform_version,
-                )?
-                .is_none()
-            {
-                return Ok((Vec::new(), Vec::new()));
-            }
-        }
 
         let prefix: Vec<Vec<u8>> = vec![
             vec![RootTree::DataContractDocuments as u8],

@@ -144,9 +144,10 @@ one commitment entry per distinct element of the document's list (times
 its windows when it also buckets), and none for an empty, `null` or absent
 list, through the same `level_keys` the stored types' walkers use;
 `index_only_entry_paths_and_key` fans the probe paths out the same way
-(`get_raw_array_elements_for_document_type`), so the create probe, the
-delete probe, the batch entry tracker and the fee estimates see every
-element. Such an index is no uniqueness rule of its own: registration
+(`get_raw_array_elements_for_document_type`), so the delete probe, the
+batch entry tracker and the fee estimates see every element. The create's
+state probe skips such an index: the covering index below is probed and
+refuses any collision first. Such an index is no uniqueness rule of its own: registration
 wants another index that keeps one entry per document to have its whole
 key inside the array index's key without the array, so two documents could
 only share an element's entry by sharing that index's entry first. Its
