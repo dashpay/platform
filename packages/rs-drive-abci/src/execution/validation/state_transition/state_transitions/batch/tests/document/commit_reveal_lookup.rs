@@ -51,7 +51,11 @@ mod commit_reveal_lookup_tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
-    use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use dpp::fee::fee_result::FeeResult;
+    use dpp::fee::Credits;
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::first_among_scan_budget;
     use crate::platform_types::platform::PlatformRef;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::util::hash::hash_double;
@@ -306,6 +310,16 @@ mod commit_reveal_lookup_tests {
         /// The codes of the errors check tx refuses `transition` with on its first check,
         /// judged at the block after the platform's last one.
         fn check_tx(&self, transition: &StateTransition) -> Vec<u32> {
+            self.check_tx_at(transition, FirstTimeCheck).0
+        }
+
+        /// The codes of the errors check tx at `level` refuses `transition` with, and the fee
+        /// it estimated when it got that far.
+        fn check_tx_at(
+            &self,
+            transition: &StateTransition,
+            level: CheckTxLevel,
+        ) -> (Vec<u32>, Option<FeeResult>) {
             let platform_version = PlatformVersion::latest();
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
@@ -317,13 +331,50 @@ mod commit_reveal_lookup_tests {
             let raw = transition
                 .serialize_to_bytes()
                 .expect("expected the transition to serialize");
-            self.platform
-                .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
-                .expect("expected to check the transaction")
-                .errors
-                .iter()
-                .map(|error| error.code())
-                .collect()
+            let result = self
+                .platform
+                .check_tx(&raw, level, &platform_ref, platform_version)
+                .expect("expected to check the transaction");
+            let codes = result.errors.iter().map(|error| error.code()).collect();
+            (codes, result.data.and_then(|check| check.fee_result))
+        }
+
+        /// Sets `who`'s balance to `credits`.
+        fn set_balance(&self, who: Who, credits: Credits) {
+            let platform_version = PlatformVersion::latest();
+            let id = self.id(who).to_buffer();
+            let balance = self
+                .platform
+                .drive
+                .fetch_identity_balance(id, None, platform_version)
+                .expect("expected to fetch the balance")
+                .expect("expected a balance");
+            if balance > credits {
+                self.platform
+                    .drive
+                    .remove_from_identity_balance(
+                        id,
+                        balance - credits,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("expected to lower the balance");
+            } else if credits > balance {
+                self.platform
+                    .drive
+                    .add_to_identity_balance(
+                        id,
+                        credits - balance,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to raise the balance");
+            }
         }
 
         /// A preorder by `who` in block `height` committing to `salt ++ name`.
@@ -2598,24 +2649,8 @@ mod commit_reveal_lookup_tests {
     #[tokio::test]
     async fn should_refuse_an_unfunded_signers_sponsorship_request_before_reading_competitors() {
         const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
-        let mut fixture = first_among_fixture(true);
-        let platform_version = PlatformVersion::latest();
-        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
-        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
-        // Check tx judges the block after the platform's last one, where Mallory's preorder is
-        // old enough and Alice's precedes it
-        let last = block(COMMIT_HEIGHT + 1);
-        fast_forward_to_block(&fixture.platform, last.time_ms, last.height, 0, 0, false);
+        let (mut fixture, _) = preceded_reveal_fixture().await;
         let contract = fixture.contract.clone();
-        let prefer_contract_owner = || {
-            Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
-                payment_token_contract_id: None,
-                token_contract_position: 0,
-                minimum_token_cost: None,
-                maximum_token_cost: None,
-                gas_fees_paid_by: GasFeesPaidBy::PreferContractOwner,
-            }))
-        };
 
         // Funded, Mallory's reveal is admitted and left to the block, as any other
         let (_, funded) = fixture
@@ -2630,26 +2665,7 @@ mod commit_reveal_lookup_tests {
             .await;
         assert_eq!(fixture.check_tx(&funded), Vec::<u32>::new());
 
-        let mallory = fixture.id(Who::Mallory).to_buffer();
-        let balance = fixture
-            .platform
-            .drive
-            .fetch_identity_balance(mallory, None, platform_version)
-            .expect("expected to fetch the balance")
-            .expect("expected Mallory to have a balance");
-        fixture
-            .platform
-            .drive
-            .remove_from_identity_balance(
-                mallory,
-                balance,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("expected to empty Mallory's balance");
+        fixture.set_balance(Who::Mallory, 0);
 
         // Unfunded, refused for the balance, not by Alice's preorder (40149), which only the
         // competitors read would find
@@ -2673,6 +2689,149 @@ mod commit_reveal_lookup_tests {
             .await;
         assert_eq!(
             fixture.check_tx(&unrequested),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+    }
+
+    /// The token payment info of a create asking the contract owner to pay its gas, which the
+    /// `name` type does not offer (registration refuses `firstAmong` beside an offer).
+    fn prefer_contract_owner() -> Option<TokenPaymentInfo> {
+        Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+            payment_token_contract_id: None,
+            token_contract_position: 0,
+            minimum_token_cost: None,
+            maximum_token_cost: None,
+            gas_fees_paid_by: GasFeesPaidBy::PreferContractOwner,
+        }))
+    }
+
+    /// Alice's preorder and then Mallory's, the platform's last block the one after Mallory's,
+    /// so check tx judges a reveal where Mallory's preorder is old enough and Alice's precedes
+    /// it. Returns Alice's preorder.
+    async fn preceded_reveal_fixture() -> (CommitRevealFixture, Document) {
+        let mut fixture = first_among_fixture(true);
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+        let last = block(COMMIT_HEIGHT + 1);
+        fast_forward_to_block(&fixture.platform, last.time_ms, last.height, 0, 0, false);
+        (fixture, alice)
+    }
+
+    /// Check tx does not validate the state of an unsponsored reveal, so its fee estimate holds
+    /// none of the competitor scan a block runs: it reserves the scan's whole budget on top. A
+    /// signer one credit short of the estimate so reserved is kept out of the mempool; one who
+    /// holds it is admitted, and in the block the refused reveal is paid for and its nonce
+    /// spent, rather than refused unpaid for a scan the signer could not cover.
+    #[tokio::test]
+    async fn should_reserve_the_competitor_scan_budget_when_admitting_a_reveal() {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let (mut fixture, alice) = preceded_reveal_fixture().await;
+        let platform_version = PlatformVersion::latest();
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+
+        let (errors, estimated) = fixture.check_tx_at(&reveal, FirstTimeCheck);
+        assert_eq!(errors, Vec::<u32>::new());
+        let estimated = estimated.expect("expected an estimated fee");
+        let budget = first_among_scan_budget(platform_version);
+        assert_eq!(budget, 100_000_000);
+        assert!(
+            estimated.processing_fee > budget,
+            "the estimate holds the scan's budget: {estimated:?}"
+        );
+        let required = estimated.total_base_fee();
+
+        fixture.set_balance(Who::Mallory, required - 1);
+        assert_eq!(
+            fixture.check_tx(&reveal),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+
+        fixture.set_balance(Who::Mallory, required);
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+        let result = fixture.process(&reveal, COMMIT_HEIGHT + 2);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e)),
+                ..
+            } if *e.preceding_document_id() == alice.id()
+        );
+    }
+
+    /// The competitor scan bills as it runs, up to its budget: past it, it bills what is left
+    /// of the budget and nothing more, and reads on. With one credit per competitor the budget
+    /// is 1,000 credits, less than the competitors query alone.
+    #[tokio::test]
+    async fn should_bill_the_competitor_scan_up_to_its_budget() {
+        let mut fixture = first_among_fixture(true);
+        preorder_name(
+            &mut fixture,
+            Who::Carol,
+            Value::Bytes32([0xC0; 32]),
+            COMMIT_HEIGHT - 2,
+        )
+        .await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT - 1).await;
+        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let alice = fixture.id(Who::Alice);
+        let data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+
+        let mut tight_budget = PlatformVersion::latest().clone();
+        tight_budget
+            .fee_version
+            .document_reference
+            .first_among_credits_per_candidate = 1;
+        let (result, execution_context, _) =
+            fixture.validate_references("name", &data, alice, None, REVEAL_HEIGHT, &tight_budget);
+
+        // Billing stops at the budget, the scan does not: Mallory's valid preorder refuses
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.preceding_document_id() == mallory.id()
+        );
+        let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan)] =
+            execution_context.operations_slice()
+        else {
+            panic!(
+                "the scan bills one capped operation, got {:?}",
+                execution_context.operations_slice()
+            );
+        };
+        assert_eq!(scan.processing_fee, 1_000);
+    }
+
+    /// The payer check of a signer who relies on a sponsor runs on every recheck too: a reveal
+    /// asking a contract owner who offers nothing to pay its gas, admitted while its signer
+    /// could pay, leaves the mempool for its signer's balance once it is spent, before any
+    /// competitor is read.
+    #[tokio::test]
+    async fn should_drop_an_unfunded_signers_sponsorship_request_on_recheck() {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let (mut fixture, _) = preceded_reveal_fixture().await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "name",
+                &name_values(),
+                &[],
+                prefer_contract_owner(),
+            )
+            .await;
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+        assert_eq!(fixture.check_tx_at(&reveal, Recheck).0, Vec::<u32>::new());
+
+        fixture.set_balance(Who::Mallory, 0);
+        assert_eq!(
+            fixture.check_tx_at(&reveal, Recheck).0,
             vec![IDENTITY_INSUFFICIENT_BALANCE]
         );
     }

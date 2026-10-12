@@ -55,7 +55,15 @@ use drive::drive::identity::key::fetch::{
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
+    ConsumedDocument, DocumentCreateTransitionActionAccessorsV0,
+};
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use std::slice;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -1723,6 +1731,109 @@ fn validate_reference_target_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
+/// The most a create's `firstAmong` competitor scan bills: the credits per competitor of the
+/// fee schedule (`FeeDocumentReferenceVersion::first_among_credits_per_candidate`) times the
+/// competitors it may read (`SystemLimits::max_first_among_candidates`). Check tx reserves it
+/// for every such create whose state it does not validate
+/// ([`first_among_scan_reservation`]), so the scan never costs more in a block than the
+/// signer was admitted with.
+pub(crate) fn first_among_scan_budget(platform_version: &PlatformVersion) -> Credits {
+    platform_version
+        .fee_version
+        .document_reference
+        .first_among_credits_per_candidate
+        .saturating_mul(u64::from(
+            platform_version.system_limits.max_first_among_candidates,
+        ))
+}
+
+/// The credits check tx reserves for the `firstAmong` competitor scans of `action`, whose
+/// state it does not validate: [`first_among_scan_budget`] for every document create of a type
+/// declaring `firstAmong` (registration admits at most one per type), nothing for anything
+/// else. Without it, a signer covering the create's estimated fee but not the scan would be
+/// admitted, then refused unpaid in a block, its nonce left to replay the scan.
+pub(crate) fn first_among_scan_reservation(
+    action: &StateTransitionAction,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    let StateTransitionAction::BatchAction(batch) = action else {
+        return 0;
+    };
+    let creates_judged_first_among = batch
+        .transitions()
+        .iter()
+        .filter(|transition| {
+            let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+                create,
+            )) = transition
+            else {
+                return false;
+            };
+            let base = create.base();
+            base.data_contract_fetch_info_ref()
+                .contract
+                .document_type_for_name(base.document_type_name())
+                .is_ok_and(declares_first_among)
+        })
+        .count() as u64;
+    first_among_scan_budget(platform_version).saturating_mul(creates_judged_first_among)
+}
+
+/// Whether a reference `document_type` declares judges a create first among the commitments
+/// it found (`firstAmong`).
+fn declares_first_among(document_type: DocumentTypeRef) -> bool {
+    document_type
+        .reference_declarations()
+        .filter_map(|(_, reference)| reference.target())
+        .flat_map(|target| target.leaves())
+        .filter_map(|leaf| leaf.as_any_document_reference())
+        .any(|declaration| {
+            declaration
+                .lookup
+                .is_some_and(|lookup| lookup.first_among.is_some())
+        })
+}
+
+/// What a `firstAmong` competitor scan has billed, against its budget: each operation is
+/// added as it is until the next would pass the budget, which then bills what is left of it,
+/// and the rest of the scan bills nothing.
+struct FirstAmongScanBill {
+    remaining: Credits,
+}
+
+impl FirstAmongScanBill {
+    fn new(platform_version: &PlatformVersion) -> Self {
+        Self {
+            remaining: first_among_scan_budget(platform_version),
+        }
+    }
+
+    fn add(
+        &mut self,
+        operation: ValidationOperation,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let mut cost = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(
+            slice::from_ref(&operation),
+            &mut cost,
+            platform_version,
+        )?;
+        let credits = cost.processing_fee;
+        if credits <= self.remaining {
+            self.remaining -= credits;
+            execution_context.add_operation(operation);
+        } else if self.remaining > 0 {
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+                FeeResult::new_from_processing_fee(self.remaining),
+            ));
+            self.remaining = 0;
+        }
+        Ok(())
+    }
+}
+
 /// Checks a create's `firstAmong` (see `LookupFirstAmong`): the commitment `found`, which
 /// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
 /// valid commitment to the values the create reveals.
@@ -1740,6 +1851,8 @@ fn validate_reference_target_v0(
 ///   SHA-256 it is): a copy of another identity's hash is owned by an identity the hash does
 ///   not name. The first valid competitor refuses the create
 ///   (`ReferencedDocumentPrecededError`, 40149).
+/// * The query and the competitors' hashes are billed as they run, up to the scan's budget
+///   ([`first_among_scan_budget`]), which check tx reserves.
 ///
 /// Registration demands a unique index over the referenced type's `$ownerId` and the
 /// `firstAmong` property, so each competitor is another identity's: the writer's only document
@@ -1821,7 +1934,7 @@ fn validate_first_among_v0(
                 "the findBy preimage assembled for the lookup that found the commitment",
             ))
         })?;
-    let competitors = fetch_documents_holding_before(
+    let (competitors, query_cost) = fetch_documents_holding_before(
         platform.drive,
         referenced_contract,
         referenced_document_type,
@@ -1830,8 +1943,16 @@ fn validate_first_among_v0(
         found_height,
         platform_version.system_limits.max_first_among_candidates,
         &block_info.epoch,
-        execution_context,
         transaction,
+        platform_version,
+    )?;
+    // The scan bills as it runs, up to its budget, which check tx reserves for a create whose
+    // state it does not validate: a block never charges the scan more than the signer was
+    // admitted with
+    let mut scan_bill = FirstAmongScanBill::new(platform_version);
+    scan_bill.add(
+        ValidationOperation::PrecalculatedOperation(query_cost),
+        execution_context,
         platform_version,
     )?;
     for competitor in &competitors {
@@ -1843,7 +1964,11 @@ fn validate_first_among_v0(
             continue;
         }
         let (digest, blocks) = find_by_preimage.key_value_for(competitor.owner_id());
-        execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
+        scan_bill.add(
+            ValidationOperation::DoubleSha256(blocks),
+            execution_context,
+            platform_version,
+        )?;
         if holds_key_part(
             referenced_document_type,
             competitor,

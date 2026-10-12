@@ -649,9 +649,9 @@ pub(crate) fn holds_key_part(
 /// `$createdAtBlockHeight`), which registration demands. Expired documents the cleanup has not
 /// reached yet are among them, as the index still holds them.
 ///
-/// The query is billed as a lookup's is: its processing cost is added to
-/// `execution_context`. Only reached from the document reference validation, which exists from
-/// protocol version 14, so it carries no version of its own.
+/// Returns the documents and the query's processing cost, which the caller bills within the
+/// competitor scan's budget. Only reached from the document reference validation, which exists
+/// from protocol version 14, so it carries no version of its own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_documents_holding_before(
     drive: &Drive,
@@ -662,10 +662,9 @@ pub(crate) fn fetch_documents_holding_before(
     created_before_height: u64,
     limit: u16,
     epoch: &Epoch,
-    execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<Vec<Document>, Error> {
+) -> Result<(Vec<Document>, FeeResult), Error> {
     let drive_query = DriveDocumentQuery {
         contract,
         document_type,
@@ -710,11 +709,9 @@ pub(crate) fn fetch_documents_holding_before(
         transaction,
         Some(platform_version.protocol_version),
     )?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
-        FeeResult::new_from_processing_fee(documents_outcome.cost()),
-    ));
+    let cost = FeeResult::new_from_processing_fee(documents_outcome.cost());
 
-    Ok(documents_outcome.documents_owned())
+    Ok((documents_outcome.documents_owned(), cost))
 }
 
 // ============================================================================

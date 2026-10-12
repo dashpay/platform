@@ -17,7 +17,12 @@ use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::validation::state_transition::batch::first_among_scan_reservation;
+use dpp::fee::fee_result::FeeResult;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -388,9 +393,9 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
-            let action = if state_transition.validates_full_state_on_check_tx()
-                || relies_on_gas_sponsor_to_pay
-            {
+            let validates_state =
+                state_transition.validates_full_state_on_check_tx() || relies_on_gas_sponsor_to_pay;
+            let action = if validates_state {
                 // A sponsored batch joins the next block, so its state is judged at that
                 // block's height: an age counted in blocks (a `refersTo`'s
                 // `minimumAgeBlocks`) is then the one the block sees
@@ -470,6 +475,17 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         ),
                     );
                 }
+            }
+
+            // A create judged first among the commitments it found reads up to its scan's
+            // budget of competitors in a block; its state was not validated here, so the signer
+            // is held to that budget too
+            if !validates_state {
+                reserve_first_among_scans(
+                    &action,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                );
             }
 
             let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -656,6 +672,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
+                // As on the first check: the budget of a scan whose state was not validated
+                if !relies_on_gas_sponsor_to_pay {
+                    reserve_first_among_scans(
+                        &action,
+                        &mut state_transition_execution_context,
+                        platform_version,
+                    );
+                }
+
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,
@@ -674,6 +699,23 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
         _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
             "CheckTxLevel must be first time check or recheck",
         ))),
+    }
+}
+
+/// Reserves, on top of the estimated fee of `action`, the budget of every `firstAmong`
+/// competitor scan it carries (see `first_among_scan_reservation`), for an action whose state
+/// check tx did not validate. Fee validation then admits only a signer who could pay for the
+/// scan in a block, where it is billed at most that budget.
+fn reserve_first_among_scans(
+    action: &StateTransitionAction,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) {
+    let reservation = first_among_scan_reservation(action, platform_version);
+    if reservation > 0 {
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+            FeeResult::new_from_processing_fee(reservation),
+        ));
     }
 }
 

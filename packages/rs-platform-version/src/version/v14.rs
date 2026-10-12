@@ -1721,7 +1721,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     each, `WriterPreimage`) refuses the create
 ///     (`ReferencedDocumentPrecededError`, 40149). A copied hash names another
 ///     owner and never refuses, and when none of the documents read refuses,
-///     the create stands. Registration, on the same contract and on another
+///     the create stands. The query and the competitors' hashes bill at most
+///     `FEE_VERSION3.document_reference.first_among_credits_per_candidate`
+///     (100,000; a new fee group, unread before this version) times that
+///     limit, and check tx, which validates no state of such a create,
+///     reserves that whole budget on top of its estimated fee (not
+///     consensus). Registration, on the same contract and on another
 ///     (`DocumentReferenceLookup`'s `referring_side_error` and
 ///     `referenced_side_error`, and the parser's
 ///     `validate_reference_lookup_sources`), requires the property to be a
