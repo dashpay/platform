@@ -23,7 +23,10 @@ use dashcore::{
     TxMerkleNode, TxOut, Txid,
 };
 use key_wallet::{
-    wallet::{initialization::WalletAccountCreationOptions, ManagedWalletInfo},
+    wallet::{
+        initialization::WalletAccountCreationOptions,
+        managed_wallet_info::wallet_info_interface::WalletInfoInterface, ManagedWalletInfo,
+    },
     WalletCoreBalance,
 };
 use platform_wallet::{
@@ -56,8 +59,6 @@ struct WalletView {
     /// Compared with `<=`, see [`WalletView::follows`].
     last_processed_height: u32,
     /// `(value, is_confirmed, is_instantlocked, height)` per unspent coin.
-    /// The lock is read on an unconfirmed coin only, where it decides which
-    /// balance the coin counts towards.
     coins: BTreeMap<OutPoint, (u64, bool, bool, u32)>,
     /// Block height of every recorded transaction, `None` when unconfirmed.
     history: BTreeMap<Txid, Option<u32>>,
@@ -100,7 +101,7 @@ fn view(info: &ManagedWalletInfo) -> WalletView {
                     (
                         coin.value(),
                         coin.is_confirmed,
-                        coin.is_instantlocked && !coin.is_confirmed,
+                        coin.is_instantlocked,
                         coin.height,
                     ),
                 )
@@ -574,6 +575,78 @@ async fn should_keep_an_instant_locked_transaction_unconfirmed_when_its_block_is
             restored.history.get(&spend.txid()),
             Some(&None),
             "{rounds:?}"
+        );
+    }
+}
+
+/// A double spend sweeps the wallet's own unconfirmed payment, then a fork
+/// drops the block that held the winner: the store holds what the wallet
+/// holds, and neither transaction comes back.
+///
+/// The coin both spent is not asserted on its own: whether the wallet takes
+/// it back is key-wallet's decision, and the store follows it.
+// TODO(sweep-of-unstored-loser): run this merged too, and generate the
+// double spend in the property test below, once a payment detected and swept
+// within one `store()` round leaves its coin spent in the store. Today that
+// round stores no spend of the coin, fork or no fork.
+#[tokio::test]
+async fn should_keep_a_swept_payment_out_when_the_block_of_its_double_spend_is_dropped() {
+    let mut session = Session::open(Rounds::PerStep).await;
+    let funding = session.chain.funding;
+    let payment = session.chain.spend(funding, FUNDING);
+    session.chain.relay(&payment, None).await;
+    session.step().await;
+    let winner = transaction(&[funding], &[(&foreign(), FUNDING - FEE)]);
+    session.chain.mine(vec![winner.clone()]).await;
+    session.chain.sync().await;
+    session.step().await;
+
+    session.chain.fork_at(BASE).await;
+
+    let restored = session.assert_restart_matches_memory().await;
+    for gone in [payment.txid(), winner.txid()] {
+        assert!(!restored.history.contains_key(&gone));
+    }
+    assert!(
+        !restored.coins.contains_key(&OutPoint::new(payment.txid(), 0)),
+        "the swept payment's change is not a coin"
+    );
+}
+
+/// The lock is all that tells a fork to keep a transaction, and the block
+/// that mines the transaction replaces the context it arrived in. Stored on
+/// its own it outlives both the block and a restart, so the relaunched
+/// wallet keeps what the one that never restarted keeps.
+#[tokio::test]
+async fn should_keep_an_instant_locked_transaction_when_the_fork_follows_a_restart() {
+    for rounds in [Rounds::PerStep, Rounds::Merged] {
+        let mut session = Session::open(rounds).await;
+        let funding = session.chain.funding;
+        let spend = session.chain.spend(funding, FUNDING);
+        session
+            .chain
+            .relay(&spend, Some(instant_lock(&spend)))
+            .await;
+        session.step().await;
+        session.chain.mine(vec![spend.clone()]).await;
+        session.chain.sync().await;
+        session.step().await;
+        session.flush().await;
+
+        let mut relaunched = session.store.restart(session.chain.wallet_id);
+        relaunched
+            .truncate_above(BASE)
+            .expect("no chain lock is applied in these cases");
+        session.chain.fork_at(BASE).await;
+
+        let relaunched = view(&relaunched);
+        if let Err(difference) = relaunched.follows(&session.chain.memory().await) {
+            panic!("{rounds:?}: {difference}");
+        }
+        assert_eq!(
+            relaunched.history.get(&spend.txid()),
+            Some(&None),
+            "{rounds:?}: kept, as unconfirmed"
         );
     }
 }
