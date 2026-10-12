@@ -98,9 +98,9 @@ pub async fn replay_recorded_history(
         .last_applied_chain_lock
         .as_ref()
         .map(|lock| lock.block_height);
-    // The lock set already holds a locked txid (load marked the restored
-    // UTXOs), so a later lock event is deduplicated: the InstantSend context,
-    // and the conflict sweep it runs, must come from here.
+    // Settle each stored context: a block under the restored chain lock is
+    // final, and a persisted lock must upgrade its record here, because the
+    // lock set already holds that txid and deduplicates a later lock event.
     for stored in &mut replay {
         stored.context = match &stored.context {
             TransactionContext::InBlock(block)
