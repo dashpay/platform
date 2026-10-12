@@ -87,7 +87,7 @@ pub fn restore_core_wallet(
 
 /// Restore durable guards after coins but before replay, without inventing transaction records.
 ///
-/// All funds accounts must already exist; reapply after adding another account.
+/// All funds accounts must already exist; call [`reapply_spent_claims`] after adding another.
 /// Known claimants must be actual spending transaction IDs, not sweep winner stamps.
 /// Returns an error before mutation when rows disagree about a claimant.
 pub fn restore_spent_claims(
@@ -105,6 +105,16 @@ pub fn restore_spent_claims(
     info.restore_spent_outpoints(claims);
     info.update_balance();
     Ok(())
+}
+
+/// Copy the wallet's current spend claims into every funds account.
+///
+/// An account inserted after load holds none, so a redelivered funding transaction
+/// would credit an output the wallet already spent. Call under the wallet lock that
+/// covers the insertion. Leaves coins, records and the wallet-level claims unchanged.
+pub(crate) fn reapply_spent_claims(info: &mut ManagedWalletInfo) {
+    let claims: Vec<_> = info.spent_outpoint_claims().into_iter().collect();
+    info.restore_spent_outpoints(&claims);
 }
 
 fn validate_claims(claims: &[(OutPoint, Option<Txid>)]) -> Result<(), CoreRestoreError> {

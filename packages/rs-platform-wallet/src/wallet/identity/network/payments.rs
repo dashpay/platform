@@ -2348,6 +2348,233 @@ mod tests {
         );
     }
 
+    /// The first address a contact account built from `account_xpub` watches,
+    /// read from a throwaway account so spend claims can be restored before
+    /// the real account is registered.
+    fn first_contact_account_address(
+        wallet_id: WalletId,
+        account_type: key_wallet::account::AccountType,
+        account_xpub: key_wallet::bip32::ExtendedPubKey,
+    ) -> dashcore::Address {
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+        ManagedCoreFundsAccount::from_account(&key_wallet::Account {
+            parent_wallet_id: Some(wallet_id),
+            account_type,
+            network: Network::Testnet,
+            account_xpub,
+            is_watch_only: false,
+        })
+        .managed_account_type()
+        .address_pools()
+        .first()
+        .expect("contact account has a pool")
+        .addresses
+        .values()
+        .next()
+        .expect("pool has at least one derived address")
+        .address
+        .clone()
+    }
+
+    /// Build a transaction paying three outputs to `address` and restore
+    /// durable spend claims on the first two, the way a wallet load does: one
+    /// with an unknown claimant, one naming a spender the wallet holds no
+    /// record of. The third output stays unclaimed as the control.
+    async fn restore_claims_on_contact_funding(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        address: &dashcore::Address,
+    ) -> dashcore::Transaction {
+        use crate::wallet::persisted_core::restore_spent_claims;
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, Transaction, Txid};
+
+        let funding = Transaction::dummy(address, 0..1, &[10_000, 20_000, 30_000]);
+        let txid = funding.txid();
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let mut wm = iw.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+        restore_spent_claims(
+            &mut info.core_wallet,
+            &[
+                (OutPoint::new(txid, 0), None),
+                (
+                    OutPoint::new(txid, 1),
+                    Some(Txid::from_byte_array([0x77; 32])),
+                ),
+            ],
+        )
+        .expect("restore spend claims");
+        funding
+    }
+
+    /// Deliver `funding` through the wallet's transaction pipeline in a
+    /// chain-locked block, as a rescan redelivers it.
+    async fn redeliver(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        funding: &dashcore::Transaction,
+    ) {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let mut wm = iw.wallet_manager.write().await;
+        wm.check_transaction_in_all_wallets(
+            funding,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+            true,
+            true,
+        )
+        .await;
+    }
+
+    /// The outputs of `funding` that `account` holds as coins.
+    fn credited_outputs(
+        account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+        funding: &dashcore::Transaction,
+    ) -> Vec<u32> {
+        let txid = funding.txid();
+        account
+            .utxos
+            .keys()
+            .filter(|outpoint| outpoint.txid == txid)
+            .map(|outpoint| outpoint.vout)
+            .collect()
+    }
+
+    /// Spend claims are restored into the funds accounts that exist at load.
+    /// A receiving account registered afterwards must hold them too: without
+    /// them a redelivered funding transaction credits outputs the wallet
+    /// already spent, inflating the balance until the next restart.
+    #[tokio::test]
+    async fn should_not_credit_claimed_outputs_to_a_receiving_account_registered_after_restore() {
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let account_xpub = test_receiving_xpub(&owner, &contact);
+        let address = first_contact_account_address(
+            wallet_id,
+            key_wallet::account::AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact.to_buffer(),
+            },
+            account_xpub,
+        );
+        let funding = restore_claims_on_contact_funding(&manager, wallet_id, &address).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, account_xpub)
+            .await
+            .expect("register_contact_account");
+        redeliver(&manager, wallet_id, &funding).await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .get(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact.to_buffer(),
+            })
+            .expect("receiving account registered");
+        assert_eq!(
+            credited_outputs(account, &funding),
+            vec![2],
+            "only the unclaimed output may be credited to an account registered after restore"
+        );
+    }
+
+    /// The same guarantee for the watch-only external account
+    /// `register_external_contact_account` inserts.
+    #[tokio::test]
+    async fn should_not_credit_claimed_outputs_to_an_external_account_registered_after_restore() {
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0x11; 32]);
+        let contact = bare_identity([0x22; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        let contact_xpub = {
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+                .expect("mnemonic")
+                .to_seed("");
+            let seed_wallet = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &seed_wallet,
+                Network::Testnet,
+                0,
+                &owner,
+                &contact_id,
+            )
+            .expect("derive contact xpub")
+        };
+        let address = first_contact_account_address(
+            wallet_id,
+            key_wallet::account::AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            },
+            contact_xpub.xpub,
+        );
+        let funding = restore_claims_on_contact_funding(&manager, wallet_id, &address).await;
+
+        let shared_key = [0x55u8; 32];
+        let encrypted = platform_encryption::encrypt_extended_public_key(
+            &shared_key,
+            &[0x11u8; 16],
+            &contact_xpub.compact.to_bytes(),
+        );
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        iw.dashpay()
+            .register_external_contact_account(
+                &owner,
+                &contact,
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register_external_contact_account");
+        redeliver(&manager, wallet_id, &funding).await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            })
+            .expect("external account registered");
+        assert_eq!(
+            credited_outputs(account, &funding),
+            vec![2],
+            "only the unclaimed output may be credited to an account registered after restore"
+        );
+    }
+
     /// 2. Reconcile derives `Received` entries from receival-account
     /// UTXOs (restores payment history after relaunch / missed events),
     /// and 3. is idempotent across passes.

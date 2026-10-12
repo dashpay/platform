@@ -12,6 +12,7 @@ use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
+use crate::wallet::persisted_core::reapply_spent_claims;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Build the persistence round for a newly registered DashPay account
@@ -247,6 +248,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to register contact account: {e}"
                 ))
             })?;
+        reapply_spent_claims(&mut info.core_wallet);
 
         tracing::info!(
             our_identity = %our_identity_id,
@@ -584,6 +586,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     e
                 )))
             })?;
+        reapply_spent_claims(&mut info.core_wallet);
 
         tracing::info!(
             our_identity = %our_identity_id,
