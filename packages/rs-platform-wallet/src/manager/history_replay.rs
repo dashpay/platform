@@ -118,7 +118,13 @@ pub async fn replay_recorded_history(
     }
     // Losers leave the replay and the projection; `swept` also keeps their
     // held raw records from coming back as fallbacks.
-    let mut swept = plan_replay_sweeps(wallet_info, &replay);
+    let (mut swept, planned_sweeps) = plan_replay_sweeps(wallet_info, &replay);
+    tracing::debug!(
+        wallet_id = %hex::encode(wallet_info.wallet_id),
+        planned_sweeps,
+        removed = swept.len(),
+        "load: settled stored transaction conflicts before the history replay"
+    );
     replay.retain(|stored| !swept.contains(&stored.txid));
     for account in wallet_info.accounts.all_funding_accounts_mut() {
         account
@@ -188,9 +194,13 @@ pub async fn replay_recorded_history(
     }
     // A settled spend's first sweep cannot reach competitors replayed later,
     // nor the raw records restored above. The upstream sweep preserves
-    // ChainLock/InstantSend precedence.
+    // ChainLock/InstantSend precedence; it runs only for a spend something
+    // unconfirmed still contests, because each sweep scans every live record.
+    let competitors = unconfirmed_spends(wallet_info);
     for stored in &replay {
-        if !matches!(stored.context, TransactionContext::Mempool) {
+        if !matches!(stored.context, TransactionContext::Mempool)
+            && is_contested(stored, &competitors)
+        {
             wallet_info.sweep_conflicts(&stored.transaction, &stored.context);
         }
     }
@@ -208,10 +218,11 @@ pub async fn replay_recorded_history(
 /// unconfirmed descendants. Planning ahead of the replay is what keeps them
 /// out: replayed after its parent was swept, a descendant that pays the wallet
 /// would be recorded again, and no later sweep reaches it without the parent.
+/// Also returns how many conflict sweeps the plan ran.
 fn plan_replay_sweeps(
     wallet_info: &ManagedWalletInfo,
     records: &[StoredTransaction],
-) -> HashSet<Txid> {
+) -> (HashSet<Txid>, usize) {
     let mut conflicts = wallet_info.clone();
     // A scratch account lets the upstream sweep see descendants across account boundaries.
     let Some(account) = conflicts
@@ -220,46 +231,26 @@ fn plan_replay_sweeps(
         .into_iter()
         .next()
     else {
-        return HashSet::new();
+        return (HashSet::new(), 0);
     };
     let owner = funds_account_type(account);
-    // The sweep reads only a record's context and inputs; the rest is filler.
-    account
-        .transactions_mut()
-        .extend(records.iter().map(|stored| {
-            let record = TransactionRecord::new(
-                stored.transaction.clone(),
-                owner,
-                stored.context.clone(),
-                TransactionType::Standard,
-                TransactionDirection::Outgoing,
-                Vec::new(),
-                Vec::new(),
-                0,
-            );
-            (stored.txid, record)
-        }));
-    // Only an input an unconfirmed record also spends can be contested;
-    // skipping every other settled record keeps the plan linear in the history.
-    let contested: HashSet<OutPoint> = conflicts
-        .accounts
-        .all_accounts()
-        .into_iter()
-        .flat_map(|account| account.transactions().values())
-        .filter(|record| !record.is_confirmed())
-        .flat_map(|record| record.transaction.input.iter())
-        .map(|input| input.previous_output)
+    // Losers and their descendants are always unconfirmed, and every sweep
+    // scans the scratch account whole, so settled records stay out of it.
+    let unconfirmed: HashMap<Txid, &StoredTransaction> = records
+        .iter()
+        .filter(|stored| stored.context.block_info().is_none())
+        .map(|stored| (stored.txid, stored))
         .collect();
+    account.transactions_mut().extend(
+        unconfirmed
+            .values()
+            .map(|stored| (stored.txid, raw_record(stored, owner))),
+    );
+    let mut competitors = unconfirmed_spends(&conflicts);
     let mut winners: Vec<&StoredTransaction> = records
         .iter()
         .filter(|stored| !matches!(stored.context, TransactionContext::Mempool))
-        .filter(|stored| {
-            stored
-                .transaction
-                .input
-                .iter()
-                .any(|input| contested.contains(&input.previous_output))
-        })
+        .filter(|stored| is_contested(stored, &competitors))
         .collect();
     winners.sort_by_key(|stored| {
         let priority = match stored.context {
@@ -269,15 +260,71 @@ fn plan_replay_sweeps(
         };
         (priority, stored.txid)
     });
-    let mut removed = HashSet::new();
+    let (mut removed, mut sweeps) = (HashSet::new(), 0);
     for stored in winners {
-        if removed.contains(&stored.txid) {
+        // An earlier sweep may have taken this winner or its last competitor.
+        if removed.contains(&stored.txid) || !is_contested(stored, &competitors) {
             continue;
         }
+        sweeps += 1;
         let sweep = conflicts.sweep_conflicts(&stored.transaction, &stored.context);
-        removed.extend(sweep.txids);
+        for txid in sweep.txids {
+            for input in unconfirmed
+                .get(&txid)
+                .into_iter()
+                .flat_map(|loser| &loser.transaction.input)
+            {
+                if let Some(count) = competitors.get_mut(&input.previous_output) {
+                    *count = count.saturating_sub(1);
+                }
+            }
+            removed.insert(txid);
+        }
     }
-    removed
+    (removed, sweeps)
+}
+
+/// A history record holding only what the conflict sweep reads: the context
+/// and the inputs. The amounts and details are filler.
+fn raw_record(stored: &StoredTransaction, owner: AccountType) -> TransactionRecord {
+    TransactionRecord::new(
+        stored.transaction.clone(),
+        owner,
+        stored.context.clone(),
+        TransactionType::Standard,
+        TransactionDirection::Outgoing,
+        Vec::new(),
+        Vec::new(),
+        0,
+    )
+}
+
+/// How many unconfirmed records of `wallet_info` spend each outpoint.
+fn unconfirmed_spends(wallet_info: &ManagedWalletInfo) -> HashMap<OutPoint, usize> {
+    let mut spends = HashMap::new();
+    for record in wallet_info
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .flat_map(|account| account.transactions().values())
+        .filter(|record| !record.is_confirmed())
+    {
+        for input in &record.transaction.input {
+            *spends.entry(input.previous_output).or_default() += 1;
+        }
+    }
+    spends
+}
+
+/// Whether an unconfirmed record other than `stored` itself still spends one
+/// of its inputs: only then can a conflict sweep for it remove anything.
+fn is_contested(stored: &StoredTransaction, competitors: &HashMap<OutPoint, usize>) -> bool {
+    let own = usize::from(stored.context.block_info().is_none());
+    stored.transaction.input.iter().any(|input| {
+        competitors
+            .get(&input.previous_output)
+            .is_some_and(|count| *count > own)
+    })
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -1127,6 +1174,87 @@ mod tests {
             );
         }
         assert_eq!(restored.balance.total(), 0);
+    }
+
+    /// Planning must not run one whole-history sweep per settled record that
+    /// merely shares an input with an unconfirmed one: a sweep is worth
+    /// running only while a competitor it could remove is still there.
+    #[test]
+    fn should_plan_sweeps_only_while_a_competitor_remains() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        const SPENDERS: u32 = 200;
+        let (_wallet, info, address) = wallet_with_receive_address();
+        let outpoint = |index: u32| {
+            let mut bytes = [7_u8; 32];
+            bytes[..4].copy_from_slice(&index.to_le_bytes());
+            OutPoint::new(Txid::from_byte_array(bytes), 0)
+        };
+        let stored = |spends: Vec<u32>, lock_time, context| {
+            let transaction = Transaction {
+                version: 1,
+                lock_time,
+                input: spends
+                    .into_iter()
+                    .map(|index| TxIn {
+                        previous_output: outpoint(index),
+                        ..Default::default()
+                    })
+                    .collect(),
+                output: vec![TxOut {
+                    value: 1_000,
+                    script_pubkey: address.script_pubkey(),
+                }],
+                special_transaction_payload: None,
+            };
+            StoredTransaction {
+                txid: transaction.txid(),
+                transaction,
+                context,
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: Vec::new(),
+            }
+        };
+        let confirmed: Vec<StoredTransaction> = (0..SPENDERS)
+            .map(|index| {
+                let block = BlockInfo::new(100 + index, BlockHash::from_byte_array([1; 32]), 0);
+                stored(vec![index], index, TransactionContext::InBlock(block))
+            })
+            .collect();
+
+        // One unconfirmed record contests every confirmed spender at once.
+        let greedy = stored((0..SPENDERS).collect(), 0, TransactionContext::Mempool);
+        let mut records = confirmed.clone();
+        records.push(greedy.clone());
+        let (removed, sweeps) = plan_replay_sweeps(&info, &records);
+        assert_eq!(removed, HashSet::from([greedy.txid]));
+        assert_eq!(sweeps, 1, "the competitor is gone after the first sweep");
+
+        // Each confirmed spender has a competitor of its own, next to
+        // unconfirmed records nothing contests.
+        let competitors: Vec<StoredTransaction> = (0..SPENDERS)
+            .map(|index| stored(vec![index], SPENDERS + index, TransactionContext::Mempool))
+            .collect();
+        let bystanders: Vec<StoredTransaction> = (0..SPENDERS)
+            .map(|index| {
+                stored(
+                    vec![SPENDERS + index],
+                    2 * SPENDERS + index,
+                    TransactionContext::Mempool,
+                )
+            })
+            .collect();
+        let records: Vec<StoredTransaction> =
+            [&confirmed[..], &competitors[..], &bystanders[..]].concat();
+        let (removed, sweeps) = plan_replay_sweeps(&info, &records);
+        assert_eq!(
+            removed,
+            competitors.iter().map(|stored| stored.txid).collect()
+        );
+        assert_eq!(sweeps, SPENDERS as usize);
     }
 
     /// An empty history leaves the restored projection untouched.
