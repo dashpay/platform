@@ -291,7 +291,11 @@ final class ChainTruncationPersistTests: XCTestCase {
         truncationRound(handler, Truncation(height: 100, unconfirmed: [spendTxid]))
 
         let kept = try XCTUnwrap(transaction(container, txid: spendTxid))
-        XCTAssertEqual(kept.context, 0, "back in the mempool")
+        XCTAssertEqual(
+            kept.context,
+            TransactionContextType.instantSend.rawValue,
+            "unconfirmed, and still InstantSend-locked"
+        )
         XCTAssertEqual(kept.blockHeight, 0)
         XCTAssertNil(kept.blockHash)
         let output = try XCTUnwrap(txo(container, txid: spendTxid, vout: 0))

@@ -1511,9 +1511,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// of the round describes the wallet after the last truncation. Per
     /// truncation, in order: a removed transaction and the coins it created
     /// go for every wallet — chain facts, like a swept loser's; a kept
-    /// transaction — InstantSend-locked, so mined again — returns to the
-    /// mempool with its outputs unconfirmed and locked, and what it spent
-    /// stays spent; this wallet's restored coins are spendable again; the
+    /// transaction — InstantSend-locked, so mined again — is stored the way
+    /// a locked transaction no block holds yet is: InstantSend context, no
+    /// block, outputs unconfirmed and locked, and what it spent stays
+    /// spent; this wallet's restored coins are spendable again; the
     /// synced height drops to the fork and never rises. A restored coin
     /// needs no veto from stored claims, unlike a sweep's release: its
     /// spender was confirmed, and no block the fork keeps can hold a second
@@ -1620,17 +1621,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         for pending in row.pendingInputs {
             backgroundContext.delete(pending)
         }
-        Self.returnToMempool(row)
+        Self.unconfirm(row, as: .mempool)
         row.involvedAccounts.removeAll()
         roundVacated.transactions[txid] = row
     }
 
     /// Keep a transaction whose block a chain truncation dropped as
-    /// unconfirmed: no block, and its outputs unconfirmed and
-    /// InstantSend-locked. Spend state is not touched.
+    /// unconfirmed and InstantSend-locked — a truncation keeps no other
+    /// kind: InstantSend context, no block, and its outputs unconfirmed and
+    /// locked. Spend state is not touched.
     private func unconfirmTransaction(txid: Data) throws {
         guard let row = try fetchTransactionRow(txid: txid, prefetching: [\.outputs]) else { return }
-        Self.returnToMempool(row)
+        Self.unconfirm(row, as: .instantSend)
         for output in row.outputs {
             roundIndex?.txosByOutpoint[output.outpoint] = output
             output.isConfirmed = false
@@ -1640,8 +1642,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    private static func returnToMempool(_ row: PersistentTransaction) {
-        row.context = TransactionContextType.mempool.rawValue
+    /// Take `row` out of its block, leaving it unconfirmed in `context`.
+    private static func unconfirm(_ row: PersistentTransaction, as context: TransactionContextType) {
+        row.context = context.rawValue
         row.blockHeight = 0
         row.blockHash = nil
         row.blockTimestamp = 0
