@@ -559,6 +559,25 @@ pub(crate) fn restore_pools(
     wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
+    // Prepared once: every account and pool below binds the same three shapes.
+    let mut stored_pool_types = conn.prepare(
+        "SELECT DISTINCT pool_type FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
+    )?;
+    let mut highest_stored_index = conn.prepare(
+        "SELECT MAX(address_index) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+           AND pool_type = ?7",
+    )?;
+    let mut stored_rows = conn.prepare(
+        "SELECT address_index, length(script), script, length(public_key), public_key, \
+         key_type, used, reserved_at FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+           AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+           AND pool_type = ?7 ORDER BY address_index",
+    )?;
     for mut account in wallet_info.accounts.all_accounts_mut() {
         let account_type = account.managed_account_type().to_account_type();
         let label = accounts::account_type_db_label(&account_type);
@@ -575,11 +594,6 @@ pub(crate) fn restore_pools(
             .iter()
             .map(|pool| pool_type_to_i64(pool.pool_type))
             .collect();
-        let mut stored_pool_types = conn.prepare(
-            "SELECT DISTINCT pool_type FROM core_address_pool \
-             WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
-               AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
-        )?;
         let mut stored = stored_pool_types.query(params![
             wallet_id.as_slice(),
             label,
@@ -605,14 +619,8 @@ pub(crate) fn restore_pools(
                 friend.as_slice(),
                 pool_type_to_i64(pool.pool_type)
             ];
-            let highest_stored: Option<i64> = conn.query_row(
-                "SELECT MAX(address_index) FROM core_address_pool \
-                 WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
-                   AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
-                   AND pool_type = ?7",
-                pool_rows,
-                |row| row.get(0),
-            )?;
+            let highest_stored: Option<i64> =
+                highest_stored_index.query_row(pool_rows, |row| row.get(0))?;
             if let Some(highest_stored) = highest_stored {
                 derive_through(
                     pool,
@@ -620,14 +628,7 @@ pub(crate) fn restore_pools(
                     i64_to_u32("core_address_pool.address_index", highest_stored)?,
                 )?;
             }
-            let mut stmt = conn.prepare(
-                "SELECT address_index, length(script), script, length(public_key), public_key, \
-                 key_type, used, reserved_at FROM core_address_pool \
-                 WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
-                   AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
-                   AND pool_type = ?7 ORDER BY address_index",
-            )?;
-            let mut rows = stmt.query(pool_rows)?;
+            let mut rows = stored_rows.query(pool_rows)?;
             while let Some(row) = rows.next()? {
                 let index = i64_to_u32("core_address_pool.address_index", row.get(0)?)?;
                 blob::check_size(row.get(1)?)?;
@@ -779,8 +780,11 @@ pub(crate) fn restore_pools(
                     Some(pool.highest_generated.map_or(index, |old| old.max(index)));
                 if used {
                     pool.used_indices.insert(index);
+                    pool.highest_used = Some(
+                        pool.highest_used
+                            .map_or(index, |highest| highest.max(index)),
+                    );
                 }
-                pool.highest_used = pool.used_indices.iter().max().copied();
             }
         }
     }

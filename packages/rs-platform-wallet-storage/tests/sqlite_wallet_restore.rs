@@ -154,6 +154,7 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
                 pool.pool_type,
                 pool.addresses.clone(),
                 reserved_index,
+                pool.highest_used,
             ));
         }
     }
@@ -172,7 +173,7 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
         assert!(
             expected
                 .iter()
-                .any(|(account, _, _, _)| *account == required),
+                .any(|(account, _, _, _, _)| *account == required),
             "missing required role {required:?}"
         );
     }
@@ -185,7 +186,7 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
     let wm = manager.wallet_manager_arc();
     let mut wm = wm.write().await;
     let restored = wm.get_wallet_info_mut(&wallet.wallet_id).unwrap();
-    for (account_type, pool_type, addresses, reserved_index) in expected {
+    for (account_type, pool_type, addresses, reserved_index, highest_used) in expected {
         let source = wallet
             .accounts
             .account_of_type(account_type)
@@ -216,6 +217,10 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
         assert_eq!(
             pool.addresses[&reserved_index].state,
             AddressState::Reserved { at: 12345 }
+        );
+        assert_eq!(
+            pool.highest_used, highest_used,
+            "{account_type:?} {pool_type:?}"
         );
         if let Some(source) = source {
             let next = pool.next_unused(&source, true).unwrap();
