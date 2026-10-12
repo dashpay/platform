@@ -19,7 +19,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
-use dpp::prelude::Identifier;
 
 use super::PlatformWalletManager;
 
@@ -519,24 +518,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Some((cursor, record)) => (Some(cursor), record),
                 None => (None, Default::default()),
             };
-        let held: Vec<(Identifier, Identifier, u32)> = platform_info
-            .core_wallet
-            .accounts
-            .dashpay_receival_accounts
-            .keys()
-            .map(|key| {
-                (
-                    Identifier::from(key.user_identity_id),
-                    Identifier::from(key.friend_identity_id),
-                    key.index,
-                )
-            })
-            .collect();
-        let dropped =
-            host_backfill.retain(|owner, contact, index| held.contains(&(*owner, *contact, index)));
-        if dropped && host_backfill.is_empty() {
-            host_backfill = Default::default();
-        }
+        let dropped = super::retain_coverage_for_held_accounts(
+            &mut host_backfill,
+            &platform_info.core_wallet,
+        );
         let wallet_id = {
             let mut durable_cursors = self.durable_cursors.lock().await;
             if self

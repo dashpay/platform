@@ -348,11 +348,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 {
                     continue 'load;
                 }
+                // Coverage for a receival account this wallet did not restore
+                // vouches for scripts nothing will watch; it is dropped here,
+                // and from the host before the wallet is published, exactly
+                // as registration does (dashpay/platform#4302 review).
+                let dropped = super::retain_coverage_for_held_accounts(
+                    &mut platform_info.dashpay_backfill,
+                    &platform_info.core_wallet,
+                );
                 match self.settle_published_backfill(
                     &mut durable_cursors,
                     wallet_id,
                     std::mem::take(&mut platform_info.dashpay_backfill),
-                    false,
+                    dropped,
                     loaded_cursor,
                     loaded_cursor,
                 ) {

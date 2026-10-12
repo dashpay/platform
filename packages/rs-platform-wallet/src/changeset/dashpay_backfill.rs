@@ -146,7 +146,10 @@ pub struct DashPayBackfillRecord {
 /// Whether `persister` can hold a durable [`DashPayBackfillRecord`].
 ///
 /// The backend has to store the record at all
-/// ([`stores_dashpay_backfill`](PlatformWalletPersistence::stores_dashpay_backfill)).
+/// ([`stores_dashpay_backfill`](PlatformWalletPersistence::stores_dashpay_backfill)),
+/// and the receival accounts the coverage is about
+/// ([`ACCOUNT_ADDRESS_POOLS`](PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)):
+/// coverage restored without its account vouches for scripts nothing watches.
 /// The record vouches for the cursor written in the same round, so both
 /// halves have to land together or not at all, and be on disk once `store`
 /// returns. That takes a backend whose `store` is the commit
@@ -161,9 +164,10 @@ where
 {
     persister.stores_dashpay_backfill()
         && persister.store_commits_inline()
-        && persister
-            .persistence_capabilities()
-            .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
+        && persister.persistence_capabilities().contains(
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS),
+        )
 }
 
 /// The persisted fields of a [`DashPayBackfillRecord`] as serde reads them,

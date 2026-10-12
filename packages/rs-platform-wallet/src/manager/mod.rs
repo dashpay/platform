@@ -23,6 +23,8 @@ use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use dpp::prelude::Identifier;
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet_manager::WalletManager;
 
 use crate::changeset::{
@@ -474,6 +476,39 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+}
+
+/// Keep `record`'s coverage only for the DashPay receival accounts `core`
+/// actually holds, and report whether anything was dropped.
+///
+/// Coverage vouches that an account's scripts were watched; for an account
+/// the published wallet does not hold, nothing watches them, and a scan the
+/// wallet commits before the account is registered again would sit inside
+/// coverage that never saw it. Both publish paths apply this before
+/// [`PlatformWalletManager::settle_published_backfill`], which replaces the
+/// host's record when it reports a drop. Dropping the last entry also drops
+/// the extent: nothing is left for it to describe.
+pub(crate) fn retain_coverage_for_held_accounts(
+    record: &mut DashPayBackfillRecord,
+    core: &ManagedWalletInfo,
+) -> bool {
+    let held: Vec<(Identifier, Identifier, u32)> = core
+        .accounts
+        .dashpay_receival_accounts
+        .keys()
+        .map(|key| {
+            (
+                Identifier::from(key.user_identity_id),
+                Identifier::from(key.friend_identity_id),
+                key.index,
+            )
+        })
+        .collect();
+    let dropped = record.retain(|owner, contact, index| held.contains(&(*owner, *contact, index)));
+    if dropped && record.is_empty() {
+        *record = DashPayBackfillRecord::default();
+    }
+    dropped
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {

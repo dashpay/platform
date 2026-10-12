@@ -4747,6 +4747,76 @@ mod tests {
         .await;
     }
 
+    /// Load trusts restored coverage only for the receival accounts it
+    /// actually restored. A host that kept the record but not the account
+    /// (its account writer missing or failing) would otherwise hand back
+    /// coverage for account A beside cursor 1000 with no A to watch; the scan
+    /// can then advance to 1500 before A is registered again, and the old
+    /// coverage would accept A over a range scanned without it. The load drops
+    /// that coverage, from the host too, before publishing
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn loading_drops_coverage_for_a_receival_account_the_wallet_did_not_restore() {
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let mut host_record = crate::changeset::DashPayBackfillRecord::default();
+        host_record.record_pass(1_000, Some(200), [(owner, contact, 0, 200)]);
+
+        // The host restores the wallet without A's receival account.
+        let (donor, _, wallet_id) = make_wallet().await;
+        let (wallet, mut managed) = {
+            let wm = donor.wallet_manager.read().await;
+            (
+                wm.get_wallet(&wallet_id).expect("wallet").clone(),
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .core_wallet
+                    .clone(),
+            )
+        };
+        drop(donor);
+        managed.metadata.synced_height = 1_000;
+        let host = Arc::new(ReloadPersister {
+            wallet,
+            managed,
+            identities: std::collections::BTreeMap::new(),
+            backfill: host_record,
+            stores: Mutex::default(),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the snapshot must load");
+
+        first_store_is_an_empty_record(&host.stores.lock().unwrap());
+        {
+            let wm = manager.wallet_manager.read().await;
+            assert!(wm
+                .get_wallet_info(&wallet_id)
+                .expect("info")
+                .dashpay_backfill
+                .is_empty());
+        }
+
+        // The scan advances without A; then A is registered again.
+        accept_successor_advance(&manager, wallet_id, 1_500).await;
+        let loaded = manager.get_wallet(&wallet_id).await.expect("wallet");
+        establish_on_recreated(&manager, &host, &loaded, owner, contact, 200).await;
+        assert_eq!(
+            loaded
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            Some(200),
+            "A is rewound for: 1001..1500 was scanned without it"
+        );
+    }
+
     /// The load path's start state is just as old. A predecessor can register
     /// a receival account the snapshot does not hold, store its coverage
     /// beside a rewind to 100 and be removed before the load publishes. The
