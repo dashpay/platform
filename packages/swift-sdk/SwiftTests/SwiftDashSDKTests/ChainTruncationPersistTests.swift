@@ -117,8 +117,10 @@ final class ChainTruncationPersistTests: XCTestCase {
     @discardableResult
     private func stageTruncation(
         _ handler: PlatformWalletPersistenceHandler,
-        _ truncation: Truncation
+        _ truncation: Truncation,
+        wallet: Data? = nil
     ) -> Bool {
+        let walletId = wallet ?? self.walletId
         let removed = rawTxids(truncation.removed)
         let unconfirmed = rawTxids(truncation.unconfirmed)
         let restored = UnsafeMutablePointer<OutPointFFI>.allocate(
@@ -172,13 +174,16 @@ final class ChainTruncationPersistTests: XCTestCase {
     }
 
     /// Stage `spendTxid` mined at `blockHeight`, spending the funded coin
-    /// and creating output 0 again, together with the synced height — the
+    /// and creating output `vout` again, together with the synced height — the
     /// part of a round that follows its truncation. The caller brackets it.
     private func stageSpendMinedAgain(
         _ handler: PlatformWalletPersistenceHandler,
         blockHeight: UInt32,
-        blockHash: Data
+        blockHash: Data,
+        wallet: Data? = nil,
+        vout: UInt32 = 0
     ) {
+        let walletId = wallet ?? self.walletId
         let name = strdup("Standard { index: 0 }")
         let address = strdup("yChangeAddr")
         defer {
@@ -206,7 +211,7 @@ final class ChainTruncationPersistTests: XCTestCase {
         Swift.withUnsafeMutableBytes(of: &utxo.outpoint.txid) { dst in
             spendTxid.withUnsafeBytes { src in dst.copyMemory(from: src) }
         }
-        utxo.outpoint.vout = 0
+        utxo.outpoint.vout = vout
         utxo.amount = 30_000
         utxo.address = address
         utxo.height = blockHeight
@@ -391,5 +396,117 @@ final class ChainTruncationPersistTests: XCTestCase {
         let (handler, _) = try makeHandler()
 
         XCTAssertTrue(truncationRound(handler, Truncation(height: 100, removed: [spendTxid])))
+    }
+
+    // MARK: - A transaction two wallets share
+
+    private let otherWalletId = Data(repeating: 0x02, count: 32)
+
+    /// `seedSpendMinedAboveTheFork` with output 1 handed to a second
+    /// wallet: one transaction row, a coin for each wallet.
+    private func seedSpendSharedWithAnotherWallet(in container: ModelContainer) throws {
+        try seedSpendMinedAboveTheFork(in: container)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: otherWalletId, network: .testnet, syncedHeight: 101))
+        let outpoint = PersistentTxo.makeOutpoint(txid: spendTxid, vout: 1)
+        let theirs = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<PersistentTxo>(predicate: #Predicate { $0.outpoint == outpoint })).first
+        )
+        theirs.walletId = otherWalletId
+        try context.save()
+    }
+
+    /// One wallet's whole backlog in one round: the truncation, then the
+    /// transaction in its new block with that wallet's own output.
+    private func truncateAndMineAgain(
+        _ handler: PlatformWalletPersistenceHandler,
+        wallet: Data,
+        vout: UInt32,
+        _ truncation: Truncation,
+        blockHash: Data
+    ) {
+        handler.beginChangeset(walletId: wallet)
+        XCTAssertTrue(stageTruncation(handler, truncation, wallet: wallet))
+        stageSpendMinedAgain(handler, blockHeight: 102, blockHash: blockHash, wallet: wallet, vout: vout)
+        XCTAssertTrue(handler.endChangeset(walletId: wallet, success: true))
+    }
+
+    /// Each wallet's round commits on its own, so the second wallet's
+    /// truncation arrives after the first wallet has stored the transaction
+    /// again. It must take only its own part of the old branch.
+    func testShouldKeepAnotherWalletsReMinedOutputWhenItsOwnTruncationArrivesLater() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpendSharedWithAnotherWallet(in: container)
+        let newBlock = Data(repeating: 0x09, count: 32)
+        let removal = Truncation(height: 100, removed: [spendTxid], restored: [(txid: fundingTxid, vout: 0)])
+
+        truncateAndMineAgain(handler, wallet: walletId, vout: 0, removal, blockHash: newBlock)
+        truncateAndMineAgain(
+            handler, wallet: otherWalletId, vout: 1, Truncation(height: 100, removed: [spendTxid]),
+            blockHash: newBlock
+        )
+
+        let first = try XCTUnwrap(
+            txo(container, txid: spendTxid, vout: 0),
+            "the first wallet's coin went missing when the second wallet's truncation arrived"
+        )
+        XCTAssertEqual(first.walletId, walletId)
+        XCTAssertEqual(first.height, 102, "the first wallet's coin lost its new block")
+        let second = try XCTUnwrap(
+            txo(container, txid: spendTxid, vout: 1),
+            "the second wallet's coin went missing"
+        )
+        XCTAssertEqual(second.walletId, otherWalletId)
+        XCTAssertEqual(second.height, 102, "the second wallet's coin lost its new block")
+        XCTAssertEqual(try XCTUnwrap(transaction(container, txid: spendTxid)).blockHeight, 102)
+    }
+
+    /// The same backlog for a transaction the fork keeps: the second
+    /// wallet's truncation must not return the first wallet's coin, already
+    /// confirmed in the new block, to unconfirmed.
+    func testShouldKeepAnotherWalletsReMinedOutputConfirmedWhenItsOwnTruncationKeepsTheTransaction() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpendSharedWithAnotherWallet(in: container)
+        let newBlock = Data(repeating: 0x09, count: 32)
+        let kept = Truncation(height: 100, unconfirmed: [spendTxid])
+
+        truncateAndMineAgain(handler, wallet: walletId, vout: 0, kept, blockHash: newBlock)
+        truncateAndMineAgain(handler, wallet: otherWalletId, vout: 1, kept, blockHash: newBlock)
+
+        let first = try XCTUnwrap(txo(container, txid: spendTxid, vout: 0), "the first wallet's coin went missing")
+        XCTAssertTrue(first.isConfirmed, "the first wallet's coin was returned to unconfirmed by the second wallet's truncation")
+        XCTAssertEqual(first.height, 102, "the first wallet's coin lost its new block")
+        let second = try XCTUnwrap(txo(container, txid: spendTxid, vout: 1), "the second wallet's coin went missing")
+        XCTAssertTrue(second.isConfirmed, "the second wallet's coin stayed unconfirmed after its own round mined it")
+        XCTAssertEqual(second.height, 102, "the second wallet's coin lost its new block")
+        let row = try XCTUnwrap(transaction(container, txid: spendTxid))
+        XCTAssertEqual(row.context, TransactionContextType.inBlock.rawValue)
+        XCTAssertEqual(row.blockHeight, 102)
+    }
+
+    /// A wallet's truncation removes its own part of a shared transaction
+    /// and leaves the row while another wallet still has a coin from it.
+    func testShouldLeaveASharedTransactionWhileAnotherWalletStillHoldsACoinFromIt() throws {
+        let (handler, container) = try makeHandler()
+        try seedSpendSharedWithAnotherWallet(in: container)
+
+        truncationRound(
+            handler,
+            Truncation(height: 100, removed: [spendTxid], restored: [(txid: fundingTxid, vout: 0)])
+        )
+
+        XCTAssertNil(txo(container, txid: spendTxid, vout: 0), "the truncating wallet's own coin is gone")
+        XCTAssertNotNil(
+            txo(container, txid: spendTxid, vout: 1),
+            "the other wallet's coin went missing before its own truncation arrived"
+        )
+        XCTAssertNotNil(transaction(container, txid: spendTxid), "the row stays while a wallet has a part in it")
+
+        handler.beginChangeset(walletId: otherWalletId)
+        XCTAssertTrue(stageTruncation(handler, Truncation(height: 100, removed: [spendTxid]), wallet: otherWalletId))
+        XCTAssertTrue(handler.endChangeset(walletId: otherWalletId, success: true))
+
+        XCTAssertNil(txo(container, txid: spendTxid, vout: 1))
+        XCTAssertNil(transaction(container, txid: spendTxid), "and goes once no wallet does")
     }
 }

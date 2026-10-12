@@ -1509,16 +1509,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// Rust fires this before the round's other core callbacks, so the rest
     /// of the round describes the wallet after the last truncation. Per
-    /// truncation, in order: a removed transaction and the coins it created
-    /// go for every wallet — chain facts, like a swept loser's; a kept
-    /// transaction — InstantSend-locked, so mined again — is stored the way
-    /// a locked transaction no block holds yet is: InstantSend context, no
-    /// block, outputs unconfirmed and locked, and what it spent stays
-    /// spent; this wallet's restored coins are spendable again; the
-    /// synced height drops to the fork and never rises. A restored coin
-    /// needs no veto from stored claims, unlike a sweep's release: its
-    /// spender was confirmed, and no block the fork keeps can hold a second
-    /// spend of it.
+    /// truncation, in order: this wallet's part in a removed transaction
+    /// goes — the coins it created for it, its accounts' involvement, its
+    /// claims and links — and the row itself once no wallet has a part in
+    /// it; a kept transaction — InstantSend-locked, so mined again — is
+    /// stored the way a locked transaction no block holds yet is:
+    /// InstantSend context, no block, this wallet's outputs unconfirmed and
+    /// locked, and what it spent stays spent; this wallet's restored coins
+    /// are spendable again; the synced height drops to the fork and never
+    /// rises. A restored coin needs no veto from stored claims, unlike a
+    /// sweep's release: its spender was confirmed, and no block the fork
+    /// keeps can hold a second spend of it.
+    ///
+    /// **Everything but the row is this wallet's own.** A transaction row
+    /// is shared across wallets and each wallet's round commits on its own,
+    /// so another wallet may already have stored the transaction again, in
+    /// its new block, by the time this truncation arrives. Its coins are
+    /// not this truncation's to take. The row's block fields are the one
+    /// thing wallets share: between two wallets' rounds they can show the
+    /// branch the other wallet last wrote.
     ///
     /// Same fail-the-round contract as the sweep callback: a lookup that
     /// throws returns `false`, so Rust does not treat a truncation that
@@ -1543,13 +1552,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 do {
                     if truncation.txids_count > 0, let txidsPtr = truncation.txids {
                         for i in 0..<Int(truncation.txids_count) {
-                            try vacateTransaction(txid: hashData(txidsPtr[i]))
+                            try vacateTransaction(txid: hashData(txidsPtr[i]), walletId: walletId)
                         }
                     }
                     if truncation.unconfirmed_txids_count > 0,
                        let txidsPtr = truncation.unconfirmed_txids {
                         for i in 0..<Int(truncation.unconfirmed_txids_count) {
-                            try unconfirmTransaction(txid: hashData(txidsPtr[i]))
+                            try unconfirmTransaction(txid: hashData(txidsPtr[i]), walletId: walletId)
                         }
                     }
                     if truncation.restored_outpoints_count > 0,
@@ -1591,20 +1600,29 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Take a transaction a chain truncation removed, and the coins it
-    /// created, out of the round — see `roundVacated`. The links and the
-    /// pending claims it made go at once, so nothing the rest of the round
-    /// reads still counts it as a spender.
+    /// Take `walletId`'s part in a transaction a chain truncation removed
+    /// out of the round — see `roundVacated` — and the row with it when no
+    /// other wallet has a part in it. The wallet's links and pending claims
+    /// go at once, so nothing the rest of the round reads still counts the
+    /// transaction as a spender of its coins.
     ///
     /// Every row a relationship hands over is registered before it is
     /// written, like any other first touch of a key (see `roundIndex`).
-    private func vacateTransaction(txid: Data) throws {
+    private func vacateTransaction(txid: Data, walletId: Data) throws {
         guard let row = try fetchTransactionRow(
             txid: txid,
             prefetching: [\.outputs, \.inputs, \.pendingInputs]
         ) else { return }
 
-        for output in row.outputs {
+        // Decided before anything is detached: a coin whose wallet cannot
+        // be resolved counts as somebody else's.
+        let sharedWithAnotherWallet =
+            row.outputs.contains { Self.resolvedWalletId(of: $0) != walletId }
+            || row.inputs.contains { Self.resolvedWalletId(of: $0) != walletId }
+            || row.pendingInputs.contains { $0.walletId != walletId }
+            || row.involvedAccounts.contains { $0.wallet.walletId != walletId }
+
+        for output in row.outputs where Self.resolvedWalletId(of: output) == walletId {
             roundIndex?.txosByOutpoint[output.outpoint] = output
             output.isSpent = false
             output.spendingTransaction = nil
@@ -1612,28 +1630,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             output.supersededByTxid = nil
             roundVacated.txos[output.outpoint] = output
         }
-        for input in row.inputs {
+        for input in row.inputs where Self.resolvedWalletId(of: input) == walletId {
             roundIndex?.txosByOutpoint[input.outpoint] = input
             input.spendingTransaction = nil
             input.spendingInputIndex = nil
             input.lastUpdated = Date()
         }
-        for pending in row.pendingInputs {
+        for pending in row.pendingInputs where pending.walletId == walletId {
             backgroundContext.delete(pending)
         }
+        row.involvedAccounts.removeAll { $0.wallet.walletId == walletId }
+
+        guard !sharedWithAnotherWallet else { return }
         Self.unconfirm(row, as: .mempool)
-        row.involvedAccounts.removeAll()
         roundVacated.transactions[txid] = row
     }
 
     /// Keep a transaction whose block a chain truncation dropped as
     /// unconfirmed and InstantSend-locked — a truncation keeps no other
-    /// kind: InstantSend context, no block, and its outputs unconfirmed and
-    /// locked. Spend state is not touched.
-    private func unconfirmTransaction(txid: Data) throws {
+    /// kind: InstantSend context, no block, and `walletId`'s outputs
+    /// unconfirmed and locked. Spend state is not touched.
+    private func unconfirmTransaction(txid: Data, walletId: Data) throws {
         guard let row = try fetchTransactionRow(txid: txid, prefetching: [\.outputs]) else { return }
         Self.unconfirm(row, as: .instantSend)
-        for output in row.outputs {
+        for output in row.outputs where Self.resolvedWalletId(of: output) == walletId {
             roundIndex?.txosByOutpoint[output.outpoint] = output
             output.isConfirmed = false
             output.isInstantLocked = true
@@ -1655,8 +1675,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Hand back one of this wallet's coins that a removed transaction had
     /// spent. The link to that transaction is cleared by
-    /// `vacateTransaction`, or by the delete rule when another wallet's
-    /// round removed the shared row first.
+    /// `vacateTransaction`.
     private func restoreTruncatedCoin(outpoint: Data, walletId: Data) throws {
         if let txo = try fetchTxoRowChecked(outpoint: outpoint),
            Self.resolvedWalletId(of: txo) == walletId {
