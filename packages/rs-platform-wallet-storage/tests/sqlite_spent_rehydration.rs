@@ -2223,6 +2223,205 @@ async fn assert_extra_input_follows_its_surviving_spender(live_sweep: bool) {
     );
 }
 
+/// A forged, unminable mempool transaction paying the wallet twice for a total
+/// past `i64`, spending a foreign coin and one of the wallet's own, as stored.
+struct UnrepresentableReceipt {
+    wallet: Wallet,
+    funding: Transaction,
+    /// The wallet's own coin only the forged transaction claims.
+    extra: OutPoint,
+    forged: Transaction,
+    /// A confirmed transaction spending only the foreign coin.
+    winner: Transaction,
+    persister: SqlitePersister,
+    _dir: tempfile::TempDir,
+}
+
+impl UnrepresentableReceipt {
+    async fn stored() -> Self {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let owned = |value| TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        };
+        let value = (1_u64 << 62) + 1;
+        let funding = spend_of(
+            OutPoint::new(Txid::from_byte_array([96; 32]), 0),
+            vec![owned(20_000)],
+        );
+        let extra = OutPoint::new(funding.txid(), 0);
+        let shared = OutPoint::new(Txid::from_byte_array([95; 32]), 0);
+        let mut forged = spend_of(shared, vec![owned(value), owned(value)]);
+        forged.input.push(TxIn {
+            previous_output: extra,
+            ..Default::default()
+        });
+        let winner = spend_of(shared, vec![owned(1_000)]);
+        let mut records = info
+            .clone()
+            .check_core_transaction(&funding, block(100), &mut wallet.clone(), true, true)
+            .await
+            .new_records;
+        // Seen before its own input is funded: a debug checker cannot net this
+        // record against a known input, a release one wraps and stores it too.
+        records.extend(
+            info.check_core_transaction(
+                &forged,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        assert_eq!(
+            records.len(),
+            2,
+            "the live checker records the forged receipt"
+        );
+        let running = info
+            .clone()
+            .check_core_transaction(&winner, block(101), &mut wallet.clone(), true, true)
+            .await;
+        assert_eq!(
+            running.swept_transactions,
+            vec![forged.txid()],
+            "the running wallet removes the forged receipt"
+        );
+        let coin = stored_utxo(&funding, 0, address.clone());
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos: vec![
+                    coin.clone(),
+                    stored_utxo(&forged, 0, address.clone()),
+                    stored_utxo(&forged, 1, address.clone()),
+                ],
+                spent_utxos: vec![coin],
+                ..Default::default()
+            },
+        );
+        Self {
+            wallet,
+            funding,
+            extra,
+            forged,
+            winner,
+            persister,
+            _dir,
+        }
+    }
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_mempool_receipt_against_final_winner_after_restart() {
+    let stored = UnrepresentableReceipt::stored().await;
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&stored.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(
+        result.swept_transactions,
+        vec![stored.forged.txid()],
+        "a final competitor arriving after restart still removes the forged receipt"
+    );
+    assert_eq!(
+        result.released_outpoints,
+        vec![stored.extra],
+        "the wallet coin only the forged receipt claimed is released"
+    );
+    loaded
+        .wallet_info
+        .check_core_transaction(&stored.funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    let mut expected = vec![stored.extra, OutPoint::new(stored.winner.txid(), 0)];
+    expected.sort();
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        expected,
+        "the forged outputs are gone and the released coin is back"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 21_000);
+}
+
+#[tokio::test]
+async fn should_keep_stored_owned_outputs_when_a_record_restored_without_them_is_stored_again() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = UnrepresentableReceipt::stored().await;
+    let txid = stored.forged.txid();
+    let mut state = stored.persister.load().unwrap();
+    let info = &state
+        .wallets
+        .get_mut(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    let restored = info.accounts.standard_bip44_accounts[&0].transactions()[&txid].clone();
+    assert!(
+        restored.output_details.is_empty(),
+        "history holds the record without the amounts that are unsafe to sum"
+    );
+
+    stored
+        .persister
+        .store(
+            stored.wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![restored],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let persisted = stored
+        .persister
+        .get_core_tx_record(stored.wallet.wallet_id, &txid)
+        .unwrap()
+        .unwrap();
+    let owned: Vec<_> = persisted.output_details.iter().map(|d| d.value).collect();
+    assert_eq!(
+        owned,
+        vec![(1 << 62) + 1, (1 << 62) + 1],
+        "the store keeps the owned outputs it already knew"
+    );
+}
+
+/// The limit of the projection: a record whose input amounts are unsafe to sum
+/// cannot go back into history, so it is settled only by a winner stored by the next load.
+#[tokio::test]
+async fn should_keep_mempool_record_with_unsafe_input_amounts_out_of_history_after_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let fixture = stage_replay_amounts(TransactionContext::Mempool, &[i64::MAX as u64, 1], 1).await;
+    let stored: Vec<u8> = fixture
+        .persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT txid FROM core_transactions WHERE record_blob IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let txid = Txid::from_slice(&stored).unwrap();
+
+    let (_, info) = fixture.load();
+
+    assert!(
+        info.accounts
+            .all_funding_accounts()
+            .into_iter()
+            .all(|account| !account.transactions().contains_key(&txid)),
+        "no stored form of its input amounts is safe for the upstream net"
+    );
+}
+
 #[tokio::test]
 async fn should_report_wallet_scoped_unconverged_replay() {
     assert_conflict_restart(ConflictCase::Unconverged).await;

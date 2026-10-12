@@ -606,7 +606,7 @@ pub(crate) fn restore_recorded_transactions(
 /// of replay inputs: durable coins, parent outputs, and staged input details.
 ///
 /// Returns the unconfirmed records that must be left out of the replay, each
-/// with whether it is safe in history as stored. Nothing authenticates a mempool
+/// with whether it can go back into account history. Nothing authenticates a mempool
 /// transaction, so its amounts are peer-supplied data, not corruption; only a
 /// network-final record fails the load.
 fn validate_replay_amounts(
@@ -687,7 +687,7 @@ fn validate_replay_amounts(
     }
     for record in records {
         // A record left out credits nothing, so its outputs are no child's input amount.
-        let restorable = stored_flow_fits(record);
+        let restorable = fits_i64(record.input_details.iter().map(|d| d.value));
         if !replayable(record, own_amounts(record), restorable, &mut unreplayable)? {
             continue;
         }
@@ -795,15 +795,26 @@ fn plan_replay_sweeps(
     sweeps
 }
 
-/// Restore set-aside records as stored, bypassing the checker, so the conflict
-/// sweep still finds what they spend: it reads topology, never amounts. One that
-/// is unsafe even as stored stays out; a winner stored by then sweeps it at load.
+/// Restore set-aside records without the checker, so the conflict sweep still
+/// finds what they spend: it reads inputs and contexts, never amounts.
+///
+/// The only arithmetic upstream runs over a stored record is the signed net of
+/// its owned outputs and attributed inputs, when a late funding is attributed
+/// to it. A record whose owned outputs alone exceed `i64` goes back without its
+/// output details; the store keeps them. One whose input amounts exceed `i64`
+/// cannot be projected at this pin, because any late attribution sums every
+/// input detail and only invented details would prevent that: it stays out, and
+/// a winner stored by the next load sweeps it there.
 fn restore_unreplayed_records(
     wallet_info: &mut ManagedWalletInfo,
     records: impl Iterator<Item = TransactionRecord>,
 ) {
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
-    for record in records {
+    for mut record in records {
+        let owned = record.output_details.iter().filter(|d| is_owned(d.role));
+        if !fits_i64(owned.map(|d| d.value)) {
+            record.output_details.clear();
+        }
         // Any funding account will do as a fallback: the sweep searches them all.
         let owner = accounts
             .iter()
@@ -815,21 +826,12 @@ fn restore_unreplayed_records(
     }
 }
 
-/// Whether owned outputs and attributed inputs each sum within `i64`: the only
-/// arithmetic upstream runs over a stored record is its signed net of those two.
-fn stored_flow_fits(record: &TransactionRecord) -> bool {
-    fn fits(values: impl Iterator<Item = u64>) -> bool {
-        values
-            .map(i64::try_from)
-            .try_fold(0_i64, |sum, value| sum.checked_add(value.ok()?))
-            .is_some()
-    }
-    let owned = record
-        .output_details
-        .iter()
-        .filter(|detail| is_owned(detail.role))
-        .map(|detail| detail.value);
-    fits(owned) && fits(record.input_details.iter().map(|detail| detail.value))
+/// Whether `values` sum within `i64`, the type upstream nets a stored record in.
+fn fits_i64(values: impl Iterator<Item = u64>) -> bool {
+    values
+        .map(i64::try_from)
+        .try_fold(0_i64, |sum, value| sum.checked_add(value.ok()?))
+        .is_some()
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -4532,8 +4534,11 @@ mod tests {
     }
 
     #[test]
-    fn should_mark_set_aside_record_restorable_only_when_its_own_flow_fits() {
-        use key_wallet::managed_account::transaction_record::{OutputDetail, OutputRole};
+    fn should_restore_set_aside_record_unless_its_input_amounts_are_unsafe() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole,
+        };
 
         let detail = |index, role, value| OutputDetail {
             index,
@@ -4541,7 +4546,7 @@ mod tests {
             address: None,
             value,
         };
-        let (_, mut info, _) = wallet_with_receive_address();
+        let (_, mut info, address) = wallet_with_receive_address();
         let mut foreign_overflow = replay_record(&[], 1, TransactionContext::Mempool);
         foreign_overflow.output_details = vec![
             detail(0, OutputRole::Sent, i64::MAX as u64),
@@ -4552,25 +4557,38 @@ mod tests {
             detail(0, OutputRole::Received, (1 << 62) + 1),
             detail(1, OutputRole::Received, (1 << 62) + 1),
         ];
+        let parents = [1, 2].map(|byte| Txid::from_byte_array([byte; 32]));
+        let mut input_overflow = replay_record(&parents, 3, TransactionContext::Mempool);
+        input_overflow.input_details = (0..2)
+            .map(|index| InputDetail {
+                index,
+                value: (1 << 62) + 1,
+                address: address.clone(),
+            })
+            .collect();
+        let records = [foreign_overflow, owned_overflow, input_overflow];
 
-        let verdicts =
-            validate_replay_amounts(&info, &[foreign_overflow.clone(), owned_overflow.clone()])
-                .unwrap();
+        let verdicts = validate_replay_amounts(&info, &records).unwrap();
 
+        let [foreign_overflow, owned_overflow, input_overflow] = records;
         assert_eq!(
-            verdicts.get(&foreign_overflow.txid),
-            Some(&true),
-            "foreign amounts never enter the stored record's net"
+            [&foreign_overflow, &owned_overflow, &input_overflow]
+                .map(|record| verdicts.get(&record.txid).copied()),
+            [Some(true), Some(true), Some(false)],
+            "only unsafe input amounts keep a set-aside record out of history"
         );
+        let (kept, withheld) = (foreign_overflow.txid, owned_overflow.txid);
+        restore_unreplayed_records(&mut info, [foreign_overflow, owned_overflow].into_iter());
+        let history = info.accounts.standard_bip44_accounts[&0].transactions();
         assert_eq!(
-            verdicts.get(&owned_overflow.txid),
-            Some(&false),
-            "an owned flow past i64 would overflow the upstream net recomputation"
+            history[&kept].output_details.len(),
+            2,
+            "a record whose owned outputs fit keeps its details"
         );
-        restore_unreplayed_records(&mut info, [foreign_overflow.clone()].into_iter());
-        assert!(info.accounts.standard_bip44_accounts[&0]
-            .transactions()
-            .contains_key(&foreign_overflow.txid));
+        assert!(
+            history[&withheld].output_details.is_empty(),
+            "owned outputs past i64 are withheld from the upstream net"
+        );
     }
 
     /// An unconfirmed child whose txid sorts ahead of its parent's still
