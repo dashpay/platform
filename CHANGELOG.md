@@ -48,6 +48,11 @@
   `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
   Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
 
+- **Breaking (Rust API):** `platform_wallet_storage::LoadSite` gains
+  `PoolRowBeyondDerivationBudget` and `UnrestoredPoolReservation` and is now
+  `#[non_exhaustive]`; code that matches it exhaustively needs a wildcard arm.
+  Persisted data, FFI layouts and capability bits are unchanged.
+
 ## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
 
 

@@ -40,7 +40,13 @@ use crate::sqlite::error::WalletStorageError;
 /// for the same site — the two are deliberately separate: a UI layer wants
 /// the prose, a log consumer wants the tag, and neither should have to
 /// derive one from the other.
+///
+/// `#[non_exhaustive]`: a new kind of inconsistency gets its own variant, so
+/// a match outside this crate needs a wildcard arm and keeps compiling when
+/// one is added. Inside the crate [`as_str`](Self::as_str) and
+/// [`explanation`](Self::explanation) still match every variant by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum LoadSite {
     /// `core_sync_state.last_applied_chain_lock` failed to decode.
     ChainLockBlob,
