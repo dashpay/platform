@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::query::QueryResultType;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -14,6 +15,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery, Transaction};
 use std::collections::BTreeSet;
+use std::ops::Bound;
 
 impl Drive {
     /// Moves every index value key that generation 0 of
@@ -41,8 +43,9 @@ impl Drive {
     /// sums values of both signs, and no node sum can leave the signed
     /// 64-bit range in any order.
     ///
-    /// Memory: Drive holds at most two pages of keys per tree level on the
-    /// way down and one batch of moves (`max_rekey_batch_moves`), but GroveDB
+    /// Memory: Drive holds at most two pages of keys, and their moves, per
+    /// tree level on the way down, and one batch of moves gathered across
+    /// trees (`max_rekey_batch_moves`), but GroveDB
     /// copies every record of a moved subtree to its new prefixes, and the
     /// block's transaction holds every write until it commits. So the
     /// activation block's memory grows with the bytes the moved subtrees hold,
@@ -59,12 +62,26 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let max_batch_moves =
+            platform_version
+                .system_limits
+                .max_rekey_batch_moves
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "the protocol version that rewrites unsigned index value keys sets \
+                 max_rekey_batch_moves",
+                )))? as usize;
+        let mut moves = PendingMoves {
+            batch: GroveDbOpBatch::new(),
+            paths: BTreeSet::new(),
+            max_batch_moves,
+        };
         let contract_count = self.for_each_contract_in_state(
             |contract_id, fetch_info| {
                 for document_type in fetch_info.contract.document_types().values() {
                     self.rekey_unsigned_integer_index_values_of_document_type(
                         contract_id,
                         document_type.as_ref(),
+                        &mut moves,
                         transaction,
                         platform_version,
                     )?;
@@ -74,6 +91,7 @@ impl Drive {
             transaction,
             platform_version,
         )?;
+        self.apply_pending_moves(&mut moves, transaction, platform_version)?;
 
         tracing::info!(
             contract_count,
@@ -87,16 +105,17 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
+        moves: &mut PendingMoves,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // Most types index no unsigned property: they need no layout
-        let indexes_unsigned_property = document_type
+        // Most types index no property whose keys change: they need no layout
+        let indexes_rekeyed_property = document_type
             .indexes()
             .values()
             .flat_map(|index| &index.properties)
-            .any(|property| document_type.has_unsigned_integer_tree_key(&property.name));
-        if !indexes_unsigned_property {
+            .any(|property| document_type.tree_keys_differ_between_generations(&property.name));
+        if !indexes_rekeyed_property {
             return Ok(());
         }
 
@@ -107,6 +126,7 @@ impl Drive {
             &document_type_path,
             &layout.root,
             document_type,
+            moves,
             transaction,
             platform_version,
         )
@@ -116,17 +136,22 @@ impl Drive {
     /// `node`: those deeper down first, under the keys as they are stored,
     /// then those of the tree's own children.
     ///
-    /// The children are read in slices: up to a page of keys whose top bit is
-    /// clear, and up to a page of keys whose top bit is set, from where the
-    /// last slice ended. A slice ends where the first full page ends, its end
-    /// mapped onto the other half by the flip, so every key in it has its
-    /// twin (the key with the top bit flipped) in the same slice, and no key
-    /// is read twice: moved keys land in ranges the slices already passed.
+    /// A tree whose children all have fixed keys moves none of them: only the
+    /// children the layout leads down through are read, one by one. Otherwise
+    /// the children are read whole when they fit a page, and else in slices:
+    /// up to a page of keys whose top bit is clear, and up to a page of keys
+    /// whose top bit is set, from where the last slice ended. A slice ends
+    /// where the first full page ends, its end mapped onto the other half by
+    /// the flip, so every key in it has its twin (the key with the top bit
+    /// flipped) in the same slice, and moved keys land in ranges the slices
+    /// already passed. Keys of the other page past the end are read again
+    /// with the next slice.
     fn rekey_below(
         &self,
         path: &[Vec<u8>],
         node: &LayoutNode,
         document_type: DocumentTypeRef,
+        moves: &mut PendingMoves,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -137,17 +162,67 @@ impl Drive {
         {
             return Ok(());
         }
-        let max_batch_moves =
-            platform_version
-                .system_limits
-                .max_rekey_batch_moves
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "the protocol version that rewrites unsigned index value keys sets \
-                 max_rekey_batch_moves",
-                )))? as usize;
-        let page_size = u16::try_from(max_batch_moves).unwrap_or(u16::MAX).max(1);
+        if node
+            .children
+            .iter()
+            .all(|child| matches!(child.key, LayoutKey::Fixed { .. }))
+        {
+            for child in &node.children {
+                let LayoutKey::Fixed { bytes, .. } = &child.key else {
+                    continue;
+                };
+                if !rekeys_within(child, document_type) {
+                    continue;
+                }
+                let is_tree = self
+                    .grove_get_raw_optional(
+                        path.into(),
+                        bytes,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )?
+                    .is_some_and(|element| element.is_any_tree());
+                if is_tree {
+                    let mut child_path = path.to_vec();
+                    child_path.push(bytes.clone());
+                    self.rekey_below(
+                        &child_path,
+                        child,
+                        document_type,
+                        moves,
+                        transaction,
+                        platform_version,
+                    )?;
+                }
+            }
+            return Ok(());
+        }
 
-        let mut moves = GroveDbOpBatch::new();
+        let page_size = u16::try_from(moves.max_batch_moves)
+            .unwrap_or(u16::MAX)
+            .max(1);
+        let full = |page: &[(Vec<u8>, bool)]| page.len() == usize::from(page_size);
+        let children = self.child_keys(
+            path,
+            QueryItem::RangeFull(..),
+            page_size,
+            transaction,
+            platform_version,
+        )?;
+        if !full(&children) {
+            return self.rekey_slice(
+                path,
+                node,
+                &children,
+                document_type,
+                moves,
+                transaction,
+                platform_version,
+            );
+        }
+
         // Every key up to here (top bit clear) and its twin are done
         let mut done_through: Option<Vec<u8>> = None;
         loop {
@@ -162,17 +237,15 @@ impl Drive {
             let low = self.child_keys(path, low_item, page_size, transaction, platform_version)?;
             let high =
                 self.child_keys(path, high_item, page_size, transaction, platform_version)?;
-            let full = |page: &[(Vec<u8>, bool)]| page.len() == usize::from(page_size);
-            let low_end = full(&low)
-                .then(|| low.last().map(|(key, _)| key.clone()))
-                .flatten();
-            let high_end = full(&high)
-                .then(|| high.last().map(|(key, _)| flipped(key)))
-                .flatten();
-            let end = match (low_end, high_end) {
-                (Some(low_end), Some(high_end)) => Some(low_end.min(high_end)),
-                (low_end, high_end) => low_end.or(high_end),
-            };
+            let low_end = low
+                .last()
+                .filter(|_| full(&low))
+                .map(|(key, _)| key.clone());
+            let high_end = high
+                .last()
+                .filter(|_| full(&high))
+                .map(|(key, _)| flipped(key));
+            let end = low_end.into_iter().chain(high_end).min();
             let in_slice = |key: &Vec<u8>, top_bit_set: bool| {
                 end.as_ref().is_none_or(|end| {
                     if top_bit_set {
@@ -191,9 +264,8 @@ impl Drive {
                 path,
                 node,
                 &slice,
-                &mut moves,
-                max_batch_moves,
                 document_type,
+                moves,
                 transaction,
                 platform_version,
             )?;
@@ -202,25 +274,20 @@ impl Drive {
                 None => break,
             }
         }
-        if !moves.is_empty() {
-            self.grove_apply_batch(moves, false, Some(transaction), &platform_version.drive)?;
-        }
         Ok(())
     }
 
     /// Rewrites the keys below each child in `slice` (children of the tree at
     /// `path`, an instance of `node`), then adds the moves of the children's
-    /// own keys to `moves`, applying them whenever `max_batch_moves` gather.
-    /// A key and its twin trade keys in one batch.
+    /// own keys to `moves`. A key and its twin trade keys in one batch.
     #[allow(clippy::too_many_arguments)]
     fn rekey_slice(
         &self,
         path: &[Vec<u8>],
         node: &LayoutNode,
         slice: &[(Vec<u8>, bool)],
-        moves: &mut GroveDbOpBatch,
-        max_batch_moves: usize,
         document_type: DocumentTypeRef,
+        moves: &mut PendingMoves,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -240,6 +307,7 @@ impl Drive {
                     &child_path,
                     child_node,
                     document_type,
+                    moves,
                     transaction,
                     platform_version,
                 )?;
@@ -247,6 +315,7 @@ impl Drive {
         }
 
         let present: BTreeSet<&[u8]> = slice.iter().map(|(key, _)| key.as_slice()).collect();
+        let mut key_moves = Vec::new();
         for (key, _) in slice {
             let Some(child_node) = child_node(node, key) else {
                 continue;
@@ -261,27 +330,73 @@ impl Drive {
                 if new_key < *key {
                     continue;
                 }
-                moves.push(QualifiedGroveDbOp::move_op(
+                key_moves.push(vec![
+                    QualifiedGroveDbOp::move_op(path.to_vec(), new_key.clone(), key.clone()),
+                    QualifiedGroveDbOp::move_op(path.to_vec(), key.clone(), new_key),
+                ]);
+            } else {
+                key_moves.push(vec![QualifiedGroveDbOp::move_op(
                     path.to_vec(),
-                    new_key.clone(),
                     key.clone(),
-                ));
+                    new_key,
+                )]);
             }
-            moves.push(QualifiedGroveDbOp::move_op(
-                path.to_vec(),
-                key.clone(),
-                new_key,
-            ));
-            if moves.len() >= max_batch_moves {
-                self.grove_apply_batch(
-                    std::mem::take(moves),
-                    false,
-                    Some(transaction),
-                    &platform_version.drive,
-                )?;
+        }
+        self.push_moves(moves, path, key_moves, transaction, platform_version)
+    }
+
+    /// Adds `key_moves`, each the move of one key of the tree at `path` or
+    /// the two moves of a twin pair, to `moves`, applying the batch whenever
+    /// `max_batch_moves` gather, and first when it holds moves below the
+    /// tree: a batch refuses to work under a key it moves.
+    fn push_moves(
+        &self,
+        moves: &mut PendingMoves,
+        path: &[Vec<u8>],
+        key_moves: Vec<Vec<QualifiedGroveDbOp>>,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if key_moves.is_empty() {
+            return Ok(());
+        }
+        // The paths extending `path` sort right after it
+        if moves
+            .paths
+            .range::<[Vec<u8>], _>((Bound::Excluded(path), Bound::Unbounded))
+            .next()
+            .is_some_and(|pending| pending.starts_with(path))
+        {
+            self.apply_pending_moves(moves, transaction, platform_version)?;
+        }
+        for key_move in key_moves {
+            if !moves.paths.contains(path) {
+                moves.paths.insert(path.to_vec());
+            }
+            moves.batch.extend(key_move);
+            if moves.batch.len() >= moves.max_batch_moves {
+                self.apply_pending_moves(moves, transaction, platform_version)?;
             }
         }
         Ok(())
+    }
+
+    fn apply_pending_moves(
+        &self,
+        moves: &mut PendingMoves,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        moves.paths.clear();
+        if moves.batch.is_empty() {
+            return Ok(());
+        }
+        self.grove_apply_batch(
+            std::mem::take(&mut moves.batch),
+            false,
+            Some(transaction),
+            &platform_version.drive,
+        )
     }
 
     /// The keys of up to `limit` children of the tree at `path` in `item`,
@@ -311,6 +426,14 @@ impl Drive {
             .map(|(key, element)| (key, element.is_any_tree()))
             .collect())
     }
+}
+
+/// The moves gathered so far, across trees, document types and contracts, and
+/// the paths of the trees they are in.
+struct PendingMoves {
+    batch: GroveDbOpBatch,
+    paths: BTreeSet<Vec<Vec<u8>>>,
+    max_batch_moves: usize,
 }
 
 /// The smallest key whose top bit is set: every key below it has the top
@@ -349,7 +472,7 @@ fn rekeys_within(node: &LayoutNode, document_type: DocumentTypeRef) -> bool {
     matches!(
         &node.key,
         LayoutKey::PropertyValue { property }
-            if document_type.has_unsigned_integer_tree_key(property)
+            if document_type.tree_keys_differ_between_generations(property)
     ) || node
         .children
         .iter()
@@ -374,6 +497,7 @@ fn rekeyed_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::DriveConfig;
     use crate::drive::votes::paths::VotePollPaths;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -381,14 +505,21 @@ mod tests {
         above_100, count_grades, insert_document, insert_grade, query_grades, query_values,
         setup_grades,
     };
+    use crate::query::vote_poll_vote_state_query::{
+        ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
+        FinalizedContestedDocumentVotePollDriveQueryExecutionResult,
+    };
     use crate::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-    use crate::util::grove_operations::DirectQueryType;
-    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::util::object_size_info::{DataContractOwnedResolvedInfo, OwnedDocumentInfo};
+    use crate::query::vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery;
+    use crate::util::object_size_info::DocumentInfo::{DocumentAndSerialization, DocumentRefInfo};
+    use crate::util::object_size_info::{
+        DataContractOwnedResolvedInfo, DocumentAndContractInfo, OwnedDocumentInfo,
+    };
     use crate::util::storage_flags::StorageFlags;
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::{DataContract, DataContractFactory};
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0, DocumentV0Setters};
     use dpp::identifier::Identifier;
     use dpp::platform_value::string_encoding::Encoding;
@@ -635,6 +766,37 @@ mod tests {
             ),
             vec![127, 128, 129]
         );
+    }
+
+    /// A moved value tree keeps the subtree under it as it was stored: the
+    /// tree of its documents keeps its root key and count, so its Merk tree
+    /// keeps its shape and hashes.
+    #[test]
+    fn should_keep_the_merk_tree_under_a_moved_key() {
+        let (drive, contract) = setup_grades(protocol_version_13());
+        for id in 20..40 {
+            insert_grade(&drive, &contract, id, 200, protocol_version_13());
+        }
+        let documents_of = |key: u8| {
+            let mut path = contract_document_type_path_vec(contract.id().as_bytes(), "grade");
+            path.extend([b"grade".to_vec(), vec![key]]);
+            drive
+                .grove_get_raw(
+                    path.as_slice().into(),
+                    &[0],
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &PlatformVersion::latest().drive,
+                )
+                .expect("expected to read")
+                .expect("expected the documents of grade 200")
+        };
+        let before = documents_of(0x48);
+
+        rekey(&drive);
+
+        assert_eq!(documents_of(0xC8), before);
     }
 
     /// The `item` type: a u64 `amount` (`minimum` alone picks u64) under a
@@ -1020,7 +1182,9 @@ mod tests {
     }
 
     /// Moves applied one batch at a time still keep each pair of keys that
-    /// trade places in one batch, and end where one batch would.
+    /// trade places in one batch, and leave the records and aggregates
+    /// batches of the usual size leave (the dumps leave out the Merk shapes,
+    /// which batch boundaries can change).
     #[test]
     fn should_rekey_the_same_in_batches_of_one_move() {
         let (drive, contract) = setup_grades(protocol_version_13());
@@ -1048,6 +1212,123 @@ mod tests {
                 .expect("expected the count"),
             5
         );
+    }
+
+    /// A `pair` type: a u8 `a` and a u16 `b`, indexed together (`[a, b]`,
+    /// two levels whose keys change) and `b` alone in a unique index, whose
+    /// value trees hold the reference to the document directly.
+    fn pair_contract() -> DataContract {
+        contract_at_13(
+            12,
+            "pair",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                    "b": {"type": "integer", "minimum": 0, "maximum": 65535, "position": 1},
+                },
+                "required": ["a", "b"],
+                "indices": [
+                    {
+                        "name": "byAB",
+                        "properties": [{"a": "asc"}, {"b": "asc"}],
+                        "countable": "countable",
+                    },
+                    {"name": "byB", "properties": [{"b": "asc"}], "unique": true},
+                ],
+                "additionalProperties": false,
+            }),
+        )
+    }
+
+    /// A drive at protocol version 13 holding [`pair_contract`] and pairs on
+    /// both sides of the top bit of each property, many of them twins.
+    fn setup_pairs(contract: &DataContract) -> Drive {
+        let drive = setup_contract_at_13(contract);
+        for (id, a, b) in [
+            (1, 1, 2),
+            (2, 129, 32770),
+            (3, 2, 7),
+            (4, 130, 32775),
+            (5, 200, 300),
+            (6, 72, 33068),
+            (7, 60, 9),
+            (8, 1, 40000),
+            (9, 1, 7232),
+            (10, 129, 5),
+            (11, 129, 32773),
+            (12, 255, 65535),
+            (13, 127, 32767),
+        ] {
+            insert_document(
+                &drive,
+                contract,
+                "pair",
+                &document(id, vec![("a", Value::U8(a)), ("b", Value::U16(b))]),
+                protocol_version_13(),
+            );
+        }
+        drive
+    }
+
+    /// Two levels whose keys change, read in slices of a few keys and moved
+    /// in batches of a few moves, so moves wait across slices and trees and a
+    /// level's moves wait for the levels below; and the references a unique
+    /// index holds directly under the moved value trees.
+    #[test]
+    fn should_rekey_two_levels_and_unique_references_in_slices_and_small_batches() {
+        let contract = pair_contract();
+        let reference = setup_pairs(&contract);
+        let before = dump_document_type(&reference, &contract, "pair");
+        rekey(&reference);
+        let expected = rekeyed_dump(before, &[("a", 1), ("b", 2)]);
+        assert_eq!(dump_document_type(&reference, &contract, "pair"), expected);
+
+        for max_rekey_batch_moves in [2, 3] {
+            let drive = setup_pairs(&contract);
+            let mut platform_version = PlatformVersion::latest().clone();
+            platform_version.system_limits.max_rekey_batch_moves = Some(max_rekey_batch_moves);
+            let transaction = drive.grove.start_transaction();
+            drive
+                .rekey_unsigned_integer_index_values(&transaction, &platform_version)
+                .expect("expected the rekey to run in small batches");
+            drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            assert_eq!(
+                dump_document_type(&drive, &contract, "pair"),
+                expected,
+                "batches of {max_rekey_batch_moves}"
+            );
+
+            let values = |sql: &str, property: &str| {
+                query_values(
+                    &drive,
+                    &contract,
+                    "pair",
+                    sql,
+                    property,
+                    PlatformVersion::latest(),
+                )
+            };
+            assert_eq!(
+                values("select * from pair where a > 100 order by a asc", "a"),
+                vec![127, 129, 129, 129, 130, 200, 255]
+            );
+            assert_eq!(
+                values(
+                    "select * from pair where a == 1 and b > 100 order by b asc",
+                    "b"
+                ),
+                vec![7232, 40000]
+            );
+            assert_eq!(
+                values("select * from pair where b > 32768 order by b asc", "b"),
+                vec![32770, 32773, 32775, 33068, 40000, 65535]
+            );
+        }
     }
 
     /// A token history shaped type: indexes led by an identifier, one of them
@@ -1338,5 +1619,271 @@ mod tests {
         let VotePoll::ContestedDocumentResourceVotePoll(poll) = vote.vote_poll();
         assert_eq!(poll.index_values, vec![Value::U8(200)]);
         assert_eq!(vote.resource_vote_choice(), towards_first);
+    }
+    /// A contest on an unsigned value started, and voted on, before protocol
+    /// version 14 ends after it: the poll is found by its end date, its tally
+    /// names the winner, whose document is awarded into the index under the
+    /// value's new key, and the cleanup removes the end date, the contenders
+    /// and the vote at the paths they have had since the contest started.
+    #[test]
+    fn should_award_and_clean_up_a_contest_on_an_unsigned_value_started_before_the_upgrade() {
+        let contract = seat_contract();
+        // Configured as a shipped node is: the end of a poll applies a batch
+        // that the test harness's consistency check refuses at any version
+        let drive = setup_drive(Some(DriveConfig {
+            batching_consistency_verification: false,
+            ..Default::default()
+        }));
+        drive
+            .create_initial_state_structure(None, protocol_version_13())
+            .expect("expected the initial state");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                protocol_version_13(),
+            )
+            .expect("expected to apply the contract");
+        let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
+            document_type_name: "seat".to_string(),
+            index_name: "byNumber".to_string(),
+            index_values: vec![Value::U8(200)],
+        };
+        add_seat_contender(&drive, &vote_poll, 21, true, protocol_version_13());
+        add_seat_contender(&drive, &vote_poll, 22, false, protocol_version_13());
+        let voter = Identifier::new([9; 32]);
+        let towards_first = ResourceVoteChoice::TowardsIdentity(Identifier::new([21; 32]));
+        drive
+            .register_contested_resource_identity_vote(
+                voter.to_buffer(),
+                1,
+                vote_poll.clone(),
+                towards_first,
+                None,
+                &BlockInfo::default(),
+                None,
+                protocol_version_13(),
+            )
+            .expect("expected to record the vote");
+
+        rekey(&drive);
+
+        let platform_version = PlatformVersion::latest();
+        let ended = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        }
+        .execute_no_proof(&drive, None, &mut vec![], platform_version)
+        .expect("expected the polls by end date");
+        let [(end_date, polls)] = ended
+            .into_iter()
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected one end date");
+        let [VotePoll::ContestedDocumentResourceVotePoll(poll)]: [VotePoll; 1] =
+            polls.try_into().expect("expected one poll");
+        assert_eq!(poll.index_values, vec![Value::U8(200)]);
+
+        let tally: FinalizedContestedDocumentVotePollDriveQueryExecutionResult =
+            ContestedDocumentVotePollDriveQuery {
+                vote_poll: poll,
+                result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                offset: None,
+                limit: Some(10),
+                start_at: None,
+                allow_include_locked_and_abstaining_vote_tally: true,
+            }
+            .execute_no_proof(&drive, None, &mut vec![], platform_version)
+            .expect("expected the tally")
+            .try_into()
+            .expect("expected a finalized tally");
+        let winner = tally
+            .contenders
+            .iter()
+            .max_by_key(|contender| contender.final_vote_tally)
+            .expect("expected contenders");
+        assert_eq!(winner.identity_id, Identifier::new([21; 32]));
+        let document_type = contract
+            .document_type_for_name("seat")
+            .expect("expected the seat type");
+        let document =
+            Document::from_bytes(&winner.serialized_document, document_type, platform_version)
+                .expect("expected the winner's document");
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentAndSerialization((
+                            document,
+                            winner.serialized_document.clone(),
+                            None,
+                        )),
+                        owner_id: Some(winner.identity_id.to_buffer()),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to award the document");
+
+        // The voters of each choice, as the end of a poll gathers them
+        let mut voters = drive
+            .fetch_identities_voting_for_contenders(
+                &vote_poll,
+                tally
+                    .contenders
+                    .iter()
+                    .map(|contender| contender.identity_id)
+                    .collect(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected the voters");
+        for contender in &tally.contenders {
+            if contender.final_vote_tally == 0 {
+                voters.insert(
+                    ResourceVoteChoice::TowardsIdentity(contender.identity_id),
+                    vec![],
+                );
+            }
+        }
+        if tally.locked_vote_tally == 0 {
+            voters.insert(ResourceVoteChoice::Lock, vec![]);
+        }
+        if tally.abstaining_vote_tally == 0 {
+            voters.insert(ResourceVoteChoice::Abstain, vec![]);
+        }
+        assert_eq!(voters.get(&towards_first), Some(&vec![voter]));
+        let ended_polls = [(&vote_poll, &end_date, &voters)];
+        let mut operations = vec![];
+        drive
+            .remove_contested_resource_vote_poll_end_date_query_operations(
+                &ended_polls,
+                &mut operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove the end date");
+        drive
+            .remove_contested_resource_vote_poll_votes_operations(
+                &ended_polls,
+                true,
+                &mut operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove the votes");
+        drive
+            .remove_contested_resource_vote_poll_documents_operations(
+                &ended_polls,
+                false,
+                &mut operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove the contenders' documents");
+        drive
+            .remove_contested_resource_vote_poll_contenders_operations(
+                &ended_polls,
+                &mut operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove the contenders");
+        let vote_id = vote_poll.unique_id().expect("expected the poll's id");
+        drive
+            .remove_specific_vote_references_given_by_identity(
+                &voter,
+                &[&vote_id],
+                &mut operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove the voter's record");
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected the cleanup to apply");
+
+        // The awarded seat is where protocol version 14 looks for it
+        assert_eq!(
+            query_values(
+                &drive,
+                &contract,
+                "seat",
+                "select * from seat where number > 100 order by number asc",
+                "number",
+                platform_version,
+            ),
+            vec![200]
+        );
+        let transaction = drive.grove.start_transaction();
+        let numbers: Vec<Vec<u8>> = stored_children(
+            &drive,
+            &[
+                contract_document_type_path_vec(contract.id().as_bytes(), "seat"),
+                vec![b"number".to_vec()],
+            ]
+            .concat(),
+            &transaction,
+        )
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect();
+        assert_eq!(numbers, vec![vec![0xC8]]);
+
+        // Nothing of the contest is left
+        let contenders: Vec<Vec<u8>> = stored_children(
+            &drive,
+            &vote_poll
+                .contenders_path(platform_version)
+                .expect("expected the contenders path"),
+            &transaction,
+        )
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect();
+        assert!(!contenders.contains(&vec![21; 32]));
+        assert!(!contenders.contains(&vec![22; 32]));
+        drop(transaction);
+        assert!(VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        }
+        .execute_no_proof(&drive, None, &mut vec![], platform_version)
+        .expect("expected the polls by end date")
+        .is_empty());
+        let votes_given = ContestedResourceVotesGivenByIdentityQuery {
+            identity_id: voter,
+            offset: None,
+            limit: None,
+            start_at: None,
+            order_ascending: true,
+        }
+        .execute_no_proof(&drive, None, &mut vec![], platform_version)
+        .expect("expected the votes given");
+        assert!(votes_given.is_empty(), "the voter's record is removed");
     }
 }
