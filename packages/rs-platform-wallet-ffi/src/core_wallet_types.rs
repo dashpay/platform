@@ -433,9 +433,11 @@ pub struct SweepBatchFFI {
 ///
 /// Applying one entry means:
 /// - delete each transaction in `txids` and every UTXO it created;
-/// - keep each transaction in `unconfirmed_txids` as unconfirmed — no block,
-///   outputs unconfirmed and InstantSend-locked, the coins it spent still
-///   spent;
+/// - keep each transaction in `unconfirmed_txids` as unconfirmed and
+///   InstantSend-locked, which is the only kind a truncation keeps: the
+///   InstantSend context, no block, outputs unconfirmed and
+///   InstantSend-locked, the coins it spent still spent. The entry is all a
+///   host needs for that; the lock itself does not cross this surface;
 /// - mark each outpoint in `restored_outpoints` unspent again;
 /// - lower a stored sync height above `height` to `height`.
 ///
