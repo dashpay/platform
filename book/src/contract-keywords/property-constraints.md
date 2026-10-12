@@ -134,7 +134,7 @@ Two more forms appear only in string and identifier comparisons, never inside ar
 | `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier, or, tested against a byte array property, hex digits |
 | `{ "ifAbsent": ["status", "open"] }` | A string property, read as the given string when the document leaves it out |
 
-A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`. A `{ "referenced": [reference, field] }` stands wherever a path does.
+A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId`, the times and heights below, `$revision`, a path or any of those after `$old.`, which reads the stored version (see [The stored version](#the-stored-version-old)), and, as the value a [total's filter](#totals-of-other-documents) matches by, `$id`. A `{ "referenced": [reference, field] }` stands wherever a path does.
 
 A `number` property (a float) cannot be read by a rule, which keeps every result exact.
 
