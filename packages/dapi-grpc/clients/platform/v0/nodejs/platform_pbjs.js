@@ -41128,6 +41128,8 @@ $root.org = (function() {
                          * @property {number} STARTS_WITH=10 STARTS_WITH value
                          * @property {number} IN_TIME_RANGE=11 IN_TIME_RANGE value
                          * @property {number} IN_INTEGER_RANGE=12 IN_INTEGER_RANGE value
+                         * @property {number} CONTAINS=13 CONTAINS value
+                         * @property {number} CONTAINS_ANY=14 CONTAINS_ANY value
                          */
                         GetDocumentsRequest.WhereOperator = (function() {
                             var valuesById = {}, values = Object.create(valuesById);
@@ -41144,6 +41146,8 @@ $root.org = (function() {
                             values[valuesById[10] = "STARTS_WITH"] = 10;
                             values[valuesById[11] = "IN_TIME_RANGE"] = 11;
                             values[valuesById[12] = "IN_INTEGER_RANGE"] = 12;
+                            values[valuesById[13] = "CONTAINS"] = 13;
+                            values[valuesById[14] = "CONTAINS_ANY"] = 14;
                             return values;
                         })();
 
@@ -43044,6 +43048,8 @@ $root.org = (function() {
                                     case 10:
                                     case 11:
                                     case 12:
+                                    case 13:
+                                    case 14:
                                         break;
                                     }
                                 if (message.value != null && message.hasOwnProperty("value")) {
@@ -43130,6 +43136,14 @@ $root.org = (function() {
                                 case "IN_INTEGER_RANGE":
                                 case 12:
                                     message.operator = 12;
+                                    break;
+                                case "CONTAINS":
+                                case 13:
+                                    message.operator = 13;
+                                    break;
+                                case "CONTAINS_ANY":
+                                case 14:
+                                    message.operator = 14;
                                     break;
                                 }
                                 if (object.value != null) {

@@ -5802,6 +5802,8 @@ export namespace GetDocumentsRequest {
     STARTS_WITH: 10;
     IN_TIME_RANGE: 11;
     IN_INTEGER_RANGE: 12;
+    CONTAINS: 13;
+    CONTAINS_ANY: 14;
   }
 
   export const WhereOperator: WhereOperatorMap;

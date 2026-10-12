@@ -11049,7 +11049,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         "ssThan\000LessThanOrEquals\000Between\000BetweenE"
         "xcludeBounds\000BetweenExcludeLeft\000BetweenE"
         "xcludeRight\000In\000StartsWith\000InTimeRange\000In"
-        "IntegerRange\000";
+        "IntegerRange\000Contains\000ContainsAny\000";
     static const int32_t values[] = {
         GetDocumentsRequest_WhereOperator_Equal,
         GetDocumentsRequest_WhereOperator_GreaterThan,
@@ -11064,6 +11064,8 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         GetDocumentsRequest_WhereOperator_StartsWith,
         GetDocumentsRequest_WhereOperator_InTimeRange,
         GetDocumentsRequest_WhereOperator_InIntegerRange,
+        GetDocumentsRequest_WhereOperator_Contains,
+        GetDocumentsRequest_WhereOperator_ContainsAny,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_WhereOperator)
@@ -11094,6 +11096,8 @@ BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
     case GetDocumentsRequest_WhereOperator_StartsWith:
     case GetDocumentsRequest_WhereOperator_InTimeRange:
     case GetDocumentsRequest_WhereOperator_InIntegerRange:
+    case GetDocumentsRequest_WhereOperator_Contains:
+    case GetDocumentsRequest_WhereOperator_ContainsAny:
       return YES;
     default:
       return NO;

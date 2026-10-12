@@ -46120,7 +46120,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator = {
   IN: 9,
   STARTS_WITH: 10,
   IN_TIME_RANGE: 11,
-  IN_INTEGER_RANGE: 12
+  IN_INTEGER_RANGE: 12,
+  CONTAINS: 13,
+  CONTAINS_ANY: 14
 };
 
 

@@ -64,7 +64,7 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
         assert_select_is_count(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_count_query(request, response, platform_version, provider)?;
+            verify_count_query(request, response, false, platform_version, provider)?;
         Ok((entries.map(DocumentSplitCounts::from_verified), mtd, proof))
     }
 }
