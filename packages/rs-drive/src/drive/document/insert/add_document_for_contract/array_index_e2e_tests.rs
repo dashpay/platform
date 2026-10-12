@@ -18,7 +18,7 @@ use crate::query::drive_document_sum_query::{
     DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumEntry, SumMode,
 };
 use crate::query::{
-    answers_per_element, key_array_element_clauses, BindingSource, CountMode, DocumentCountRequest,
+    key_array_element_clauses, BindingSource, CountMode, DocumentCountRequest,
     DocumentCountResponse, DocumentRankedRequest, DocumentRankedResponse, DriveDocumentCountQuery,
     DriveDocumentQuery, DriveDocumentRankedQuery, DriveSubQuery, OrderClause, RankedAxis,
     RankedEntry, RankedEntryValue, SelectProjection, SubQueryBinding, SubQueryKind, WhereClause,
@@ -180,6 +180,18 @@ fn create_fee(
     document: &Document,
     apply: bool,
 ) -> FeeResult {
+    create_in(drive, contract, document, BlockInfo::default(), apply, None)
+}
+
+/// [`create_fee`] in `block_info`, inside `transaction`.
+fn create_in(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    block_info: BlockInfo,
+    apply: bool,
+    transaction: TransactionArg,
+) -> FeeResult {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -194,9 +206,9 @@ fn create_fee(
                 document_type: contract.document_type_for_name("post").expect("post"),
             },
             false,
-            BlockInfo::default(),
+            block_info,
             apply,
-            None,
+            transaction,
             PlatformVersion::latest(),
             None,
         )
@@ -211,16 +223,28 @@ fn replace_fee(
     document: &Document,
     apply: bool,
 ) -> FeeResult {
+    replace_in(drive, contract, document, BlockInfo::default(), apply, None)
+}
+
+/// [`replace_fee`] in `block_info`, inside `transaction`.
+fn replace_in(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    block_info: BlockInfo,
+    apply: bool,
+    transaction: TransactionArg,
+) -> FeeResult {
     drive
         .update_document_for_contract(
             document,
             contract,
             contract.document_type_for_name("post").expect("post"),
             Some(OWNER),
-            BlockInfo::default(),
+            block_info,
             apply,
             None,
-            None,
+            transaction,
             PlatformVersion::latest(),
             None,
         )
@@ -229,18 +253,61 @@ fn replace_fee(
 
 /// What deleting post `id` costs, applied or only priced.
 fn delete_fee(drive: &Drive, contract: &DataContract, id: u8, apply: bool) -> FeeResult {
+    delete_in(
+        drive,
+        contract,
+        Identifier::from([id; 32]),
+        BlockInfo::default(),
+        apply,
+        None,
+    )
+}
+
+/// [`delete_fee`] of the post `id` in `block_info`, inside `transaction`.
+fn delete_in(
+    drive: &Drive,
+    contract: &DataContract,
+    id: Identifier,
+    block_info: BlockInfo,
+    apply: bool,
+    transaction: TransactionArg,
+) -> FeeResult {
     drive
         .delete_document_for_contract(
-            Identifier::from([id; 32]),
+            id,
             contract,
             "post",
-            BlockInfo::default(),
+            block_info,
             apply,
-            None,
+            transaction,
             PlatformVersion::latest(),
             None,
         )
         .expect("delete document")
+}
+
+/// The root hash of the drive's committed state.
+fn live_root_hash(drive: &Drive) -> [u8; 32] {
+    drive
+        .grove
+        .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+        .unwrap()
+        .expect("root hash")
+}
+
+/// The total of an aggregate count.
+fn aggregate_total(response: DocumentCountResponse) -> u64 {
+    match response {
+        DocumentCountResponse::Aggregate(total) => total,
+        other => panic!("expected an aggregate, got {other:?}"),
+    }
+}
+
+/// A post created at `created_at` holding `hashtags` and nothing else.
+fn bare_post(id: u8, created_at: u64, hashtags: &[&str]) -> Document {
+    let mut document = post_created(id, created_at, hashtags);
+    document.properties_mut().remove("language");
+    document
 }
 
 fn text(value: &str) -> Vec<u8> {
@@ -518,6 +585,83 @@ fn should_move_only_the_changed_entries_on_update() {
     }
 }
 
+/// A unique index beside an array index under the same first property: a
+/// replace reads the unique index's earlier sibling levels for a missing
+/// value, and passes the array's level by (an element is never empty, and a
+/// document without one is entered nowhere under the array), so replaces that
+/// change, empty or keep the list all apply and move exactly their entries.
+#[test]
+fn should_replace_beside_a_unique_index_sharing_a_level_with_the_array() {
+    let (drive, contract) = setup_with(post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 20},
+                "position": 0
+            },
+            "slug": {"type": "string", "maxLength": 20, "position": 1}
+        },
+        "required": ["slug"],
+        "indices": [
+            {"name": "byOwnerSlug", "properties": [{"$ownerId": "asc"}, {"slug": "asc"}], "unique": true},
+            {"name": "byOwnerHashtag", "properties": [{"$ownerId": "asc"}, {"hashtags": "asc"}]}
+        ],
+        "additionalProperties": false
+    })));
+    let slug_entry = |slug: &str| {
+        has_key(
+            &drive,
+            &contract,
+            &[text("$ownerId"), OWNER.to_vec(), text("slug")],
+            &text(slug),
+        )
+    };
+    let hashtag_entry = |tag: &str| {
+        has_entry(
+            &drive,
+            &contract,
+            &[
+                text("$ownerId"),
+                OWNER.to_vec(),
+                text("hashtags"),
+                text(tag),
+            ],
+            1,
+        )
+    };
+    let mut document = Document::V0(DocumentV0 {
+        id: Identifier::from([1; 32]),
+        owner_id: Identifier::from(OWNER),
+        properties: BTreeMap::from([
+            ("slug".to_string(), Value::Text("first".to_string())),
+            ("hashtags".to_string(), platform_value!(["dash"])),
+        ]),
+        revision: Some(1),
+        ..Default::default()
+    });
+    insert(&drive, &contract, &document);
+    assert!(slug_entry("first") && hashtag_entry("dash"));
+
+    document.set("slug", Value::Text("second".to_string()));
+    document.set("hashtags", platform_value!(["news"]));
+    document.set_revision(Some(2));
+    update(&drive, &contract, &document);
+    assert!(slug_entry("second") && !slug_entry("first"));
+    assert!(hashtag_entry("news") && !hashtag_entry("dash"));
+
+    document.set("hashtags", platform_value!([]));
+    document.set_revision(Some(3));
+    update(&drive, &contract, &document);
+    assert!(slug_entry("second") && !hashtag_entry("news"));
+
+    document.set_revision(Some(4));
+    update(&drive, &contract, &document);
+    assert!(slug_entry("second"));
+}
+
 /// Pricing a write without applying it walks the same element fan-out with
 /// estimated layers, and touches no state: a create and a replace of a real
 /// post price its elements, a delete prices the stored post as the worst case
@@ -528,8 +672,6 @@ fn should_move_only_the_changed_entries_on_update() {
 #[test]
 fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
     let created_at = 20_000 * DAY_MS + 1_000;
-    let mut trending_post = post_created(1, created_at, &["dash", "news"]);
-    trending_post.properties_mut().remove("language");
     for (contract, document, replaced_elements) in [
         (
             post_contract(),
@@ -538,19 +680,11 @@ fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
         ),
         (
             trending_three_days_contract(),
-            trending_post,
+            bare_post(1, created_at, &["dash", "news"]),
             vec!["crypto", "defi", "web3", "nft"],
         ),
     ] {
         let (drive, contract) = setup_with(contract);
-        let platform_version = PlatformVersion::latest();
-        let root_hash = |drive: &Drive| {
-            drive
-                .grove
-                .root_hash(None, &platform_version.drive.grove_version)
-                .unwrap()
-                .expect("root hash")
-        };
         let covers = |write: &str, estimated: FeeResult, actual: FeeResult| {
             assert!(
                 estimated.total_base_fee() >= actual.total_base_fee(),
@@ -560,9 +694,9 @@ fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
             );
         };
 
-        let empty = root_hash(&drive);
+        let empty = live_root_hash(&drive);
         let estimated = create_fee(&drive, &contract, &document, false);
-        assert_eq!(root_hash(&drive), empty, "pricing writes nothing");
+        assert_eq!(live_root_hash(&drive), empty, "pricing writes nothing");
         covers(
             "create",
             estimated,
@@ -572,18 +706,22 @@ fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
         let mut replaced = document.clone();
         replaced.set("hashtags", platform_value!(replaced_elements));
         replaced.set_revision(Some(2));
-        let stored = root_hash(&drive);
+        let stored = live_root_hash(&drive);
         let estimated = replace_fee(&drive, &contract, &replaced, false);
-        assert_eq!(root_hash(&drive), stored, "pricing writes nothing");
+        assert_eq!(live_root_hash(&drive), stored, "pricing writes nothing");
         covers(
             "replace",
             estimated,
             replace_fee(&drive, &contract, &replaced, true),
         );
 
-        let replaced_root = root_hash(&drive);
+        let replaced_root = live_root_hash(&drive);
         let estimated = delete_fee(&drive, &contract, 1, false);
-        assert_eq!(root_hash(&drive), replaced_root, "pricing writes nothing");
+        assert_eq!(
+            live_root_hash(&drive),
+            replaced_root,
+            "pricing writes nothing"
+        );
         covers("delete", estimated, delete_fee(&drive, &contract, 1, true));
     }
 }
@@ -674,11 +812,7 @@ fn query_ids(drive: &Drive, contract: &DataContract, query: Value) -> Vec<u8> {
         .expect("the proof verifies");
     assert_eq!(
         root_hash,
-        drive
-            .grove
-            .root_hash(None, &platform_version.drive.grove_version)
-            .unwrap()
-            .expect("root hash"),
+        live_root_hash(&drive),
         "the proof reaches the live root hash"
     );
     let proved: Vec<u8> = proved
@@ -1026,12 +1160,10 @@ fn proved_counts(
         other => panic!("expected a proof, got {other:?}"),
     };
     // The verifier keys the clauses as the prover did.
-    let several_elements_allowed =
-        answers_per_element(matches!(mode, CountMode::GroupByIn), &where_clauses);
     let keyed = key_array_element_clauses(
         where_clauses,
         document_type,
-        several_elements_allowed,
+        matches!(mode, CountMode::GroupByIn),
         platform_version,
     )
     .expect("keyed");
@@ -1050,14 +1182,7 @@ fn proved_counts(
     }
     .verify_point_lookup_count_proof(&proof, platform_version)
     .expect("the count proof verifies");
-    assert_eq!(
-        root_hash,
-        drive
-            .grove
-            .root_hash(None, &platform_version.drive.grove_version)
-            .unwrap()
-            .expect("root hash")
-    );
+    assert_eq!(root_hash, live_root_hash(&drive));
     entries
         .into_iter()
         .map(|entry| {
@@ -1074,10 +1199,12 @@ fn proved_counts(
 fn should_count_the_posts_holding_each_element() {
     let (drive, contract) = tagged_posts();
     let dash = element_clause(WhereOperator::Contains, Value::Text("dash".to_string()));
-    match count(&drive, &contract, dash.clone(), CountMode::Aggregate, false).expect("counts") {
-        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 3),
-        other => panic!("expected an aggregate, got {other:?}"),
-    }
+    assert_eq!(
+        aggregate_total(
+            count(&drive, &contract, dash.clone(), CountMode::Aggregate, false).expect("counts")
+        ),
+        3
+    );
     assert_eq!(
         proved_counts(&drive, &contract, dash, CountMode::Aggregate)
             .values()
@@ -1133,18 +1260,15 @@ fn should_count_the_posts_holding_each_element() {
     );
     // An empty string is an element like any other.
     insert(&drive, &contract, &post_created(6, CREATED_AT + 6, &[""]));
-    match count(
+    let empty_string = count(
         &drive,
         &contract,
         element_clause(WhereOperator::Contains, Value::Text(String::new())),
         CountMode::Aggregate,
         false,
     )
-    .expect("an empty string element counts")
-    {
-        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 1),
-        other => panic!("expected an aggregate, got {other:?}"),
-    }
+    .expect("an empty string element counts");
+    assert_eq!(aggregate_total(empty_string), 1);
     // And a raw equality on the array is no element read.
     let error = count(
         &drive,
@@ -1248,54 +1372,32 @@ const DAY_MS: u64 = 86_400_000;
 /// A `post` type ranking each day's hashtags: `[$createdAt day window,
 /// hashtags]`, the array held to 4 elements under the window.
 fn trending_contract() -> DataContract {
-    DataContractFactory::new(PlatformVersion::latest().protocol_version)
-        .expect("factory")
-        .create_with_value_config(
-            Identifier::from([2; 32]),
-            0,
-            platform_value!({"post": {
-                "type": "object",
-                "documentsMutable": true,
-                "properties": {
-                    "hashtags": {
-                        "type": "array",
-                        "maxItems": 4,
-                        "items": {"type": "string", "minLength": 1, "maxLength": 59},
-                        "position": 0
-                    }
-                },
-                "required": ["$createdAt"],
-                "indices": [{
-                    "name": "trendingToday",
-                    "properties": [{"$createdAt": "asc"}, {"hashtags": "asc"}],
-                    "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
-                    "rangeCountable": true,
-                    "rankedCountable": true
-                }],
-                "additionalProperties": false
-            }}),
-            None,
-            None,
-        )
-        .expect("contract")
-        .data_contract_owned()
+    post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 59},
+                "position": 0
+            }
+        },
+        "required": ["$createdAt"],
+        "indices": [{
+            "name": "trendingToday",
+            "properties": [{"$createdAt": "asc"}, {"hashtags": "asc"}],
+            "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
+            "rangeCountable": true,
+            "rankedCountable": true
+        }],
+        "additionalProperties": false
+    }))
 }
 
 #[test]
 fn should_enter_a_post_once_per_element_in_its_window() {
-    let platform_version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = trending_contract();
-    drive
-        .apply_contract(
-            &contract,
-            BlockInfo::default(),
-            true,
-            StorageFlags::optional_default_as_cow(),
-            None,
-            platform_version,
-        )
-        .expect("apply contract");
+    let (drive, contract) = setup_with(trending_contract());
     let document_type = contract.document_type_for_name("post").expect("post");
     let level_key = document_type
         .indexes()
@@ -1319,11 +1421,6 @@ fn should_enter_a_post_once_per_element_in_its_window() {
         )
     };
 
-    let bare_post = |id: u8, created_at: u64, hashtags: &[&str]| {
-        let mut document = post_created(id, created_at, hashtags);
-        document.properties_mut().remove("language");
-        document
-    };
     let mut first = bare_post(1, day + 1_000, &["dash", "news"]);
     insert(&drive, &contract, &first);
     insert(&drive, &contract, &bare_post(2, day + 2_000, &["dash"]));
@@ -1426,18 +1523,15 @@ fn should_bind_an_empty_string_element_beside_a_declared_skip_property() {
             value: Value::Text("en".to_string()),
         },
     ];
-    match count(
+    let empty_string = count(
         &drive,
         &contract,
         empty_in_english.clone(),
         CountMode::Aggregate,
         false,
     )
-    .expect("the index counts the empty-string element")
-    {
-        DocumentCountResponse::Aggregate(total) => assert_eq!(total, 1),
-        other => panic!("expected an aggregate, got {other:?}"),
-    }
+    .expect("the index counts the empty-string element");
+    assert_eq!(aggregate_total(empty_string), 1);
     assert_eq!(
         proved_counts(&drive, &contract, empty_in_english, CountMode::Aggregate)
             .values()
@@ -1474,18 +1568,10 @@ fn element_totals(
                 .collect(),
         ),
     );
-    let keyed = key_array_element_clauses(
-        where_clauses.clone(),
-        document_type,
-        answers_per_element(true, &where_clauses),
-        platform_version,
-    )
-    .expect("keyed");
-    let live_root_hash = drive
-        .grove
-        .root_hash(None, &platform_version.drive.grove_version)
-        .unwrap()
-        .expect("root hash");
+    let keyed =
+        key_array_element_clauses(where_clauses.clone(), document_type, true, platform_version)
+            .expect("keyed");
+    let live = live_root_hash(&drive);
     let element = |in_key: Option<Vec<u8>>, key: Vec<u8>| {
         String::from_utf8(in_key.unwrap_or(key)).expect("a hashtag")
     };
@@ -1551,7 +1637,7 @@ fn element_totals(
     let (root_hash, proved) = sum_query(index)
         .verify_point_lookup_sum_proof(&proof, platform_version)
         .expect("the sum proof verifies");
-    assert_eq!(root_hash, live_root_hash);
+    assert_eq!(root_hash, live);
     let sums_by_element = sums(unproved);
     assert_eq!(
         sums(proved),
@@ -1595,7 +1681,7 @@ fn element_totals(
     let (root_hash, proved) = sum_query(index)
         .verify_point_lookup_count_and_sum_proof(&proof, platform_version)
         .expect("the average proof verifies");
-    assert_eq!(root_hash, live_root_hash);
+    assert_eq!(root_hash, live);
     let totals_by_element = totals(unproved);
     assert_eq!(
         totals(proved),
@@ -1777,11 +1863,6 @@ fn should_enter_a_post_per_window_and_element_across_overlapping_windows() {
     };
     let in_every_window = |tag: &str, id: u8| windows.iter().all(|window| entry(window, tag, id));
     let in_no_window = |tag: &str, id: u8| windows.iter().all(|window| !entry(window, tag, id));
-    let bare_post = |id: u8, created_at: u64, hashtags: &[&str]| {
-        let mut document = post_created(id, created_at, hashtags);
-        document.properties_mut().remove("language");
-        document
-    };
 
     let mut first = bare_post(1, created_at, &["dash", "news"]);
     insert(&drive, &contract, &first);
@@ -1882,27 +1963,7 @@ fn should_drain_expired_windows_of_an_indexed_array() {
             .collect::<Vec<_>>()
     };
     let write = |document: &Document, time_ms: u64| {
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((
-                            document,
-                            StorageFlags::optional_default_as_cow(),
-                        )),
-                        owner_id: Some(OWNER),
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                block(time_ms),
-                true,
-                Some(&tx),
-                platform_version,
-                None,
-            )
-            .expect("the write applies");
+        create_in(&drive, &contract, document, block(time_ms), true, Some(&tx));
     };
     // How far the oldest window standing lags behind the expiry horizon at
     // `time_ms`: 0 when every expired window is gone.
@@ -2015,20 +2076,8 @@ fn should_drain_expired_windows_of_an_indexed_array() {
         platform_value!([kept.clone(), "fresh0", "fresh1", "fresh2"]),
     );
     replaced.set_revision(Some(2));
-    drive
-        .update_document_for_contract(
-            &replaced,
-            &contract,
-            document_type,
-            Some(OWNER),
-            block(now),
-            true,
-            StorageFlags::optional_default_as_cow(),
-            Some(&tx),
-            platform_version,
-            None,
-        )
-        .expect("a replace over drained windows applies");
+    // A replace over drained windows applies
+    replace_in(&drive, &contract, &replaced, block(now), true, Some(&tx));
     for window in &live {
         assert!(holds(&replaced, *window, &kept) && holds(&replaced, *window, "fresh0"));
         assert!(!holds(&replaced, *window, &dropped));
@@ -2039,41 +2088,34 @@ fn should_drain_expired_windows_of_an_indexed_array() {
     );
 
     // A post whose every window the drain took is replaced and deleted without
-    // failing on the entries already gone.
+    // failing on the entries already gone, and without rebuilding any of its
+    // windows.
     let mut drained = tagged(10, start + 10_000, distinct_tags(10));
-    assert!(windows_of(start + 10_000)
-        .iter()
-        .all(|window| !window_stands(*window)));
+    let drained_windows = windows_of(start + 10_000);
+    let all_drained = || drained_windows.iter().all(|window| !window_stands(*window));
+    assert!(all_drained());
     drained.set("hashtags", platform_value!(["late"]));
     drained.set_revision(Some(2));
-    drive
-        .update_document_for_contract(
-            &drained,
-            &contract,
-            document_type,
-            Some(OWNER),
-            block(now),
-            true,
-            StorageFlags::optional_default_as_cow(),
-            Some(&tx),
-            platform_version,
-            None,
-        )
-        .expect("a replace of a drained post applies");
-    for (post, tag) in [(&drained, "late"), (&replaced, "fresh0")] {
-        drive
-            .delete_document_for_contract(
-                post.id(),
-                &contract,
-                "post",
-                block(now),
-                true,
-                Some(&tx),
-                platform_version,
-                None,
-            )
-            .expect("a delete over drained windows applies");
-        assert!(live.iter().all(|window| !holds(post, *window, tag)));
-    }
+    replace_in(&drive, &contract, &drained, block(now), true, Some(&tx));
+    assert!(
+        all_drained(),
+        "the replace rebuilt none of the drained post's windows"
+    );
+    delete_in(&drive, &contract, drained.id(), block(now), true, Some(&tx));
+    assert!(
+        all_drained(),
+        "the delete rebuilt none of the drained post's windows"
+    );
+    delete_in(
+        &drive,
+        &contract,
+        replaced.id(),
+        block(now),
+        true,
+        Some(&tx),
+    );
+    assert!(live
+        .iter()
+        .all(|window| !holds(&replaced, *window, "fresh0")));
     assert_eq!(lag(now), 0, "the deletes rebuilt no drained window");
 }

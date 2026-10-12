@@ -379,9 +379,13 @@ impl Drive {
             let new_takes_part = document_takes_part_in_index(
                 &index.skip_if_absent_properties,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_type,
             )?;
-            let old_takes_part =
-                document_takes_part_in_index(&index.skip_if_absent_properties, &old_document_info)?;
+            let old_takes_part = document_takes_part_in_index(
+                &index.skip_if_absent_properties,
+                &old_document_info,
+                document_type,
+            )?;
             if old_takes_part && !new_takes_part {
                 leaving_indexes.push((index, new_takes_part, old_takes_part));
             } else if new_takes_part {
@@ -673,11 +677,18 @@ impl Drive {
                 ))?;
 
                 if reads_stored_entries && index.unique && !old_sibling_value_missing {
-                    for sibling in current_index_level
+                    for (sibling, sibling_level) in current_index_level
                         .sub_levels()
-                        .keys()
-                        .take_while(|sibling| sibling.as_str() < index_property.name.as_str())
+                        .iter()
+                        .take_while(|(sibling, _)| sibling.as_str() < index_property.name.as_str())
                     {
+                        // The level of an indexed typed array (protocol version 14) carries
+                        // no missing value: an element is never empty, and a document
+                        // holding none takes no part in the indexes naming the array. Its
+                        // value is a list, which no scalar read keys.
+                        if sibling_level.indexes_array_elements() {
+                            continue;
+                        }
                         let old_sibling_value = old_document_info
                             .get_raw_for_document_type(
                                 sibling,
@@ -1345,6 +1356,11 @@ impl Drive {
 
         let new_set: HashSet<&Vec<&[u8]>> = new_entries.iter().collect();
         let old_set: HashSet<&Vec<&[u8]>> = old_entries.iter().collect();
+        // The trees the inserts below found already standing: entries share
+        // the trees above the array's level, and each is read once. The
+        // insertion cache keeps the trees this batch inserts; nothing below
+        // deletes before the inserts are done.
+        let mut standing_trees: HashSet<Vec<Vec<u8>>> = HashSet::new();
 
         // Insert/refresh new entries FIRST (see the ordering note on the
         // delete loop below): added entries are inserted; common entries are
@@ -1398,7 +1414,9 @@ impl Drive {
             let mut path: Vec<Vec<u8>> = base_index_path.to_vec();
             let mut qualified_path = path.clone();
             qualified_path.push(entry_key.to_vec());
-            if !batch_insertion_cache.contains(&qualified_path) {
+            if !batch_insertion_cache.contains(&qualified_path)
+                && !standing_trees.contains(&qualified_path)
+            {
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
                     PathKeyInfo::PathKeyRef::<0>((path.clone(), entry_key)),
                     top_value_tree_type,
@@ -1411,6 +1429,8 @@ impl Drive {
                 )?;
                 if inserted {
                     batch_insertion_cache.insert(qualified_path);
+                } else {
+                    standing_trees.insert(qualified_path);
                 }
             }
             path.push(entry_key.to_vec());
@@ -1435,7 +1455,9 @@ impl Drive {
 
                 let mut qualified_path = path.clone();
                 qualified_path.push(property_name.clone());
-                if !batch_insertion_cache.contains(&qualified_path) {
+                if !batch_insertion_cache.contains(&qualified_path)
+                    && !standing_trees.contains(&qualified_path)
+                {
                     // Continuation property-name tree: contributes zero on
                     // every axis its aggregating parent maintains, exactly
                     // as on the insert path — except inside a ranking
@@ -1477,13 +1499,17 @@ impl Drive {
                     };
                     if inserted {
                         batch_insertion_cache.insert(qualified_path);
+                    } else {
+                        standing_trees.insert(qualified_path);
                     }
                 }
                 path.push(property_name.clone());
 
                 let mut qualified_path = path.clone();
                 qualified_path.push(value.to_vec());
-                if !batch_insertion_cache.contains(&qualified_path) {
+                if !batch_insertion_cache.contains(&qualified_path)
+                    && !standing_trees.contains(&qualified_path)
+                {
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((path.clone(), *value)),
                         sub_level_tree_types.value_tree_type,
@@ -1496,6 +1522,8 @@ impl Drive {
                     )?;
                     if inserted {
                         batch_insertion_cache.insert(qualified_path);
+                    } else {
+                        standing_trees.insert(qualified_path);
                     }
                 }
                 path.push(value.to_vec());

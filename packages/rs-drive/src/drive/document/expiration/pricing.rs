@@ -117,31 +117,19 @@ pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u6
         .indexes()
         .values()
         .map(|index| {
-            let windows = index
-                .time_range
-                .as_ref()
-                .map(|transform| transform.overlap_factor())
-                .or(index
-                    .integer_range
-                    .as_ref()
-                    .map(|transform| transform.overlap_factor()))
-                .map_or(1, |windows| windows.max(1));
             let properties = index.properties.len() as u64;
-            let levels = match index
-                .typed_arrays(document_type.flattened_properties())
-                .next()
-            {
-                Some((position, _, typed_array)) => {
+            let levels = match index.indexed_array_fan_out(document_type.flattened_properties()) {
+                Some((position, max_items)) => {
                     let above = position as u64;
                     above.saturating_add(
                         properties
                             .saturating_sub(above)
-                            .saturating_mul(u64::from(typed_array.max_items.max(1))),
+                            .saturating_mul(u64::from(max_items.max(1))),
                     )
                 }
                 None => properties,
             };
-            levels.saturating_mul(windows)
+            levels.saturating_mul(index.windows_per_document())
         })
         .fold(0u64, u64::saturating_add)
 }

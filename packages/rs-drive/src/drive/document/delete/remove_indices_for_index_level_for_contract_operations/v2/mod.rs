@@ -12,8 +12,8 @@ use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
-    level_removes_entry,
+    document_takes_part_in_index, index_level_tree_types_with_continuation_demotion, level_keys,
+    level_removes_entry, LevelKeys,
 };
 use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -109,6 +109,7 @@ impl Drive {
                 && document_takes_part_in_index(
                     &index_type.skip_if_absent_properties,
                     &document_and_contract_info.owned_document_info.document_info,
+                    document_and_contract_info.document_type,
                 )?
             {
                 // An entry written before protocol version 14 can sit in
@@ -184,6 +185,7 @@ impl Drive {
             if !level_removes_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 continue;
             }
@@ -201,28 +203,18 @@ impl Drive {
 
             // Mirror of the insert walker: an indexed typed array (protocol version 14) holds
             // one value tree of the document per distinct element.
-            let document_index_fields: Vec<DriveKeyInfo> = if sub_level.indexes_array_elements() {
-                document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_raw_array_elements_for_document_type(
-                        name,
-                        document_type,
-                        Some((sub_level, event_id)),
-                        platform_version,
-                    )?
-            } else {
-                vec![document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_raw_for_document_type(
-                        name,
-                        document_type,
-                        document_and_contract_info.owned_document_info.owner_id,
-                        Some((sub_level, event_id)),
-                        platform_version,
-                    )?
-                    .unwrap_or_default()]
+            let document_index_fields: Vec<DriveKeyInfo> = match level_keys(
+                &document_and_contract_info.owned_document_info.document_info,
+                sub_level,
+                name,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                Some((sub_level, event_id)),
+                platform_version,
+            )? {
+                LevelKeys::Elements(element_keys) => element_keys,
+                // An absent value keeps its null-layout empty key
+                LevelKeys::Value(value) => vec![value.unwrap_or_default()],
             };
 
             sub_level_index_path_info.push(index_property_key)?;
