@@ -1293,8 +1293,15 @@ fn extend_pools_for_restored_addresses(
         // reaches 50 and derives idx 45). A single mark-then-refill pass
         // would leave that address in the pool with `used = false`, handing
         // a previously-used address back out as fresh. Terminates: each
-        // round marks at least one new address from the finite restored set
-        // (`mark_used` returns `true` only on an unused→used flip).
+        // round after the first marks at least one new address from the
+        // finite restored set (`mark_used` returns `true` only on an
+        // unused→used flip).
+        //
+        // A pool restored from its stored rows enters with those entries
+        // already used, so no flip announces them. Its window is refilled
+        // once regardless, or the addresses past the stored rows would stay
+        // underived: unobserved, and a funded one among them never marked.
+        let mut restored_used = pool.highest_used.is_some();
         loop {
             let mut marked_any = false;
             for addr in restored_addresses {
@@ -1302,7 +1309,8 @@ fn extend_pools_for_restored_addresses(
                     marked_any = true;
                 }
             }
-            if !marked_any {
+            let refill_restored = std::mem::take(&mut restored_used);
+            if !marked_any && !refill_restored {
                 break;
             }
             // Refill the gap window past the deepest used index (needs the

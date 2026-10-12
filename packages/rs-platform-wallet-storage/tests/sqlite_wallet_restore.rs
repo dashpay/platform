@@ -1240,3 +1240,97 @@ fn should_report_a_reservation_that_no_restored_pool_takes_back() {
         );
     }
 }
+
+/// The saved pool's own `Used` rows have to drive the gap refill the load
+/// runs for used addresses: a coin past the saved window, with no transaction
+/// record and no pool row, is only derived by that refill.
+#[test]
+fn should_refill_the_gap_window_past_a_used_address_restored_from_its_pool_row() {
+    use key_wallet::account::StandardAccountType;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    const USED: u32 = 20;
+    let account_type = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let source = account_key_source(&wallet, account_type);
+    let (funded, funded_index, gap) =
+        with_pool(&mut info, account_type, AddressPoolType::External, |pool| {
+            let gap = pool.gap_limit;
+            assert_eq!(pool.highest_generated, Some(gap - 1));
+            assert!(USED < gap);
+            // Past the saved window and past the discovery horizon, but inside
+            // the gap window of the used address.
+            let funded_index = gap + 15;
+            assert!(funded_index <= USED + gap);
+            let mut deeper = pool.clone();
+            deeper
+                .generate_addresses(funded_index + 1 - gap, &source, true)
+                .unwrap();
+            let funded = deeper.addresses[&funded_index].address.clone();
+            // Saved as used, through the initial window only.
+            assert!(pool.mark_index_used(USED));
+            (funded, funded_index, gap)
+        });
+    let (persister, _tmp, path) = common::fresh_persister();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    // A coin with no transaction record: history replay cannot mark it.
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![key_wallet::Utxo::new(
+                        OutPoint::new(Txid::from_byte_array([9; 32]), 0),
+                        TxOut {
+                            value: 50_000,
+                            script_pubkey: funded.script_pubkey(),
+                        },
+                        funded.clone(),
+                        100,
+                        false,
+                    )],
+                    synced_height: Some(100),
+                    last_processed_height: Some(100),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let mut state = SqlitePersister::open(SqlitePersisterConfig::new(path))
+        .unwrap()
+        .load()
+        .unwrap();
+    let restored = &mut state
+        .wallets
+        .get_mut(&wallet.wallet_id)
+        .expect("wallet")
+        .wallet_info;
+    assert_eq!(restored.balance.total(), 50_000);
+    with_pool(restored, account_type, AddressPoolType::External, |pool| {
+        assert!(
+            pool.highest_generated >= Some(USED + gap),
+            "the window past the used address must be derived, got {:?}",
+            pool.highest_generated
+        );
+        assert_eq!(
+            pool.addresses[&funded_index].state,
+            AddressState::Used,
+            "a funded address must come back used"
+        );
+        assert_ne!(
+            pool.next_unused(&source, true).unwrap(),
+            funded,
+            "a funded address must not be handed out again"
+        );
+    });
+}
