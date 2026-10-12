@@ -1307,8 +1307,9 @@ class PlatformWalletPersistenceHandler(
         chunked(truncation.removedTxids) { db.txoDao().deleteByTxids(it) }
         chunked(truncation.removedTxids) { db.txoDao().detachSpenders(it) }
         chunked(truncation.removedTxids) { db.transactionDao().deleteByTxids(it) }
-        // Kept: InstantSend-locked, so mined again. No block until then;
-        // the coins they spent stay spent.
+        // Kept: InstantSend-locked, so mined again. Stored until then the
+        // way a locked transaction no block holds yet is; the coins they
+        // spent stay spent.
         chunked(truncation.unconfirmedTxids) { db.transactionDao().unconfirmByTxids(it) }
         chunked(truncation.unconfirmedTxids) { db.txoDao().unconfirmInstantLockedByTxids(it) }
         // Restored: this wallet's coins the removed transactions spent.

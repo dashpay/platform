@@ -112,12 +112,13 @@ interface TransactionDao {
     suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
-     * Return [txids] to the mempool: a chain truncation dropped their
-     * block and kept them as unconfirmed. Clears the block columns and
-     * touches nothing else. Chunked by the caller.
+     * Keep [txids] as unconfirmed and InstantSend-locked: a chain
+     * truncation dropped their block, and it keeps no other kind. Sets the
+     * InstantSend context, clears the block columns and touches nothing
+     * else. Chunked by the caller.
      */
     @Query(
-        "UPDATE transactions SET context = 0, blockHeight = 0, blockHash = NULL, " +
+        "UPDATE transactions SET context = 1, blockHeight = 0, blockHash = NULL, " +
             "blockTimestamp = 0, blockPosition = 0, hasBlockPosition = 0 " +
             "WHERE txid IN (:txids)"
     )

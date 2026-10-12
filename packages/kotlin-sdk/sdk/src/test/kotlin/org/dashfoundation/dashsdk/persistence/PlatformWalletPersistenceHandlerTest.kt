@@ -6125,7 +6125,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0, handler.onChangesetEnd(walletId, success = true))
 
         val kept = db.transactionDao().getByTxid(spend)!!
-        assertEquals("back in the mempool", 0, kept.context)
+        assertEquals("unconfirmed, and still InstantSend-locked", 1, kept.context)
         assertEquals(0, kept.blockHeight)
         assertNull(kept.blockHash)
         val output = db.txoDao().getByOutpoint(change)!!
