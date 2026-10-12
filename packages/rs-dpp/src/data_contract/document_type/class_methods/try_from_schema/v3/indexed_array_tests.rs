@@ -435,6 +435,40 @@ fn should_let_an_update_raise_an_indexed_array_within_the_limits() {
     );
 }
 
+/// A type with a time to live prepaid each document's cleanup by its indexed
+/// arrays' `maxItems`, so an update may not raise one there; a bound that
+/// stays, or a type without a time to live, is unaffected.
+#[test]
+fn should_hold_an_indexed_array_bound_on_a_type_with_a_time_to_live() {
+    let expiring = |max_items: u16| {
+        let mut schema = post_schema(
+            hashtags(max_items),
+            platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]),
+        );
+        schema
+            .insert("ttl".to_string(), 86_400u32.into())
+            .expect("a time to live");
+        parse(schema).expect("an expiring post type")
+    };
+    let old = expiring(4);
+    let update = |new: &DocumentType| {
+        old.as_ref()
+            .validate_update(new.as_ref(), 2, PlatformVersion::latest())
+            .expect("validate_update runs")
+    };
+
+    let raised = update(&expiring(8));
+    assert!(!raised.is_valid(), "a raised bound is refused");
+    assert!(
+        format!("{:?}", raised.errors)
+            .contains("can not raise the maxItems of indexed typed array 'hashtags' from 4 to 8"),
+        "{:?}",
+        raised.errors
+    );
+    let kept = update(&expiring(4));
+    assert!(kept.is_valid(), "{:?}", kept.errors);
+}
+
 /// The key codec by protocol version, through its dispatchers: generation 1
 /// (protocol version 14) keys a scalar exactly as generation 0 does, so no
 /// stored key moves, and keys a typed array property as one element, which

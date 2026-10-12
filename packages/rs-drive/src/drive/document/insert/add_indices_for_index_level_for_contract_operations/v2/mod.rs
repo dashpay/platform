@@ -380,8 +380,18 @@ impl Drive {
                 );
             }
 
-            for document_index_field in document_index_fields {
-                let mut value_index_path_info = sub_level_index_path_info.clone();
+            // The final value takes the path; earlier ones (only an indexed typed array's
+            // elements are several) clone it.
+            let value_count = document_index_fields.len();
+            for (position, document_index_field) in document_index_fields.into_iter().enumerate() {
+                let mut value_index_path_info = if position + 1 == value_count {
+                    std::mem::replace(
+                        &mut sub_level_index_path_info,
+                        PathInfo::PathAsVec(Vec::new()),
+                    )
+                } else {
+                    sub_level_index_path_info.clone()
+                };
                 // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 

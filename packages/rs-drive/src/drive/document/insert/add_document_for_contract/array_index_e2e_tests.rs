@@ -38,7 +38,8 @@ use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
-use grovedb::Error as GroveError;
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{Error as GroveError, PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 
 const OWNER: [u8; 32] = [7; 32];
@@ -232,6 +233,17 @@ fn has_entry(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], id: u
 /// empties; any other read error fails the test, so an absence is never an
 /// unreadable tree.
 fn has_key(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], key: &[u8]) -> bool {
+    has_key_in(drive, contract, segments, key, None)
+}
+
+/// [`has_key`] read inside `transaction`.
+fn has_key_in(
+    drive: &Drive,
+    contract: &DataContract,
+    segments: &[Vec<u8>],
+    key: &[u8],
+    transaction: TransactionArg,
+) -> bool {
     let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
     path.extend(segments.iter().cloned());
     match drive
@@ -239,7 +251,7 @@ fn has_key(drive: &Drive, contract: &DataContract, segments: &[Vec<u8>], key: &[
         .has_raw(
             path.as_slice(),
             key,
-            None,
+            transaction,
             &PlatformVersion::latest().drive.grove_version,
         )
         .unwrap()
@@ -1682,4 +1694,362 @@ fn should_sum_and_average_each_element_through_updates() {
         format!("{error:?}").contains("only answered grouped by"),
         "{error:?}"
     );
+}
+
+/// An array under overlapping windows: a post is entered once per window
+/// holding its `$createdAt` and per distinct element, every combination; an
+/// update moves the combinations of the elements it changes in every window,
+/// and a delete removes them all, pruning an element's trees in every window
+/// where no other post holds it.
+#[test]
+fn should_enter_a_post_per_window_and_element_across_overlapping_windows() {
+    let (drive, contract) = setup_with(post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 59},
+                "position": 0
+            }
+        },
+        "required": ["$createdAt"],
+        "indices": [{
+            "name": "trendingThreeDays",
+            "properties": [{"$createdAt": "asc"}, {"hashtags": "asc"}],
+            "timeRange": {"on": "$createdAt", "range": 259200, "step": 86400}
+        }],
+        "additionalProperties": false
+    })));
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let index = document_type
+        .indexes()
+        .get("trendingThreeDays")
+        .expect("the index");
+    let level_key = index
+        .time_range
+        .as_ref()
+        .expect("a window")
+        .storage_key("$createdAt");
+    let created_at = 20_000 * DAY_MS + 1_000;
+    let windows = index
+        .bucketing()
+        .expect("a window")
+        .entry_keys_for_raw(&DocumentPropertyType::encode_date_timestamp(created_at));
+    assert_eq!(windows.len(), 3, "a day lies in three three-day windows");
+    let entry = |window: &[u8], tag: &str, id: u8| {
+        has_entry(
+            &drive,
+            &contract,
+            &[
+                level_key.as_bytes().to_vec(),
+                window.to_vec(),
+                text("hashtags"),
+                text(tag),
+            ],
+            id,
+        )
+    };
+    let in_every_window = |tag: &str, id: u8| windows.iter().all(|window| entry(window, tag, id));
+    let in_no_window = |tag: &str, id: u8| windows.iter().all(|window| !entry(window, tag, id));
+    let bare_post = |id: u8, created_at: u64, hashtags: &[&str]| {
+        let mut document = post_created(id, created_at, hashtags);
+        document.properties_mut().remove("language");
+        document
+    };
+
+    let mut first = bare_post(1, created_at, &["dash", "news"]);
+    insert(&drive, &contract, &first);
+    insert(
+        &drive,
+        &contract,
+        &bare_post(2, created_at + 1_000, &["dash"]),
+    );
+    assert!(in_every_window("dash", 1) && in_every_window("news", 1));
+    assert!(in_every_window("dash", 2) && in_no_window("news", 2));
+
+    // Keeps `news`, drops `dash`, adds `crypto`, in every window at once.
+    first.set("hashtags", platform_value!(["news", "crypto"]));
+    first.set_revision(Some(2));
+    update(&drive, &contract, &first);
+    assert!(in_no_window("dash", 1));
+    assert!(in_every_window("news", 1) && in_every_window("crypto", 1));
+    assert!(
+        in_every_window("dash", 2),
+        "the other post keeps the shared element"
+    );
+
+    delete(&drive, &contract, 1);
+    assert!(in_no_window("news", 1) && in_no_window("crypto", 1));
+    for window in &windows {
+        let elements = [
+            level_key.as_bytes().to_vec(),
+            window.clone(),
+            text("hashtags"),
+        ];
+        assert!(!has_key(&drive, &contract, &elements, &text("news")));
+        assert!(!has_key(&drive, &contract, &elements, &text("crypto")));
+    }
+    assert!(in_every_window("dash", 2));
+}
+
+/// An expiring window over an indexed array, with a property below the array.
+/// Sustained writes, each copied into 24 windows under 4 distinct elements,
+/// drain every expired window as they go: the drain budget counts the array's
+/// `maxItems` value trees under its branch, where one value tree would leave
+/// it short. A replace and a delete of a post whose oldest windows the drain
+/// took neither rebuild them nor fail on the entries it removed, and the
+/// live windows keep exactly the post's current elements.
+#[test]
+fn should_drain_expired_windows_of_an_indexed_array() {
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_with(post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 59},
+                "position": 0
+            },
+            "language": {"type": "string", "maxLength": 59, "position": 1}
+        },
+        "required": ["$createdAt", "language"],
+        "indices": [{
+            "name": "windowed",
+            "properties": [{"$createdAt": "asc"}, {"hashtags": "asc"}, {"language": "asc"}],
+            "timeRange": {"on": "$createdAt", "range": 24, "step": 1, "ttl": 24}
+        }],
+        "additionalProperties": false
+    })));
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let index = document_type.indexes().get("windowed").expect("the index");
+    let transform = index.time_range.as_ref().expect("a window");
+    let level_key = transform.storage_key("$createdAt").into_bytes();
+    let tx = drive.grove.start_transaction();
+    let block = |time_ms: u64| BlockInfo {
+        time_ms,
+        ..Default::default()
+    };
+    let tagged = |n: u32, created_at: u64, tags: Vec<String>| {
+        let mut id = [1u8; 32];
+        id[..4].copy_from_slice(&n.to_be_bytes());
+        Document::V0(DocumentV0 {
+            id: Identifier::from(id),
+            owner_id: Identifier::from(OWNER),
+            properties: BTreeMap::from([
+                (
+                    "hashtags".to_string(),
+                    Value::Array(tags.into_iter().map(Value::Text).collect()),
+                ),
+                ("language".to_string(), Value::Text("en".to_string())),
+            ]),
+            created_at: Some(created_at),
+            revision: Some(1),
+            ..Default::default()
+        })
+    };
+    let distinct_tags = |n: u32| {
+        (0..4)
+            .map(|k| format!("t{}", 4 * n + k))
+            .collect::<Vec<_>>()
+    };
+    let write = |document: &Document, time_ms: u64| {
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(OWNER),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                block(time_ms),
+                true,
+                Some(&tx),
+                platform_version,
+                None,
+            )
+            .expect("the write applies");
+    };
+    // How far the oldest window standing lags behind the expiry horizon at
+    // `time_ms`: 0 when every expired window is gone.
+    let lag = |time_ms: u64| {
+        let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+        path.push(level_key.clone());
+        let mut query = Query::new();
+        query.insert_all();
+        let (result, _) = drive
+            .grove_get_raw_path_query(
+                &PathQuery::new(path, SizedQuery::new(query, Some(1), None)),
+                Some(&tx),
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("the windows read");
+        let oldest = result
+            .to_key_elements()
+            .first()
+            .and_then(|(key, _)| DocumentPropertyType::decode_date_timestamp(key))
+            .expect("a window stands");
+        let horizon = transform
+            .expiry_horizon_ms(time_ms)
+            .expect("the window expires");
+        horizon.saturating_sub(oldest)
+    };
+    // Whether the window `start` stands. The drain drops a window's trees flat, so a
+    // read below a dropped window is no evidence: an expired window is judged by this.
+    let window_stands = |start: u64| {
+        has_key_in(
+            &drive,
+            &contract,
+            std::slice::from_ref(&level_key),
+            &DocumentPropertyType::encode_date_timestamp(start),
+            Some(&tx),
+        )
+    };
+    // Whether `document`'s entry under `tag` stands in the live window `start`.
+    let holds = |document: &Document, start: u64, tag: &str| {
+        has_key_in(
+            &drive,
+            &contract,
+            &[
+                level_key.clone(),
+                DocumentPropertyType::encode_date_timestamp(start),
+                text("hashtags"),
+                text(tag),
+                text("language"),
+                text("en"),
+                vec![0],
+            ],
+            &document.id().to_buffer(),
+            Some(&tx),
+        )
+    };
+    let windows_of = |created_at: u64| -> Vec<u64> {
+        index
+            .bucketing()
+            .expect("a window")
+            .entry_keys_for_raw(&DocumentPropertyType::encode_date_timestamp(created_at))
+            .iter()
+            .filter_map(|key| DocumentPropertyType::decode_date_timestamp(key))
+            .collect()
+    };
+
+    let start = 1_000_000u64;
+    let mut lags = vec![];
+    let mut last_time = start;
+    for n in 0..200u32 {
+        last_time = start + u64::from(n) * 1_000;
+        write(&tagged(n, last_time, distinct_tags(n)), last_time);
+        if [95, 150, 199].contains(&n) {
+            lags.push(lag(last_time));
+        }
+    }
+    assert_eq!(
+        lags,
+        vec![0, 0, 0],
+        "sustained writes drain every expired window"
+    );
+
+    // The newest post whose oldest windows are drained while its newer ones live.
+    let now = last_time;
+    let horizon = transform
+        .expiry_horizon_ms(now)
+        .expect("the window expires");
+    let (n, expired, live) = (0..200u32)
+        .rev()
+        .find_map(|n| {
+            let (expired, live): (Vec<u64>, Vec<u64>) = windows_of(start + u64::from(n) * 1_000)
+                .into_iter()
+                .partition(|window| *window < horizon);
+            (!expired.is_empty() && !live.is_empty()).then_some((n, expired, live))
+        })
+        .expect("a post straddles the expiry horizon");
+    let partly_drained = tagged(n, start + u64::from(n) * 1_000, distinct_tags(n));
+    let kept = format!("t{}", 4 * n);
+    let dropped = format!("t{}", 4 * n + 1);
+    assert!(expired.iter().all(|window| !window_stands(*window)));
+    assert!(live
+        .iter()
+        .all(|window| holds(&partly_drained, *window, &kept)));
+
+    // A replace keeping one element and changing three: the live windows move,
+    // the drained ones stay drained.
+    let mut replaced = partly_drained.clone();
+    replaced.set(
+        "hashtags",
+        platform_value!([kept.clone(), "fresh0", "fresh1", "fresh2"]),
+    );
+    replaced.set_revision(Some(2));
+    drive
+        .update_document_for_contract(
+            &replaced,
+            &contract,
+            document_type,
+            Some(OWNER),
+            block(now),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            Some(&tx),
+            platform_version,
+            None,
+        )
+        .expect("a replace over drained windows applies");
+    for window in &live {
+        assert!(holds(&replaced, *window, &kept) && holds(&replaced, *window, "fresh0"));
+        assert!(!holds(&replaced, *window, &dropped));
+    }
+    assert!(
+        expired.iter().all(|window| !window_stands(*window)),
+        "the replace rebuilt no drained window"
+    );
+
+    // A post whose every window the drain took is replaced and deleted without
+    // failing on the entries already gone.
+    let mut drained = tagged(10, start + 10_000, distinct_tags(10));
+    assert!(windows_of(start + 10_000)
+        .iter()
+        .all(|window| !window_stands(*window)));
+    drained.set("hashtags", platform_value!(["late"]));
+    drained.set_revision(Some(2));
+    drive
+        .update_document_for_contract(
+            &drained,
+            &contract,
+            document_type,
+            Some(OWNER),
+            block(now),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            Some(&tx),
+            platform_version,
+            None,
+        )
+        .expect("a replace of a drained post applies");
+    for (post, tag) in [(&drained, "late"), (&replaced, "fresh0")] {
+        drive
+            .delete_document_for_contract(
+                post.id(),
+                &contract,
+                "post",
+                block(now),
+                true,
+                Some(&tx),
+                platform_version,
+                None,
+            )
+            .expect("a delete over drained windows applies");
+        assert!(live.iter().all(|window| !holds(post, *window, tag)));
+    }
+    assert_eq!(lag(now), 0, "the deletes rebuilt no drained window");
 }

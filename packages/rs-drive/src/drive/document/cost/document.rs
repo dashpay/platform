@@ -137,9 +137,14 @@ pub(crate) fn value_of(
             Value::Identifier([1; 32])
         }
         DocumentPropertyType::TypedArray(array) => {
-            let item_length = bounds(&array.item_type, platform_version)
-                .map(|(_, _, middle)| middle)
-                .unwrap_or_else(|| u32::from(array.item_type.min_size().unwrap_or_default()));
+            let item_length = match bounds(&array.item_type, platform_version) {
+                // At least one unit when the element can hold one: the ordinal is
+                // stamped into the element's last bytes, and empty elements are all
+                // one key, where a document of `maxItems` one-unit elements writes as
+                // many (a string of `maxLength` 1 has a middle length of 0).
+                Some((_, max, middle)) => middle.max(u32::from(max.is_none_or(|max| max > 0))),
+                None => u32::from(array.item_type.min_size().unwrap_or_default()),
+            };
             // Distinct elements of one size: an index naming the array keys
             // the document once per distinct element, so repeats would price
             // one entry where a document of distinct elements writes many.
