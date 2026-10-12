@@ -436,8 +436,8 @@ fn plan_replay_sweeps(
                 .into_iter()
                 .flat_map(|loser| &loser.transaction.input)
             {
-                if let Some(count) = competitors.get_mut(&input.previous_output) {
-                    *count = count.saturating_sub(1);
+                if let Some(spenders) = competitors.get_mut(&input.previous_output) {
+                    spenders.retain(|spender| *spender != txid);
                 }
             }
             removed.insert(txid);
@@ -461,9 +461,11 @@ fn raw_record(stored: &StoredTransaction, owner: AccountType) -> TransactionReco
     )
 }
 
-/// How many unconfirmed records of `wallet_info` spend each outpoint.
-fn unconfirmed_spends(wallet_info: &ManagedWalletInfo) -> HashMap<OutPoint, usize> {
-    let mut spends = HashMap::new();
+/// The unconfirmed transactions of `wallet_info` spending each outpoint. One
+/// recorded in several accounts is still one spender.
+fn unconfirmed_spends(wallet_info: &ManagedWalletInfo) -> HashMap<OutPoint, Vec<Txid>> {
+    let mut seen = HashSet::new();
+    let mut spends: HashMap<OutPoint, Vec<Txid>> = HashMap::new();
     for record in wallet_info
         .accounts
         .all_accounts()
@@ -471,21 +473,26 @@ fn unconfirmed_spends(wallet_info: &ManagedWalletInfo) -> HashMap<OutPoint, usiz
         .flat_map(|account| account.transactions().values())
         .filter(|record| !record.is_confirmed())
     {
+        if !seen.insert(record.txid) {
+            continue;
+        }
         for input in &record.transaction.input {
-            *spends.entry(input.previous_output).or_default() += 1;
+            spends
+                .entry(input.previous_output)
+                .or_default()
+                .push(record.txid);
         }
     }
     spends
 }
 
-/// Whether an unconfirmed record other than `stored` itself still spends one
-/// of its inputs: only then can a conflict sweep for it remove anything.
-fn is_contested(stored: &StoredTransaction, competitors: &HashMap<OutPoint, usize>) -> bool {
-    let own = usize::from(stored.context.block_info().is_none());
+/// Whether an unconfirmed transaction other than `stored` itself still spends
+/// one of its inputs: only then can a conflict sweep for it remove anything.
+fn is_contested(stored: &StoredTransaction, competitors: &HashMap<OutPoint, Vec<Txid>>) -> bool {
     stored.transaction.input.iter().any(|input| {
         competitors
             .get(&input.previous_output)
-            .is_some_and(|count| *count > own)
+            .is_some_and(|spenders| spenders.iter().any(|txid| *txid != stored.txid))
     })
 }
 
@@ -1728,6 +1735,91 @@ mod tests {
             competitors.iter().map(|stored| stored.txid).collect()
         );
         assert_eq!(sweeps, SPENDERS as usize);
+    }
+
+    /// A wallet with BIP44 accounts 0 and 1 and a receive address of each.
+    fn two_account_wallet() -> (Wallet, ManagedWalletInfo, [dashcore::Address; 2]) {
+        let wallet = Wallet::new_random(
+            Network::Testnet,
+            WalletAccountCreationOptions::BIP44AccountsOnly([0, 1].into_iter().collect()),
+        )
+        .unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let addresses = [0, 1].map(|index| {
+            let xpub = wallet.accounts.standard_bip44_accounts[&index].account_xpub;
+            info.accounts
+                .standard_bip44_accounts
+                .get_mut(&index)
+                .unwrap()
+                .next_receive_address(Some(&xpub), true)
+                .unwrap()
+        });
+        (wallet, info, addresses)
+    }
+
+    /// A transaction recorded in two accounts is one spender of its inputs,
+    /// not a competitor of itself: with no other spender it is uncontested.
+    #[tokio::test]
+    async fn should_not_count_multi_account_record_as_its_own_competitor() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, mut info, addresses) = two_account_wallet();
+        let pay = |previous_output: OutPoint, value: u64, to: usize| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output,
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value,
+                script_pubkey: addresses[to].script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let funding = pay(
+            OutPoint::new(Txid::from_byte_array([83; 32]), 0),
+            100_000,
+            0,
+        );
+        let coin = OutPoint::new(funding.txid(), 0);
+        let transfer = pay(coin, 99_000, 1);
+        let locked = TransactionContext::InstantSend(InstantLock {
+            txid: transfer.txid(),
+            inputs: vec![coin],
+            ..Default::default()
+        });
+        let block = BlockInfo::new(100, BlockHash::from_byte_array([84; 32]), 100);
+        info.check_core_transaction(
+            &funding,
+            TransactionContext::InBlock(block),
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+        info.check_core_transaction(&transfer, locked.clone(), &mut wallet, true, true)
+            .await;
+        for index in [0, 1] {
+            assert!(
+                info.accounts.standard_bip44_accounts[&index]
+                    .transactions()
+                    .contains_key(&transfer.txid()),
+                "the transfer must be on record in account {index}"
+            );
+        }
+        let stored = StoredTransaction {
+            txid: transfer.txid(),
+            transaction: transfer,
+            context: locked,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+
+        assert!(!is_contested(&stored, &unconfirmed_spends(&info)));
     }
 
     /// An empty history leaves the restored projection untouched.
