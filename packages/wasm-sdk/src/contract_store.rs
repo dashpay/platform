@@ -10,7 +10,7 @@
 //! `{version, bytes}` and seeded back in `WasmSdkBuilder::build`.
 //!
 //! Staleness fails closed: a document stamped with a `$contractVersion` above
-//! the cached contract's version drops the entry (see
+//! the retained contract's version drops that entry (see
 //! `WasmSdk::drop_stale_contract`), and explicit cache removals remove the
 //! stored entry too. An entry this build cannot deserialize is skipped.
 //!
@@ -156,11 +156,40 @@ pub(crate) fn remove(network: Network, id: &Identifier) {
     }
 }
 
+/// Remove a row unless its decoded same-ID body covers the observed version.
+pub(crate) fn remove_if_older(
+    network: Network,
+    id: &Identifier,
+    observed_version: u32,
+    platform_version: &PlatformVersion,
+) {
+    let Some(key) = storage_key(network) else {
+        return;
+    };
+    let mut contracts = read(&key);
+    let encoded_id = id.to_string(Encoding::Base58);
+    if contracts
+        .get(&encoded_id)
+        .and_then(|stored| stored.decode(platform_version))
+        .is_some_and(|stored| stored.id() == *id && stored.version() >= observed_version)
+    {
+        return;
+    }
+    if contracts.remove(&encoded_id).is_some() {
+        write(&key, &contracts);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    use crate::sdk::WasmSdk;
     use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dash_sdk::dpp::document::DocumentV0;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::platform::Document;
+    use dash_sdk::SdkBuilder;
 
     fn contract(id_byte: u8, version: u32) -> DataContract {
         let mut contract =
@@ -324,5 +353,67 @@ mod tests {
         let loaded = load_all(Network::Testnet, pv);
         assert_eq!(loaded[0].id(), Identifier::new([0x54; 32]));
         assert_eq!(loaded[0].version(), 2);
+    }
+
+    fn observe_newer_document(id_byte: u8) {
+        let sdk = WasmSdk::new_for_testing(
+            SdkBuilder::new_mock()
+                .with_version(PlatformVersion::latest())
+                .with_network(Network::Testnet)
+                .build()
+                .expect("cache SDK"),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
+        let stamped = Document::V0(DocumentV0 {
+            contract_version: Some(2),
+            ..Default::default()
+        });
+        assert!(sdk.drop_stale_contract(&contract(id_byte, 1), [&stamped]));
+    }
+
+    #[test]
+    fn should_remove_stale_body_despite_inflated_auxiliary_version() {
+        stored_body_with_metadata(0x61, &contract(0x61, 1), 99);
+        observe_newer_document(0x61);
+        assert!(load_all(Network::Testnet, PlatformVersion::latest()).is_empty());
+    }
+
+    #[test]
+    fn should_preserve_current_body_despite_deflated_auxiliary_version_on_stale_query() {
+        stored_body_with_metadata(0x62, &contract(0x62, 3), 1);
+        observe_newer_document(0x62);
+        assert_eq!(
+            load_all(Network::Testnet, PlatformVersion::latest())
+                .first()
+                .expect("a newer decoded body must survive despite deflated metadata")
+                .version(),
+            3
+        );
+    }
+
+    #[test]
+    fn should_remove_wrong_id_body_despite_newer_version_on_stale_query() {
+        stored_body_with_metadata(0x63, &contract(0x64, 99), 99);
+        observe_newer_document(0x63);
+        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        assert!(!read(&key).contains_key(&Identifier::new([0x63; 32]).to_string(Encoding::Base58)));
+    }
+
+    #[test]
+    fn should_remove_undecodable_body_despite_newer_version_on_stale_query() {
+        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        let id = Identifier::new([0x65; 32]).to_string(Encoding::Base58);
+        write(
+            &key,
+            &BTreeMap::from([(
+                id.clone(),
+                StoredContract {
+                    version: 99,
+                    bytes: BASE64.encode(b"not a contract"),
+                },
+            )]),
+        );
+        observe_newer_document(0x65);
+        assert!(!read(&key).contains_key(&id));
     }
 }

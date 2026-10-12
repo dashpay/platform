@@ -551,6 +551,104 @@ async fn should_verify_schema_changed_write_after_authenticated_update_in_same_c
 }
 
 #[tokio::test]
+async fn should_preserve_promoted_contract_when_a_stale_query_observes_its_version() {
+    let (sdk, update_request, write_request) = fixture(|_| {}).await;
+    let snapshot = sdk
+        .get_cached_contract(&CONTRACT_ID.into())
+        .expect("query captured the old contract");
+    assert_eq!(snapshot.version(), 1);
+    let fetch_request = add_older_contract_fetch(&sdk);
+    let signer = CountingSigner::default();
+    sdk.update_contract(contract(2), identity_key(), &signer, None)
+        .await
+        .expect("authenticated contract update");
+
+    let stamped = Document::V0(DocumentV0 {
+        contract_version: Some(2),
+        ..Default::default()
+    });
+    assert!(
+        sdk.drop_stale_contract(&snapshot, [&stamped]),
+        "the captured query remains stale even when the retained contract covers it"
+    );
+    let older = sdk
+        .refresh_contract(CONTRACT_ID.into())
+        .await
+        .expect("authenticated older fetch");
+    assert_eq!(
+        older.version(),
+        1,
+        "explicit refresh returns its own snapshot"
+    );
+    let retained = sdk
+        .get_or_fetch_contract(CONTRACT_ID.into())
+        .await
+        .expect("contract for the subsequent write");
+    let result = document()
+        .put_to_platform_and_wait_for_response(
+            sdk.inner_sdk(),
+            retained
+                .document_type_for_name("note")
+                .expect("retained note type")
+                .to_owned_document_type(),
+            Some(ENTROPY),
+            identity_key(),
+            None,
+            &signer,
+            None,
+        )
+        .await;
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&update_request)
+            .await,
+        1
+    );
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&fetch_request)
+            .await,
+        1,
+        "the older response was actually authenticated rather than skipped by a cache hit"
+    );
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&write_request)
+            .await,
+        1,
+        "the write reached broadcast exactly once"
+    );
+    assert_eq!(signer.0.load(Ordering::SeqCst), 2);
+    let confirmed =
+        result.expect("a stale query must not regress the schema for subsequent writes");
+    assert_eq!(
+        confirmed.properties().get("b"),
+        Some(&Value::Text("beta".into()))
+    );
+    assert_eq!(retained.version(), 2);
+    assert_eq!(
+        sdk.get_cached_contract(&CONTRACT_ID.into())
+            .expect("retained memory")
+            .version(),
+        2
+    );
+    assert_eq!(
+        crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest())
+            .iter()
+            .find(|contract| contract.id() == Identifier::from(CONTRACT_ID))
+            .expect("retained persisted contract")
+            .version(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn should_not_promote_update_with_invalid_quorum_signature() {
     let (sdk, update_request, _) = fixture(|response| {
         let Some(wait_for_state_transition_result_response::Version::V0(v0)) = response.version.as_mut() else { panic!("response version") };
