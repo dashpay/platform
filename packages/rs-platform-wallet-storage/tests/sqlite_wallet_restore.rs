@@ -1627,8 +1627,6 @@ fn burn_two_funding_keys(info: &mut ManagedWalletInfo, account_type: AccountType
 
 /// The index the asset-lock builder would fund its next credit output from.
 fn next_funding_index(info: &mut ManagedWalletInfo, account_type: AccountType) -> u32 {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
     let mut accounts = info.accounts.all_accounts_mut();
     let account = accounts
         .iter_mut()
