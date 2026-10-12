@@ -72,6 +72,9 @@ pub enum LoadSite {
     UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
+    /// A stored address-pool row sits further above the rest of its pool
+    /// than the load will derive to check it, so it is not restored.
+    PoolRowBeyondDerivationBudget,
     /// An `identity_keys` row was unreadable or contradicted its columns.
     IdentityKeyRow,
     /// A `contacts` row was unreadable or contradicted its columns.
@@ -122,6 +125,7 @@ impl LoadSite {
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
             Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
+            Self::PoolRowBeyondDerivationBudget => "pool_row_beyond_derivation_budget",
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
@@ -160,15 +164,18 @@ impl LoadSite {
             Self::WalletRehydration => {
                 "recovery mode: dropping one wallet that could not be rebuilt, keeping the rest of the file"
             }
-            // The only two sites `note_degraded` ever reaches (see its
-            // callers) — never-fatal in either policy, so their prose
-            // describes an accepted-as-is degradation rather than a
-            // tolerated inconsistency.
+            // The sites `note_degraded` reaches (see its callers) —
+            // never-fatal in either policy, so their prose describes an
+            // accepted-as-is degradation rather than a tolerated
+            // inconsistency.
             Self::OrphanedUtxoOwner => {
                 "load degraded: routing addresses from an unavailable owner to the first funds account"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
+            }
+            Self::PoolRowBeyondDerivationBudget => {
+                "load degraded: leaving out address-pool rows too far above their pool to be checked"
             }
             // Sites whose site tag plus the logged error already say
             // everything a reader needs, so they share the generic line.

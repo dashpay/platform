@@ -1099,3 +1099,47 @@ fn should_reject_a_platform_node_address_stored_at_two_indices() {
         "core pool address has multiple derivation indices",
     );
 }
+
+/// A pool the wallet has really grown past the discovery ceiling is stored
+/// row for row by the writer, and has to load again.
+#[test]
+fn should_restore_a_correctly_derived_pool_deeper_than_the_discovery_ceiling() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    const DEEPEST: u32 = 10_001;
+    let account_type = AccountType::IdentityInvitation;
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let source = account_key_source(&wallet, account_type);
+    let reserved = with_pool(&mut info, account_type, AddressPoolType::Absent, |pool| {
+        let derived = pool.highest_generated.map_or(0, |highest| highest + 1);
+        pool.generate_addresses(DEEPEST + 1 - derived, &source, true)
+            .unwrap();
+        assert_eq!(pool.highest_generated, Some(DEEPEST));
+        let entry = pool.addresses.get_mut(&DEEPEST).unwrap();
+        entry.state = AddressState::Reserved { at: 12345 };
+        entry.clone()
+    });
+    let (persister, _tmp, path) = common::fresh_persister();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    drop(persister);
+
+    let mut state = SqlitePersister::open(SqlitePersisterConfig::new(path))
+        .unwrap()
+        .load()
+        .expect("a pool the writer accepted must load");
+    let restored = &mut state
+        .wallets
+        .get_mut(&wallet.wallet_id)
+        .expect("wallet")
+        .wallet_info;
+    with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
+        let actual = &pool.addresses[&DEEPEST];
+        assert_eq!(actual.state, AddressState::Reserved { at: 12345 });
+        assert_eq!(actual.address, reserved.address);
+        assert_eq!(actual.path, reserved.path);
+    });
+}

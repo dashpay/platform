@@ -503,14 +503,34 @@ fn public_key_source(
         .map(|account| KeySource::BLSPublic(account.bls_public_key.clone()))
 }
 
-/// Derive `pool` from its account's public key through `highest_stored`, so
-/// every stored row meets an entry this wallet derived itself.
+/// How many indices a stored pool may be missing below its highest row and
+/// still be derived all the way through.
+///
+/// Checking a row means deriving every index below it, and that work has to
+/// be bounded: one damaged `address_index` must not buy billions of
+/// derivations. Depth is not what marks a damaged index, though. The writer
+/// stores a pool row for row however far the wallet has really grown it, so
+/// a deep pool brings one row for every index it asks to have derived, and a
+/// wallet that issued twenty thousand funding keys is as healthy as one that
+/// issued twenty. What marks damage is sparseness: far more indices below a
+/// row than there are rows. The derivation budget is therefore the pool's
+/// own row count plus this allowance for indices no row covers — the same
+/// allowance the discovery walk gives an account, so a partial snapshot it
+/// could have resolved is restored here too.
+const UNSTORED_INDEX_ALLOWANCE: u32 = MAX_REHYDRATION_DERIVATION_INDEX;
+
+/// Derive `pool` from its account's public key towards `highest_stored`, so
+/// the stored rows meet entries this wallet derived itself.
+///
+/// At most `stored_rows` + [`UNSTORED_INDEX_ALLOWANCE`] indices are derived.
+/// A row left above that has no derived entry, and the overlay skips it.
 ///
 /// Hardened pools are left as they are; see [`restore_pools`].
-fn derive_through(
+fn derive_towards(
     pool: &mut AddressPool,
     key_source: Option<&KeySource>,
     highest_stored: u32,
+    stored_rows: u32,
 ) -> Result<(), WalletStorageError> {
     if pool.pool_type == AddressPoolType::AbsentHardened {
         return Ok(());
@@ -521,18 +541,14 @@ fn derive_through(
     if highest_stored < derived {
         return Ok(());
     }
-    // Refused before deriving: a damaged index must not buy unbounded work.
-    if highest_stored > MAX_REHYDRATION_DERIVATION_INDEX {
-        return Err(WalletStorageError::blob_decode(
-            "core pool row index is beyond the restorable derivation depth",
-        ));
-    }
     // Without key material nothing is derived, and the overlay refuses the
     // rows that are left without a derived entry.
     let Some(key_source) = key_source else {
         return Ok(());
     };
-    pool.generate_addresses(highest_stored - derived + 1, key_source, true)
+    let missing = highest_stored - derived + 1;
+    let budget = stored_rows.saturating_add(UNSTORED_INDEX_ALLOWANCE);
+    pool.generate_addresses(missing.min(budget), key_source, true)
         .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
     Ok(())
 }
@@ -543,8 +559,15 @@ fn derive_through(
 /// not taken on trust where it can be checked. Each pool is first derived,
 /// from the account's public key in `wallet`, through its highest stored
 /// index; a row then overlays an entry this wallet derived itself and must
-/// name the same address and key. A pool whose stored index lies past
-/// [`MAX_REHYDRATION_DERIVATION_INDEX`] is refused before anything is derived.
+/// name the same address and key.
+///
+/// That derivation is budgeted by the pool's own row count (see
+/// [`UNSTORED_INDEX_ALLOWANCE`]), so a deep pool the wallet really grew
+/// restores in full, while an index with almost nothing stored below it
+/// cannot force unbounded work. A row above the budget is not restored: it
+/// is counted as [`LoadSite::PoolRowBeyondDerivationBudget`] under either
+/// policy and the wallet loads without it, the way the discovery walk defers
+/// an address it cannot reach.
 ///
 /// `AbsentHardened` pools are the exception. A hardened child cannot be
 /// derived from public key material, and a watch-only load holds nothing
@@ -567,7 +590,7 @@ pub(crate) fn restore_pools(
            AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
     )?;
     let mut highest_stored_index = conn.prepare_cached(
-        "SELECT MAX(address_index) FROM core_address_pool \
+        "SELECT MAX(address_index), COUNT(*) FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
            AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
            AND pool_type = ?7",
@@ -620,15 +643,18 @@ pub(crate) fn restore_pools(
                 friend.as_slice(),
                 pool_type_to_i64(pool.pool_type)
             ];
-            let highest_stored: Option<i64> =
-                highest_stored_index.query_row(pool_rows, |row| row.get(0))?;
+            let (highest_stored, stored): (Option<i64>, i64) =
+                highest_stored_index.query_row(pool_rows, |row| Ok((row.get(0)?, row.get(1)?)))?;
             if let Some(highest_stored) = highest_stored {
-                derive_through(
+                derive_towards(
                     pool,
                     key_source.as_ref(),
                     i64_to_u32("core_address_pool.address_index", highest_stored)?,
+                    // Saturating: a larger count only widens the budget.
+                    u32::try_from(stored).unwrap_or(u32::MAX),
                 )?;
             }
+            let mut beyond_budget = 0usize;
             let mut rows = stored_rows.query(pool_rows)?;
             while let Some(row) = rows.next()? {
                 let index = i64_to_u32("core_address_pool.address_index", row.get(0)?)?;
@@ -721,6 +747,13 @@ pub(crate) fn restore_pools(
                 path.push(child);
                 let previous = pool.addresses.get(&index);
                 if previous.is_none() && pool.pool_type != AddressPoolType::AbsentHardened {
+                    // The pool was derived as far as its budget reaches, so a
+                    // row above its end is one the budget left out.
+                    if key_source.is_some() && pool.highest_generated.is_some_and(|end| index > end)
+                    {
+                        beyond_budget += 1;
+                        continue;
+                    }
                     return Err(WalletStorageError::blob_decode(
                         "core pool row has no derived entry to be checked against",
                     ));
@@ -786,6 +819,19 @@ pub(crate) fn restore_pools(
                             .map_or(index, |highest| highest.max(index)),
                     );
                 }
+            }
+            if beyond_budget > 0 {
+                ctx.note_degraded(
+                    LoadSite::PoolRowBeyondDerivationBudget,
+                    SiteCoords {
+                        wallet_id: Some(*wallet_id),
+                        account_type: &account_type,
+                        affected: beyond_budget,
+                        detail: Some(&pool.pool_type),
+                    },
+                    "stored pool rows sit further above the rest of their pool than the \
+                     derivation budget reaches, so they cannot be checked and are not restored",
+                );
             }
         }
     }
@@ -1096,44 +1142,54 @@ mod tests {
         }
     }
 
-    /// Checking a stored row means deriving every index below it, so an index
-    /// past the ceiling is refused before the pool is touched. The index used
-    /// here would take billions of derivations if the refusal came second.
+    /// Checking a stored row means deriving every index below it. An index
+    /// with almost nothing stored below it is left out instead: the pool is
+    /// derived as far as its budget reaches and no further, the row is
+    /// counted, and the rest of the pool is restored. The index used here
+    /// would take billions of derivations if the budget did not hold.
     #[test]
-    fn restore_pools_refuses_an_index_past_the_derivation_ceiling_before_deriving() {
+    fn restore_pools_skips_a_row_the_derivation_budget_cannot_reach() {
         let mut conn = migrated_conn();
         let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
-        let derived = with_pool_of(&mut info, &address, |pool, _| pool.highest_generated);
+        let derived_end = with_pool_of(&mut info, &address, |pool, _| pool.highest_generated)
+            .expect("the stored pool is derived");
+        let stored_rows: u32 = conn
+            .query_row("SELECT COUNT(*) FROM core_address_pool", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let unreachable = u32::try_from(i32::MAX).unwrap();
         let moved = conn
             .execute(
                 "UPDATE core_address_pool SET address_index = ?1 \
                  WHERE address_index = (SELECT MAX(address_index) FROM core_address_pool)",
-                params![i64::from(i32::MAX)],
+                params![i64::from(unreachable)],
             )
             .unwrap();
         assert_eq!(moved, 1);
 
-        let error = restore_pools(
-            &conn,
-            &wallet.wallet_id,
-            &wallet,
-            &mut info,
-            &LoadCtx::strict(),
-        )
-        .expect_err("an index past the ceiling must be refused");
-        assert!(
-            matches!(
-                error,
-                WalletStorageError::BlobDecode { reason }
-                    if reason == "core pool row index is beyond the restorable derivation depth"
-            ),
-            "unexpected error: {error:?}"
-        );
+        let ctx = LoadCtx::strict();
+        restore_pools(&conn, &wallet.wallet_id, &wallet, &mut info, &ctx)
+            .expect("an unreachable row must not fail the wallet");
         assert_eq!(
-            with_pool_of(&mut info, &address, |pool, _| pool.highest_generated),
-            derived,
-            "a refused pool must not have been derived any further"
+            ctx.degradation()
+                .by_site
+                .get(&LoadSite::PoolRowBeyondDerivationBudget),
+            Some(&1),
+            "the row left out must be counted"
         );
+        with_pool_of(&mut info, &address, |pool, index| {
+            assert!(
+                !pool.addresses.contains_key(&unreachable),
+                "a row that could not be checked must not be restored"
+            );
+            assert_eq!(pool.addresses[&index].address, address);
+            assert_eq!(
+                pool.highest_generated,
+                Some(derived_end + stored_rows + UNSTORED_INDEX_ALLOWANCE),
+                "nothing may be derived beyond the budget"
+            );
+        });
     }
 
     #[test]
