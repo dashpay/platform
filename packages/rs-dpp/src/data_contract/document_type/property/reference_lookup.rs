@@ -26,12 +26,16 @@ use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::lookup_preimage::LookupHashKey;
 use crate::data_contract::document_type::property::{
-    is_transient, top_level_property, DocumentPropertyType,
+    is_transient, top_level_property, DocumentPropertyReferenceTarget, DocumentPropertyType,
 };
 
 /// Why a key part moves when it is a field only the contract's moderators write
 /// (`moderatorAbilities.changeFields`): no replace is needed to change it.
 const MODERATORS_CHANGE: &str = "the contract's moderators change";
+
+/// Why a key part moves when it is an immutable, optional `deletableDocument`
+/// reference by id: a replace may clear it once its document is deleted.
+const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -589,7 +593,8 @@ impl DocumentReferenceLookup {
         }
         // A minimum age is judged against the found document's creation height,
         // so the type must record one; consuming deletes the document as its
-        // own owner would, which the type must allow
+        // own owner would, which the type must allow, or keep for consumption
+        // alone (`canBeDeleted: "onlyWhenConsumed"`)
         if self.minimum_age_blocks.is_some()
             && !referenced
                 .required_fields()
@@ -602,10 +607,14 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        if self.consume && !referenced.documents_can_be_deleted() {
+        if self.consume
+            && !referenced.documents_can_be_deleted()
+            && !referenced.documents_deleted_only_when_consumed()
+        {
             return Some(format!(
                 "consume deletes the found document as its owner would, which \"{}\" does not \
-                 allow (`canBeDeleted: false`)",
+                 allow (`canBeDeleted: false`): set `canBeDeleted` to true, or to \
+                 \"onlyWhenConsumed\" for documents only a consume deletes",
                 referenced.name()
             ));
         }
@@ -654,6 +663,9 @@ impl DocumentReferenceLookup {
             // A field only moderators write is never fixed, whatever the type says
             let hint = if why == MODERATORS_CHANGE {
                 "find it by a property only its owner writes"
+            } else if why == CLEARED_ONCE_DELETED {
+                "make the reference required or find it by a property that is no optional \
+                 `deletableDocument` reference"
             } else {
                 "make the type immutable or list the property under `immutable`"
             };
@@ -683,35 +695,9 @@ impl DocumentReferenceLookup {
     /// immutable on contract update, and the `immutable` list may only grow,
     /// so the answer holds for good.
     fn moving_key_part(&self, referenced: DocumentTypeRef) -> Option<(&str, &'static str)> {
-        let changes_owner = owner_can_change(referenced);
-        let replaceable = referenced.documents_mutable();
         self.keys.keys().find_map(|index_property| {
-            let why = match index_property.as_str() {
-                ID
-                | CREATOR_ID
-                | CREATED_AT
-                | CREATED_AT_BLOCK_HEIGHT
-                | CREATED_AT_CORE_BLOCK_HEIGHT => None,
-                OWNER_ID => changes_owner.then_some("a transfer or a purchase changes"),
-                UPDATED_AT | UPDATED_AT_BLOCK_HEIGHT | UPDATED_AT_CORE_BLOCK_HEIGHT => (replaceable
-                    || changes_owner)
-                    .then_some("a replace, a transfer or a purchase changes"),
-                TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
-                    changes_owner.then_some("a transfer or a purchase changes")
-                }
-                property => {
-                    if referenced
-                        .moderator_changeable_fields()
-                        .contains(top_level_property(property))
-                    {
-                        Some(MODERATORS_CHANGE)
-                    } else {
-                        (!schema_property_is_fixed_once_written(referenced, property))
-                            .then_some("a replace can change")
-                    }
-                }
-            };
-            why.map(|why| (index_property.as_str(), why))
+            why_value_can_change(referenced, index_property)
+                .map(|why| (index_property.as_str(), why))
         })
     }
 
@@ -765,6 +751,48 @@ pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
         || document_type.trade_mode() != TradeMode::None
 }
 
+/// How the value `property` names, of a document of `referenced`, can change
+/// after the document is written, `None` when it is fixed for good: `$id`,
+/// `$creatorId` and the creation times never change; `$ownerId` and the
+/// transfer times change with a transfer or a purchase, the update times also
+/// with a replace; a schema property is fixed when
+/// [`schema_property_is_fixed_once_written`] says so and a replace cannot
+/// clear it ([`clearable_once_its_document_is_deleted`]), and its moderators'
+/// fields are named as such. Shared by a lookup's key and the
+/// `summableOffCountIndex` lossless rule, so the two judge a value alike.
+pub(crate) fn why_value_can_change(
+    referenced: DocumentTypeRef,
+    property: &str,
+) -> Option<&'static str> {
+    let changes_owner = owner_can_change(referenced);
+    match property {
+        ID | CREATOR_ID | CREATED_AT | CREATED_AT_BLOCK_HEIGHT | CREATED_AT_CORE_BLOCK_HEIGHT => {
+            None
+        }
+        OWNER_ID => changes_owner.then_some("a transfer or a purchase changes"),
+        UPDATED_AT | UPDATED_AT_BLOCK_HEIGHT | UPDATED_AT_CORE_BLOCK_HEIGHT => {
+            (referenced.documents_mutable() || changes_owner)
+                .then_some("a replace, a transfer or a purchase changes")
+        }
+        TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+            changes_owner.then_some("a transfer or a purchase changes")
+        }
+        property => {
+            if referenced
+                .moderator_changeable_fields()
+                .contains(top_level_property(property))
+            {
+                Some(MODERATORS_CHANGE)
+            } else if !schema_property_is_fixed_once_written(referenced, property) {
+                Some("a replace can change")
+            } else {
+                clearable_once_its_document_is_deleted(referenced, property)
+                    .then_some(CLEARED_ONCE_DELETED)
+            }
+        }
+    }
+}
+
 /// Whether the schema property at `path` of a document of `document_type` can
 /// never change once the document is written: the type is immutable
 /// (`documentsMutable: false`), or the property's top-level property is listed
@@ -785,6 +813,35 @@ pub(crate) fn schema_property_is_fixed_once_written(
         && !document_type
             .moderator_changeable_fields()
             .contains(top_level)
+}
+
+/// Whether a replace may clear the top-level property of `path` of a document
+/// of `document_type` though `immutable` lists it: an optional
+/// `deletableDocument` reference by id, which document replace state
+/// validation 1 lets a replace clear once its document is deleted, so that the
+/// document can still be replaced. A required one is never cleared: replace
+/// advanced structure validation refuses a document missing a required
+/// property before state validation reads the clear. Clearing changes the
+/// value to absent, so a value that must stay as written (a lookup's key part,
+/// a param or `where` value a findBy function's key is judged by on the create,
+/// a value a `summableOffCountIndex` index's group is fixed by) may not be one.
+pub(crate) fn clearable_once_its_document_is_deleted(
+    document_type: DocumentTypeRef,
+    path: &str,
+) -> bool {
+    document_type.documents_mutable()
+        && document_type
+            .flattened_properties()
+            .get(top_level_property(path))
+            .is_some_and(|property| {
+                !property.required
+                    && matches!(
+                        property.property_type,
+                        DocumentPropertyType::IdentifierWithReference(
+                            DocumentPropertyReferenceTarget::DeletableDocument { .. }
+                        )
+                    )
+            })
 }
 
 /// The kind of value an index property of `document_type` holds: a system

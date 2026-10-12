@@ -72,7 +72,7 @@ impl MasternodeListSummary {
                 platform_node_id,
             } => (
                 Some(*platform_http_port),
-                Some(platform_node_id.to_canonical_bytes()),
+                Some(platform_node_id.to_byte_array()),
                 true,
             ),
         };
@@ -223,7 +223,7 @@ mod tests {
             is_valid: false,
             mn_type: EntryMasternodeType::HighPerformance {
                 platform_http_port: 1443,
-                platform_node_id: PlatformNodeId::from_canonical_bytes([3u8; 20]),
+                platform_node_id: PlatformNodeId::from_byte_array([3u8; 20]),
             },
         };
         let list = MasternodeList::build(

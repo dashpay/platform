@@ -1,3 +1,4 @@
+pub mod core_credit_pool_unlock_limit;
 mod core_dust_threshold;
 pub mod daily_withdrawal_limit;
 #[cfg(all(feature = "withdrawals-contract", feature = "system_contracts"))]

@@ -59,7 +59,7 @@ pub fn verify_masternode_vote(
     .map_err(|e| JsValue::from_str(&format!("Failed to deserialize data contract: {:?}", e)))?;
 
     let (root_hash, vote_option) = Drive::verify_masternode_vote(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         masternode_pro_tx_hash_bytes,
         &vote,
         &data_contract,

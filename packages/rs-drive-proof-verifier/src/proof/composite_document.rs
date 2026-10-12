@@ -75,13 +75,10 @@ pub fn verify_composite_documents_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, CompositeDocuments), Error> {
     let (root_hash, result) = query
-        .verify_composite_documents_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            platform_version,
-        )
+        .verify_composite_documents_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok((
         root_hash,

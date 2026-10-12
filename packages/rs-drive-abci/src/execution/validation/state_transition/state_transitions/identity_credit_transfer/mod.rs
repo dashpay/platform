@@ -128,6 +128,7 @@ mod tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::signature::SignatureError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::fee::Credits;
@@ -153,7 +154,24 @@ mod tests {
         seed: u64,
         credits: Credits,
     ) -> (Identity, SimpleSigner, IdentityPublicKey) {
-        let platform_version = PlatformVersion::latest();
+        setup_identity_with_transfer_key_of_type(
+            platform,
+            seed,
+            credits,
+            KeyType::ECDSA_SECP256K1,
+            PlatformVersion::latest(),
+        )
+    }
+
+    /// [`setup_identity_with_transfer_key`] with a transfer key of `transfer_key_type`, added
+    /// at `platform_version`.
+    fn setup_identity_with_transfer_key_of_type(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+        transfer_key_type: KeyType,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
         let mut signer = SimpleSigner::default();
         let mut rng = StdRng::seed_from_u64(seed);
 
@@ -183,7 +201,7 @@ mod tests {
                 &mut rng,
                 Purpose::TRANSFER,
                 SecurityLevel::CRITICAL,
-                KeyType::ECDSA_SECP256K1,
+                transfer_key_type,
                 None,
                 platform_version,
             )
@@ -737,5 +755,111 @@ mod tests {
             )
             .expect("expected the epoch's processing fees");
         assert_eq!(processing_fees, owed);
+    }
+
+    /// From protocol version 14 a BLS12_381 signature must verify: a transfer naming the
+    /// sender's BLS transfer key but signed by another identity's BLS key is refused, unpaid.
+    /// Protocol version 13 replays as it ran and executes it, and a signature by the key
+    /// itself executes under both.
+    #[tokio::test]
+    async fn should_refuse_a_bls_signature_that_does_not_verify_from_protocol_version_14() {
+        for (protocol_version, refused) in [
+            (PlatformVersion::latest().protocol_version, true),
+            (13, false),
+        ] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a known protocol version");
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (sender, signer, transfer_key) = setup_identity_with_transfer_key_of_type(
+                &mut platform,
+                900,
+                dash_to_credits!(1.0),
+                KeyType::BLS12_381,
+                platform_version,
+            );
+            let (recipient, recipient_signer, recipient_transfer_key) =
+                setup_identity_with_transfer_key_of_type(
+                    &mut platform,
+                    901,
+                    dash_to_credits!(0.5),
+                    KeyType::BLS12_381,
+                    platform_version,
+                );
+            assert_eq!(transfer_key.id(), recipient_transfer_key.id());
+
+            let platform_state = platform.state.load();
+
+            let signed_by_another_key = create_signed_transfer(
+                sender.id(),
+                recipient.id(),
+                500_000,
+                1,
+                &recipient_signer,
+                &recipient_transfer_key,
+            )
+            .await;
+            let signed_by_the_key = create_signed_transfer(
+                sender.id(),
+                recipient.id(),
+                500_000,
+                2,
+                &signer,
+                &transfer_key,
+            )
+            .await;
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![signed_by_another_key, signed_by_the_key],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    true,
+                    None,
+                )
+                .expect("expected to process state transitions");
+
+            let results = processing_result.execution_results();
+            if refused {
+                assert_matches!(
+                    results.as_slice(),
+                    [
+                        StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::SignatureError(
+                                SignatureError::InvalidStateTransitionSignatureError(_)
+                            )
+                        ),
+                        StateTransitionExecutionResult::SuccessfulExecution { .. }
+                    ],
+                    "protocol version {protocol_version}"
+                );
+            } else {
+                assert_matches!(
+                    results.as_slice(),
+                    [
+                        StateTransitionExecutionResult::SuccessfulExecution { .. },
+                        StateTransitionExecutionResult::SuccessfulExecution { .. }
+                    ],
+                    "protocol version {protocol_version}"
+                );
+            }
+        }
     }
 }

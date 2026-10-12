@@ -29,23 +29,44 @@ import DashSDKFFI
 // was unreadable.
 
 /// Serves every read live except the one model type it is told to fault,
-/// and records the reads it saw so a test can prove which fetch failed.
+/// and records the reads it saw so a test can prove which fetch failed —
+/// or, faulting nothing, count how many reads a code path issued.
 /// Shared by every test that needs one model's read to fail.
 final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
     struct ReadFault: Error {}
 
     private let live = LiveModelFetcher()
-    private let faulted: ObjectIdentifier
+    private let faulted: ObjectIdentifier?
     private let served: Int
+    private let faultLimit: Int
     private let lock = NSLock()
     private var reads: [String] = []
     private var faultedTypeReads = 0
 
-    /// Faults every read of `model` after the first `served` reads of it
-    /// have been answered live — `0` faults the first one.
-    init(faulting model: any PersistentModel.Type, afterServing served: Int = 0) {
+    /// Faults reads of `model` after the first `served` reads of it have
+    /// been answered live — `0` faults the first one — and serves them live
+    /// again once `faultLimit` reads have been faulted (default: never).
+    init(
+        faulting model: any PersistentModel.Type,
+        afterServing served: Int = 0,
+        faultLimit: Int = .max
+    ) {
         faulted = ObjectIdentifier(model)
         self.served = served
+        self.faultLimit = faultLimit
+    }
+
+    /// Serves every read live and only records it.
+    init() {
+        faulted = nil
+        served = 0
+        faultLimit = 0
+    }
+
+    /// How many reads of `model` were observed, faulted ones included.
+    func readCount(of model: any PersistentModel.Type) -> Int {
+        let name = String(describing: model)
+        return observedReads.filter { $0 == name }.count
     }
 
     /// Model names in the order they were read, the faulted one included.
@@ -64,7 +85,7 @@ final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
         var fault = false
         if ObjectIdentifier(T.self) == faulted {
             faultedTypeReads += 1
-            fault = faultedTypeReads > served
+            fault = faultedTypeReads > served && faultedTypeReads - served <= faultLimit
         }
         lock.unlock()
         guard !fault else { throw ReadFault() }

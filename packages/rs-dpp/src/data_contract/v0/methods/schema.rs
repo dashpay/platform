@@ -2,6 +2,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_summable_off_count_indexes_lossless,
 };
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -82,6 +83,10 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         // whole contract judges it
         if full_validation {
             validate_preallocated_indexes_kept_on_removal(&self.document_types)?;
+            // Inert before protocol version 14: it judges only
+            // `summableOffCountIndex` indexes, which only meta-schema v3
+            // admits.
+            validate_summable_off_count_indexes_lossless(&self.document_types)?;
         }
 
         Ok(())

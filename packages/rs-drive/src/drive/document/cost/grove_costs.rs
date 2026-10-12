@@ -143,6 +143,9 @@ pub(crate) enum PricedElement {
         item_len: u32,
         flags_len: Option<u32>,
     },
+    /// A sum item (a `summableOffCountIndex` index's counter), charged its
+    /// fixed size whatever its value, with flags of `flags_len` bytes.
+    SumItem { flags_len: Option<u32> },
 }
 
 /// The storage bytes GroveDB adds for a new `element` under a key of
@@ -169,6 +172,9 @@ pub(crate) fn new_element_bytes(key_len: u32, element: PricedElement, node: Node
             item_len + varint_len(item_len) + 11 + flags_bytes(flags_len),
             node,
         ),
+        PricedElement::SumItem { flags_len } => {
+            node_value_bytes(key_len, 11 + flags_bytes(flags_len), node)
+        }
     };
     key_bytes(key_len) + value
 }

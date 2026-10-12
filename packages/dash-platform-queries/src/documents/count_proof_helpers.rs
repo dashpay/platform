@@ -254,7 +254,7 @@ pub(super) fn verify_count_query(
             &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "range count requires a `range_countable: true` index whose last \
+            error: "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                     property matches the range field"
                 .to_string(),
         })?
@@ -265,7 +265,7 @@ pub(super) fn verify_count_query(
             &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove count requires a `countable: true` index whose properties \
+            error: "prove count requires a `countable: true` (or summableOffCountIndex) index whose properties \
                     exactly match the where clause fields, or `documentsCountable: \
                     true` on the document type for unfiltered total counts"
                 .to_string(),
@@ -319,17 +319,15 @@ pub(super) fn verify_count_query(
         }
         DocumentCountMode::RangeAggregateCarrierProof => {
             // Carrier-ACOR (grovedb #663) — one verified `u64` per
-            // present In branch. `limit` cap on the per-branch
-            // walk follows the same `validate-don't-clamp`
-            // contract the distinct path uses; pass through what
-            // the caller asked for (with the `0` → default
-            // sentinel) so the path-query bytes match the
-            // server's exactly.
-            let limit_u16 = if request.limit == 0 {
-                None
-            } else {
-                Some(limit_to_u16_or_default(request.limit)?)
-            };
+            // present In branch. The limit comes from the same
+            // function the server's dispatcher uses (`0` is the
+            // unset sentinel), so a range-outer request without a
+            // limit walks the platform default on both sides and the
+            // path-query bytes match the server's exactly.
+            let limit_u16 = DriveDocumentCountQuery::carrier_aggregate_count_limit(
+                &request.where_clauses,
+                (request.limit != 0).then_some(request.limit),
+            )?;
             let left_to_right = request
                 .order_by_clauses
                 .first()

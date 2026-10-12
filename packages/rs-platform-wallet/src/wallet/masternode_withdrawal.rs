@@ -31,7 +31,7 @@ use async_trait::async_trait;
 use dashcore::hashes::{hash160, sha256d, Hash};
 use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use dashcore::secp256k1::Message;
-use dashcore::signer::CompactSignature;
+use dashcore::sign_message::MessageSignature;
 use dashcore::{Address as DashAddress, AddressType, Network, ScriptBuf};
 use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -716,7 +716,10 @@ where
                 )
             })?;
 
-        Ok(recoverable.to_compact_signature(true).to_vec().into())
+        Ok(MessageSignature::new(recoverable, true)
+            .serialize()
+            .to_vec()
+            .into())
     }
 
     async fn sign_create_witness(

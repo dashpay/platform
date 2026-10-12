@@ -44,7 +44,9 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::{read_data_at_path, RepeatedKey};
 use crate::data_contract::document_type::property::generated_from::{HashFunction, SystemFunction};
-use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
+use crate::data_contract::document_type::property::reference_lookup::{
+    clearable_once_its_document_is_deleted, schema_property_is_fixed_once_written,
+};
 use crate::data_contract::document_type::property::{
     is_transient, DocumentPropertyType, PropertyReference, ReferenceHolder,
 };
@@ -245,6 +247,16 @@ impl LookupHashKey {
                      when the document is created only, so every stored value it reads must be \
                      fixed once written (make the type immutable or list the property under \
                      `immutable`)"
+                ));
+            }
+            if !is_transient(declaring, path)
+                && clearable_once_its_document_is_deleted(declaring, path)
+            {
+                return Some(format!(
+                    "param \"{path}\" is an optional `deletableDocument` reference a replace can \
+                     clear once its document is deleted: the key is checked when the document is \
+                     created only, so every stored value it reads must be fixed once written \
+                     (make the reference required)"
                 ));
             }
         }

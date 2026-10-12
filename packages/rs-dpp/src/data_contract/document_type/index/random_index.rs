@@ -66,6 +66,8 @@ impl Index {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -75,6 +77,7 @@ impl Index {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         })
     }
 }

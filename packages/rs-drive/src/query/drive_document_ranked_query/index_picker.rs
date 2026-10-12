@@ -7,10 +7,11 @@
 //! and the SDK verifier both call these so they land on the same index
 //! (and therefore the same grove path) for the same request.
 
-use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
+use super::{read_axis_for, DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{index_admissible_for_query, ResolvedTimeRange, SkipIfAbsentBinding};
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::version::PlatformVersion;
@@ -114,35 +115,38 @@ pub fn find_ranked_index_for_axis<'b>(
         if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             return false;
         }
-        // The positions whose levels host this axis's secondaries — for
-        // the Count axis every `at` level plus the terminal when the
-        // boolean is on (any subset of an index's levels may rank); empty
-        // when the index does not declare the axis (or aggregates a
-        // different field than requested).
-        let candidate_positions: Vec<usize> = match axis {
-            RankedAxis::Count => index
-                .ranked_countable_at
-                .iter()
-                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+        // The positions whose levels host this axis's secondaries — every
+        // `at` level of the axis plus the terminal when the boolean is on
+        // (any subset of an index's levels may rank; only a
+        // `summableOffCountIndex` index ranks sums and averages at earlier
+        // levels); empty when the index does not declare the axis (or
+        // aggregates a different field than requested).
+        let positions = |at_levels: &[String], ranks_terminal: bool| -> Vec<usize> {
+            index
+                .at_level_positions(at_levels)
                 .chain(
-                    index
-                        .ranked_countable
+                    ranks_terminal
                         .then(|| index.properties.len().checked_sub(1))
                         .flatten(),
                 )
-                .collect(),
-            RankedAxis::Sum => (index.ranked_summable
-                && index.summable.as_deref() == Some(aggregate_field))
-            .then(|| index.properties.len().checked_sub(1))
-            .flatten()
-            .into_iter()
-            .collect(),
-            RankedAxis::Avg => (index.ranked_averageable
-                && index.summable.as_deref() == Some(aggregate_field))
-            .then(|| index.properties.len().checked_sub(1))
-            .flatten()
-            .into_iter()
-            .collect(),
+                .collect()
+        };
+        let sums_requested_field = index.summed_value_name() == Some(aggregate_field);
+        let candidate_positions: Vec<usize> = match axis {
+            // A document count over a `summableOffCountIndex` index ranks by
+            // its sums, its document counts (`read_axis_for`); its
+            // `rankedCountable` levels are parsed into the Sum ranking.
+            RankedAxis::Count if read_axis_for(axis, index) == RankedAxis::Sum => {
+                positions(&index.ranked_summable_at, index.ranked_summable)
+            }
+            RankedAxis::Count => positions(&index.ranked_countable_at, index.ranked_countable),
+            RankedAxis::Sum if sums_requested_field => {
+                positions(&index.ranked_summable_at, index.ranked_summable)
+            }
+            RankedAxis::Avg if sums_requested_field => {
+                positions(&index.ranked_averageable_at, index.ranked_averageable)
+            }
+            RankedAxis::Sum | RankedAxis::Avg => Vec::new(),
         };
         // A candidate matches when its property is the grouping property
         // and every property before it is pinned exactly once (length
@@ -225,6 +229,7 @@ pub fn resolve_ranked_query_for_mode<'a>(
                     &mode.group_by_property,
                     &mode.prefix_pins,
                     &mode.aggregate_field,
+                    document_type,
                 ),
             ))
         })?;
@@ -248,13 +253,19 @@ pub fn resolve_ranked_query_for_mode<'a>(
 /// so a rejected request reads identically everywhere. Names the exact
 /// index the request needs: property list (pins first, in request
 /// order, then the grouping property), ranking keyword, and `summable`
-/// field where applicable.
+/// field where applicable. On an indexOnly type, a `sum` or `avg` naming an
+/// index of the type that is no property (`sum(byPost)`) sums that index's
+/// entries, which only a `summableOffCountIndex` index over it does: the text
+/// then names that keyword, and the level-addressed ranking at the grouping
+/// property, since such an index continues below it to the source's
+/// properties.
 pub fn no_covering_index_message(
     surface: &str,
     axis: RankedAxis,
     group_by_property: &str,
     prefix_pins: &[PrefixPin],
     aggregate_field: &str,
+    document_type: DocumentTypeRef,
 ) -> String {
     let pin_fields = || {
         prefix_pins
@@ -263,6 +274,37 @@ pub fn no_covering_index_message(
             .collect::<Vec<_>>()
             .join(", ")
     };
+    let pins_clause = if prefix_pins.is_empty() {
+        String::new()
+    } else {
+        format!(" with pins on [{}]", pin_fields())
+    };
+    let names_a_source = !aggregate_field.is_empty()
+        && document_type.index_only()
+        && document_type.indexes().contains_key(aggregate_field)
+        && !document_type
+            .flattened_properties()
+            .contains_key(aggregate_field);
+    if names_a_source {
+        let leading = if prefix_pins.is_empty() {
+            group_by_property.to_string()
+        } else {
+            format!("{}, {group_by_property}", pin_fields())
+        };
+        return format!(
+            "no ranked index covers `group_by = [{group_by_property}]`{pins_clause} on the \
+             {axis:?} axis for this {surface} query: the document type needs an index with \
+             `summableOffCountIndex: \"{aggregate_field}\"` whose properties start with \
+             [{leading}] (every leading property pinned by an equality or `IN` `where` clause), \
+             declaring `{}: {{ \"at\": [\"{group_by_property}\"] }}`{}",
+            axis.required_index_keyword(),
+            if axis == RankedAxis::Avg {
+                " and `rangeCountable: true`"
+            } else {
+                ""
+            },
+        );
+    }
     let index_shape = if prefix_pins.is_empty() {
         format!("a single-property index on `{group_by_property}`")
     } else {
@@ -273,13 +315,9 @@ pub fn no_covering_index_message(
         )
     };
     format!(
-        "no ranked index covers `group_by = [{group_by_property}]`{} on the {axis:?} axis \
-         for this {surface} query: the document type needs {index_shape} declaring `{}`{}",
-        if prefix_pins.is_empty() {
-            String::new()
-        } else {
-            format!(" with pins on [{}]", pin_fields())
-        },
+        "no ranked index covers `group_by = [{group_by_property}]`{pins_clause} on the \
+         {axis:?} axis for this {surface} query: the document type needs {index_shape} \
+         declaring `{}`{}",
         axis.required_index_keyword(),
         if aggregate_field.is_empty() {
             String::new()
@@ -326,8 +364,9 @@ pub fn encode_prefix_branches(
     // key: a null pin on a skip property would read an empty ranking as if it
     // were complete. (A ranking never sits above a skip property, so every
     // skip property is either pinned here or the ranked property itself; an
-    // indexOnly type has no null values to pin.)
-    if index.skip_if_absent && index.terminal.is_none() {
+    // indexOnly type has no null values to pin: its indexes carry a terminal,
+    // or keep `summableOffCountIndex` counters.)
+    if index.skip_if_absent && !index.is_index_only() {
         if let Some(pin) = prefix_pins.iter().find(|pin| {
             index.skip_if_absent_properties.contains(&pin.field)
                 && pin.values.iter().any(|value| value.is_null())

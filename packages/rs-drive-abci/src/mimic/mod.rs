@@ -13,7 +13,7 @@ use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
 use crate::rpc::core::CoreRPCLike;
 use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::SignatureSchemes;
+
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -538,10 +538,10 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                     );
             let block_signature = current_quorum
                 .private_key
-                .sign(SignatureSchemes::Basic, digest.as_slice())
+                .sign(digest.as_slice())
                 .expect("expected to be able to sign");
 
-            commit_info.block_signature = block_signature.as_raw_value().to_compressed().to_vec();
+            commit_info.block_signature = block_signature.to_bytes().to_vec();
         } else {
             commit_info.block_signature = [0u8; 96].to_vec();
         }

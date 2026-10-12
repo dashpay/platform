@@ -111,7 +111,12 @@ impl DriveDocumentQuery<'_> {
                     )?);
                 }
                 Some(segment) if segment == outer_type_name => {
-                    let grovedb::Element::Item(serialized, _) = element else {
+                    // A stored document is any item, the sum-bearing one of a
+                    // `documentsSummable` type included. Edited in place: a
+                    // chained query needs an indexOnly inner type
+                    // (`validate_chained` above), which only protocol version
+                    // 14 parses, so no earlier proof reaches this line.
+                    let Ok(serialized) = element.into_item_bytes() else {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "chained proof's outer half proved a non-item element where a \
                              stored document was expected"

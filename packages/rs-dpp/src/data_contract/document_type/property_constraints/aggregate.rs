@@ -33,9 +33,9 @@ impl AggregateRead {
     /// total of the documents matching the filter: the first in name order
     /// whose properties are exactly the filter's keys, countable for a
     /// `countOf` and summing the property for a `sumOf`, and plain: not unique,
-    /// contested, ranked, bucketed (a time or integer range) or with an
-    /// indexOnly terminal, whose trees keep their totals elsewhere or not at
-    /// all. `None` for an
+    /// contested, ranked, bucketed (a time or integer range) or an indexOnly
+    /// index (one with a terminal, or a `summableOffCountIndex` index), whose
+    /// trees keep their totals elsewhere or not at all. `None` for an
     /// empty filter, and when no index answers, which registration refuses.
     pub fn answering_index<'a>(&self, counted: &'a DocumentTypeRef) -> Option<&'a Index> {
         if self.filter.is_empty() {
@@ -45,11 +45,8 @@ impl AggregateRead {
             let plain = !index.unique
                 && index.contested_index.is_none()
                 && !index.is_bucketed()
-                && index.terminal.is_none()
-                && !index.ranked_countable
-                && index.ranked_countable_at.is_empty()
-                && !index.ranked_summable
-                && !index.ranked_averageable;
+                && !index.is_index_only()
+                && !index.declares_any_ranking();
             // An index lists a property once, so equal lengths and every property
             // among the keys make the two the same set
             let keyed_by_filter = index.properties.len() == self.filter.len()

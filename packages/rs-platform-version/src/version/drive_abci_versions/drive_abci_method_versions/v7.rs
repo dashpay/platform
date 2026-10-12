@@ -100,6 +100,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         cleanup_expired_locks_of_withdrawal_amounts: 0,
         record_credit_inflows_for_withdrawals: None,
         record_total_credits_history_for_withdrawals: None,
+        scan_core_blocks_for_withdrawals: None,
+        calculate_core_anchored_withdrawal_limit: None,
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
