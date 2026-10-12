@@ -89,7 +89,7 @@ erDiagram
         BLOB script "scriptPubKey bytes"
         INTEGER is_sweep_placeholder "1 until funding arrives"
         INTEGER spent "0 | 1"
-        BLOB spent_in_txid "spender claiming the row: apply_sweep hold, runtime or V019 history repair; else NULL"
+        BLOB spent_in_txid "spender claiming the row: spend writer, apply_sweep hold, runtime or V019 history repair; else NULL"
         INTEGER winner_mined_height "V007: sweep winner's mined height; NULL when unstamped or materialised"
     }
 
@@ -402,9 +402,12 @@ One row per UTXO, spent or unspent. Owning-account identity is derived from
 `core_address_pool` while loading wallet state, and confirmation height is
 derived from `core_transactions.height`.
 
-`spent_in_txid` names the transaction that claims the row. Three writers set
+`spent_in_txid` names the transaction that claims the row. Four writers set
 it:
 
+- the spend writer (`schema::core_state::apply`), naming the record stored in
+  the same round when it turns a row from unspent to spent, mempool spends
+  included; a row that is already spent keeps its claim, known or unknown;
 - `apply_sweep`, naming the winner that took an input a swept loser claimed
   but this store had no released record for;
 - the runtime history repair (`schema::core_history`), which marks an owned

@@ -967,20 +967,7 @@ async fn assert_conflict_restart(case: ConflictCase) {
             |row| row.get(0),
         )
         .unwrap();
-    // Release controls carry a known loser claim; an unknown durable claim must stay held.
-    if expect_released {
-        persister
-            .lock_conn_for_test()
-            .execute(
-                "UPDATE core_utxos SET spent_in_txid = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
-                rusqlite::params![
-                    loser.txid().as_byte_array().as_slice(),
-                    wallet.wallet_id.as_slice(),
-                    &extra_key
-                ],
-            )
-            .unwrap();
-    }
+    // The store itself names the loser as claimant; only an unknown durable claim stays held.
     if let ConflictCase::UnknownClaim { height, .. } = case {
         persister.lock_conn_for_test().execute(
             "UPDATE core_utxos SET spent_in_txid = NULL, winner_mined_height = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
@@ -1388,10 +1375,15 @@ async fn should_guard_recordless_spends_with_missing_funding_and_finality() {
     }
 }
 
-async fn assert_replay_amount_rejected(values: &[u64], received: u64) {
+/// Replace the stored history with one `context` record spending `values` and receiving `received`.
+async fn stage_replay_amounts(
+    context: TransactionContext,
+    values: &[u64],
+    received: u64,
+) -> Fixture {
     use key_wallet::managed_account::transaction_record::{InputDetail, OutputDetail, OutputRole};
-    use platform_wallet_storage::{sqlite::schema::blob, WalletStorageError};
-    let fixture = Fixture::with_height_only_funding(block(200)).await;
+    use platform_wallet_storage::sqlite::schema::blob;
+    let fixture = Fixture::with_height_only_funding(context).await;
     let conn = fixture.persister.lock_conn_for_test();
     let bytes: Vec<u8> = conn
         .query_row(
@@ -1435,8 +1427,23 @@ async fn assert_replay_amount_rejected(values: &[u64], received: u64) {
             .unwrap();
     record.txid = record.transaction.txid();
     conn.execute("DELETE FROM core_transactions", []).unwrap();
-    conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 200, 0, ?3)", rusqlite::params![fixture.wallet_id.as_slice(), record.txid.as_byte_array().as_slice(), blob::encode(&record).unwrap()]).unwrap();
+    conn.execute(
+        "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, ?3, 0, ?4)",
+        rusqlite::params![
+            fixture.wallet_id.as_slice(),
+            record.txid.as_byte_array().as_slice(),
+            record.block_info().map(|block| block.height()),
+            blob::encode(&record).unwrap()
+        ],
+    )
+    .unwrap();
     drop(conn);
+    fixture
+}
+
+async fn assert_replay_amount_rejected(values: &[u64], received: u64) {
+    use platform_wallet_storage::WalletStorageError;
+    let fixture = stage_replay_amounts(block(200), values, received).await;
     let error = fixture
         .persister
         .load()
@@ -1463,6 +1470,212 @@ async fn should_reject_cumulatively_overflowing_replay_inputs_with_fitting_net()
 #[tokio::test]
 async fn should_reject_overflowing_replay_output_with_fitting_net() {
     assert_replay_amount_rejected(&[i64::MAX as u64], 1_u64 << 63).await;
+}
+
+#[tokio::test]
+async fn should_skip_unconfirmed_record_with_overflowing_replay_inputs() {
+    let fixture = stage_replay_amounts(TransactionContext::Mempool, &[i64::MAX as u64, 1], 1).await;
+
+    let (_, info) = fixture.load();
+
+    fixture.assert_spent_excluded(&info);
+}
+
+/// A fresh wallet with one derived receive address on its first BIP44 account.
+fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, Address) {
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+    let address = info
+        .accounts
+        .standard_bip44_accounts
+        .get_mut(&0)
+        .unwrap()
+        .next_receive_address(Some(&xpub), true)
+        .unwrap();
+    (wallet, info, address)
+}
+
+/// Persist one Core round for `wallet` as a sync would, then reopen the store strictly.
+fn store_then_reopen(wallet: &Wallet, core: CoreChangeSet) -> (SqlitePersister, tempfile::TempDir) {
+    let (persister, dir, path) = common::fresh_persister();
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 0,
+                }),
+                account_registrations: wallet
+                    .accounts
+                    .all_accounts()
+                    .into_iter()
+                    .map(|account| AccountRegistrationEntry {
+                        account_type: account.account_type,
+                        account_xpub: account.account_xpub,
+                    })
+                    .collect(),
+                core: Some(core),
+                ..Default::default()
+            },
+        )
+        .expect("the store accepts what the live checker recorded");
+    drop(persister);
+    let config = SqlitePersisterConfig::new(path)
+        .with_load_policy(platform_wallet_storage::LoadPolicy::Strict);
+    (SqlitePersister::open(config).unwrap(), dir)
+}
+
+fn spend_of(previous_output: OutPoint, output: Vec<TxOut>) -> Transaction {
+    Transaction {
+        version: 1,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output,
+            ..Default::default()
+        }],
+        output,
+        special_transaction_payload: None,
+    }
+}
+
+#[tokio::test]
+async fn should_load_wallet_holding_mempool_receipt_with_overflowing_foreign_output() {
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    // Unminable, but nothing rejects it on the way in: only the owned output is accounted.
+    let receipt = spend_of(
+        OutPoint::new(Txid::from_byte_array([81; 32]), 0),
+        vec![
+            TxOut {
+                value: 5_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            TxOut {
+                value: i64::MAX as u64,
+                script_pubkey: foreign_address(82).script_pubkey(),
+            },
+        ],
+    );
+    let records = info
+        .check_core_transaction(
+            &receipt,
+            TransactionContext::Mempool,
+            &mut wallet,
+            true,
+            true,
+        )
+        .await
+        .new_records;
+    assert_eq!(records.len(), 1, "the live checker records the receipt");
+    let new_utxos = info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .values()
+        .cloned()
+        .collect();
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos,
+            ..Default::default()
+        },
+    );
+
+    let mut state = persister
+        .load()
+        .expect("an unminable mempool receipt must not fail a strict load");
+
+    let info = state.wallets.remove(&wallet.wallet_id).unwrap().wallet_info;
+    let coins = &info.accounts.standard_bip44_accounts[&0].utxos;
+    assert_eq!(
+        coins.keys().copied().collect::<Vec<_>>(),
+        vec![OutPoint::new(receipt.txid(), 0)],
+        "the owned receipt survives the restart"
+    );
+    assert_eq!(info.balance.total(), 5_000);
+}
+
+#[tokio::test]
+async fn should_keep_reservation_of_forged_mempool_spend_with_overflowing_foreign_output() {
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let funding = spend_of(
+        OutPoint::new(Txid::from_byte_array([83; 32]), 0),
+        vec![TxOut {
+            value: 100_000,
+            script_pubkey: address.script_pubkey(),
+        }],
+    );
+    let mut records = info
+        .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+        .await
+        .new_records;
+    let coin =
+        info.accounts.standard_bip44_accounts[&0].utxos[&OutPoint::new(funding.txid(), 0)].clone();
+    // Mempool signatures are not verified, so a peer can name a wallet coin as an input.
+    let forged = spend_of(
+        coin.outpoint,
+        vec![
+            TxOut {
+                value: i64::MAX as u64,
+                script_pubkey: foreign_address(84).script_pubkey(),
+            },
+            TxOut {
+                value: 1_000,
+                script_pubkey: address.script_pubkey(),
+            },
+        ],
+    );
+    records.extend(
+        info.check_core_transaction(
+            &forged,
+            TransactionContext::Mempool,
+            &mut wallet,
+            true,
+            true,
+        )
+        .await
+        .new_records,
+    );
+    assert_eq!(
+        records.len(),
+        2,
+        "the live checker records the forged spend"
+    );
+    let change = OutPoint::new(forged.txid(), 1);
+    let new_utxos = [
+        coin.clone(),
+        info.accounts.standard_bip44_accounts[&0].utxos[&change].clone(),
+    ]
+    .into();
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos,
+            spent_utxos: vec![coin.clone()],
+            ..Default::default()
+        },
+    );
+
+    let mut state = persister
+        .load()
+        .expect("an unminable mempool spend must not fail a strict load");
+
+    let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+    loaded
+        .wallet_info
+        .check_core_transaction(&funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    let coins = &loaded.wallet_info.accounts.standard_bip44_accounts[&0].utxos;
+    assert_eq!(
+        coins.keys().copied().collect::<Vec<_>>(),
+        vec![change],
+        "the reserved coin stays out of the spendable set through funding redelivery"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
 }
 
 #[tokio::test]

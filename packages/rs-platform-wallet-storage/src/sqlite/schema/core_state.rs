@@ -166,7 +166,7 @@ pub fn apply(
                 }
                 None => false,
             };
-            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, spent)?;
+            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, spent, None)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -183,20 +183,36 @@ pub fn apply(
             "SELECT 1 FROM core_utxos \
              WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
         )?;
+        // A reservation created here names the record that made it, so a
+        // conflict removing that record can release the coin. Only the unspent
+        // -> spent transition is attributed: an existing claim, known or not, stands.
+        let mut spenders: HashMap<OutPoint, Txid> = HashMap::new();
+        for record in &cs.records {
+            for input in &record.transaction.input {
+                spenders.entry(input.previous_output).or_insert(record.txid);
+            }
+        }
         let mut mark_spent_stmt = tx.prepare_cached(
-            "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
+            "UPDATE core_utxos SET spent = 1, \
+                 spent_in_txid = CASE WHEN spent = 0 THEN ?3 ELSE spent_in_txid END \
+             WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint)?;
+            let spender = spenders.get(&utxo.outpoint);
             let materialised: bool = materialised_stmt
                 .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(true))
                 .optional()?
                 .unwrap_or(false);
             if materialised {
-                mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
+                mark_spent_stmt.execute(params![
+                    wallet_id.as_slice(),
+                    &op[..],
+                    spender.map(AsRef::<[u8]>::as_ref)
+                ])?;
             } else {
-                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true, spender)?;
             }
         }
     }
@@ -852,8 +868,8 @@ fn apply_sweep(
 }
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
-        (wallet_id, outpoint, value, script, spent) \
-     VALUES (?1, ?2, ?3, ?4, ?5) \
+        (wallet_id, outpoint, value, script, spent, spent_in_txid) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
@@ -867,6 +883,8 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
             ELSE NULL END";
 
 /// Upsert one `core_utxos` row; `spent` marks spent-only synthetic rows.
+/// `spender` is the claimant of a freshly inserted row only: an existing row
+/// keeps the claim it already has.
 ///
 /// # Errors
 ///
@@ -879,6 +897,7 @@ fn execute_upsert_utxo(
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
+    spender: Option<&Txid>,
 ) -> Result<(), WalletStorageError> {
     if utxo.txout.script_pubkey.as_bytes().is_empty() {
         return Err(WalletStorageError::EmptyUtxoScript {
@@ -892,6 +911,7 @@ fn execute_upsert_utxo(
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         spent,
+        spender.map(AsRef::<[u8]>::as_ref),
     ])?;
     Ok(())
 }
@@ -970,7 +990,7 @@ pub(crate) fn load_spent_claims(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
     )?;
@@ -3048,6 +3068,157 @@ mod tests {
             .query_row("SELECT spent FROM core_utxos", [], |row| row.get(0))
             .unwrap();
         assert!(spent, "the existing row must be marked spent");
+    }
+
+    fn wallet_db(wallet_id: &[u8; 32]) -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        conn
+    }
+
+    /// A mempool record spending `coins`, as the bridge stores it beside `spent_utxos`.
+    fn mempool_spend(coins: &[&Utxo]) -> TransactionRecord {
+        let mut record =
+            transaction_record(Txid::from_byte_array([0; 32]), TransactionContext::Mempool);
+        record.transaction.input = coins
+            .iter()
+            .map(|coin| dashcore::TxIn {
+                previous_output: coin.outpoint,
+                ..Default::default()
+            })
+            .collect();
+        record.txid = record.transaction.txid();
+        record.net_amount = 0;
+        record
+    }
+
+    fn spend_claim(
+        conn: &Connection,
+        wallet_id: &[u8; 32],
+        outpoint: &OutPoint,
+    ) -> (bool, Option<Vec<u8>>) {
+        conn.query_row(
+            "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![&wallet_id[..], blob::encode_outpoint(outpoint).unwrap()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn should_record_spender_for_new_mempool_reservation() {
+        let wallet_id = [0x61; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let stored = sample_utxo(Txid::from_byte_array([0x62; 32]), 10, true);
+        // No funding row yet: the spend synthesises its own spent row.
+        let unseen = sample_utxo(Txid::from_byte_array([0x63; 32]), 10, true);
+        let spender = mempool_spend(&[&stored, &unseen]);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![stored.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![spender.clone()],
+                spent_utxos: vec![stored.clone(), unseen.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let claimant = Some(AsRef::<[u8]>::as_ref(&spender.txid).to_vec());
+        for coin in [&stored, &unseen] {
+            assert_eq!(
+                spend_claim(&tx, &wallet_id, &coin.outpoint),
+                (true, claimant.clone()),
+                "a new mempool reservation must name the transaction that made it"
+            );
+        }
+    }
+
+    #[test]
+    fn should_keep_existing_claims_when_mempool_spend_is_redelivered() {
+        let wallet_id = [0x64; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let unknown = sample_utxo(Txid::from_byte_array([0x65; 32]), 10, true);
+        let foreign = sample_utxo(Txid::from_byte_array([0x66; 32]), 10, true);
+        let held = sample_utxo(Txid::from_byte_array([0x67; 32]), 10, true);
+        let other_spender = [0x68u8; 32];
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![unknown.clone(), foreign.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.execute(
+            "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        tx.execute(
+            "UPDATE core_utxos SET spent_in_txid = ?3 WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![
+                &wallet_id[..],
+                blob::encode_outpoint(&foreign.outpoint).unwrap(),
+                &other_spender[..]
+            ],
+        )
+        .unwrap();
+        // A sweep hold for an input whose funding this store never saw.
+        tx.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, is_sweep_placeholder, spent, spent_in_txid) \
+             VALUES (?1, ?2, 0, X'', 1, 1, ?3)",
+            params![
+                &wallet_id[..],
+                blob::encode_outpoint(&held.outpoint).unwrap(),
+                &other_spender[..]
+            ],
+        )
+        .unwrap();
+        let spender = mempool_spend(&[&unknown, &foreign, &held]);
+
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![spender],
+                spent_utxos: vec![unknown.clone(), foreign.clone(), held.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            spend_claim(&tx, &wallet_id, &unknown.outpoint),
+            (true, None),
+            "an unknown durable claim must not be adopted by a later mempool spender"
+        );
+        for coin in [&foreign, &held] {
+            assert_eq!(
+                spend_claim(&tx, &wallet_id, &coin.outpoint),
+                (true, Some(other_spender.to_vec())),
+                "another spender's claim must stand"
+            );
+        }
     }
 
     #[test]
