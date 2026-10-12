@@ -2514,8 +2514,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     typed array in an index and meta-schemas v0 to v2 have none.
 ///
 /// 93. **Fee estimates size sum and count trees, and sum items, as they are
-///     stored**: grovedb's `GROVE_V4` (`average_case_propagated_aggregate_kind`
-///     1) estimates a sum, big sum, count or count-sum tree that a batch
+///     stored**: grovedb's `GROVE_V4`
+///     (`average_case_propagated_aggregate_kind` 1) estimates a sum, big sum,
+///     count or count-sum tree that a batch
 ///     creates together with its contents as that tree rather than as a plain
 ///     tree. The `apply: false` estimate of a document insert under a
 ///     countable or summable index (which creates the value tree and its `0`
@@ -2528,9 +2529,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     inserted `SumItem` or `ItemWithSumItem`, and a replaced
 ///     `ItemWithSumItem`, with its sum at the fixed 9-byte width the apply
 ///     charges, up to 8 bytes more per item, in both estimators
-///     (`average_case_sum_item_cost_size` 1, `worst_case_sum_item_cost_size`
-///     1). Applied fees are unchanged. Inert before this version: `GROVE_V1`
-///     to `GROVE_V3` keep the old sizing.
+///     (`average_case_sum_item_cost_size` 1,
+///     `worst_case_sum_item_cost_size` 1). Applied fees are unchanged. Inert
+///     before this version: `GROVE_V1` to `GROVE_V3` keep the old sizing.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
