@@ -283,14 +283,7 @@ The two spellings are the same property: a value is validated, indexed and store
 "records": {
   "type": "object",
   "properties": {
-    "identity": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    }
+    "identity": { "type": "identifier", "position": 0 }
   },
   "minProperties": 1,
   "additionalProperties": false,
