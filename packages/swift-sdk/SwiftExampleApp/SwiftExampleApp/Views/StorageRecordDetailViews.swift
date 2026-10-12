@@ -2252,6 +2252,61 @@ struct PendingInputStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentSpentClaim
+
+struct SpentClaimStorageDetailView: View {
+    let record: PersistentSpentClaim
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Outpoint", value: outpointHex(record.outpoint))
+                // Display order matches the canonical block-explorer
+                // form (byte-reversed from on-disk wire order) — same
+                // convention `PersistentTransaction.txidHex` uses.
+                FieldRow(
+                    label: "Claimant TXID",
+                    value: record.claimant.map { claimant in
+                        claimant.reversed().map { String(format: "%02x", $0) }.joined()
+                    } ?? "— (unknown)"
+                )
+                FieldRow(label: "Wallet ID", value: record.walletId.isEmpty ? "—" : hexString(record.walletId))
+            }
+            Section {
+                Text(
+                    "A spent claim is the Core wallet engine's own record "
+                    + "that this outpoint is spent, stored independently of "
+                    + "transaction history and PersistentTxo state. The "
+                    + "claimant is the spending transaction; it is unknown "
+                    + "when the engine could not name one. Claims are "
+                    + "restored into the engine on wallet load."
+                )
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle("Spent Claim")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// 36-byte outpoint as `<txid hex (display order)>:<vout>`.
+    /// Duplicates the helper in the list view rather than threading
+    /// it through a shared file — the function is small and the two
+    /// surfaces don't otherwise collaborate.
+    private func outpointHex(_ outpoint: Data) -> String {
+        guard outpoint.count == 36 else {
+            return outpoint.map { String(format: "%02x", $0) }.joined()
+        }
+        let txid = outpoint.prefix(32)
+        let voutBytes = outpoint.suffix(4)
+        let vout = voutBytes.withUnsafeBytes { raw in
+            raw.load(as: UInt32.self).littleEndian
+        }
+        let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(txidHex):\(vout)"
+    }
+}
+
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageDetailView: View {

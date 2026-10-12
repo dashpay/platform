@@ -15,8 +15,8 @@ pub fn upsert(
 ) -> Result<(), WalletStorageError> {
     let network = network_to_str(entry.network);
     let mut stmt = tx.prepare_cached(
-        "INSERT INTO wallets (wallet_id, network, birth_height) \
-         VALUES (?1, ?2, ?3) \
+        "INSERT INTO wallets (wallet_id, network, birth_height, spent_claims_complete) \
+         VALUES (?1, ?2, ?3, 1) \
          ON CONFLICT(wallet_id) DO UPDATE SET network = excluded.network, \
                                               birth_height = excluded.birth_height",
     )?;
@@ -29,8 +29,8 @@ pub fn upsert(
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), WalletStorageError> {
     conn.execute(
-        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
-         VALUES (?1, ?2, ?3)",
+        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height, spent_claims_complete) \
+         VALUES (?1, ?2, ?3, 1)",
         params![wallet_id.as_slice(), "testnet", 0i64],
     )?;
     Ok(())
@@ -49,19 +49,20 @@ pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> 
     Ok(out)
 }
 
-/// Lookup `(network, birth_height)` for a wallet, if known.
+/// Lookup `(network, birth_height, spent_claims_complete)` for a known wallet.
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<Option<(String, u32)>, WalletStorageError> {
-    let mut stmt =
-        conn.prepare("SELECT network, birth_height FROM wallets WHERE wallet_id = ?1")?;
+) -> Result<Option<(String, u32, bool)>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT network, birth_height, spent_claims_complete FROM wallets WHERE wallet_id = ?1",
+    )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     if let Some(row) = rows.next()? {
         let network: String = row.get(0)?;
         let height: i64 = row.get(1)?;
         let height = crate::sqlite::util::safe_cast::i64_to_u32("wallets.birth_height", height)?;
-        Ok(Some((network, height)))
+        Ok(Some((network, height, row.get(2)?)))
     } else {
         Ok(None)
     }

@@ -1842,6 +1842,7 @@ mod tests {
                     identity_manager: crate::changeset::IdentityManagerStartState::default(),
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    unconfirmed_outgoing_inputs: Vec::new(),
                 },
             );
             Ok(crate::changeset::ClientStartState {

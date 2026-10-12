@@ -77,8 +77,8 @@ pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
     use rusqlite::params;
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
-         VALUES (?1, 'testnet', 0)",
+        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height, spent_claims_complete) \
+         VALUES (?1, 'testnet', 0, 1)",
         params![wallet_id.as_slice()],
     )
     .expect("ensure wallets");

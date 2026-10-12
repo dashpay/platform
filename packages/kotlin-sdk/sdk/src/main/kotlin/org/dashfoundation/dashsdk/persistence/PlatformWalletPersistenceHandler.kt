@@ -32,6 +32,7 @@ import org.dashfoundation.dashsdk.ffi.UtxoRestoreData
 import org.dashfoundation.dashsdk.ffi.ShieldedOutgoingNoteData
 import org.dashfoundation.dashsdk.ffi.ShieldedSyncStateData
 import org.dashfoundation.dashsdk.ffi.ShieldedViewingKeyData
+import org.dashfoundation.dashsdk.ffi.SpentClaimRestoreData
 import org.dashfoundation.dashsdk.ffi.TrackedAssetLockRestoreData
 import org.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData
 import org.dashfoundation.dashsdk.ffi.WalletRestoreData
@@ -59,7 +60,10 @@ import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionAccountInvolvementEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
+import org.dashfoundation.dashsdk.persistence.entities.SpentClaimEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.Executors
 
 /**
@@ -567,7 +571,9 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         stage(walletId) { db ->
             val existing = db.walletDao().getByWalletId(walletId)
-            val row = (existing ?: WalletEntity(walletId = walletId)).copy(
+            // Only register_wallet emits metadata; an absent row is a new,
+            // empty registration. Existing markers are never upgraded here.
+            val row = (existing ?: WalletEntity(walletId = walletId, spentClaimsComplete = true)).copy(
                 networkRaw = network,
                 walletGroupId = if (walletGroupId.isNotEmpty()) walletGroupId
                 else existing?.walletGroupId ?: ByteArray(0),
@@ -575,6 +581,41 @@ class PlatformWalletPersistenceHandler(
                 lastUpdated = now(),
             )
             db.walletDao().upsert(row)
+        }
+        0
+    }
+
+    override fun onPersistSpentClaims(
+        walletId: ByteArray,
+        claimedOutpoints: ByteArray,
+        hasClaimant: ByteArray,
+        claimants: ByteArray,
+        releasedOutpoints: ByteArray,
+    ): Int = guarded {
+        check(openRound(walletId) != null) { "Core spent claims require an atomic changeset round" }
+        require(walletId.size == 32 && claimedOutpoints.size % 36 == 0 && releasedOutpoints.size % 36 == 0)
+        val count = claimedOutpoints.size / 36
+        require(hasClaimant.size == count && claimants.size.toLong() == count.toLong() * 32)
+        require(hasClaimant.all { it == 0.toByte() || it == 1.toByte() })
+        val wallet = walletId.copyOf()
+        val claims = (0 until count).map { i ->
+            val offset = i * 36
+            SpentClaimEntity(
+                walletId = wallet,
+                txid = claimedOutpoints.copyOfRange(offset, offset + 32),
+                vout = ByteBuffer.wrap(claimedOutpoints, offset + 32, 4)
+                    .order(ByteOrder.LITTLE_ENDIAN).int,
+                claimant = if (hasClaimant[i] == 0.toByte()) null else claimants.copyOfRange(i * 32, (i + 1) * 32),
+            )
+        }
+        val releases = (releasedOutpoints.indices step 36).map { offset ->
+            releasedOutpoints.copyOfRange(offset, offset + 32) to
+                ByteBuffer.wrap(releasedOutpoints, offset + 32, 4)
+                    .order(ByteOrder.LITTLE_ENDIAN).int
+        }
+        stage(wallet) { db ->
+            for (claim in claims) db.spentClaimDao().upsert(claim)
+            for ((txid, vout) in releases) db.spentClaimDao().release(wallet, txid, vout)
         }
         0
     }
@@ -2594,6 +2635,7 @@ class PlatformWalletPersistenceHandler(
             val wallets = network
                 ?.let { database.walletDao().getByNetwork(it.ffiValue) }
                 ?: database.walletDao().observeAll().first()
+            val claimsByWallet = database.spentClaimDao().getAll().groupBy { it.walletId.toHex() }
             val out = ArrayList<WalletRestoreData>()
             for (w in wallets) {
                 val accounts = database.accountDao().observeByWallet(w.walletId).first()
@@ -2605,6 +2647,12 @@ class PlatformWalletPersistenceHandler(
                         ),
                     )
                 if (accounts.isEmpty()) continue
+                check(w.spentClaimsComplete) {
+                    "Core spent-claim snapshot is incomplete for wallet ${w.walletId.toHex()}; a full rescan is required"
+                }
+                val spentClaims = claimsByWallet[w.walletId.toHex()].orEmpty().map {
+                    SpentClaimRestoreData(it.txid, it.vout, it.claimant)
+                }.toTypedArray()
                 val specs = accounts.map { a ->
                     AccountSpecData(
                         typeTag = a.accountType.toByte(),
@@ -2694,6 +2742,7 @@ class PlatformWalletPersistenceHandler(
                         unresolvedAssetLockTxRecords = unresolvedAssetLockTxRecords,
                         providerSpecialTxs = providerSpecialTxs,
                         lastAppliedChainLockBytes = lastAppliedChainLockBytes,
+                        spentClaims = spentClaims,
                     ),
                 )
             }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
+import org.dashfoundation.dashsdk.persistence.entities.SpentClaimEntity
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
@@ -80,6 +81,9 @@ class WalletManagerRoundTripTest {
             val walletRow = db.walletDao().getByWalletId(walletId)
             assertNotNull("wallet row persisted", walletRow)
             assertEquals(Network.TESTNET.ffiValue, walletRow!!.networkRaw)
+            assertTrue("fresh registration certifies empty authoritative claims", walletRow.spentClaimsComplete)
+            db.spentClaimDao().upsert(SpentClaimEntity(walletId, ByteArray(32) { 0x41 }, -1, null))
+            db.spentClaimDao().upsert(SpentClaimEntity(walletId, ByteArray(32) { 0x42 }, 0, ByteArray(32) { 0x43 }))
 
             val accounts = db.accountDao().observeByWallet(walletId).first()
             assertTrue("at least one account persisted", accounts.isNotEmpty())
@@ -96,6 +100,7 @@ class WalletManagerRoundTripTest {
         PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { reloaded ->
             val restored = reloaded.loadPersistedWallets()
             assertTrue("at least one wallet restored", restored.isNotEmpty())
+            assertEquals("both known and unknown claimant rows survive JNI restore", 2, db.spentClaimDao().getAll().size)
             val match = reloaded.wallet(forWalletId = walletId)
             assertNotNull("the created wallet is restored by id", match)
             assertTrue(walletId.contentEquals(match!!.walletId))

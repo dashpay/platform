@@ -117,6 +117,7 @@ async fn should_preserve_a_payment_persisted_while_a_sweep_snapshot_is_in_flight
         }
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         tx.send(WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             txids: vec![loser],
             superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),

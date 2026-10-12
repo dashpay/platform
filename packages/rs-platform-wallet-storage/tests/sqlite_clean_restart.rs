@@ -98,6 +98,18 @@ async fn persist_events(
     .await
     .unwrap();
     assert!(!fault.load(Ordering::Relaxed));
+    let guard = manager.read().await;
+    let conn = persister.lock_conn_for_test();
+    for (wallet_id, info) in guard.get_all_wallet_infos() {
+        let claims =
+            platform_wallet_storage::sqlite::schema::spent_claims::load(&conn, wallet_id).unwrap();
+        assert_eq!(
+            claims
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>(),
+            info.core_wallet.spent_outpoint_claims()
+        );
+    }
 }
 
 fn assert_coins(info: &ManagedWalletInfo, funding: &Transaction, phase: &str) {
@@ -320,4 +332,48 @@ async fn should_preserve_recordless_winner_after_clean_event_persistence_and_res
 #[tokio::test]
 async fn should_preserve_finalized_recordless_winner_after_clean_event_persistence_and_restart() {
     clean_restart(true, true, false).await;
+}
+
+#[test]
+fn should_reject_pre_claim_store_after_metadata_and_partial_delta() {
+    use platform_wallet::changeset::{CoreChangeSet, SpentClaimBatch};
+    use platform_wallet_storage::WalletStorageError;
+    let (persister, _dir, _) = common::fresh_persister();
+    let wallet_id = [8; 32];
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO wallets(wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            [wallet_id.as_slice()],
+        )
+        .unwrap();
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 0,
+                }),
+                core: Some(CoreChangeSet {
+                    spent_claim_batches: vec![SpentClaimBatch {
+                        claimed: vec![(OutPoint::new(Txid::from_byte_array([9; 32]), 0), None)],
+                        released: vec![],
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let platform_wallet::changeset::PersistenceError::Backend { source, .. } =
+        persister.load().unwrap_err()
+    else {
+        panic!("expected typed backend error")
+    };
+    assert!(matches!(
+        source.downcast_ref::<WalletStorageError>(),
+        Some(WalletStorageError::SpentClaimsUnavailable { .. })
+    ));
 }

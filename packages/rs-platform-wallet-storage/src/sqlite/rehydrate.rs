@@ -4,6 +4,7 @@
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
+use platform_wallet::wallet::persisted_core::restore_spent_claims;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -26,6 +27,7 @@ use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::wallet::persisted_core::{restore_core_wallet, PersistedCoreState};
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -297,21 +299,16 @@ pub fn apply_persisted_core_state(
     // pool-extension diagnostics without re-borrowing `wallet_info`.
     let wallet_id = wallet_info.wallet_id;
 
-    // Sync watermarks first so `update_balance`'s maturity check sees
-    // the restored tip.
-    if let Some(h) = core.last_processed_height {
-        wallet_info.metadata.last_processed_height =
-            wallet_info.metadata.last_processed_height.max(h);
-    }
-    if let Some(h) = core.synced_height {
-        wallet_info.metadata.synced_height = wallet_info.metadata.synced_height.max(h);
-    }
-
-    // Restore the highest applied chainlock when the persister carries it
-    // (FFI path) so the asset-lock proof CL-from-metadata fallback fires at launch.
-    if let Some(cl) = &core.last_applied_chain_lock {
-        wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
-    }
+    let mut restored = PersistedCoreState {
+        synced_height: core
+            .synced_height
+            .map(|h| wallet_info.metadata.synced_height.max(h)),
+        last_processed_height: core
+            .last_processed_height
+            .map(|h| wallet_info.metadata.last_processed_height.max(h)),
+        chain_lock: core.last_applied_chain_lock.clone(),
+        ..Default::default()
+    };
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
@@ -357,7 +354,10 @@ pub fn apply_persisted_core_state(
                 utxo_accounts.get(&utxo.outpoint),
                 &mut orphaned_owners,
             );
-            funding[target].utxos.insert(utxo.outpoint, (*utxo).clone());
+            restored.utxos.push((
+                funding[target].managed_account_type().to_account_type(),
+                (*utxo).clone(),
+            ));
             per_account_addrs[target].push(utxo.address.clone());
         }
 
@@ -412,6 +412,9 @@ pub fn apply_persisted_core_state(
         }
     }
 
+    restore_core_wallet(wallet_info, restored)
+        .map_err(|_| WalletStorageError::MissingAccount { wallet_id })?;
+
     // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
     // UTXOs it finds, so running it earlier would record the txid and mark
     // nothing. Without it, instant-locked funds come back as merely confirmed
@@ -439,6 +442,7 @@ pub(crate) fn restore_recorded_transactions(
     wallet: &mut Wallet,
     records: Vec<TransactionRecord>,
     instant_locks: &BTreeMap<Txid, InstantLock>,
+    spent_claims: &[(OutPoint, Option<Txid>)],
 ) -> Result<Vec<SweepBatch>, WalletStorageError> {
     validate_replay_amounts(wallet_info, &records)?;
     // Where the load projection parked each unspent outpoint; its keys are
@@ -453,6 +457,7 @@ pub(crate) fn restore_recorded_transactions(
         })
         .collect();
     if records.is_empty() {
+        restore_spent_claims(wallet_info, spent_claims)?;
         return Ok(Vec::new());
     }
     // TODO(bound-load-history-replay): every stored record is replayed on each
@@ -485,8 +490,10 @@ pub(crate) fn restore_recorded_transactions(
     }
 
     // Kept only to undo a replay the checker suspended part-way through.
-    let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
-    let mut sweeps = plan_replay_sweeps(wallet_info, &replay);
+    let (mut info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
+    restore_spent_claims(&mut info_before, spent_claims)?;
+    let (mut sweeps, planned_claims) = plan_replay_sweeps(wallet_info, &replay, spent_claims);
+    restore_spent_claims(wallet_info, &planned_claims.into_iter().collect::<Vec<_>>())?;
     let removed: HashSet<_> = sweeps
         .iter()
         .flat_map(|sweep| sweep.txids.iter().copied())
@@ -520,11 +527,10 @@ pub(crate) fn restore_recorded_transactions(
     })
     .is_some();
     if !completed {
-        // Degrade to the pre-replay projection: persisted spends stay
-        // excluded, only redelivery guards are missing until the next sync.
+        // Retain the pre-replay projection and authoritative claims on suspension.
         tracing::error!(
             wallet_id = %hex::encode(wallet_info.wallet_id),
-            "transaction checker suspended during load replay; restored spend guards skipped"
+            "transaction checker suspended during load replay; restored pre-replay state and claims"
         );
         *wallet_info = info_before;
         *wallet = wallet_before;
@@ -680,8 +686,10 @@ fn replay_sweep(
 fn plan_replay_sweeps(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
-) -> Vec<SweepBatch> {
+    spent_claims: &[(OutPoint, Option<Txid>)],
+) -> (Vec<SweepBatch>, BTreeMap<OutPoint, Option<Txid>>) {
     let mut conflicts = wallet_info.clone();
+    conflicts.restore_spent_outpoints(spent_claims);
     // A scratch account lets the upstream sweep see descendants across account boundaries.
     let Some(account) = conflicts
         .accounts
@@ -689,7 +697,7 @@ fn plan_replay_sweeps(
         .into_iter()
         .next()
     else {
-        return Vec::new();
+        return (Vec::new(), conflicts.spent_outpoint_claims());
     };
     account
         .transactions_mut()
@@ -739,7 +747,7 @@ fn plan_replay_sweeps(
             .released_outpoints
             .retain(|outpoint| !removed.contains(&outpoint.txid) && !claimed.contains(outpoint));
     }
-    sweeps
+    (sweeps, conflicts.spent_outpoint_claims())
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -749,8 +757,8 @@ fn plan_replay_sweeps(
 /// rebuilds no spent mark; a redelivered funding transaction would then
 /// re-credit the coin once finality prunes the observed spend. The stored
 /// `input_details` are the evidence: wallet-owned by construction and repaired
-/// from persisted outputs. Staged coins are never in `placed`, so the
-/// retention pass drops whatever replay leaves behind.
+/// from persisted outputs. Guarded inputs are staged even when funding history
+/// exists, because guard restoration prevents that funding from crediting them.
 fn stage_recorded_spent_inputs(
     wallet_info: &mut ManagedWalletInfo,
     records: &[TransactionRecord],
@@ -759,6 +767,7 @@ fn stage_recorded_spent_inputs(
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
     let replayed: HashSet<Txid> = records.iter().map(|record| record.txid).collect();
+    let guarded = wallet_info.spent_outpoint_claims();
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
     for record in records {
         for detail in &record.input_details {
@@ -766,7 +775,9 @@ fn stage_recorded_spent_inputs(
                 continue;
             };
             let outpoint = input.previous_output;
-            if placed.contains_key(&outpoint) || replayed.contains(&outpoint.txid) {
+            if (placed.contains_key(&outpoint) || replayed.contains(&outpoint.txid))
+                && !guarded.contains_key(&outpoint)
+            {
                 continue;
             }
             let Some(account) = accounts
@@ -3786,8 +3797,14 @@ mod tests {
                     },
                 );
             }
-            restore_recorded_transactions(&mut restored, &mut wallet, records, &Default::default())
-                .unwrap();
+            restore_recorded_transactions(
+                &mut restored,
+                &mut wallet,
+                records,
+                &Default::default(),
+                &[],
+            )
+            .unwrap();
 
             let coins = &restored.accounts.standard_bip44_accounts[&0].utxos;
             assert!(!coins.contains_key(&spent), "{case}");
@@ -3882,7 +3899,7 @@ mod tests {
         // Alone, the locked spend comes back InstantSend.
         let mut alone = ManagedWalletInfo::from_wallet(&wallet, 0);
         let pair = vec![record_of(funding.txid()), record_of(winner.txid())];
-        restore_recorded_transactions(&mut alone, &mut wallet, pair, &locks).unwrap();
+        restore_recorded_transactions(&mut alone, &mut wallet, pair, &locks, &[]).unwrap();
         assert!(
             alone.accounts.standard_bip44_accounts[&0]
                 .transactions()
@@ -3893,7 +3910,7 @@ mod tests {
 
         // Replayed after a conflicting spend, its lock sweeps that spend.
         let mut contested = ManagedWalletInfo::from_wallet(&wallet, 0);
-        restore_recorded_transactions(&mut contested, &mut wallet, records.clone(), &locks)
+        restore_recorded_transactions(&mut contested, &mut wallet, records.clone(), &locks, &[])
             .unwrap();
         assert!(
             !contested.accounts.standard_bip44_accounts[&0]
@@ -4041,7 +4058,8 @@ mod tests {
                     );
                 }
 
-                restore_recorded_transactions(&mut restored, &mut wallet, records, &locks).unwrap();
+                restore_recorded_transactions(&mut restored, &mut wallet, records, &locks, &[])
+                    .unwrap();
 
                 let account = &restored.accounts.standard_bip44_accounts[&0];
                 let keep_competitor = matches!(settlement, "block" | "persisted_chainlock_below")
@@ -4372,7 +4390,8 @@ mod tests {
         for (case, records, key, lock) in cases {
             let locks: BTreeMap<Txid, InstantLock> = [(key, lock)].into_iter().collect();
             let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
-            restore_recorded_transactions(&mut restored, &mut wallet, records, &locks).unwrap();
+            restore_recorded_transactions(&mut restored, &mut wallet, records, &locks, &[])
+                .unwrap();
             let transactions = restored.accounts.standard_bip44_accounts[&0].transactions();
             assert!(
                 !transactions

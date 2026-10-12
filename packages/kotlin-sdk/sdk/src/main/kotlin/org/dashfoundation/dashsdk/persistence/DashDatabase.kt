@@ -19,6 +19,7 @@ import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
+import org.dashfoundation.dashsdk.persistence.dao.SpentClaimDao
 import org.dashfoundation.dashsdk.persistence.dao.ShieldedDao
 import org.dashfoundation.dashsdk.persistence.dao.StorageCountsDao
 import org.dashfoundation.dashsdk.persistence.dao.TokenDao
@@ -58,6 +59,7 @@ import org.dashfoundation.dashsdk.persistence.entities.TokenHistoryEventEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionAccountInvolvementEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
+import org.dashfoundation.dashsdk.persistence.entities.SpentClaimEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEntity
 
@@ -161,12 +163,16 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * contract's `oncePerIdentityDistribution` block as JSON, so the claim
  * screen can offer the third distribution kind. NULL for every pre-existing
  * row; the next contract materialization fills it in.
+ *
+ * Version 15 adds authoritative Core spent claims and a completeness marker;
+ * legacy wallet rows remain incomplete until rebuilt from authoritative state.
  */
 @Database(
-    version = 14,
+    version = 15,
     exportSchema = true,
     entities = [
         WalletEntity::class,
+        SpentClaimEntity::class,
         AccountEntity::class,
         TransactionEntity::class,
         TransactionAccountInvolvementEntity::class,
@@ -205,6 +211,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
 @TypeConverters(Converters::class)
 abstract class DashDatabase : RoomDatabase() {
 
+    abstract fun spentClaimDao(): SpentClaimDao
     abstract fun walletDao(): WalletDao
     abstract fun accountDao(): AccountDao
     abstract fun transactionDao(): TransactionDao
@@ -679,6 +686,19 @@ abstract class DashDatabase : RoomDatabase() {
             }
         }
 
+        /** Authoritative claims cannot be reconstructed from legacy UI spent/sweep stamps. */
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `spentClaimsComplete` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `core_spent_claims` (" +
+                        "`walletId` BLOB NOT NULL, `txid` BLOB NOT NULL, `vout` INTEGER NOT NULL, " +
+                        "`claimant` BLOB, PRIMARY KEY(`walletId`, `txid`, `vout`), " +
+                        "FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+            }
+        }
+
         /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
@@ -708,6 +728,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
+                    MIGRATION_14_15,
                 )
                 .build()
 

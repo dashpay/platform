@@ -84,6 +84,7 @@ public enum DashModelContainer {
             PersistentTransaction.self,
             PersistentTxo.self,
             PersistentPendingInput.self,
+            PersistentSpentClaim.self,
             PersistentWalletManagerMetadata.self,
             PersistentShieldedNote.self,
             PersistentShieldedOutgoingNote.self,
@@ -381,7 +382,7 @@ public enum DashSchemaV3: VersionedSchema {
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV3.models }
 }
 
-/// Live schema adds an optional accounting-availability marker; existing rows keep nil.
+/// Unreleased live schema includes wallet accounting availability and authoritative spend claims.
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

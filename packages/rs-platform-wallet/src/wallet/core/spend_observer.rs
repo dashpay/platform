@@ -264,6 +264,7 @@ mod tests {
 
     fn detected(record: TransactionRecord) -> WalletEvent {
         WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             record: Box::new(record),
             balance: WalletCoreBalance::default(),
@@ -274,6 +275,7 @@ mod tests {
 
     fn block_processed(inserted: Vec<TransactionRecord>) -> WalletEvent {
         WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             height: 1_000,
             chain_lock: None,

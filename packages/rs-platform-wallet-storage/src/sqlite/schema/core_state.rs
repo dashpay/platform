@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
-use dashcore::{hashes::Hash, OutPoint, Txid};
+use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
@@ -519,10 +519,22 @@ pub fn apply_replay_sweeps(
         .iter()
         .flat_map(|sweep| sweep.txids.iter().copied())
         .collect();
-    let candidates: HashSet<_> = sweeps
+    let mut candidates: HashSet<_> = sweeps
         .iter()
         .flat_map(|sweep| sweep.released_outpoints.iter().copied())
         .collect();
+    // Held inputs also need their history stamps preserved when no guard was released.
+    let mut inputs = tx.prepare("SELECT length(txid), txid, length(outpoint), outpoint FROM core_transaction_inputs WHERE wallet_id = ?1")?;
+    let mut rows = inputs.query(params![wallet_id.as_slice()])?;
+    while let Some(row) = rows.next()? {
+        blob::check_fixed_width(row.get(0)?, 32, "core_transaction_inputs.txid")?;
+        let txid: Vec<u8> = row.get(1)?;
+        if removed.contains(&Txid::from_slice(&txid)?) {
+            blob::check_size(row.get(2)?)?;
+            let outpoint: Vec<u8> = row.get(3)?;
+            candidates.insert(blob::decode_outpoint(&outpoint)?);
+        }
+    }
     let mut held = HashMap::new();
     for outpoint in candidates {
         let key = blob::encode_outpoint(&outpoint)?;
@@ -963,32 +975,6 @@ fn upsert_sync_state(
         ],
     )?;
     Ok(())
-}
-
-/// Durable spend guards include recordless claims and unmaterialized sweep placeholders.
-pub(crate) fn load_spent_claims(
-    conn: &Connection,
-    wallet_id: &WalletId,
-) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
-    let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
-         FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
-    )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
-    let mut outpoints = Vec::new();
-    while let Some(row) = rows.next()? {
-        blob::check_size(row.get(0)?)?;
-        let bytes: Vec<u8> = row.get(1)?;
-        let claimant = if let Some(length) = row.get::<_, Option<i64>>(2)? {
-            blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
-            let raw: Vec<u8> = row.get(3)?;
-            Some(Txid::from_slice(&raw)?)
-        } else {
-            None
-        };
-        outpoints.push((blob::decode_outpoint(&bytes)?, claimant));
-    }
-    Ok(outpoints)
 }
 
 /// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one wallet

@@ -44,6 +44,7 @@ use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identifier, Revision};
 
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+use key_wallet::wallet::managed_wallet_info::SpentOutpointChanges;
 
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 
@@ -59,12 +60,31 @@ use crate::wallet::identity::{
 // Core wallet changeset — projection of upstream `WalletEvent` data
 // ---------------------------------------------------------------------------
 
+/// One authoritative engine claim update; batches must be applied in emission order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SpentClaimBatch {
+    /// Claims to upsert, including sticky unknown claimants.
+    pub claimed: Vec<(OutPoint, Option<Txid>)>,
+    /// Claims to delete; distinct from sweep outputs eligible for re-credit.
+    pub released: Vec<OutPoint>,
+}
+
+impl From<&SpentOutpointChanges> for SpentClaimBatch {
+    fn from(changes: &SpentOutpointChanges) -> Self {
+        Self {
+            claimed: changes.claimed.clone(),
+            released: changes.released.clone(),
+        }
+    }
+}
+
 /// Platform-owned projection of the core-wallet deltas that upstream's
 /// `WalletEvent` bus delivers.
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
-/// emitted by `WalletManager`. Every field is additive except
-/// [`Self::sweeps`]. The merge implementation coalesces the record vecs
+/// emitted by `WalletManager`. Subtractive updates live in [`Self::sweeps`]
+/// and ordered [`Self::spent_claim_batches`]. The merge implementation coalesces the record vecs
 /// newest-wins (by txid for the wallet-level `records`, by
 /// `(txid, account)` for `account_records` — see
 /// [`fold_same_txid_records`]), uses monotonic-max for the height
@@ -87,6 +107,10 @@ use crate::wallet::identity::{
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
+    /// Ordered authoritative claim updates, independent of TXO/history sweep stamps.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub spent_claim_batches: Vec<SpentClaimBatch>,
+
     /// Transaction records produced by this batch — one WALLET-LEVEL
     /// record per txid.
     ///
@@ -662,6 +686,7 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
+        self.spent_claim_batches.extend(other.spent_claim_batches);
         // A record arriving after a sweep that removed the same transaction
         // reinstates it, and every persister writes records before replaying
         // sweeps — so without this the sweep would delete a row the wallet
@@ -856,7 +881,8 @@ impl Merge for CoreChangeSet {
     }
 
     fn is_empty(&self) -> bool {
-        self.records.is_empty()
+        self.spent_claim_batches.is_empty()
+            && self.records.is_empty()
             && self.account_records.is_empty()
             && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
@@ -2439,6 +2465,50 @@ mod serde_compat_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_preserve_spent_claim_batch_order_across_merge() {
+        use dashcore::hashes::Hash;
+
+        let outpoint = OutPoint::new(Txid::from_byte_array([1; 32]), 0);
+        let owner = Txid::from_byte_array([2; 32]);
+        let batches = vec![
+            SpentClaimBatch {
+                claimed: vec![(outpoint, Some(owner))],
+                released: vec![],
+            },
+            SpentClaimBatch {
+                claimed: vec![],
+                released: vec![outpoint],
+            },
+            SpentClaimBatch {
+                claimed: vec![(outpoint, None)],
+                released: vec![],
+            },
+            SpentClaimBatch {
+                claimed: vec![(outpoint, None)],
+                released: vec![],
+            },
+        ];
+        let mut merged = CoreChangeSet::default();
+        for batch in &batches {
+            let delta = CoreChangeSet {
+                spent_claim_batches: vec![batch.clone()],
+                ..Default::default()
+            };
+            assert!(!delta.is_empty());
+            merged.merge(delta);
+        }
+        assert_eq!(merged.spent_claim_batches, batches);
+        let mut mirror = BTreeMap::new();
+        for batch in merged.spent_claim_batches {
+            mirror.extend(batch.claimed);
+            for outpoint in batch.released {
+                mirror.remove(&outpoint);
+            }
+        }
+        assert_eq!(mirror, BTreeMap::from([(outpoint, None)]));
+    }
 
     fn identity_entry_with_contested(id: Identifier, labels: &[&str]) -> IdentityEntry {
         IdentityEntry {

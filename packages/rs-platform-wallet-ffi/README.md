@@ -15,6 +15,28 @@ This library provides C-compatible bindings for the Platform Wallet, enabling in
 - **Memory Safe**: Proper handle-based resource management
 - **Thread Safe**: Uses thread-safe handle storage
 
+## Authoritative spent-claim persistence
+
+`PersistenceCallbacksExtension.on_persist_spent_claims_fn` receives each engine
+claim batch inside the same begin/end transaction as its event. Upsert the claimed
+pairs first, then delete released outpoints, preserving callback order. Releases
+remove guards and are distinct from sweep outputs that may be re-credited. All
+arrays are borrowed only until callback return; return nonzero to roll back the
+round. Core claim-bearing rounds require this callback and atomic begin/end hooks.
+
+Load only a complete mirror produced by this format into
+`WalletRestoreEntryFFI.spent_claims`; nullable claimants and bodyless outpoints must
+survive. Do not infer claimants from TXO/history sweep winner stamps. Backends must
+reject old wallet stores that lack this format rather than treat missing claims
+as a complete empty set. Rust installs guards before funding replay and retains
+record/proof restoration. The tracked-transaction late-InstantSend event gap
+remains upstream (#976/#1106).
+
+The extension is append-only and size-gated, retaining existing field offsets.
+Rebuild native libraries, generated headers, and host wrappers together. The
+restore struct is not size-gated: callers allocating its older, smaller layout
+are incompatible with the appended claim fields.
+
 ## Building
 
 ### As a static library

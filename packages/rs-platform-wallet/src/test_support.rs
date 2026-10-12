@@ -316,6 +316,7 @@ pub(crate) fn observed_spend_event(
         0,
     );
     key_wallet_manager::WalletEvent::TransactionDetected {
+        spent_outpoint_changes: Default::default(),
         wallet_id,
         record: Box::new(record),
         balance: key_wallet::WalletCoreBalance::default(),

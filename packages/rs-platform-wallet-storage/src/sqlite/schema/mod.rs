@@ -23,6 +23,7 @@ pub mod pending_contact_crypto;
 pub mod platform_addrs;
 #[cfg(feature = "shielded")]
 pub mod shielded_viewing_keys;
+pub mod spent_claims;
 pub mod token_balances;
 pub mod tracked_masternodes;
 pub mod versions;

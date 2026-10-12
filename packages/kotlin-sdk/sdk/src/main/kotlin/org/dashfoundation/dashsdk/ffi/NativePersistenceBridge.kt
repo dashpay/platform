@@ -788,6 +788,20 @@ abstract class NativePersistenceBridge {
     // reaches Rust as a fatal, unclassified error however it fails.
 
     /**
+     * One ordered authoritative Core claim batch, inside begin/end. Outpoints
+     * are packed as txid[32] + little-endian vout[4]; claimants are 32 bytes
+     * per claimed outpoint and hasClaimant is one 0/1 byte per claimed row.
+     * Apply claims first, then releases. An inherited implementation fails closed.
+     */
+    open fun onPersistSpentClaims(
+        walletId: ByteArray,
+        claimedOutpoints: ByteArray,
+        hasClaimant: ByteArray,
+        claimants: ByteArray,
+        releasedOutpoints: ByteArray,
+    ): Int = -1
+
+    /**
      * `on_load_wallet_list_fn`. Returns the persisted wallet list as an
      * array of flat holders; the Rust trampoline re-packs each into a
      * `WalletRestoreEntryFFI` (plus nested arrays) in Rust-owned memory,
@@ -968,6 +982,14 @@ class WalletRestoreData(
      * `loadWalletList`.
      */
     @JvmField val lastAppliedChainLockBytes: ByteArray,
+    @JvmField val spentClaims: Array<SpentClaimRestoreData> = emptyArray(),
+)
+
+/** Authoritative outpoint claim; a null claimant remains a present claim. */
+class SpentClaimRestoreData(
+    @JvmField val txid: ByteArray,
+    @JvmField val vout: Int,
+    @JvmField val claimant: ByteArray?,
 )
 
 /**

@@ -120,6 +120,17 @@ pub enum WalletStorageError {
     #[error("wallet not found: {}", hex::encode(wallet_id))]
     WalletNotFound { wallet_id: [u8; 32] },
 
+    /// Invalid normalized Core restore input.
+    #[error("invalid persisted Core wallet state")]
+    CoreRestore(#[from] platform_wallet::wallet::persisted_core::CoreRestoreError),
+
+    /// Existing wallet rows lack a complete authoritative claim mirror.
+    #[error(
+        "wallet {} requires a fresh store and rescan: authoritative spent claims are unavailable",
+        hex::encode(wallet_id)
+    )]
+    SpentClaimsUnavailable { wallet_id: [u8; 32] },
+
     /// A changeset entry named a `wallet_id` different from the wallet
     /// the flush is scoped to — writing it would mis-file the row under
     /// the wrong parent.
@@ -753,6 +764,8 @@ impl WalletStorageError {
             | Self::AutoBackupDirUnwritable { .. }
             | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
+            | Self::SpentClaimsUnavailable { .. }
+            | Self::CoreRestore(_)
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
             | Self::RestoreDestinationLocked
@@ -868,6 +881,8 @@ impl WalletStorageError {
             | Self::AutoBackupDirUnwritable { .. }
             | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
+            | Self::SpentClaimsUnavailable { .. }
+            | Self::CoreRestore(_)
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
             | Self::RestoreDestinationLocked
@@ -947,6 +962,8 @@ impl WalletStorageError {
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
             Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::WalletNotFound { .. } => "wallet_not_found",
+            Self::SpentClaimsUnavailable { .. } => "spent_claims_unavailable",
+            Self::CoreRestore(_) => "core_restore",
             Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",
             Self::RestoreDestinationLocked => "restore_destination_locked",

@@ -106,6 +106,8 @@ public final class PersistentWallet {
     /// drives the "📥 Imported" badge; defaulted to `false` for
     /// rows that predate the column.
     public var isImported: Bool = false
+    /// False on pre-claim stores; only new wallet registration initializes a complete empty mirror.
+    public var spentClaimsComplete: Bool = false
     /// Verified seed-binding marker: the BIP44 account-0 xpub that the
     /// Keychain-resolved seed was proven to derive, bound to the mnemonic
     /// Keychain item's identity stamp, written after one successful
@@ -149,6 +151,7 @@ public final class PersistentWallet {
         isImported: Bool = false
     ) {
         self.walletId = walletId
+        self.spentClaimsComplete = true
         self.walletGroupId = walletGroupId
         self.networkRaw = network?.rawValue
         self.name = name

@@ -1121,7 +1121,7 @@ async fn build_core_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
 ) -> CoreChangeSet {
-    match event {
+    let mut changeset = match event {
         WalletEvent::TransactionDetected {
             wallet_id,
             record,
@@ -1376,7 +1376,28 @@ async fn build_core_changeset(
                 ..CoreChangeSet::default()
             }
         }
+    };
+    let changes = match event {
+        WalletEvent::TransactionDetected {
+            spent_outpoint_changes,
+            ..
+        }
+        | WalletEvent::BlockProcessed {
+            spent_outpoint_changes,
+            ..
+        }
+        | WalletEvent::TransactionsSwept {
+            spent_outpoint_changes,
+            ..
+        } => Some(spent_outpoint_changes),
+        _ => None,
+    };
+    if let Some(changes) = changes {
+        if !changes.is_empty() {
+            changeset.spent_claim_batches.push(changes.into());
+        }
     }
+    changeset
 }
 
 /// What one drained `WalletEvent` proved about the Core transaction behind a
@@ -2154,25 +2175,9 @@ pub(crate) fn spent_outpoints(record: &TransactionRecord) -> impl Iterator<Item 
 }
 
 impl CoreChangeSet {
-    /// Cheap "should we bother round-tripping the persister" check used
-    /// by the adapter to drop empty events without locking. Skips the
-    /// `is_empty()` walk over `instant_locks_for_non_final_records`
-    /// since that map is rarely populated and `Vec::is_empty` short-
-    /// circuits on the common case.
+    /// Whether the adapter can skip persistence, including claim-only updates.
     fn is_empty_no_records(&self) -> bool {
-        self.records.is_empty()
-            && self.account_records.is_empty()
-            && self.sweeps.is_empty()
-            && self.spent_utxos.is_empty()
-            && self.new_utxos.is_empty()
-            && self.instant_locks_for_non_final_records.is_empty()
-            && self.last_processed_height.is_none()
-            && self.synced_height.is_none()
-            && self.last_applied_chain_lock.is_none()
-            && self.addresses_derived.is_empty()
-            && self.addresses_marked_used.is_empty()
-            && self.account_highest_used.is_empty()
-            && self.utxo_credit_verdicts.is_empty()
+        Merge::is_empty(self)
     }
 }
 
@@ -2246,6 +2251,7 @@ mod swept_transaction_projection_tests {
 
     fn swept_releasing(txids: Vec<Txid>, released_outpoints: Vec<OutPoint>) -> WalletEvent {
         WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             txids,
             superseded_by: txid(0xff),
@@ -2285,6 +2291,7 @@ mod swept_transaction_projection_tests {
     #[tokio::test]
     async fn sweep_carries_the_winners_finality_context_verbatim() {
         let event = WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             txids: vec![txid(1)],
             superseded_by: txid(0xff),
@@ -2583,6 +2590,7 @@ mod sent_payment_verdict_tests {
 
     pub(super) fn sweep_of(wallet_id: WalletId, txid: Txid) -> WalletEvent {
         WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             txids: vec![txid],
             superseded_by: Txid::from_byte_array([0x77; 32]),
@@ -2614,6 +2622,7 @@ mod sent_payment_verdict_tests {
             -50_000,
         );
         WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             height: 1_499_060,
             chain_lock: None,
@@ -2791,6 +2800,7 @@ mod sent_payment_verdict_tests {
             -50_000,
         );
         let event = WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             record: Box::new(record),
             balance: WalletCoreBalance::default(),
@@ -2867,6 +2877,7 @@ mod sent_payment_verdict_tests {
             -50_000,
         );
         let event = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: [0x01; 32],
             height: 1_499_060,
             chain_lock: None,
@@ -3096,6 +3107,7 @@ mod contact_watch_only_projection_tests {
 
     fn block_processed(inserted: Vec<TransactionRecord>) -> WalletEvent {
         WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             height: 1_000,
             chain_lock: None,
@@ -3110,6 +3122,7 @@ mod contact_watch_only_projection_tests {
 
     fn transaction_detected(record: TransactionRecord) -> WalletEvent {
         WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             record: Box::new(record),
             balance: WalletCoreBalance::default(),
@@ -3419,6 +3432,7 @@ mod contact_watch_only_projection_tests {
     async fn confirmation_re_emit_does_not_reintroduce_the_watch_only_row() {
         let (_, funding, watch_only) = contact_payment_records();
         let event = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             height: 1_001,
             chain_lock: None,
@@ -3453,6 +3467,7 @@ mod contact_watch_only_projection_tests {
         stale.net_amount = CHANGE as i64;
         stale.direction = TransactionDirection::Incoming;
         let event = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             height: 1_001,
             chain_lock: None,
@@ -3517,6 +3532,7 @@ mod contact_watch_only_projection_tests {
         );
 
         let event = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             height: 1_001,
             chain_lock: None,
@@ -3579,6 +3595,7 @@ mod contact_watch_only_projection_tests {
         let manager = test_manager();
         let mut merged = build_core_changeset(&manager, &transaction_detected(mempool_slice)).await;
         let confirmation = WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id: WALLET_ID,
             height: 1_001,
             chain_lock: None,
@@ -4420,6 +4437,7 @@ mod contact_watch_only_projection_tests {
 
         // The event delivers ONE slice — as live mempool matching does.
         let lone_event = WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             record: Box::new(lone_slice),
             balance: WalletCoreBalance::default(),
@@ -4720,6 +4738,20 @@ mod usage_delta_tests {
 #[cfg(test)]
 mod tests {
     use super::freeze_synced_height_if_faulted;
+    use crate::changeset::SpentClaimBatch;
+
+    #[test]
+    fn should_preserve_claim_only_events_for_persistence() {
+        let changeset = CoreChangeSet {
+            spent_claim_batches: vec![SpentClaimBatch {
+                claimed: vec![(dashcore::OutPoint::null(), None)],
+                released: vec![],
+            }],
+            ..Default::default()
+        };
+        assert!(!changeset.is_empty_no_records());
+    }
+
     use crate::changeset::changeset::CoreChangeSet;
 
     /// A spent UTXO must carry the real locking script of the output it
@@ -5077,6 +5109,7 @@ mod tests {
     /// to prove records still persist after the guard activates.
     fn block_processed_event(wallet_id: WalletId, height: u32) -> WalletEvent {
         WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             height,
             chain_lock: None,
@@ -5923,6 +5956,7 @@ mod tests {
     fn swept_event(wallet_id: WalletId, txid_byte: u8, superseded_by_byte: u8) -> WalletEvent {
         use dashcore::hashes::Hash as _;
         WalletEvent::TransactionsSwept {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
             superseded_by: dashcore::Txid::from_byte_array([superseded_by_byte; 32]),
@@ -6214,6 +6248,7 @@ mod tests {
 
         event_tx
             .send(WalletEvent::BlockProcessed {
+                spent_outpoint_changes: Default::default(),
                 wallet_id,
                 height: 4321,
                 chain_lock: None,
@@ -6348,6 +6383,7 @@ mod tests {
         // Track the lock the same way a restore scan would.
         event_tx
             .send(WalletEvent::BlockProcessed {
+                spent_outpoint_changes: Default::default(),
                 wallet_id,
                 height: 4321,
                 chain_lock: None,
@@ -6365,6 +6401,7 @@ mod tests {
         // The funding tx is swept.
         event_tx
             .send(WalletEvent::TransactionsSwept {
+                spent_outpoint_changes: Default::default(),
                 wallet_id,
                 txids: vec![tx.txid()],
                 superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),
@@ -6617,6 +6654,7 @@ mod tests {
         // the pre-finality Broadcast status, no proof.
         event_tx
             .send(WalletEvent::BlockProcessed {
+                spent_outpoint_changes: Default::default(),
                 wallet_id,
                 height: 4321,
                 chain_lock: None,
@@ -7805,6 +7843,7 @@ mod utxo_credit_verdict_tests {
         let manager = Arc::new(RwLock::new(wm));
 
         let event = |wallet_id: WalletId| WalletEvent::BlockProcessed {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             height: 100_000,
             chain_lock: None,
@@ -7899,6 +7938,7 @@ mod utxo_credit_verdict_tests {
         let manager = Arc::new(RwLock::new(wm));
 
         let event = WalletEvent::TransactionDetected {
+            spent_outpoint_changes: Default::default(),
             wallet_id,
             record: Box::new(stale_clone),
             balance: WalletCoreBalance::default(),

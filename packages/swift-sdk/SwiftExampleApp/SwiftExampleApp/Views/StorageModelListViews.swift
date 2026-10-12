@@ -1833,6 +1833,72 @@ struct PendingInputStorageListView: View {
     }
 }
 
+// MARK: - PersistentSpentClaim
+
+/// Diagnostic list of every `PersistentSpentClaim` row — one per
+/// outpoint the Core wallet engine reports spent. Rows mirror the
+/// engine's own claims, independent of transaction history and
+/// `PersistentTxo` state; a nil claimant is a spend whose spending
+/// transaction the engine could not name.
+struct SpentClaimStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentSpentClaim]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentSpentClaim] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: SpentClaimStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(outpointHex(record.outpoint))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    Text(record.claimant == nil ? "claimant unknown" : "claimant known")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Spent Claims (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Spent Claims",
+                    systemImage: "checkmark.seal"
+                )
+            }
+        }
+    }
+
+    /// 36-byte outpoint as `<txid hex (display order)>:<vout>`. Mirrors
+    /// `PersistentTxo.outpointHex` so the same row is identifiable
+    /// across both surfaces.
+    private func outpointHex(_ outpoint: Data) -> String {
+        guard outpoint.count == 36 else {
+            return outpoint.map { String(format: "%02x", $0) }.joined()
+        }
+        let txid = outpoint.prefix(32)
+        let voutBytes = outpoint.suffix(4)
+        let vout = voutBytes.withUnsafeBytes { raw in
+            raw.load(as: UInt32.self).littleEndian
+        }
+        let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(txidHex):\(vout)"
+    }
+}
+
 // MARK: - PersistentAssetLock
 
 /// Storage explorer surface for tracked asset locks. SwiftData-backed
