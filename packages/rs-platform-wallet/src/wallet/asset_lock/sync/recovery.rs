@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Txid};
-use dpp::prelude::CoreBlockHeight;
+use dpp::prelude::{AssetLockProof, CoreBlockHeight};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -524,6 +524,38 @@ pub(crate) fn final_lock_input_claims<'a>(
                 .map(move |input| (input.previous_output, Some(funding)))
         })
         .collect()
+}
+
+/// Hand `history` the InstantSend lock each tracked asset lock holds for its
+/// funding, so the replay settles that funding's stored conflicts by it.
+///
+/// A store may keep the funding's record as unconfirmed and no lock beside it,
+/// while the lock's proof carries the real one. A lock is taken only when it,
+/// the proof's transaction and the tracked funding name one transaction the
+/// history holds, and a lock the store supplied itself stands. Its signature
+/// is not verified at load, like the locks a store keeps for its own records.
+pub(crate) fn add_tracked_instant_locks<'a>(
+    history: &mut RecordedHistory,
+    locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
+) {
+    for lock in locks {
+        let Some(AssetLockProof::Instant(proof)) = &lock.proof else {
+            continue;
+        };
+        let funding = lock.transaction.txid();
+        if proof.instant_lock.txid == funding
+            && proof.transaction.txid() == funding
+            && history
+                .transactions
+                .iter()
+                .any(|stored| stored.txid == funding)
+        {
+            history
+                .instant_locks
+                .entry(funding)
+                .or_insert_with(|| proof.instant_lock.clone());
+        }
+    }
 }
 
 /// Confirmed spends of pending asset-lock inputs, read from the stored history.
@@ -3891,6 +3923,101 @@ mod tests {
                         height: 103,
                     },
                 ),
+            ])
+        );
+    }
+
+    /// Only a lock that names the tracked funding, backed by a proof of that
+    /// same transaction and by a stored record of it, reaches the history. A
+    /// lock the store supplied itself is kept, and a chain proof holds no
+    /// lock to hand over.
+    #[test]
+    fn should_hand_history_only_matching_tracked_instant_locks() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use dpp::prelude::AssetLockProof;
+
+        let outpoint = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+        let instant_lock = |txid, input| InstantLock {
+            txid,
+            inputs: vec![input],
+            ..Default::default()
+        };
+        let instant = |lock: InstantLock, transaction: &Transaction| {
+            AssetLockProof::Instant(InstantAssetLockProof::new(lock, transaction.clone(), 0))
+        };
+        let tracked = |funding: &Transaction, proof| TrackedAssetLock {
+            out_point: OutPoint::new(funding.txid(), 0),
+            transaction: funding.clone(),
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 1,
+            status: AssetLockStatus::InstantSendLocked,
+            proof: Some(proof),
+        };
+        let stored = |transaction: &Transaction| StoredTransaction {
+            txid: transaction.txid(),
+            transaction: transaction.clone(),
+            context: TransactionContext::Mempool,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+
+        let [matching, foreign_lock, foreign_proof, unrecorded, supplied, chain_proven, other] =
+            [1, 2, 3, 4, 5, 6, 9].map(|byte| transaction_spending(outpoint(byte)));
+        let kept = instant_lock(supplied.txid(), outpoint(50));
+        let locks = [
+            tracked(
+                &matching,
+                instant(instant_lock(matching.txid(), outpoint(1)), &matching),
+            ),
+            tracked(
+                &foreign_lock,
+                instant(instant_lock(other.txid(), outpoint(2)), &foreign_lock),
+            ),
+            tracked(
+                &foreign_proof,
+                instant(instant_lock(foreign_proof.txid(), outpoint(3)), &other),
+            ),
+            tracked(
+                &unrecorded,
+                instant(instant_lock(unrecorded.txid(), outpoint(4)), &unrecorded),
+            ),
+            tracked(
+                &supplied,
+                instant(instant_lock(supplied.txid(), outpoint(5)), &supplied),
+            ),
+            tracked(
+                &chain_proven,
+                AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: 150,
+                    out_point: OutPoint::new(chain_proven.txid(), 0),
+                }),
+            ),
+        ];
+        let mut history = RecordedHistory {
+            transactions: [
+                &matching,
+                &foreign_lock,
+                &foreign_proof,
+                &supplied,
+                &chain_proven,
+            ]
+            .map(stored)
+            .to_vec(),
+            instant_locks: BTreeMap::from([(supplied.txid(), kept.clone())]),
+        };
+
+        super::add_tracked_instant_locks(&mut history, &locks);
+
+        assert_eq!(
+            history.instant_locks,
+            BTreeMap::from([
+                (matching.txid(), instant_lock(matching.txid(), outpoint(1))),
+                (supplied.txid(), kept),
             ])
         );
     }
