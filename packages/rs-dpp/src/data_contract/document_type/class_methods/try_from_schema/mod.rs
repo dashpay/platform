@@ -1291,7 +1291,13 @@ fn parse_reference_target(
         // `moderatorAbilities.deleteKeepsFields`, are left out where the document
         // held none, and the type may be another contract's): a gate on any other
         // property could refuse every later replace, for good on a property that
-        // can not be repointed or cleared, so it may compare only those two
+        // can not be repointed or cleared, so an equality or a `notEqual` with the
+        // writer may compare only those two. A `contains` of the writer is the one
+        // gate admitted here on another property, a typed array, which no system
+        // identifier is: a list the document held none of is read as empty, as
+        // against the document in state, so the gate refuses after a removal what
+        // it refused before; registration, with the referenced type in hand, keeps
+        // the list to one every removal record holds
         "moderatedDocument" => {
             let (contract_id, document_type_name) =
                 parse_document_reference_type(refers_to_map, reference_type)?;

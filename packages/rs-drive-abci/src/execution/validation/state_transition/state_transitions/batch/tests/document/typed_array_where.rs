@@ -10,10 +10,22 @@
 use super::*;
 
 mod typed_array_where_tests {
-    use super::super::reference_test_setup::{assert_successful, ReferenceTestSetup as Setup};
+    use super::super::reference_test_setup::{
+        assert_successful, create_transition, process_and_commit, ReferenceTestSetup as Setup,
+    };
     use super::*;
     use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use dpp::identifier::Identifier;
+    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+    use dpp::state_transition::StateTransition;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
+        DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0,
+    };
+    use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+    use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+    use std::collections::BTreeMap;
 
     const CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-where-typed-arrays.json";
 
@@ -138,22 +150,39 @@ mod typed_array_where_tests {
             ])
             .await;
 
-        let result = setup
-            .create_on(
-                "copy",
-                post,
-                &[
-                    (
-                        "members",
-                        Value::Array(vec![
-                            Value::Bytes(alice.to_buffer().to_vec()),
-                            Value::Bytes(bob.to_buffer().to_vec()),
-                        ]),
-                    ),
-                    ("scores", Value::Array(vec![Value::U64(3), Value::U64(700)])),
-                ],
-            )
-            .await;
+        let members = Value::Array(vec![
+            Value::Bytes(alice.to_buffer().to_vec()),
+            Value::Bytes(bob.to_buffer().to_vec()),
+        ]);
+        let scores = Value::Array(vec![Value::U64(3), Value::U64(700)]);
+        let nonce = setup.next_nonce();
+        let (_, create) = create_transition(
+            &setup.contract,
+            "copy",
+            &[
+                ("postId", Value::Identifier(post.to_buffer())),
+                ("members", members.clone()),
+                ("scores", scores.clone()),
+            ],
+            setup.owner,
+            &setup.key,
+            nonce,
+            &setup.signer,
+            &mut setup.rng,
+            PlatformVersion::latest(),
+        )
+        .await;
+        // The node decodes the transition and checks the references on its
+        // action's data, which still holds the elements as they were carried
+        let data = create_action_data(&setup, &create);
+        assert_eq!(data.get("members"), Some(&members));
+        assert_eq!(data.get("scores"), Some(&scores));
+        let result = process_and_commit(
+            &setup.platform,
+            &setup.platform_state,
+            &create,
+            PlatformVersion::latest(),
+        );
         assert_successful(&result, "equal values agree however they are carried");
 
         let result = setup
@@ -173,6 +202,59 @@ mod typed_array_where_tests {
             )
             .await;
         assert_mismatch(&result, "scores", "the order of the scores counts");
+    }
+
+    /// The data of the create action the node builds from `create` once
+    /// decoded from its bytes as a block's transition is, which the reference
+    /// check reads.
+    fn create_action_data(setup: &Setup, create: &StateTransition) -> BTreeMap<String, Value> {
+        let bytes = create
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let StateTransition::Batch(batch) =
+            StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+                &bytes,
+                PlatformVersion::latest(),
+            )
+            .expect("expected it to decode as the node does")
+        else {
+            panic!("expected a batch transition");
+        };
+        let Some(BatchedTransitionRef::Document(DocumentTransition::Create(create))) =
+            batch.first_transition()
+        else {
+            panic!("expected a document create");
+        };
+        let (_, contract_fetch_info) = setup
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                setup.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the contract");
+        let contract_fetch_info = contract_fetch_info.expect("the contract is in state");
+        let (result, _) =
+            DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
+                &setup.platform.drive,
+                setup.owner,
+                None,
+                create,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(contract_fetch_info.clone()),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the transformer to run");
+        match result.into_data().expect("expected an action") {
+            BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+                action,
+            )) => action.data().clone(),
+            other => panic!("expected a create action, got {other:?}"),
+        }
     }
 
     /// A `contains` holds when the post's list holds the referring value; a

@@ -18,7 +18,9 @@
 //! referenced document is the one the source property's value names.
 
 use super::preallocation::same_contract_record_reference;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentReferenceKind};
+use crate::data_contract::document_type::property::{
+    typed_array_property, DocumentProperty, DocumentReferenceKind,
+};
 use crate::data_contract::document_type::Index;
 use indexmap::IndexMap;
 use platform_value::Identifier;
@@ -70,7 +72,13 @@ impl Index {
             {
                 continue;
             }
-            if property.starts_with('$') {
+            // A list fixes no group: a `where` equality between two typed
+            // arrays compares lists, which no tree key holds. Inert while an
+            // indexOnly type, the only one declaring a summableOffCountIndex
+            // index, indexes no typed array
+            if property.starts_with('$')
+                || typed_array_property(flattened_properties, property).is_some()
+            {
                 return Err(property);
             }
             let bound_before = derivations.len();

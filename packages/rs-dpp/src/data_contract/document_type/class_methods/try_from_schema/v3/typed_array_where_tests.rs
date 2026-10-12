@@ -5,13 +5,15 @@
 //! checked at registration.
 
 use super::reference_test_helpers::{
-    assert_refused, assert_refused_by_the_parser, contract, contract_on, identifier, CONTRACT_ID,
+    assert_refused_by_the_parser, contract, contract_on, identifier, CONTRACT_ID,
 };
+use super::typed_array_test_helpers::expect_json_schema_error;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentReferenceDeclaration, WhereCondition, WhereContainsBound,
 };
+use crate::data_contract::DataContract;
 use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -81,11 +83,15 @@ fn contract_with_where(where_value: serde_json::Value) -> serde_json::Value {
     })
 }
 
-/// The `where` of the like's reference, as parsed.
+/// The `where` of the like's reference, as registration parses it.
 fn parsed_where(
     where_value: serde_json::Value,
 ) -> (BTreeMap<String, String>, BTreeMap<String, WhereCondition>) {
-    let parsed = contract(contract_with_where(where_value)).expect("the contract parses");
+    where_of(&contract(contract_with_where(where_value)).expect("the contract parses"))
+}
+
+/// The `where` of the like's reference in `parsed`.
+fn where_of(parsed: &DataContract) -> (BTreeMap<String, String>, BTreeMap<String, WhereCondition>) {
     let like = parsed
         .document_type_for_name("like")
         .expect("the like type");
@@ -201,9 +207,14 @@ fn should_admit_the_list_keys_in_the_meta_schema() {
         let parsed = contract(contract_with_where(where_value.clone()));
         assert!(parsed.is_ok(), "{where_value}: {parsed:?}");
     }
-    assert_refused(
-        contract(contract_with_where(json!({ "tags": { "contains": 5 } }))),
-        "",
+    let error = expect_json_schema_error(contract(contract_with_where(
+        json!({ "tags": { "contains": 5 } }),
+    )));
+    // The entry matches none of an equality's path, the writer and a condition
+    assert_eq!(
+        error.instance_path(),
+        "/properties/postId/refersTo/where/tags",
+        "the meta-schema refuses the entry: {error:?}"
     );
 }
 
@@ -221,4 +232,16 @@ fn should_read_back_a_stored_list_where() {
     )
     .expect("the stored contract reads");
     assert_eq!(stored.id(), Identifier::from(CONTRACT_ID));
+    let (property_agreement, where_conditions) = where_of(&stored);
+    assert_eq!(
+        property_agreement,
+        BTreeMap::from([("tags".to_string(), "tags".to_string())])
+    );
+    assert_eq!(
+        where_conditions,
+        BTreeMap::from([(
+            "members".to_string(),
+            WhereCondition::Contains(WhereContainsBound::Writer)
+        )])
+    );
 }

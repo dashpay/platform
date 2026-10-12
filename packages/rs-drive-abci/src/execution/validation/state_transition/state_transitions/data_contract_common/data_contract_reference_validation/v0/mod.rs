@@ -171,59 +171,6 @@ fn preallocated_index_keyed_by(
         .map(|index| index.name.clone())
 }
 
-/// The name of an index of `document_type` whose path a `where` equality
-/// between two typed arrays, the referring `referring_property` with the
-/// referenced `referenced_property` on the reference carried by
-/// `reference_property`, would fix: a preallocated index keyed through the
-/// pair ([`preallocated_index_keyed_by`]), or a `summableOffCountIndex` index
-/// whose source fixes one of its properties through it. A list is no tree key,
-/// so neither may be fixed through one; `None` when no index is. Only an
-/// indexOnly type declares either index, and it indexes no typed array today,
-/// so this keeps them refusing a list pair should it come to index one.
-fn index_fixed_through_list_pair(
-    contract: &DataContract,
-    document_type: DocumentTypeRef,
-    reference_property: &str,
-    referring_property: &str,
-    referenced_property: &str,
-) -> Option<String> {
-    preallocated_index_keyed_by(
-        contract,
-        document_type,
-        reference_property,
-        referring_property,
-        referenced_property,
-    )
-    .or_else(|| {
-        let indexes = document_type.indexes();
-        indexes
-            .values()
-            .find(|index| {
-                index
-                    .summable_off_count_index
-                    .as_ref()
-                    .and_then(|source_name| indexes.get(source_name))
-                    .and_then(|source| {
-                        index
-                            .count_index_derivations(
-                                source,
-                                document_type.flattened_properties(),
-                                contract.id(),
-                            )
-                            .ok()
-                    })
-                    .is_some_and(|derivations| {
-                        derivations.iter().any(|derivation| {
-                            derivation.referring_property == reference_property
-                                && derivation.property == referring_property
-                                && derivation.referenced == referenced_property
-                        })
-                    })
-            })
-            .map(|index| index.name.clone())
-    })
-}
-
 /// Why the elements of the referenced typed array `referenced` hold no value a
 /// `where` entry over lists compares, `None` when they do: an integer, a
 /// boolean, a string, an identifier or a byte array, the kinds a literal reads
@@ -1030,7 +977,9 @@ fn validate_reference_target_declaration_v0(
             ));
         }
         // Two typed arrays are equal as lists, element by element, which no
-        // single value is; no index is fixed through a pair of lists
+        // single value is. No index is keyed through a pair of lists: the
+        // preallocation bindings and `summableOffCountIndex` derivations bind
+        // no typed array, so the tree key check below is not theirs
         match (referring_type, &referenced.property_type) {
             (
                 DocumentPropertyType::TypedArray(referring_list),
@@ -1043,21 +992,6 @@ fn validate_reference_target_declaration_v0(
                     referenced_list,
                 ) {
                     return Ok(invalid(reason));
-                }
-                let fixed_index = reference_property.and_then(|reference_property| {
-                    index_fixed_through_list_pair(
-                        contract,
-                        document_type,
-                        reference_property,
-                        referring_property,
-                        referenced_property,
-                    )
-                });
-                if let Some(index_name) = fixed_index {
-                    return Ok(invalid(&format!(
-                        "the index {index_name} would be keyed through this pair by the \
-                         referenced typed array, and a list is no tree key"
-                    )));
                 }
                 continue;
             }
@@ -1269,8 +1203,12 @@ fn validate_reference_target_declaration_v0(
                     WhereOrderingBound::Constant(_) => {}
                 }
             }
-            // Checked above, against the elements of the list
-            WhereCondition::Contains(_) | WhereCondition::ContainsAll(_) => {}
+            WhereCondition::Contains(_) | WhereCondition::ContainsAll(_) => {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "a contains or a containsAll is checked against the elements of its list \
+                     before the conditions comparing one value",
+                )));
+            }
         }
         if let Some(reason) = unkept_on_removal(condition, referenced_property) {
             return Ok(invalid(reason));
@@ -1414,84 +1352,5 @@ mod tests {
         // The post's insert never preallocates through a pair its record drops, so no tree
         // is keyed by its value
         assert_eq!(keyed_by(&contract_keeping(None)), None);
-    }
-
-    /// A contract whose indexOnly `like` keys the preallocated `byTagsPost` by its `tags`, a
-    /// typed array its `where` pairs with its post's `tags`. Parsed as a stored contract is
-    /// read: a validating parse refuses an indexOnly type indexing a typed array, so no such
-    /// contract registers today.
-    fn contract_indexing_a_list_pair() -> DataContract {
-        let platform_version = PlatformVersion::latest();
-        let tags = |position: u64| {
-            platform_value!({
-                "type": "array",
-                "items": { "type": "string", "minLength": 1, "maxLength": 63 },
-                "maxItems": 4,
-                "uniqueItems": true,
-                "position": position,
-            })
-        };
-        let post_id = platform_value!({
-            "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-            "contentMediaType": "application/x.dash.dpp.identifier", "position": 0,
-            "refersTo": {
-                "type": "permanentDocument",
-                "documentType": "post",
-                "where": { "tags": "tags" },
-            },
-        });
-        DataContract::from_value(
-            platform_value!({
-                "$formatVersion": "1",
-                "id": Value::Identifier([7; 32]),
-                "ownerId": Value::Identifier([8; 32]),
-                "version": 1,
-                "documentSchemas": {
-                    "post": {
-                        "type": "object",
-                        "documentsMutable": false,
-                        "canBeDeleted": false,
-                        "properties": { "tags": tags(0) },
-                        "additionalProperties": false,
-                    },
-                    "like": {
-                        "type": "object",
-                        "indexOnly": true,
-                        "documentsMutable": false,
-                        "canBeDeleted": true,
-                        "properties": { "postId": post_id, "tags": tags(1) },
-                        "indices": [{
-                            "name": "byTagsPost",
-                            "properties": [{ "tags": "asc" }, { "postId": "asc" }],
-                            "terminal": "$ownerId",
-                            "preallocated": true,
-                        }],
-                        "required": ["postId"],
-                        "additionalProperties": false,
-                    },
-                },
-            }),
-            false,
-            platform_version,
-        )
-        .expect("the stored contract parses")
-    }
-
-    /// A list is no tree key, so registration refuses a pair of lists any index would be fixed
-    /// through, should an indexOnly type come to index a typed array.
-    #[test]
-    fn should_find_the_index_a_pair_of_lists_would_fix() {
-        let contract = contract_indexing_a_list_pair();
-        let like = contract
-            .document_type_for_name("like")
-            .expect("the like type");
-        assert_eq!(
-            index_fixed_through_list_pair(&contract, like, "postId", "tags", "tags"),
-            Some("byTagsPost".to_string())
-        );
-        assert_eq!(
-            index_fixed_through_list_pair(&contract, like, "postId", "other", "tags"),
-            None
-        );
     }
 }

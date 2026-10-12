@@ -538,33 +538,44 @@ impl WhereCondition {
                 )
             }
             // An absent bound is no element of any list
-            WhereCondition::Contains(_) => {
-                match (
-                    where_list_elements(referenced),
-                    bound.and_then(ListElement::of),
-                ) {
-                    (Some(elements), Some(wanted)) => elements
-                        .iter()
-                        .any(|element| ListElement::of(element).as_ref() == Some(&wanted)),
+            WhereCondition::Contains(_) => match (where_list_elements(referenced), bound) {
+                (Some(elements), Some(bound)) => elements
+                    .iter()
+                    .any(|element| element.same_scalar_data(bound)),
+                _ => false,
+            },
+            WhereCondition::ContainsAll(_) => {
+                match (where_list_elements(referenced), where_list_elements(bound)) {
+                    (Some(held), Some(wanted)) => list_holds_all(held, wanted),
                     _ => false,
                 }
             }
-            // A set of the held elements, each wanted one looked up in it: two
-            // lists of up to `max_typed_array_items` elements each are compared
-            // in time near their length, not its square
-            WhereCondition::ContainsAll(_) => {
-                let (Some(held), Some(wanted)) =
-                    (where_list_elements(referenced), where_list_elements(bound))
-                else {
-                    return false;
-                };
-                let held: BTreeSet<ListElement> = held.iter().filter_map(ListElement::of).collect();
-                wanted.iter().all(|element| {
-                    ListElement::of(element).is_some_and(|element| held.contains(&element))
-                })
-            }
         }
     }
+}
+
+/// Whether `held` has, for every element of `wanted`, an element equal to it
+/// as `Value::same_scalar_data` compares two single values. The held elements
+/// go in a set ([`ListElement`]), each wanted one looked up in it, so two lists
+/// of up to `max_typed_array_items` elements each are compared in time near
+/// their length, not its square. A float, which compares with any number by
+/// its bits and so has no place in that order, is compared one by one.
+fn list_holds_all(held: &[Value], wanted: &[Value]) -> bool {
+    let keyed: BTreeSet<ListElement> = held.iter().filter_map(ListElement::of).collect();
+    let floats: Vec<&Value> = held
+        .iter()
+        .filter(|element| matches!(element, Value::Float(_)))
+        .collect();
+    wanted.iter().all(|element| match ListElement::of(element) {
+        Some(key) => {
+            keyed.contains(&key) || floats.iter().any(|float| float.same_scalar_data(element))
+        }
+        None if matches!(element, Value::Float(_)) => {
+            held.iter().any(|other| other.same_scalar_data(element))
+        }
+        // A map, or a list of anything but bytes, equals nothing
+        None => false,
+    })
 }
 
 /// The elements of a typed array a `where` entry over lists reads: a list the
@@ -581,50 +592,45 @@ pub fn where_list_elements(value: Option<&Value>) -> Option<&[Value]> {
 
 /// Whether two typed array values are equal as a `where` equality between two
 /// typed arrays compares them: the same elements in the same order, a list the
-/// document leaves out the empty one. Two elements are compared by value
-/// ([`ListElement`]): an integer whatever width it is held at, the bytes of an
-/// identifier or a byte array whichever variant holds them (an identifier and
-/// its 32 bytes are equal), a string as a string, a boolean as a boolean. An
-/// element of no such kind equals nothing, not even itself.
+/// document leaves out the empty one. Two elements are compared as a scalar
+/// equality compares two single values (`Value::same_scalar_data`): an integer
+/// whatever width it is held at, the bytes of an identifier or a byte array
+/// whichever variant holds them (an identifier and its 32 bytes are equal), a
+/// string as a string, a boolean as a boolean.
 pub fn where_lists_equal(a: Option<&Value>, b: Option<&Value>) -> bool {
     match (where_list_elements(a), where_list_elements(b)) {
         (Some(a), Some(b)) => {
-            a.len() == b.len()
-                && a.iter().zip(b).all(|(a, b)| {
-                    matches!(
-                        (ListElement::of(a), ListElement::of(b)),
-                        (Some(a), Some(b)) if a == b
-                    )
-                })
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.same_scalar_data(b))
         }
         _ => false,
     }
 }
 
-/// A typed array element as a `where` entry over lists compares it, by value:
-/// two elements are equal when they read as the same `ListElement`. It agrees
-/// with `Value::same_scalar_data`, which compares two single values, for every
-/// element a typed array of the kinds an entry over lists admits holds (integers,
-/// booleans, strings, identifiers and byte arrays), and orders them, so a
-/// `containsAll` looks each element up in a set. One difference: a whole number
-/// carried as a float reads as the integer it is, exactly, where
-/// `same_scalar_data` reads the integer as the float it rounds to.
+/// A single value other than a float as `Value::same_scalar_data` compares it:
+/// two such values are equal exactly when they read as the same `ListElement`,
+/// which orders them, so a `containsAll` looks each element up in a set. A
+/// float compares with an integer as the float the integer rounds to, which is
+/// no order, so it reads as none and is compared one by one.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum ListElement<'a> {
+    Null,
     Boolean(bool),
     Integer(i128),
     /// An unsigned integer past `i128::MAX`.
     LargeUnsigned(u128),
     Text(&'a str),
     Bytes(Cow<'a, [u8]>),
+    EnumU8(&'a [u8]),
+    EnumString(&'a [String]),
 }
 
 impl<'a> ListElement<'a> {
-    /// The element `value` reads as, `None` for a value of no kind a typed
-    /// array an entry over lists admits holds: a fractional float, a map, a
-    /// list of anything but bytes, or a null.
+    /// The element `value` reads as, `None` for a float and for a value
+    /// `same_scalar_data` finds equal to nothing: a map, or a list of anything
+    /// but bytes.
     fn of(value: &'a Value) -> Option<Self> {
         Some(match value {
+            Value::Null => ListElement::Null,
             Value::Bool(flag) => ListElement::Boolean(*flag),
             Value::Text(text) => ListElement::Text(text),
             Value::U128(integer) => match i128::try_from(*integer) {
@@ -640,7 +646,8 @@ impl<'a> ListElement<'a> {
             Value::I16(integer) => ListElement::Integer(i128::from(*integer)),
             Value::U8(integer) => ListElement::Integer(i128::from(*integer)),
             Value::I8(integer) => ListElement::Integer(i128::from(*integer)),
-            Value::Float(_) => ListElement::Integer(whole_integer(value)?),
+            Value::EnumU8(values) => ListElement::EnumU8(values),
+            Value::EnumString(values) => ListElement::EnumString(values),
             Value::Bytes(bytes) => ListElement::Bytes(Cow::Borrowed(bytes)),
             Value::Bytes20(bytes) => ListElement::Bytes(Cow::Borrowed(bytes)),
             Value::Bytes32(bytes) => ListElement::Bytes(Cow::Borrowed(bytes)),
@@ -957,6 +964,60 @@ mod tests {
             Some(&large),
             Some(&Value::Array(vec![Value::I128(-1)]))
         ));
+    }
+
+    /// The three list forms compare two elements exactly as a scalar equality
+    /// compares two single values, floats included: `-0.0` is not `0`, and an
+    /// integer past 2^53 equals the float it rounds to.
+    #[test]
+    fn should_compare_list_elements_as_a_scalar_equality_does() {
+        let sample = [
+            Value::Null,
+            Value::Bool(true),
+            Value::U8(0),
+            Value::I64(0),
+            Value::U16(3),
+            Value::I128(-4),
+            Value::U128(u128::MAX),
+            Value::Float(0.0),
+            Value::Float(-0.0),
+            Value::Float(3.0),
+            Value::Float(3.5),
+            Value::Float(9007199254740992.0),
+            Value::U64(9007199254740993),
+            Value::Text("a".to_string()),
+            Value::Bytes(vec![7; 32]),
+            Value::Identifier([7; 32]),
+            Value::Array(vec![Value::U8(7); 32]),
+            Value::Array(vec![Value::Text("a".to_string())]),
+            Value::Map(vec![]),
+            Value::EnumU8(vec![1]),
+        ];
+        let all_tags = WhereCondition::ContainsAll("tags".to_string());
+        let tag = WhereCondition::Contains(WhereContainsBound::Property("tag".to_string()));
+        for held in &sample {
+            for wanted in &sample {
+                let scalar = held.same_scalar_data(wanted);
+                let held_list = Value::Array(vec![held.clone()]);
+                let wanted_list = Value::Array(vec![wanted.clone()]);
+                let pair = format!("{held:?} against {wanted:?}");
+                assert_eq!(
+                    where_lists_equal(Some(&held_list), Some(&wanted_list)),
+                    scalar,
+                    "equality of {pair}"
+                );
+                assert_eq!(
+                    tag.holds(Some(&held_list), None, Some(wanted)),
+                    scalar,
+                    "contains of {pair}"
+                );
+                assert_eq!(
+                    all_tags.holds(Some(&held_list), None, Some(&wanted_list)),
+                    scalar,
+                    "containsAll of {pair}"
+                );
+            }
+        }
     }
 
     #[test]

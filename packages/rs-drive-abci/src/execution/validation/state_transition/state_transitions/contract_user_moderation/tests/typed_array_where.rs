@@ -98,48 +98,6 @@ fn texts(texts: &[&str]) -> Value {
     )
 }
 
-/// A creation by `actor` of a document of `document_type_name` holding exactly
-/// `properties`
-async fn create_with(
-    setup: &Setup,
-    actor: &Actor,
-    document_type_name: &str,
-    properties: Vec<(&str, Value)>,
-) -> (Document, StateTransition) {
-    setup
-        .create_document_of_type_with(actor, document_type_name, |document| {
-            document.properties_mut().clear();
-            for (property, value) in properties {
-                document.set(property, value);
-            }
-        })
-        .await
-}
-
-/// The replacement of `document` by `actor`, its owner, its revision bumped
-async fn replacement(
-    actor: &Actor,
-    contract: &DataContract,
-    document: &mut Document,
-) -> StateTransition {
-    document.increment_revision().expect("revision increments");
-    BatchTransition::new_document_replacement_transition_from_document(
-        document.clone(),
-        contract
-            .document_type_for_name(ECHO)
-            .expect("expected the echo type"),
-        &actor.key,
-        actor.contract_nonce(),
-        0,
-        None,
-        &actor.signer,
-        PlatformVersion::latest(),
-        None,
-    )
-    .await
-    .expect("expected to build the replacement")
-}
-
 fn assert_where_refused(execution: &StateTransitionExecutionResult, referring: &str) {
     assert!(
         matches!(
@@ -222,21 +180,21 @@ async fn should_compare_lists_with_a_removal_record() {
 
     // The writer is asked about on every replace, and is still a kept member
     echo.set("note", "still here".into());
-    let edit = replacement(&setup.stranger, &setup.contract, &mut echo).await;
+    let edit = replacement(&setup.stranger, &setup.contract, ECHO, &mut echo).await;
     assert_success(&setup.process(&edit, &transaction));
 
     // Changed tags are compared with the kept ones, order and all
     let mut reordered = echo.clone();
     reordered.set("tags", texts(&["news", "dash"]));
-    let refused = replacement(&setup.stranger, &setup.contract, &mut reordered).await;
+    let refused = replacement(&setup.stranger, &setup.contract, ECHO, &mut reordered).await;
     assert_where_refused(&setup.process(&refused, &transaction), "tags");
 
     // The untagged post's record keeps no tags, the empty list an empty one equals
     untagged_echo.set("tags", texts(&[]));
-    let emptied = replacement(&setup.stranger, &setup.contract, &mut untagged_echo).await;
+    let emptied = replacement(&setup.stranger, &setup.contract, ECHO, &mut untagged_echo).await;
     assert_success(&setup.process(&emptied, &transaction));
     let mut tagged = untagged_echo.clone();
     tagged.set("tags", texts(&["dash"]));
-    let refused = replacement(&setup.stranger, &setup.contract, &mut tagged).await;
+    let refused = replacement(&setup.stranger, &setup.contract, ECHO, &mut tagged).await;
     assert_where_refused(&setup.process(&refused, &transaction), "tags");
 }
