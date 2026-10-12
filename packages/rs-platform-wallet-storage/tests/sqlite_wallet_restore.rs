@@ -721,3 +721,127 @@ async fn should_restore_provider_key_transaction_history_and_positions() {
     drop(wm);
     assert!(manager.shutdown().await.all_clean());
 }
+
+fn with_pool<R>(
+    info: &mut ManagedWalletInfo,
+    account_type: AccountType,
+    pool_type: key_wallet::managed_account::address_pool::AddressPoolType,
+    edit: impl FnOnce(&mut key_wallet::managed_account::address_pool::AddressPool) -> R,
+) -> R {
+    let mut accounts = info.accounts.all_accounts_mut();
+    let account = accounts
+        .iter_mut()
+        .find(|account| account.managed_account_type().to_account_type() == account_type)
+        .expect("account");
+    let mut pools = account.managed_account_type_mut().address_pools_mut();
+    let pool = pools
+        .iter_mut()
+        .find(|pool| pool.pool_type == pool_type)
+        .expect("pool");
+    edit(pool)
+}
+
+fn account_key_source(wallet: &Wallet, account_type: AccountType) -> KeySource {
+    KeySource::Public(
+        wallet
+            .accounts
+            .account_of_type(account_type)
+            .expect("account keys")
+            .account_xpub,
+    )
+}
+
+/// Persists a wallet shaped by `prepare` next to a healthy sibling, runs the
+/// statement `prepare` returns against the first wallet's rows (`?1` is its
+/// id), and asserts the load's verdict: Strict returns the typed storage
+/// error, Recovery drops that wallet alone and names the cause.
+fn assert_pool_corruption_is_typed_and_isolated(
+    prepare: impl FnOnce(&Wallet, &mut ManagedWalletInfo) -> String,
+    reason: &str,
+) {
+    use platform_wallet::changeset::PersistenceError;
+    use platform_wallet_storage::{LoadPolicy, WalletStorageError};
+
+    let (persister, _tmp, path) = common::fresh_persister();
+    let sick = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut sick_info = ManagedWalletInfo::from_wallet(&sick, 1);
+    let corruption = prepare(&sick, &mut sick_info);
+    persister
+        .store(sick.wallet_id, registration(&sick, &sick_info))
+        .unwrap();
+    let healthy =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    persister
+        .store(
+            healthy.wallet_id,
+            registration(&healthy, &ManagedWalletInfo::from_wallet(&healthy, 1)),
+        )
+        .unwrap();
+    let rewritten = persister
+        .lock_conn_for_test()
+        .execute(&corruption, [sick.wallet_id.as_slice()])
+        .unwrap();
+    assert_eq!(rewritten, 1, "the fixture must rewrite exactly one row");
+    drop(persister);
+
+    let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let error = match strict.load() {
+        Ok(_) => panic!("Strict must refuse the row: {reason}"),
+        Err(error) => error,
+    };
+    let PersistenceError::Backend { source, .. } = error else {
+        panic!("expected a backend error, got {error:?}")
+    };
+    assert!(
+        matches!(
+            source.downcast_ref::<WalletStorageError>(),
+            Some(WalletStorageError::BlobDecode { reason: actual }) if *actual == reason
+        ),
+        "expected `{reason}`, got {source:?}"
+    );
+    drop(strict);
+
+    let recovery = SqlitePersister::open(
+        SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery),
+    )
+    .unwrap();
+    let state = recovery.load().expect("recovery isolates the wallet");
+    assert!(state.wallets.contains_key(&healthy.wallet_id));
+    assert!(!state.wallets.contains_key(&sick.wallet_id));
+    let degradation = recovery.last_load_degradation();
+    assert_eq!(degradation.wallets_degraded.len(), 1);
+    assert_eq!(
+        degradation.wallets_degraded.get(&sick.wallet_id).copied(),
+        Some("blob_decode")
+    );
+}
+
+/// Past the freshly derived window there is no derived entry to compare a
+/// persisted row with, yet the row's address is what the wallet would hand
+/// out. It has to match the account's own derivation there too.
+#[test]
+fn should_reject_a_pool_row_beyond_the_derived_window_that_its_account_cannot_derive() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    assert_pool_corruption_is_typed_and_isolated(
+        |wallet, info| {
+            let account_type = AccountType::IdentityInvitation;
+            let source = account_key_source(wallet, account_type);
+            let deep = with_pool(info, account_type, AddressPoolType::Absent, |pool| {
+                pool.generate_addresses(40, &source, true).unwrap();
+                pool.highest_generated.unwrap()
+            });
+            // A well-formed P2PKH script and a correctly sized key that are
+            // not this account's child at that index.
+            format!(
+                "UPDATE core_address_pool \
+                 SET script = X'76a914{}88ac', public_key = X'02{}' \
+                 WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
+                   AND address_index = {deep}",
+                "42".repeat(20),
+                "11".repeat(32),
+            )
+        },
+        "core pool row conflicts with its derived address or key",
+    );
+}

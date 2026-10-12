@@ -16,10 +16,13 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, AddressState, KeySource, PublicKeyType,
+};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
+use crate::sqlite::rehydrate::MAX_REHYDRATION_DERIVATION_INDEX;
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
 use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
@@ -485,10 +488,74 @@ pub fn load_used_addresses_with_ctx(
     Ok(out)
 }
 
+/// Public key material that re-derives `account_type`'s pool entries, if the
+/// watch-only `wallet` holds any.
+fn public_key_source(
+    wallet: &key_wallet::wallet::Wallet,
+    account_type: key_wallet::account::AccountType,
+) -> Option<KeySource> {
+    if let Some(account) = wallet.accounts.account_of_type(account_type) {
+        return Some(KeySource::Public(account.account_xpub));
+    }
+    wallet
+        .accounts
+        .bls_account_of_type(account_type)
+        .map(|account| KeySource::BLSPublic(account.bls_public_key.clone()))
+}
+
+/// Derive `pool` from its account's public key through `highest_stored`, so
+/// every stored row meets an entry this wallet derived itself.
+///
+/// Hardened pools are left as they are; see [`restore_pools`].
+fn derive_through(
+    pool: &mut AddressPool,
+    key_source: Option<&KeySource>,
+    highest_stored: u32,
+) -> Result<(), WalletStorageError> {
+    if pool.pool_type == AddressPoolType::AbsentHardened {
+        return Ok(());
+    }
+    let derived = pool
+        .highest_generated
+        .map_or(0, |highest| highest.saturating_add(1));
+    if highest_stored < derived {
+        return Ok(());
+    }
+    // Refused before deriving: a damaged index must not buy unbounded work.
+    if highest_stored > MAX_REHYDRATION_DERIVATION_INDEX {
+        return Err(WalletStorageError::blob_decode(
+            "core pool row index is beyond the restorable derivation depth",
+        ));
+    }
+    // Without key material nothing is derived, and the overlay refuses the
+    // rows that are left without a derived entry.
+    let Some(key_source) = key_source else {
+        return Ok(());
+    };
+    pool.generate_addresses(highest_stored - derived + 1, key_source, true)
+        .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+    Ok(())
+}
+
 /// Restore every persisted Core pool, including handed-out and pre-derived keys.
+///
+/// A restored entry is an address the wallet goes on to hand out, so a row is
+/// not taken on trust where it can be checked. Each pool is first derived,
+/// from the account's public key in `wallet`, through its highest stored
+/// index; a row then overlays an entry this wallet derived itself and must
+/// name the same address and key. A pool whose stored index lies past
+/// [`MAX_REHYDRATION_DERIVATION_INDEX`] is refused before anything is derived.
+///
+/// `AbsentHardened` pools are the exception. A hardened child cannot be
+/// derived from public key material, and a watch-only load holds nothing
+/// else, so their rows — the pre-derived platform-node keys — are trusted as
+/// stored, as [`restore_provider_platform_node_pool`] already trusts them.
+///
+/// [`restore_provider_platform_node_pool`]: crate::sqlite::rehydrate::restore_provider_platform_node_pool
 pub(crate) fn restore_pools(
     conn: &Connection,
     wallet_id: &WalletId,
+    wallet: &key_wallet::wallet::Wallet,
     wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
@@ -496,15 +563,9 @@ pub(crate) fn restore_pools(
         let account_type = account.managed_account_type().to_account_type();
         let label = accounts::account_type_db_label(&account_type);
         let (user, friend) = accounts::account_dashpay_ids(&account_type);
+        let key_source = public_key_source(wallet, account_type);
         for pool in account.managed_account_type_mut().address_pools_mut() {
-            let mut stmt = conn.prepare(
-                "SELECT address_index, length(script), script, length(public_key), public_key, \
-                 key_type, used, reserved_at FROM core_address_pool \
-                 WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
-                   AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
-                   AND pool_type = ?7 ORDER BY address_index",
-            )?;
-            let mut rows = stmt.query(params![
+            let pool_rows = params![
                 wallet_id.as_slice(),
                 label,
                 i64::from(accounts::account_index(&account_type)),
@@ -512,7 +573,30 @@ pub(crate) fn restore_pools(
                 user.as_slice(),
                 friend.as_slice(),
                 pool_type_to_i64(pool.pool_type)
-            ])?;
+            ];
+            let highest_stored: Option<i64> = conn.query_row(
+                "SELECT MAX(address_index) FROM core_address_pool \
+                 WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+                   AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+                   AND pool_type = ?7",
+                pool_rows,
+                |row| row.get(0),
+            )?;
+            if let Some(highest_stored) = highest_stored {
+                derive_through(
+                    pool,
+                    key_source.as_ref(),
+                    i64_to_u32("core_address_pool.address_index", highest_stored)?,
+                )?;
+            }
+            let mut stmt = conn.prepare(
+                "SELECT address_index, length(script), script, length(public_key), public_key, \
+                 key_type, used, reserved_at FROM core_address_pool \
+                 WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+                   AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+                   AND pool_type = ?7 ORDER BY address_index",
+            )?;
+            let mut rows = stmt.query(pool_rows)?;
             while let Some(row) = rows.next()? {
                 let index = i64_to_u32("core_address_pool.address_index", row.get(0)?)?;
                 blob::check_size(row.get(1)?)?;
@@ -603,6 +687,11 @@ pub(crate) fn restore_pools(
                 let mut path = pool.base_path.clone();
                 path.push(child);
                 let previous = pool.addresses.get(&index);
+                if previous.is_none() && pool.pool_type != AddressPoolType::AbsentHardened {
+                    return Err(WalletStorageError::blob_decode(
+                        "core pool row has no derived entry to be checked against",
+                    ));
+                }
                 if previous.is_some_and(|info| {
                     info.address != address
                         || public_key
@@ -880,44 +969,42 @@ mod tests {
         assert_eq!(rows, 0, "the guard must refuse before binding the row");
     }
 
-    /// `restore_pools` overlays a persisted row on the entry the load
-    /// projection already built, and a repaired wallet is rebuilt twice in
-    /// one load. The accounting that entry carries must come through
-    /// unchanged: neither reset by the overlay nor counted a second time.
-    #[test]
-    fn restore_pools_keeps_existing_address_accounting_exactly_once() {
+    fn with_pool_of<R>(
+        info: &mut key_wallet::wallet::ManagedWalletInfo,
+        address: &dashcore::Address,
+        read: impl Fn(&mut AddressPool, u32) -> R,
+    ) -> R {
+        for mut account in info.accounts.all_accounts_mut() {
+            for pool in account.managed_account_type_mut().address_pools_mut() {
+                if let Some(index) = pool.address_index.get(address).copied() {
+                    return read(pool, index);
+                }
+            }
+        }
+        panic!("the address must belong to a pool");
+    }
+
+    /// A wallet whose BIP44 external pool is stored exactly as derived, and
+    /// the first receive address of that pool.
+    fn wallet_with_stored_external_pool(
+        conn: &mut rusqlite::Connection,
+    ) -> (
+        key_wallet::wallet::Wallet,
+        key_wallet::wallet::ManagedWalletInfo,
+        dashcore::Address,
+    ) {
         use key_wallet::account::{AccountType, StandardAccountType};
-        use key_wallet::managed_account::address_pool::AddressPool;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::{ManagedWalletInfo, Wallet};
 
-        use crate::sqlite::config::LoadPolicy;
-
-        fn with_pool_of<R>(
-            info: &mut ManagedWalletInfo,
-            address: &dashcore::Address,
-            read: impl Fn(&mut AddressPool, u32) -> R,
-        ) -> R {
-            for mut account in info.accounts.all_accounts_mut() {
-                for pool in account.managed_account_type_mut().address_pools_mut() {
-                    if let Some(index) = pool.address_index.get(address).copied() {
-                        return read(pool, index);
-                    }
-                }
-            }
-            panic!("the address must belong to a pool");
-        }
-
-        let mut conn = migrated_conn();
         let wallet = Wallet::new_random(
             dashcore::Network::Testnet,
             WalletAccountCreationOptions::Default,
         )
         .unwrap();
-        let wallet_id = wallet.wallet_id;
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
-            params![wallet_id.as_slice()],
+            params![wallet.wallet_id.as_slice()],
         )
         .unwrap();
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
@@ -929,26 +1016,37 @@ mod tests {
             .unwrap()
             .next_receive_address(Some(&xpub), true)
             .unwrap();
-        let persisted = with_pool_of(&mut info, &address, |pool, index| {
+        let stored = with_pool_of(&mut info, &address, |pool, _| AccountAddressPoolEntry {
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            pool_type: pool.pool_type,
+            addresses: pool.addresses.values().cloned().collect(),
+        });
+        let tx = conn.transaction().unwrap();
+        apply_pools(&tx, &wallet.wallet_id, std::slice::from_ref(&stored)).unwrap();
+        tx.commit().unwrap();
+        (wallet, info, address)
+    }
+
+    /// `restore_pools` overlays a persisted row on the entry the load
+    /// projection already built, and a repaired wallet is rebuilt twice in
+    /// one load. The accounting that entry carries must come through
+    /// unchanged: neither reset by the overlay nor counted a second time.
+    #[test]
+    fn restore_pools_keeps_existing_address_accounting_exactly_once() {
+        let mut conn = migrated_conn();
+        let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
+        with_pool_of(&mut info, &address, |pool, index| {
             let entry = pool.addresses.get_mut(&index).unwrap();
             entry.update_stats(700, 200);
             entry.balance = 500;
-            AccountAddressPoolEntry {
-                account_type: AccountType::Standard {
-                    index: 0,
-                    standard_account_type: StandardAccountType::BIP44Account,
-                },
-                pool_type: pool.pool_type,
-                addresses: pool.addresses.values().cloned().collect(),
-            }
         });
-        let tx = conn.transaction().unwrap();
-        apply_pools(&tx, &wallet_id, std::slice::from_ref(&persisted)).unwrap();
-        tx.commit().unwrap();
 
-        let ctx = LoadCtx::new(LoadPolicy::Strict);
+        let ctx = LoadCtx::strict();
         for round in 1..=2 {
-            restore_pools(&conn, &wallet_id, &mut info, &ctx).unwrap();
+            restore_pools(&conn, &wallet.wallet_id, &wallet, &mut info, &ctx).unwrap();
             let accounting = with_pool_of(&mut info, &address, |pool, index| {
                 let entry = &pool.addresses[&index];
                 (
@@ -960,6 +1058,46 @@ mod tests {
             });
             assert_eq!(accounting, (1, 700, 200, 500), "restore round {round}");
         }
+    }
+
+    /// Checking a stored row means deriving every index below it, so an index
+    /// past the ceiling is refused before the pool is touched. The index used
+    /// here would take billions of derivations if the refusal came second.
+    #[test]
+    fn restore_pools_refuses_an_index_past_the_derivation_ceiling_before_deriving() {
+        let mut conn = migrated_conn();
+        let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
+        let derived = with_pool_of(&mut info, &address, |pool, _| pool.highest_generated);
+        let moved = conn
+            .execute(
+                "UPDATE core_address_pool SET address_index = ?1 \
+                 WHERE address_index = (SELECT MAX(address_index) FROM core_address_pool)",
+                params![i64::from(i32::MAX)],
+            )
+            .unwrap();
+        assert_eq!(moved, 1);
+
+        let error = restore_pools(
+            &conn,
+            &wallet.wallet_id,
+            &wallet,
+            &mut info,
+            &LoadCtx::strict(),
+        )
+        .expect_err("an index past the ceiling must be refused");
+        assert!(
+            matches!(
+                error,
+                WalletStorageError::BlobDecode { reason }
+                    if reason == "core pool row index is beyond the restorable derivation depth"
+            ),
+            "unexpected error: {error:?}"
+        );
+        assert_eq!(
+            with_pool_of(&mut info, &address, |pool, _| pool.highest_generated),
+            derived,
+            "a refused pool must not have been derived any further"
+        );
     }
 
     #[test]

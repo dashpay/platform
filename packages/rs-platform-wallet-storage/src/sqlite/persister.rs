@@ -1878,7 +1878,7 @@ fn load_wallet_snapshot(
         restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
             .map_err(PersistenceError::from)?;
     }
-    schema::core_pool::restore_pools(conn, &wallet_id, &mut wallet_info, ctx)
+    schema::core_pool::restore_pools(conn, &wallet_id, &wallet, &mut wallet_info, ctx)
         .map_err(PersistenceError::from)?;
     let mut wallet = wallet;
     let sweeps = restore_recorded_transactions(

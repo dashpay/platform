@@ -981,7 +981,7 @@ fn owning_account_of(account: &ManagedCoreFundsAccount) -> OwningAccount {
 /// rescan to re-warm — generous enough to cover any realistic per-account
 /// derivation depth. The common (single funds account) path terminates at
 /// the true high-water mark well before this and never reaches the cap.
-const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
+pub(crate) const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 
 /// Soft threshold past which a single chain's discovery scan is treated as
 /// abnormally deep and worth a `tracing::warn!`. Real funds chains anchor
