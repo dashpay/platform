@@ -647,7 +647,7 @@ class DashDatabaseMigrationTest {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            14,
+            15,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -659,16 +659,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_11_12,
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
+            DashDatabase.MIGRATION_14_15,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v14 schema. */
+    /** The full chain from v1 must also land on a valid v15 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            14,
+            15,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -683,6 +684,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_11_12,
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
+            DashDatabase.MIGRATION_14_15,
         ).close()
     }
 }
