@@ -119,10 +119,8 @@ web-time = "1.1"
 wasm-bindgen-test = "0.3.58"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-drive = { path = "../rs-drive", default-features = false, features = ["full", "verify"] }
 tempfile = "3"
 async-trait = "0.1"
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.8.0", features = ["crypto"], default-features = false }
 
 [package.metadata.wasm-pack]
 wasm-opt = false

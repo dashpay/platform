@@ -9,20 +9,14 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse,
 };
 use dash_sdk::dpp::address_funds::AddressWitness;
-use dash_sdk::dpp::block::block_info::BlockInfo;
-use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
 use dash_sdk::dpp::dashcore::{secp256k1, signer, Network};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dash_sdk::dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dash_sdk::dpp::data_contract::TokenConfiguration;
 use dash_sdk::dpp::document::{DocumentV0, DocumentV0Setters};
 use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dash_sdk::dpp::identity::{IdentityV0, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dash_sdk::dpp::identity::{KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::{platform_value, BinaryData, Value};
-use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
-use dash_sdk::dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
-use dash_sdk::dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::StateTransition;
@@ -31,17 +25,10 @@ use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateT
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::{ContextProvider, Query};
 use dash_sdk::{error::ContextProviderError, SdkBuilder};
-use drive::drive::Drive;
-use drive::util::test_helpers::setup::{setup_document, setup_drive_with_initial_state_structure};
 use rs_dapi_client::{transport::TransportRequest, DumpData, ExecutionResponse, RequestSettings};
-use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tenderdash_abci::{
-    proto::types::{CanonicalVote, SignedMsgType, StateId},
-    signatures::{Hashable, Signable},
-};
 
 const CONTRACT_ID: [u8; 32] = [0x41; 32];
 const OWNER_ID: [u8; 32] = [0x42; 32];
@@ -100,18 +87,15 @@ impl ContextProvider for Provider {
         _: [u8; 32],
         _: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        let key = quorum_secret().public_key();
-        let bytes: Vec<u8> = (&key).into();
-        Ok(bytes.try_into().expect("BLS public key"))
+        Ok(vectors()
+            .quorum_public_key
+            .try_into()
+            .expect("BLS public key"))
     }
 
     fn get_platform_activation_height(&self) -> Result<u32, ContextProviderError> {
         Ok(1)
     }
-}
-
-fn quorum_secret() -> SecretKey<Bls12381G2Impl> {
-    SecretKey::from_hash(b"authenticated contract update regression")
 }
 
 fn contract(version: u32) -> DataContract {
@@ -186,53 +170,6 @@ fn document() -> Document {
     })
 }
 
-fn signed_proof(drive: &Drive, bytes: Vec<u8>, metadata: &ResponseMetadata) -> Proof {
-    let root = drive
-        .grove
-        .root_hash(None, &PlatformVersion::latest().drive.grove_version)
-        .unwrap()
-        .expect("GroveDB root");
-    let state_id = StateId {
-        app_version: metadata.protocol_version as u64,
-        core_chain_locked_height: metadata.core_chain_locked_height,
-        time: metadata.time_ms,
-        app_hash: root.to_vec(),
-        height: metadata.height,
-    };
-    let vote = CanonicalVote {
-        r#type: SignedMsgType::Precommit.into(),
-        block_id: vec![0x45; 32],
-        chain_id: metadata.chain_id.clone(),
-        height: metadata.height as i64,
-        round: 0,
-        state_id: state_id
-            .calculate_msg_hash(&metadata.chain_id, metadata.height as i64, 0)
-            .expect("state ID hash"),
-    };
-    let digest = vote
-        .calculate_sign_hash(
-            &metadata.chain_id,
-            106,
-            &[0x46; 32],
-            metadata.height as i64,
-            0,
-        )
-        .expect("Tenderdash vote hash");
-    Proof {
-        grovedb_proof: bytes,
-        quorum_hash: vec![0x46; 32],
-        signature: quorum_secret()
-            .sign(SignatureSchemes::Basic, &digest)
-            .expect("BLS signature")
-            .as_raw_value()
-            .to_compressed()
-            .to_vec(),
-        round: 0,
-        block_id_hash: vote.block_id,
-        quorum_type: 106,
-    }
-}
-
 fn dump<R: TransportRequest>(directory: &Path, request: &R, response: R::Response) {
     let result = Ok(ExecutionResponse {
         inner: response,
@@ -242,37 +179,6 @@ fn dump<R: TransportRequest>(directory: &Path, request: &R, response: R::Respons
     let data = DumpData::new(request, &result);
     data.save(&directory.join(data.filename().expect("request filename")))
         .expect("raw transport fixture");
-}
-
-fn wait_response(
-    drive: &Drive,
-    transition: &StateTransition,
-) -> WaitForStateTransitionResultResponse {
-    let metadata = ResponseMetadata {
-        height: 100,
-        core_chain_locked_height: 1,
-        time_ms: 1_000_000,
-        protocol_version: PlatformVersion::latest().protocol_version,
-        chain_id: "dash-test-chain".into(),
-        ..Default::default()
-    };
-    let proof = drive
-        .prove_state_transition(transition, None, PlatformVersion::latest())
-        .expect("transition proof")
-        .data
-        .expect("valid proof query");
-    WaitForStateTransitionResultResponse {
-        version: Some(wait_for_state_transition_result_response::Version::V0(
-            wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
-                result: Some(
-                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(
-                        signed_proof(drive, proof, &metadata),
-                    ),
-                ),
-                metadata: Some(metadata),
-            },
-        )),
-    }
 }
 
 async fn update_transition(contract: DataContract) -> StateTransition {
@@ -306,42 +212,144 @@ async fn fixture(
     fixture_with_document(document(), 2, mutate_update, |_| {}).await
 }
 
-fn add_older_contract_fetch(sdk: &WasmSdk) -> GetDataContractRequest {
-    let pv = PlatformVersion::latest();
-    let directory = tempfile::TempDir::new().expect("contract fetch proof");
-    let drive = setup_drive_with_initial_state_structure(Some(pv));
-    drive
-        .insert_contract(&contract(1), BlockInfo::default(), true, None, pv)
-        .expect("older committed contract");
-    let metadata = ResponseMetadata {
-        height: 99,
-        core_chain_locked_height: 1,
-        time_ms: 990_000,
-        protocol_version: pv.protocol_version,
-        chain_id: "dash-test-chain".into(),
-        ..Default::default()
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContractCacheVectors {
+    fixture_format_version: u32,
+    protocol_version: u32,
+    generator: String,
+    quorum_public_key: Vec<u8>,
+    inputs: serde_json::Value,
+    roots: BTreeMap<String, Vec<u8>>,
+    responses: SignedResponses,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignedResponses {
+    owner_update: WaitForStateTransitionResultResponse,
+    owner_write: WaitForStateTransitionResultResponse,
+    owner_nonce: GetIdentityContractNonceResponse,
+    non_owner_update: WaitForStateTransitionResultResponse,
+    non_owner_write: WaitForStateTransitionResultResponse,
+    non_owner_owner_nonce: GetIdentityContractNonceResponse,
+    non_owner_writer_nonce: GetIdentityContractNonceResponse,
+    submitted_v3_update: WaitForStateTransitionResultResponse,
+    older_contract_fetch: GetDataContractResponse,
+}
+
+fn assert_envelope(metadata: &ResponseMetadata, proof: &Proof, older: bool) {
+    assert_eq!(
+        metadata.protocol_version,
+        PlatformVersion::latest().protocol_version
+    );
+    assert_eq!(metadata.height, if older { 99 } else { 100 });
+    assert_eq!(metadata.time_ms, if older { 990_000 } else { 1_000_000 });
+    assert_eq!(metadata.core_chain_locked_height, 1);
+    assert_eq!(metadata.chain_id, "dash-test-chain");
+    assert_eq!(proof.quorum_hash, vec![0x46; 32]);
+    assert_eq!(proof.quorum_type, 106);
+    assert_eq!(proof.round, 0);
+    assert_eq!(proof.block_id_hash, vec![0x45; 32]);
+    assert_eq!(proof.signature.len(), 96);
+    assert!(!proof.grovedb_proof.is_empty());
+}
+
+fn vectors() -> ContractCacheVectors {
+    let vectors: ContractCacheVectors = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/contract-cache/signed-responses.json"
+    )))
+    .expect("complete signed contract cache vectors");
+    assert_eq!(vectors.fixture_format_version, 1);
+    assert_eq!(
+        vectors.protocol_version,
+        PlatformVersion::latest().protocol_version,
+        "regenerate vectors for the latest protocol"
+    );
+    assert_eq!(
+        vectors.generator,
+        "packages/rs-drive-abci/examples/generate_wasm_contract_cache_vectors.rs"
+    );
+    assert_eq!(vectors.quorum_public_key.len(), 48);
+    assert_eq!(
+        vectors.inputs,
+        serde_json::json!({
+            "contract_id": CONTRACT_ID.to_vec(), "owner_id": OWNER_ID.to_vec(),
+            "entropy": ENTROPY.to_vec(), "note_id": vec![0x44u8;32], "writer_id": vec![0x52u8;32],
+            "identity_key_seeds": [1,2], "quorum_seed": "authenticated contract update regression",
+            "contract_versions": [1,2,3], "identity_balance": 1_000_000, "identity_revision": 1,
+            "update_nonce": 1, "owner_write_nonce": 2, "non_owner_write_nonce": 1,
+            "chain_id": "dash-test-chain", "core_height": 1, "height": 100, "time_ms": 1_000_000,
+            "older_height": 99, "older_time_ms": 990_000,
+            "block_id": vec![0x45u8;32], "quorum_hash": vec![0x46u8;32], "quorum_type": 106,
+        })
+    );
+    assert_eq!(vectors.roots.len(), 5);
+    for name in [
+        "owner_update",
+        "owner_write",
+        "non_owner_update",
+        "non_owner_write",
+        "older_contract_fetch",
+    ] {
+        assert_eq!(
+            vectors.roots.get(name).expect("recorded state root").len(),
+            32
+        );
+    }
+    let responses = &vectors.responses;
+    for response in [
+        &responses.owner_update,
+        &responses.owner_write,
+        &responses.non_owner_update,
+        &responses.non_owner_write,
+        &responses.submitted_v3_update,
+    ] {
+        let Some(wait_for_state_transition_result_response::Version::V0(v0)) = &response.version
+        else {
+            panic!("wait response version")
+        };
+        let Some(wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0.result else { panic!("wait response proof") };
+        assert_envelope(v0.metadata.as_ref().expect("wait metadata"), proof, false);
+    }
+    for response in [
+        &responses.owner_nonce,
+        &responses.non_owner_owner_nonce,
+        &responses.non_owner_writer_nonce,
+    ] {
+        let Some(get_identity_contract_nonce_response::Version::V0(v0)) = &response.version else {
+            panic!("nonce response version")
+        };
+        let Some(get_identity_contract_nonce_response::get_identity_contract_nonce_response_v0::Result::Proof(proof)) = &v0.result else { panic!("nonce response proof") };
+        assert_envelope(v0.metadata.as_ref().expect("nonce metadata"), proof, false);
+    }
+    let Some(get_data_contract_response::Version::V0(v0)) = &responses.older_contract_fetch.version
+    else {
+        panic!("contract response version")
     };
-    let proof = drive
-        .prove_contract(CONTRACT_ID, None, pv)
-        .expect("contract proof");
+    let Some(get_data_contract_response::get_data_contract_response_v0::Result::Proof(proof)) =
+        &v0.result
+    else {
+        panic!("contract response proof")
+    };
+    assert_envelope(
+        v0.metadata.as_ref().expect("contract metadata"),
+        proof,
+        true,
+    );
+    vectors
+}
+
+fn add_older_contract_fetch(sdk: &WasmSdk) -> GetDataContractRequest {
+    let directory = tempfile::TempDir::new().expect("contract fetch fixture");
     let request: GetDataContractRequest = Identifier::from(CONTRACT_ID)
         .query(&sdk.inner_sdk().query_settings())
         .expect("contract request");
     dump(
         directory.path(),
         &request,
-        GetDataContractResponse {
-            version: Some(get_data_contract_response::Version::V0(
-                get_data_contract_response::GetDataContractResponseV0 {
-                    result: Some(
-                        get_data_contract_response::get_data_contract_response_v0::Result::Proof(
-                            signed_proof(&drive, proof, &metadata),
-                        ),
-                    ),
-                    metadata: Some(metadata),
-                },
-            )),
-        },
+        vectors().responses.older_contract_fetch,
     );
     sdk.inner_sdk()
         .clone()
@@ -376,37 +384,35 @@ async fn fixture_with_document(
         })
         .build()
         .expect("SDK");
-    let drive = setup_drive_with_initial_state_structure(Some(pv));
     let updated = contract(2);
-    drive
-        .insert_contract(&updated, BlockInfo::default(), true, None, pv)
-        .expect("v2 contract");
     let writer = note.owner_id();
-    let identities = BTreeSet::from([OWNER_ID, writer.to_buffer()]);
-    for id in &identities {
-        let key = if *id == OWNER_ID {
-            identity_key()
-        } else {
-            identity_key_with_seed(2)
-        };
-        drive
-            .add_new_identity(
-                Identity::V0(IdentityV0 {
-                    id: (*id).into(),
-                    public_keys: BTreeMap::from([(key.id(), key)]),
-                    balance: 1_000_000,
-                    revision: 1,
-                }),
-                false,
-                &BlockInfo::default(),
-                true,
+    let mut expected_note = document();
+    expected_note.set_owner_id(writer);
+    assert_eq!(note, expected_note, "unsupported document fixture shape");
+    let responses = vectors().responses;
+    let (mut response, mut write_response, owner_nonce, writer_nonce) =
+        match (writer.to_buffer(), submitted_version) {
+            (OWNER_ID, 2) => (
+                responses.owner_update,
+                responses.owner_write,
+                responses.owner_nonce,
                 None,
-                pv,
-            )
-            .expect("owner balance");
-    }
+            ),
+            (OWNER_ID, 3) => (
+                responses.submitted_v3_update,
+                responses.owner_write,
+                responses.owner_nonce,
+                None,
+            ),
+            (writer_id, 2) if writer_id == [0x52; 32] => (
+                responses.non_owner_update,
+                responses.non_owner_write,
+                responses.non_owner_owner_nonce,
+                Some(responses.non_owner_writer_nonce),
+            ),
+            _ => panic!("unsupported owner/version fixture case"),
+        };
     let update = update_transition(contract(submitted_version)).await;
-    let mut response = wait_response(&drive, &update);
     mutate_update(&mut response);
     let update_request = update
         .broadcast_request_for_state_transition()
@@ -446,39 +452,9 @@ async fn fixture_with_document(
     )
     .await
     .expect("signed document create");
-    let StateTransition::Batch(ref batch) = document_transition else {
-        panic!("document batch")
-    };
-    let Some(BatchedTransitionRef::Document(DocumentTransition::Create(create))) =
-        batch.first_transition()
-    else {
-        panic!("document create")
-    };
-    let committed = Document::try_from_create_transition(
-        create,
-        writer,
-        &BlockInfo {
-            time_ms: 1_000_000,
-            height: 100,
-            core_height: 1,
-            ..Default::default()
-        },
-        &updated,
-        &updated.document_type_for_name("note").expect("note type"),
-        pv,
-    )
-    .expect("committed document");
-    setup_document(
-        &drive,
-        &committed,
-        &updated,
-        updated.document_type_for_name("note").expect("note type"),
-        None,
-    );
     let write_request = document_transition
         .broadcast_request_for_state_transition()
         .expect("write request");
-    let mut write_response = wait_response(&drive, &document_transition);
     mutate_write(&mut write_response);
     dump(
         directory.path(),
@@ -493,28 +469,15 @@ async fn fixture_with_document(
         write_response,
     );
 
-    for id in identities {
-        let nonce_request: GetIdentityContractNonceRequest =
-            (Identifier::from(id), Identifier::from(CONTRACT_ID))
-                .query(&sdk.query_settings())
-                .expect("nonce request");
-        let metadata = ResponseMetadata {
-            height: 100,
-            core_chain_locked_height: 1,
-            time_ms: 1_000_000,
-            protocol_version: pv.protocol_version,
-            chain_id: "dash-test-chain".into(),
-            ..Default::default()
-        };
-        let nonce_proof = drive
-            .prove_identity_contract_nonce(id, CONTRACT_ID, None, &pv.drive)
-            .expect("nonce absence proof");
-        dump(directory.path(), &nonce_request, GetIdentityContractNonceResponse {
-        version: Some(get_identity_contract_nonce_response::Version::V0(get_identity_contract_nonce_response::GetIdentityContractNonceResponseV0 {
-            result: Some(get_identity_contract_nonce_response::get_identity_contract_nonce_response_v0::Result::Proof(signed_proof(&drive, nonce_proof, &metadata))),
-            metadata: Some(metadata),
-        })),
-    });
+    let mut nonces = vec![(Identifier::from(OWNER_ID), owner_nonce)];
+    if let Some(response) = writer_nonce {
+        nonces.push((writer, response));
+    }
+    for (id, response) in nonces {
+        let request: GetIdentityContractNonceRequest = (id, Identifier::from(CONTRACT_ID))
+            .query(&sdk.query_settings())
+            .expect("nonce request");
+        dump(directory.path(), &request, response);
     }
     sdk.mock()
         .load_expectations_sync(directory.path())
