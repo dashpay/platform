@@ -2,8 +2,9 @@ use super::*;
 use crate::context_provider::WasmTrustedContext;
 use crate::error::WasmSdkErrorKind;
 use dapi_grpc::platform::v0::{
-    get_identity_contract_nonce_response, wait_for_state_transition_result_response,
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse,
+    get_data_contract_response, get_identity_contract_nonce_response,
+    wait_for_state_transition_result_response, BroadcastStateTransitionRequest,
+    BroadcastStateTransitionResponse, GetDataContractRequest, GetDataContractResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, Proof, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
@@ -303,6 +304,51 @@ async fn fixture(
     BroadcastStateTransitionRequest,
 ) {
     fixture_with_document(document(), 2, mutate_update, |_| {}).await
+}
+
+fn add_older_contract_fetch(sdk: &WasmSdk) -> GetDataContractRequest {
+    let pv = PlatformVersion::latest();
+    let directory = tempfile::TempDir::new().expect("contract fetch proof");
+    let drive = setup_drive_with_initial_state_structure(Some(pv));
+    drive
+        .insert_contract(&contract(1), BlockInfo::default(), true, None, pv)
+        .expect("older committed contract");
+    let metadata = ResponseMetadata {
+        height: 99,
+        core_chain_locked_height: 1,
+        time_ms: 990_000,
+        protocol_version: pv.protocol_version,
+        chain_id: "dash-test-chain".into(),
+        ..Default::default()
+    };
+    let proof = drive
+        .prove_contract(CONTRACT_ID, None, pv)
+        .expect("contract proof");
+    let request: GetDataContractRequest = Identifier::from(CONTRACT_ID)
+        .query(&sdk.inner_sdk().query_settings())
+        .expect("contract request");
+    dump(
+        directory.path(),
+        &request,
+        GetDataContractResponse {
+            version: Some(get_data_contract_response::Version::V0(
+                get_data_contract_response::GetDataContractResponseV0 {
+                    result: Some(
+                        get_data_contract_response::get_data_contract_response_v0::Result::Proof(
+                            signed_proof(&drive, proof, &metadata),
+                        ),
+                    ),
+                    metadata: Some(metadata),
+                },
+            )),
+        },
+    );
+    sdk.inner_sdk()
+        .clone()
+        .mock()
+        .load_expectations_sync(directory.path())
+        .expect("raw older contract response");
+    request
 }
 
 async fn fixture_with_document(
@@ -799,6 +845,172 @@ async fn should_return_fetched_snapshot_without_regressing_promoted_cache() {
             .expect("durable contract")
             .version(),
         2
+    );
+}
+
+#[tokio::test]
+async fn should_use_updated_schema_when_an_older_shared_fetch_finishes_late() {
+    let (sdk, update_request, write_request) = fixture(|_| {}).await;
+    let fetch_request = add_older_contract_fetch(&sdk);
+    sdk.remove_cached_contract(&CONTRACT_ID.into());
+    let fetch_sdk =
+        WasmSdk::new_for_testing(sdk.inner_sdk().clone(), sdk.trusted_context().cloned());
+    let (release, gate) = futures::channel::oneshot::channel::<()>();
+    let mut producer = Box::pin(sdk.join_or_start_contract_fetch(
+        CONTRACT_ID.into(),
+        move || async move {
+            gate.await.expect("release older fetch");
+            fetch_sdk.refresh_contract(CONTRACT_ID.into()).await
+        },
+    ));
+    assert!(futures::poll!(producer.as_mut()).is_pending());
+    let mut first = Box::pin(sdk.get_or_fetch_contract(CONTRACT_ID.into()));
+    let mut second = Box::pin(sdk.get_or_fetch_contract(CONTRACT_ID.into()));
+    assert!(futures::poll!(first.as_mut()).is_pending());
+    assert!(futures::poll!(second.as_mut()).is_pending());
+    assert_eq!(sdk.inflight_contract_fetch_count(), 1);
+    assert!(sdk.get_cached_contract(&CONTRACT_ID.into()).is_none());
+
+    let signer = CountingSigner::default();
+    sdk.update_contract(contract(2), identity_key(), &signer, None)
+        .await
+        .expect("authenticated newer update");
+    release.send(()).expect("old fetch is still waiting");
+    let (producer, first, second) = futures::join!(producer, first, second);
+    assert_eq!(
+        producer
+            .expect("authenticated older fetch snapshot")
+            .version(),
+        1
+    );
+    assert_eq!(sdk.inflight_contract_fetch_count(), 0);
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&fetch_request)
+            .await,
+        1,
+        "both cold waiters must share one authenticated fetch"
+    );
+    let first = first.expect("first cold waiter");
+    let second = second.expect("second cold waiter");
+    assert_eq!(
+        first.version(),
+        2,
+        "a waiting writer must receive the promoted schema, not the older snapshot"
+    );
+    assert_eq!(second, first);
+    let confirmed = document()
+        .put_to_platform_and_wait_for_response(
+            sdk.inner_sdk(),
+            first
+                .document_type_for_name("note")
+                .expect("new note type")
+                .to_owned_document_type(),
+            Some(ENTROPY),
+            identity_key(),
+            None,
+            &signer,
+            None,
+        )
+        .await
+        .expect("write using returned new schema");
+    assert_eq!(
+        confirmed.properties().get("b"),
+        Some(&Value::Text("beta".into()))
+    );
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&update_request)
+            .await,
+        1
+    );
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&write_request)
+            .await,
+        1
+    );
+    assert_eq!(signer.0.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        sdk.get_cached_contract(&CONTRACT_ID.into())
+            .expect("retained cache")
+            .version(),
+        2
+    );
+    assert_eq!(
+        crate::contract_store::load_all(Network::Testnet, PlatformVersion::latest())
+            .iter()
+            .find(|c| c.id() == Identifier::from(CONTRACT_ID))
+            .expect("durable newer contract")
+            .version(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn should_keep_shared_fetch_error_after_a_verified_update_populates_cache() {
+    let (sdk, update_request, _) = fixture(|_| {}).await;
+    sdk.remove_cached_contract(&CONTRACT_ID.into());
+    let (release, gate) = futures::channel::oneshot::channel::<()>();
+    let mut producer = Box::pin(sdk.join_or_start_contract_fetch(
+        CONTRACT_ID.into(),
+        move || async move {
+            gate.await.expect("release failed fetch");
+            Err(WasmSdkError::not_found("contract fetch failed"))
+        },
+    ));
+    assert!(futures::poll!(producer.as_mut()).is_pending());
+    let mut waiter = Box::pin(sdk.get_or_fetch_contract(CONTRACT_ID.into()));
+    assert!(futures::poll!(waiter.as_mut()).is_pending());
+    let signer = CountingSigner::default();
+    sdk.update_contract(contract(2), identity_key(), &signer, None)
+        .await
+        .expect("authenticated update");
+    release.send(()).expect("failed fetch waiter remains");
+    let (producer, waiter) = futures::join!(producer, waiter);
+    assert!(producer.is_err());
+    let error = waiter.expect_err("a failed fetch must stay visible despite the cache");
+    assert_eq!(error.kind(), WasmSdkErrorKind::NotFound);
+    assert_eq!(error.message(), "contract fetch failed");
+    assert_eq!(sdk.inflight_contract_fetch_count(), 0);
+    assert_eq!(
+        sdk.get_cached_contract(&CONTRACT_ID.into())
+            .expect("promoted cache")
+            .version(),
+        2
+    );
+    assert_eq!(
+        sdk.inner_sdk()
+            .clone()
+            .mock()
+            .request_count(&update_request)
+            .await,
+        1
+    );
+    assert_eq!(signer.0.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn should_return_authenticated_fetch_when_no_trusted_cache_is_available() {
+    let (original, _, _) = fixture(|_| {}).await;
+    let sdk = WasmSdk::new_for_testing(original.inner_sdk().clone(), None);
+    let request = add_older_contract_fetch(&sdk);
+    let fetched = sdk
+        .get_or_fetch_contract(CONTRACT_ID.into())
+        .await
+        .expect("proved fetch");
+    assert_eq!(fetched.version(), 1);
+    assert!(sdk.get_cached_contract(&CONTRACT_ID.into()).is_none());
+    assert_eq!(sdk.inflight_contract_fetch_count(), 0);
+    assert_eq!(
+        sdk.inner_sdk().clone().mock().request_count(&request).await,
+        1
     );
 }
 

@@ -172,8 +172,8 @@ impl WasmSdk {
     ///
     /// A miss does not always fetch: when a fetch for the same id is
     /// already in flight (another query missed the cold cache a moment
-    /// ago), this call joins it and every waiter receives that one
-    /// fetch's result — see [`Self::join_or_start_contract_fetch`].
+    /// ago), this call joins it. After success, a contract promoted while
+    /// the fetch was pending takes precedence over its older result.
     pub(crate) async fn get_or_fetch_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
@@ -184,10 +184,15 @@ impl WasmSdk {
 
         let sdk = self.sdk.clone();
         let trusted_context = self.trusted_context.clone();
-        self.join_or_start_contract_fetch(contract_id, move || {
-            fetch_contract_into_cache(sdk, trusted_context, contract_id)
-        })
-        .await
+        let fetched = self
+            .join_or_start_contract_fetch(contract_id, move || {
+                fetch_contract_into_cache(sdk, trusted_context, contract_id)
+            })
+            .await?;
+        Ok(self
+            .get_cached_contract(&contract_id)
+            .map(|cached| (*cached).clone())
+            .unwrap_or(fetched))
     }
 
     /// Single-flight over contract fetches: join the fetch already in
