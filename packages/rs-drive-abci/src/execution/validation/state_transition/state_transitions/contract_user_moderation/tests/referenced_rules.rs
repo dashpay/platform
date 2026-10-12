@@ -203,8 +203,10 @@ fn comment_schema() -> Value {
     })
 }
 
-/// A stall on a topic, kept to a hundred and one posts on it while it is
-/// open, with a note only moderators write
+/// A stall on a topic, written only while the topic is open, with a note
+/// only moderators write. Its rule reads no total: registration refuses a rule
+/// reading a referenced document beside one on a type keeping fields for its
+/// moderators, whose change is judged against every rule reading a total
 fn stall_schema() -> Value {
     platform_value!({
         "type": "object",
@@ -220,12 +222,7 @@ fn stall_schema() -> Value {
         },
         "required": ["topicId"],
         "propertyConstraints": {
-            "fewPosts": {
-                "lessThanOrEqual": [
-                    { "countOf": [THREAD_POST, { "topicId": "topicId" }] },
-                    { "add": [{ "referenced": ["topicId", "open"] }, 100] }
-                ]
-            }
+            "topicOpen": { "equal": [{ "referenced": ["topicId", "open"] }, 1] }
         },
         "additionalProperties": false,
     })
@@ -585,13 +582,14 @@ async fn should_check_every_where_entry_of_a_removed_document_a_rule_reads() {
 }
 
 /// A moderator's change of a field judges no rule reading a referenced
-/// document, and reads none of its totals: the stall's rule, reading the posts
-/// on its topic and the topic itself, is left for the owner's writes.
+/// document: the stall's rule, reading whether its topic is open, is left for
+/// the owner's writes, so a moderator changes the note of a stall whose topic
+/// has closed.
 #[tokio::test]
-async fn should_change_a_field_without_reading_a_total_of_a_rule_it_does_not_judge() {
+async fn should_change_a_field_without_judging_a_rule_reading_a_reference() {
     let setup = setup().await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (topic, create_topic) = create_with(
+    let (mut topic, create_topic) = create_with(
         &setup,
         &setup.user,
         TOPIC,
@@ -607,6 +605,10 @@ async fn should_change_a_field_without_reading_a_total_of_a_rule_it_does_not_jud
     )
     .await;
     assert_success(&setup.process(&create_stall, &transaction));
+
+    topic.set("open", Value::Bool(false));
+    let close = replacement(&setup.user, &setup.contract, TOPIC, &mut topic).await;
+    assert_success(&setup.process(&close, &transaction));
 
     let change = setup
         .moderate(

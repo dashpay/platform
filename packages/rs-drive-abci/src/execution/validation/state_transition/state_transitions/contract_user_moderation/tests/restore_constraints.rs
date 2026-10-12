@@ -422,3 +422,43 @@ async fn should_preserve_the_rule_free_restore_fee_and_document() {
         Some(removed)
     );
 }
+
+/// A restore is judged only against the rules reading a total, with `$old.` reading the restored
+/// document itself. `textChangesOnEveryEdit`, which the restored document could never meet
+/// against itself, is not judged; `onePerOwnerUnlessRetitled` is, and finds the text unchanged,
+/// so its cap applies.
+#[tokio::test]
+async fn should_judge_a_restore_by_the_rules_reading_a_total_with_the_restored_document_stored() {
+    let setup = setup_with_schema(post_schema_with(platform_value!({
+        "indices": [{"name": "byOwner", "properties": [{"$ownerId": "asc"}],
+            "countable": "countable"}],
+        "propertyConstraints": {
+            "onePerOwnerUnlessRetitled": {"anyOf": [
+                {"notEqual": ["text", "$old.text"]},
+                {"lessThanOrEqual": [{"countOf": ["post", {"$ownerId": "$ownerId"}]}, 1]}
+            ]},
+            "textChangesOnEveryEdit": {"notEqual": ["text", "$old.text"]}
+        }
+    })))
+    .await;
+    let tx = setup.platform.drive.grove.start_transaction();
+    let first = create_post(&setup, &setup.user, "first", None, &tx).await;
+    let bytes = remove_post(&setup, &first, &tx).await;
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process(&restore, &tx));
+    assert!(setup.stored_document(POST, first.id(), Some(&tx)).is_some());
+
+    // A create has no stored text, so its cap does not apply; a restore's does
+    let second = create_post(&setup, &setup.user, "second", None, &tx).await;
+    let bytes = remove_post(&setup, &second, &tx).await;
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    let result = setup.process(&restore, &tx);
+    constraint_refusal(&result, "onePerOwnerUnlessRetitled");
+    assert!(setup
+        .stored_document(POST, second.id(), Some(&tx))
+        .is_none());
+}
