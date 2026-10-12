@@ -970,7 +970,7 @@ pub(crate) fn load_spent_claims(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
     )?;
