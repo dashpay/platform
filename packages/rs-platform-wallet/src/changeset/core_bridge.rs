@@ -140,6 +140,11 @@ struct AdapterFaultState {
     /// wallet's next round until a store accepts them. Session-scoped: a
     /// restart before that round loses them.
     unapplied_truncations: HashMap<WalletId, Vec<ChainTruncation>>,
+    /// Sent-payment rows a truncation returned to pending in a round a
+    /// `store()` rejected, per wallet. That verdict is decided once, with
+    /// the fork, so the rows are laid under that wallet's next round until
+    /// a store accepts them. Session-scoped, like the truncations.
+    unstored_reversals: HashMap<WalletId, PaymentOverlay>,
 }
 
 impl AdapterFaultState {
@@ -733,9 +738,14 @@ fn commit_wallet<P>(
     let WalletBatch {
         mut core,
         asset_locks,
-        payments,
+        mut payments,
     } = wallet_batch;
     {
+        // Under this round's own rows: a verdict reached since is the newer.
+        if let Some(mut owed) = fault.unstored_reversals.remove(&wallet_id) {
+            merge_payment_overlays(&mut owed, payments);
+            payments = owed;
+        }
         // A truncation this wallet's store rejected goes first: everything
         // folded since describes the wallet after it.
         if let Some(unapplied) = fault.unapplied_truncations.remove(&wallet_id) {
@@ -885,6 +895,7 @@ fn commit_wallet<P>(
             .as_ref()
             .map(|core| core.truncations.clone())
             .unwrap_or_default();
+        let offered_reversals = returned_to_pending(cs.dashpay_payments_overlay.as_ref());
         let store_result = persister.store(wallet_id, cs);
         if let Err(error) = &store_result {
             // A backend that kept the failed round for its own retry still
@@ -896,6 +907,13 @@ fn commit_wallet<P>(
                 fault
                     .unapplied_truncations
                     .insert(wallet_id, offered_truncations);
+            }
+            // Whole rows, so a copy the backend also kept changes nothing:
+            // these are set aside on every failure.
+            if !offered_reversals.is_empty() {
+                fault
+                    .unstored_reversals
+                    .insert(wallet_id, offered_reversals);
             }
         }
         // Recorded only once the store has RETURNED, and whether it accepted
@@ -1620,6 +1638,12 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
 /// the sweep from the frozen watermark, which re-derives the verdict. A
 /// rollback ledger would only defend a divergence that cannot outlive the
 /// session that caused it.
+///
+/// The exception is a payment a truncation returned to pending: no scan
+/// reports the fork again, so nothing re-derives that verdict. Those rows are
+/// offered again with the wallet's next round, as the truncation is (see
+/// [`returned_to_pending`]). The list is held in memory only; a restart
+/// before a store accepts them leaves the stored payment confirmed.
 pub(crate) async fn sent_payment_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
@@ -1698,6 +1722,23 @@ pub(crate) async fn sent_payment_verdicts(
         }
     }
     overlay
+}
+
+/// The rows of `overlay` a truncation returned to pending. `Pending` is the
+/// status only that verdict writes (see [`next_sent_payment_status`]), so the
+/// status alone picks them out.
+fn returned_to_pending(overlay: Option<&PaymentOverlay>) -> PaymentOverlay {
+    let mut rows = PaymentOverlay::default();
+    for (owner, payments) in overlay.into_iter().flatten() {
+        for (txid, entry) in payments {
+            if entry.status == PaymentStatus::Pending {
+                rows.entry(*owner)
+                    .or_default()
+                    .insert(txid.clone(), entry.clone());
+            }
+        }
+    }
+    rows
 }
 
 /// The status `entry` moves to under `evidence`, or `None` if it does not
@@ -7293,6 +7334,169 @@ mod tests {
         );
         assert_eq!(diag.persisted, Some(700));
         assert_eq!(diag.faulted, 0, "a payments-capable host is not a fault");
+    }
+
+    /// A fork is reported once, so the payment it returns to pending is
+    /// decided once. When the store rejects that round the truncation is
+    /// offered again; the payment row has to come with it, or the store
+    /// keeps a confirmed payment for a transaction no block holds.
+    #[test]
+    fn should_offer_the_payment_a_rejected_truncation_returned_to_pending_again() {
+        use crate::changeset::PersistenceCapabilities;
+        use crate::wallet::identity::PaymentStatus;
+        let wallet_id = [0x35u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            PersistenceCapabilities::CORE_CHAIN_TRUNCATION
+                .union(PersistenceCapabilities::DASHPAY_PAYMENTS),
+        );
+        persister.fail_next(wallet_id);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+        let truncation = super::ChainTruncation {
+            height: 600,
+            txids: Vec::new(),
+            unconfirmed_txids: Vec::new(),
+            restored_outpoints: Vec::new(),
+        };
+
+        let mut rejected_round = BTreeMap::new();
+        rejected_round.insert(
+            wallet_id,
+            WalletBatch {
+                core: CoreChangeSet {
+                    truncations: vec![truncation.clone()],
+                    ..CoreChangeSet::default()
+                },
+                asset_locks: AssetLockChangeSet::default(),
+                payments: one_verdict_overlay(PaymentStatus::Pending),
+            },
+        );
+        commit_batch(
+            &persister,
+            rejected_round,
+            1,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+        assert!(
+            obs_rx
+                .try_recv()
+                .expect("the round reaches store()")
+                .rejected
+        );
+
+        commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(700, 700)),
+            2,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+        let retried = obs_rx.try_recv().expect("the next round reaches store()");
+        assert_eq!(retried.truncations, vec![truncation]);
+        assert_eq!(
+            retried.dashpay_payments,
+            Some(one_verdict_overlay(PaymentStatus::Pending)),
+            "the payment the truncation returned to pending rides the retry"
+        );
+
+        commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(701, 701)),
+            3,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+        let after = obs_rx.try_recv().expect("the third round reaches store()");
+        assert_eq!(
+            after.dashpay_payments, None,
+            "a row a store accepted is not offered again"
+        );
+    }
+
+    /// What the store sees on the round after one it rejected, when the
+    /// rejected round carried `rejected` and the next one carries `next`.
+    fn payments_stored_after_a_rejected_round(
+        rejected: super::PaymentOverlay,
+        next: super::PaymentOverlay,
+    ) -> Option<super::PaymentOverlay> {
+        let wallet_id = [0x36u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS,
+        );
+        persister.fail_next(wallet_id);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+
+        for (seq, payments) in [(1, rejected), (2, next)] {
+            let mut batch = BTreeMap::new();
+            batch.insert(
+                wallet_id,
+                WalletBatch {
+                    core: watermark_with_rows(700 + seq as u32, 700 + seq as u32),
+                    asset_locks: AssetLockChangeSet::default(),
+                    payments,
+                },
+            );
+            commit_batch(
+                &persister,
+                batch,
+                seq,
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut Vec::new(),
+            );
+        }
+        assert!(obs_rx.try_recv().expect("the first round").rejected);
+        obs_rx
+            .try_recv()
+            .expect("the second round")
+            .dashpay_payments
+    }
+
+    /// A swept or confirmed payment of a rejected round is re-derived by the
+    /// scan the frozen watermark forces at the next start, so it is not
+    /// carried: only the verdict nothing reports twice is.
+    #[test]
+    fn should_not_offer_a_verdict_the_next_scan_re_derives_again() {
+        use crate::wallet::identity::PaymentStatus;
+        for status in [PaymentStatus::Failed, PaymentStatus::Confirmed] {
+            assert_eq!(
+                payments_stored_after_a_rejected_round(
+                    one_verdict_overlay(status),
+                    super::PaymentOverlay::default(),
+                ),
+                None,
+                "{status:?}"
+            );
+        }
+    }
+
+    /// The payment was mined again before the retry: the round that says so
+    /// is the newer word on the row.
+    #[test]
+    fn should_store_the_newer_verdict_over_a_carried_return_to_pending() {
+        use crate::wallet::identity::PaymentStatus;
+        assert_eq!(
+            payments_stored_after_a_rejected_round(
+                one_verdict_overlay(PaymentStatus::Pending),
+                one_verdict_overlay(PaymentStatus::Confirmed),
+            ),
+            Some(one_verdict_overlay(PaymentStatus::Confirmed)),
+        );
     }
 
     /// A persister that never attested `DASHPAY_PAYMENTS` cannot apply the
