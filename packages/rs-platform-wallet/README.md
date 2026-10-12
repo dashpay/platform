@@ -205,6 +205,12 @@ Spending only final coins brings these Rust source and behaviour changes:
   required, outpoint }` (FFI code 59): the build's final coins fall short, but
   key-wallet would build it if the coins that are not yet confirmed or
   InstantSend-locked were final. An exhaustive `match` needs an arm for it.
+- The asset-lock builds (identity registration and top-up, invitations,
+  shielded and platform-address funding) return `CoreFundsAwaitingNetwork`
+  for the same condition, where they returned `AssetLockInsufficientFunds`
+  (FFI code 29): a caller that matched 29 to offer "add funds" should treat 59
+  as "wait". For a drain it is reported only when the waiting coins exceed the
+  minimum lock floor.
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
   InstantSend-locked coins. A coin in `FinalizeOptions::inputs` that a

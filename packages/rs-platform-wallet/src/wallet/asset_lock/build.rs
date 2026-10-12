@@ -6,6 +6,8 @@
 use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
+use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
 use key_wallet::account::AccountType;
@@ -15,15 +17,20 @@ use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockError, AssetLockFundingAccount, AssetLockFundingType, CreditOutputFunding,
 };
-use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};
+use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
-use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::{
+    BuilderError, TransactionBuilder,
+};
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
+use crate::wallet::core::{resolved_funding_accounts, trial_with_waiting_coins, waiting_may_help};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
@@ -262,6 +269,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             script_pubkey: funding_address.script_pubkey(),
         };
 
+        let trial_output = credit_output.clone();
         let funding = CreditOutputFunding {
             output: credit_output,
             funding_type,
@@ -273,7 +281,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // pools the sources, enforces that CoinJoin funding is drain-only and
         // unpooled, and reserves the selected inputs in each contributing
         // account's own set under one owner token).
-        let result = info
+        let built = info
             .core_wallet
             .build_asset_lock_with_signer(
                 wallet,
@@ -284,8 +292,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 drain,
                 signer,
             )
-            .await
-            .map_err(|e| {
+            .await;
+        let result = match built {
+            Ok(result) => result,
+            Err(error) => {
                 // A drain's credit-output value is a zero placeholder, so it
                 // must not be advertised as the `required` amount of a typed
                 // shortfall (an empty CoinJoin account would report
@@ -298,8 +308,43 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         minimum_lock_duffs.unwrap_or(0)
                     }
                 };
-                map_builder_error(e, required)
-            })?;
+                let waiting = waiting_coins_would_fund(
+                    &error,
+                    wallet,
+                    info,
+                    funding_sources,
+                    source_index,
+                    trial_output,
+                    drain,
+                )
+                // A drain locks what it finds, so it builds over any waiting
+                // coin; it is waiting on the network only if those coins
+                // reach the floor (their fee aside).
+                .filter(|waiting| !drain || *waiting > required);
+                return Err(match (map_builder_error(error, required), waiting) {
+                    (
+                        PlatformWalletError::AssetLockInsufficientFunds {
+                            available,
+                            required,
+                        },
+                        Some(waiting),
+                    ) => PlatformWalletError::CoreFundsAwaitingNetwork {
+                        available: Some(available),
+                        waiting,
+                        required: Some(required),
+                        outpoint: None,
+                    },
+                    // Too many inputs: fewer, larger coins are on their way.
+                    (_, Some(waiting)) => PlatformWalletError::CoreFundsAwaitingNetwork {
+                        available: None,
+                        waiting,
+                        required: None,
+                        outpoint: None,
+                    },
+                    (error, None) => error,
+                });
+            }
+        };
 
         // Refuse a selection that picked an input pinned by an IN-FLIGHT
         // BROADCAST dispatch (`WalletGeneration::pin_in_broadcast`): this
@@ -1326,6 +1371,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 ///
 /// Every other builder error keeps the pre-existing generic
 /// `AssetLockTransaction` string form.
+///
+/// The caller turns a shortfall into
+/// [`CoreFundsAwaitingNetwork`](PlatformWalletError::CoreFundsAwaitingNetwork)
+/// when the coins that are not final yet would fund the build
+/// ([`waiting_coins_would_fund`]).
 fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
     match e {
         AssetLockError::Builder(
@@ -1351,6 +1401,57 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
             PlatformWalletError::AssetLockTransaction(format!("Asset lock builder failed: {other}"))
         }
     }
+}
+
+/// Whether the coins that are not final yet would fund an asset lock that
+/// just failed with `error`: the value of those coins a trial of the same
+/// build spends, as for a plain send ([`trial_with_waiting_coins`]), so the
+/// same wallet reports the same thing for a payment and a top-up. `None` when
+/// the failure is not a shortfall, or waiting would not cure it.
+///
+/// The trial mirrors key-wallet's asset-lock configuration (fee rate, the
+/// payload with the one credit output, every coin for a drain) over the
+/// accounts the sources resolve to. It runs under the caller's wallet-manager
+/// write guard, on the failure path only, and signs no input.
+fn waiting_coins_would_fund(
+    error: &AssetLockError,
+    wallet: &Wallet,
+    info: &mut PlatformWalletInfo,
+    funding_sources: &[AccountTypePreference],
+    source_index: u32,
+    credit_output: TxOut,
+    drain: bool,
+) -> Option<u64> {
+    let AssetLockError::Builder(error) = error else {
+        return None;
+    };
+    if !waiting_may_help(error) {
+        return None;
+    }
+    let offered = resolved_funding_accounts(
+        &info.core_wallet.accounts,
+        wallet,
+        funding_sources,
+        source_index,
+        funding_sources.len() == 1,
+    )
+    .ok()?;
+    let make = move || {
+        let builder = TransactionBuilder::new()
+            .set_fee_rate(FeeRate::new(DEFAULT_FEE_PER_KB))
+            .set_special_payload(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(vec![credit_output.clone()]),
+            ));
+        Ok(if drain {
+            builder.set_selection_strategy(SelectionStrategy::All)
+        } else {
+            builder
+        })
+    };
+    let height = info.core_wallet.last_processed_height();
+    trial_with_waiting_coins(&make, wallet, info, &offered, &[], None, height)
+        .ok()
+        .flatten()
 }
 
 #[cfg(test)]
@@ -1860,6 +1961,86 @@ mod tests {
             0,
             "a build-level shortfall must never reach the broadcaster"
         );
+    }
+
+    /// Mark every BIP44 coin as neither confirmed nor InstantSend-locked.
+    async fn make_bip44_coins_wait<B: TransactionBroadcaster>(manager: &AssetLockManager<B>) {
+        let mut wm = manager.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_mut_and_info_mut(&manager.wallet_id)
+            .expect("wallet");
+        for utxo in info
+            .core_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 account")
+            .utxos
+            .values_mut()
+        {
+            utxo.is_confirmed = false;
+            utxo.is_instantlocked = false;
+        }
+    }
+
+    /// A top-up whose only coins are not final yet reports what a plain send
+    /// from the same coins reports: funds waiting on the network when those
+    /// coins would fund it, insufficient funds when they would not.
+    #[tokio::test]
+    async fn should_report_an_asset_lock_shortfall_as_waiting_when_waiting_coins_fund_it() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        // The fixture's one coin.
+        let balance = 10_000_000;
+        make_bip44_coins_wait(&manager).await;
+        let build = |amount| {
+            manager.build_asset_lock_transaction_with_funding(
+                amount,
+                &[AccountTypePreference::BIP44],
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                &signer,
+            )
+        };
+
+        for amount in [
+            super::AssetLockBuildAmount::Exact(balance / 2),
+            super::AssetLockBuildAmount::DrainAll {
+                minimum_lock_duffs: Some(balance / 2),
+            },
+        ] {
+            let waiting = build(amount).await;
+            assert!(
+                matches!(
+                    waiting,
+                    Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                        available: Some(0),
+                        waiting,
+                        required: Some(required),
+                        outpoint: None,
+                    }) if waiting == balance && required == balance / 2
+                ),
+                "{amount:?}: got {waiting:?}"
+            );
+        }
+
+        for amount in [
+            super::AssetLockBuildAmount::Exact(balance * 2),
+            super::AssetLockBuildAmount::DrainAll {
+                minimum_lock_duffs: Some(balance * 2),
+            },
+        ] {
+            let short = build(amount).await;
+            assert!(
+                matches!(
+                    short,
+                    Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+                ),
+                "{amount:?}: got {short:?}"
+            );
+        }
+
+        assert_eq!(broadcaster.calls(), 0);
     }
 
     /// Builds an `AssetLockManager` over the shared BIP44-funded fixture.

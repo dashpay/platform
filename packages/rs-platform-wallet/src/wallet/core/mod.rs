@@ -15,8 +15,8 @@ pub use generation::WalletGeneration;
 pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
 pub use spend_observer::SpendObservationHandler;
 pub(crate) use transaction::{
-    build_error_awaiting_network, resolve_source_accounts, trial_with_waiting_coins,
-    waiting_may_help,
+    build_error_awaiting_network, resolve_source_accounts, resolved_funding_accounts,
+    trial_with_waiting_coins, waiting_may_help,
 };
 pub use transaction::{
     check_fee_rate, FinalizeOptions, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES,
