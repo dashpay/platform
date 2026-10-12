@@ -9,6 +9,8 @@ use crate::query::{QuerySyntaxSimpleValidationResult, QuerySyntaxValidationResul
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::MAX_INDEX_SIZE;
 use dpp::data_contract::document_type::{
     typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef,
 };
@@ -274,9 +276,11 @@ impl WhereOperator {
                 Value::Array(elements) => elements.contains(right_value),
                 _ => false,
             },
-            ContainsAny => match (left_value, right_value) {
-                (Value::Array(elements), Value::Array(values)) => {
-                    elements.iter().any(|element| values.contains(element))
+            // An element matches as the `in` it keys like, so u8 elements
+            // also match a list given as bytes.
+            ContainsAny => match left_value {
+                Value::Array(elements) => {
+                    elements.iter().any(|element| In.eval(element, right_value))
                 }
                 _ => false,
             },
@@ -1270,42 +1274,66 @@ impl<'a> WhereClause {
     ) -> Result<(), Error> {
         let names_typed_array =
             typed_array_property(document_type.flattened_properties(), &self.field).is_some();
-        if names_typed_array != self.operator.reads_array_elements() {
-            return Err(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(if names_typed_array {
-                    "a typed array is read with contains or containsAny, and no other operator"
-                } else {
-                    "contains and containsAny read the elements of a typed array"
-                }),
-            ));
+        if let Some(error) = self.element_operator_mismatch(names_typed_array) {
+            return Err(Error::Query(error));
         }
         if !names_typed_array {
             return Ok(());
         }
-        let values = match self.operator {
-            ContainsAny => {
-                let in_values = self.in_values();
-                if let Some(error) = in_values.errors.into_iter().next() {
-                    return Err(Error::Query(error));
-                }
-                in_values.data.unwrap_or_default().into_owned()
+        self.validate_element_values(|value| {
+            document_type
+                .serialize_value_for_key(&self.field, value, platform_version)
+                .is_ok()
+        })
+        .map_err(Error::Query)
+    }
+
+    /// The refusal of a clause that names a typed array without an element
+    /// operator, or uses one on any other field.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn element_operator_mismatch(&self, names_typed_array: bool) -> Option<QuerySyntaxError> {
+        (names_typed_array != self.operator.reads_array_elements()).then_some(
+            QuerySyntaxError::InvalidWhereClauseComponents(if names_typed_array {
+                "a typed array is read with contains or containsAny, and no other operator"
+            } else {
+                "contains and containsAny read the elements of a typed array"
+            }),
+        )
+    }
+
+    /// Judge the values of an element clause, `keys_as_element` telling
+    /// whether one value keys as an element of the array: `contains` names
+    /// one element, `containsAny` a list of them given as an `in` list is (1
+    /// to 100 distinct values, or bytes for u8 elements). Documents queries and
+    /// subscription filters judge element values by this one rule rather than
+    /// by the operators the element type admits as a property, so a boolean
+    /// array is read with `containsAny` though a boolean property takes no `in`.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn validate_element_values(
+        &self,
+        keys_as_element: impl Fn(&Value) -> bool,
+    ) -> Result<(), QuerySyntaxError> {
+        let listed;
+        let values: &[Value] = if self.operator == ContainsAny {
+            let in_values = self.in_values();
+            if let Some(error) = in_values.errors.into_iter().next() {
+                return Err(error);
             }
-            _ => vec![self.value.clone()],
+            listed = in_values.data.unwrap_or_default();
+            &listed
+        } else {
+            std::slice::from_ref(&self.value)
         };
-        for value in &values {
-            if value.is_null()
-                || document_type
-                    .serialize_value_for_key(&self.field, value, platform_version)
-                    .is_err()
-            {
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "invalid value type for an element of the typed array",
-                    ),
-                ));
-            }
+        if values
+            .iter()
+            .all(|value| !value.is_null() && keys_as_element(value))
+        {
+            Ok(())
+        } else {
+            Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "invalid value type for an element of the typed array",
+            ))
         }
-        Ok(())
     }
 
     /// Validate this where clause against the document schema
@@ -1327,33 +1355,28 @@ impl<'a> WhereClause {
             Cow::Borrowed(&property.property_type)
         };
 
-        // Check operator is allowed for field type
+        // A typed array is read with an element operator and nothing else, and
+        // each value it names is judged as `validate_array_element_clause`
+        // judges it for documents queries: it must key as an element, as
+        // generation 1 of `serialize_value_for_key` keys one. Any other clause
+        // is judged by the operator rules of its field's type.
         let property_type = property_type_cow.as_ref();
-        if !allowed_ops_for_type(property_type).contains(&self.operator) {
-            return QuerySyntaxSimpleValidationResult::new_with_error(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "operator not allowed for field type",
-                ),
-            );
+        let element_type = match property_type {
+            DocumentPropertyType::TypedArray(typed_array) => Some(&typed_array.item_type),
+            _ => None,
+        };
+        if let Some(error) = self.element_operator_mismatch(element_type.is_some()) {
+            return QuerySyntaxSimpleValidationResult::new_with_error(error);
         }
-
-        // An element operator reads a typed array (the only type admitting one):
-        // its value is one element, or a list of them, of the element type, and
-        // is judged as an equality or an `in` on that type would be
-        if self.operator.reads_array_elements() {
-            let DocumentPropertyType::TypedArray(typed_array) = property_type else {
-                return QuerySyntaxSimpleValidationResult::new_with_error(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "contains and containsAny read the elements of a typed array",
-                    ),
-                );
+        if let Some(element_type) = element_type {
+            return match self.validate_element_values(|value| {
+                element_type
+                    .encode_value_for_tree_keys(value)
+                    .is_ok_and(|key| key.len() <= MAX_INDEX_SIZE)
+            }) {
+                Ok(()) => QuerySyntaxSimpleValidationResult::new(),
+                Err(error) => QuerySyntaxSimpleValidationResult::new_with_error(error),
             };
-            let element_clause = WhereClause {
-                field: self.field.clone(),
-                operator: self.operator.as_key_operator(),
-                value: self.value.clone(),
-            };
-            return element_clause.validate_against_property_type(&typed_array.item_type);
         }
 
         self.validate_against_property_type(property_type)
