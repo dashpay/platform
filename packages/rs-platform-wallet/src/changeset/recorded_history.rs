@@ -60,8 +60,9 @@ pub struct StoredTransaction {
     /// Load excludes spent outputs, so a spend whose funding survives only as
     /// a height row replays with no owned input; these let the replay stage
     /// that input and rebuild its spent mark. Empty when the store keeps no
-    /// per-input ownership: the replay then only keeps a settled spend's coin
-    /// from being credited again, without attributing the spend.
+    /// per-input ownership: the replay then only keeps the coin of a
+    /// chain-locked or InstantSend-locked spend from being credited again,
+    /// without attributing the spend.
     pub owned_inputs: Vec<InputDetail>,
 }
 

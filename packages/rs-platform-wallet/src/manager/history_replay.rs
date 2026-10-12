@@ -354,7 +354,7 @@ pub async fn replay_recorded_history(
         .into_iter()
         .map(|(coin, spenders)| (coin, reservation_claimant(&spenders, &unsafe_amounts)))
         .collect();
-    claims.extend(settled_spend_claims(&replay));
+    claims.extend(irreversible_spend_claims(&replay));
     wallet_info.restore_spent_outpoints(&claims);
     wallet_info.update_balance();
     swept.extend(set_aside.iter().map(|stored| stored.txid));
@@ -684,7 +684,7 @@ fn drop_fallback_copies(
     }
 }
 
-/// Spend claims for the inputs of every settled record in `replay` whose
+/// Spend claims for the inputs of every irreversible record in `replay` whose
 /// funding the replay did not see.
 ///
 /// Such a spend marks no coin spent: the coin is not in the projection and,
@@ -692,15 +692,23 @@ fn drop_fallback_copies(
 /// observed spend guards it, and finality prunes that, so a funding delivered
 /// later would credit the coin again. A claim outlives the pruning.
 ///
-/// The claim is safe because the spend is settled, in a block or under an
-/// InstantSend lock: the coin is gone, and no later funding may credit it. A
-/// plain mempool spend can still be evicted and is not claimed. Inputs that
-/// are not the wallet's are claimed as well; such a claim guards nothing.
-fn settled_spend_claims(replay: &[StoredTransaction]) -> Vec<(OutPoint, Option<Txid>)> {
+/// Nothing retires a claim when a fork drops its claimant, so only a spend no
+/// fork can drop is claimed: one in a chain-locked block or under an
+/// InstantSend lock. A spend in a block above the restored chain lock keeps
+/// the observed spend alone, which a fork drops with it; the next load claims
+/// it once its block is chain-locked. A plain mempool spend can still be
+/// evicted and is not claimed. Inputs that are not the wallet's are claimed as
+/// well; such a claim guards nothing.
+fn irreversible_spend_claims(replay: &[StoredTransaction]) -> Vec<(OutPoint, Option<Txid>)> {
     let replayed: HashSet<Txid> = replay.iter().map(|stored| stored.txid).collect();
     replay
         .iter()
-        .filter(|stored| !matches!(stored.context, TransactionContext::Mempool))
+        .filter(|stored| {
+            matches!(
+                stored.context,
+                TransactionContext::InChainLockedBlock(_) | TransactionContext::InstantSend(_)
+            )
+        })
         .flat_map(|stored| {
             stored
                 .transaction
@@ -741,8 +749,8 @@ fn restore_persisted_coin_state(coin: &mut Utxo, persisted: &Utxo) {
 /// it marks no coin spent, its sent amount is missing, and it gets no record
 /// at all when it pays nothing to the wallet. The stored
 /// [`StoredTransaction::owned_inputs`] are the evidence. Without them only
-/// [`settled_spend_claims`] keeps a redelivered funding from re-crediting the
-/// coin. Staged coins are never in `placed`, so the retention pass drops
+/// [`irreversible_spend_claims`] keeps a redelivered funding from re-crediting
+/// the coin. Staged coins are never in `placed`, so the retention pass drops
 /// whatever replay leaves behind.
 fn stage_recorded_spent_inputs(
     wallet_info: &mut ManagedWalletInfo,
@@ -1113,13 +1121,21 @@ mod tests {
 
     /// A persister that stores no per-input ownership leaves the replay
     /// nothing to stage, so a spend whose funding is not in the history marks
-    /// no coin spent. A settled spend, in a block or under an InstantSend
-    /// lock, must still keep its inputs from being credited once finality has
-    /// pruned the observed spend. A plain mempool spend can still be evicted
-    /// and guards nothing, and a coin no stored record spends is credited as
-    /// ever.
+    /// no coin spent. A spend no fork can drop, in a chain-locked block or
+    /// under an InstantSend lock, must still keep its inputs from being
+    /// credited once finality has pruned the observed spend. A plain mempool
+    /// spend can still be evicted and guards nothing, and a coin no stored
+    /// record spends is credited as ever.
+    ///
+    /// A spend in a block above the restored chain lock gets no claim either:
+    /// a fork can still drop it, and nothing retires a claim. That leaves a
+    /// double credit open for a spend that is all of these at once: in a
+    /// block not yet chain-locked when the wallet loads, paying nothing to
+    /// the wallet, its funding not replayable, and its funding block
+    /// delivered again in the same session without its own block. The next
+    /// load claims it once its block is chain-locked.
     #[tokio::test]
-    async fn should_guard_unreplayed_funding_against_settled_spends_only() {
+    async fn should_guard_unreplayed_funding_against_irreversible_spends_only() {
         use dashcore::bls_sig_utils::BLSSignature;
         use dashcore::ephemerealdata::chain_lock::ChainLock;
         use dashcore::hashes::Hash;
@@ -1159,12 +1175,27 @@ mod tests {
             special_transaction_payload: None,
         };
 
-        for (case, context, guarded) in [
-            ("in a block", spender.context.clone(), true),
-            ("InstantSend-locked", locked, true),
-            ("mempool", TransactionContext::Mempool, false),
+        let chain_lock = |block_height| ChainLock {
+            block_height,
+            block_hash: BlockHash::from_byte_array([30; 32]),
+            signature: BLSSignature::from([0; 96]),
+        };
+        let in_block = spender.context.clone();
+        assert_eq!(in_block.block_info().map(|block| block.height()), Some(101));
+
+        for (case, context, chain_locked, guarded) in [
+            ("in a chain-locked block", in_block.clone(), Some(101), true),
+            (
+                "in a block above the chain lock",
+                in_block,
+                Some(100),
+                false,
+            ),
+            ("InstantSend-locked", locked, None, true),
+            ("mempool", TransactionContext::Mempool, None, false),
         ] {
             let mut info = restored.clone();
+            info.metadata.last_applied_chain_lock = chain_locked.map(chain_lock);
             let without_ownership = StoredTransaction {
                 context,
                 owned_inputs: Vec::new(),
@@ -1175,11 +1206,7 @@ mod tests {
                 instant_locks: BTreeMap::new(),
             };
             replay_recorded_history(&mut info, &mut wallet, history).await;
-            info.apply_chain_lock(ChainLock {
-                block_height: 300,
-                block_hash: BlockHash::from_byte_array([30; 32]),
-                signature: BLSSignature::from([0; 96]),
-            });
+            info.apply_chain_lock(chain_lock(300));
             info.update_synced_height(300);
             assert!(info.observed_spent_outpoints().is_empty(), "{case}");
 
@@ -1192,13 +1219,61 @@ mod tests {
             assert_eq!(
                 coins.contains_key(&spent),
                 !guarded,
-                "{case}: only a settled spend keeps its input from being credited"
+                "{case}: only a spend no fork can drop keeps its input from being credited"
             );
             assert!(
                 coins.contains_key(&OutPoint::new(unrelated.txid(), 0)),
                 "{case}: a coin no stored record spends must be credited"
             );
         }
+    }
+
+    /// A block above the chain lock can be reorged out. When the fork drops a
+    /// restored spend, the coin it spent is unspent again, and a delivery of
+    /// its funding must credit it.
+    #[tokio::test]
+    async fn should_credit_funding_again_after_a_fork_drops_the_restored_spend() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, restored, funding, records, spent) = confirmed_spend_fixture().await;
+        let spender = records
+            .into_iter()
+            .find(|record| record.txid != funding.txid())
+            .map(StoredTransaction::from)
+            .unwrap();
+        assert_eq!(
+            spender.context.block_info().map(|block| block.height()),
+            Some(101)
+        );
+        let mut info = restored;
+        let history = RecordedHistory {
+            transactions: vec![StoredTransaction {
+                owned_inputs: Vec::new(),
+                ..spender
+            }],
+            instant_locks: BTreeMap::new(),
+        };
+        replay_recorded_history(&mut info, &mut wallet, history).await;
+
+        info.truncate_above(100).unwrap();
+        let block = BlockInfo::new(100, BlockHash::from_byte_array([100; 32]), 100);
+        info.check_core_transaction(
+            &funding,
+            TransactionContext::InBlock(block),
+            &mut wallet,
+            true,
+            true,
+        )
+        .await;
+
+        assert!(
+            info.accounts.standard_bip44_accounts[&0]
+                .utxos
+                .contains_key(&spent),
+            "the fork dropped the spend, so the coin is unspent again"
+        );
     }
 
     #[tokio::test]
