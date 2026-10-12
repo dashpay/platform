@@ -24,7 +24,9 @@ use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemo
 use dpp::data_contract::document_type::property_constraints::{
     referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
 };
-use dpp::data_contract::document_type::{WhereBoundRead, WhereCondition, WhereLiteralKind};
+use dpp::data_contract::document_type::{
+    typed_array_property, where_lists_equal, WhereBoundRead, WhereCondition, WhereLiteralKind,
+};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -44,6 +46,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::KeyID;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use dpp::platform_value::Error as ValueError;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -1528,6 +1531,25 @@ fn validate_reference_target_v0(
                     else {
                         return Ok(mismatch());
                     };
+                    // Two typed arrays, which registration pairs with nothing
+                    // else, are equal as lists: the same elements in the same
+                    // order, each compared by value, a list either document
+                    // leaves out the empty one. In place in generation 0: a
+                    // pair of lists registers from protocol version 14 only
+                    let lists = typed_array_property(
+                        referenced_document_type.flattened_properties(),
+                        referenced_property,
+                    )
+                    .is_some();
+                    if lists {
+                        if !where_lists_equal(
+                            referring_value.as_deref(),
+                            referenced_value.as_deref(),
+                        ) {
+                            return Ok(mismatch());
+                        }
+                        continue;
+                    }
                     let (referring_value, referenced_value) =
                         match (referring_value, referenced_value) {
                             (Some(referring_value), Some(referenced_value)) => {
@@ -1562,8 +1584,11 @@ fn validate_reference_target_v0(
                         referenced_document_type,
                         referenced_property,
                     );
-                    let bound =
-                        where_bound_value(condition, document_data, owner_id, referring_system);
+                    let Ok(bound) =
+                        where_bound_value(condition, document_data, owner_id, referring_system)
+                    else {
+                        return Ok(condition_mismatch(path, condition, referenced_property));
+                    };
                     if !condition.holds(referenced_value.as_deref(), kind, bound.as_deref()) {
                         return Ok(condition_mismatch(path, condition, referenced_property));
                     }
@@ -2140,26 +2165,30 @@ fn condition_mismatch(
 
 /// The value of the bound `condition` compares the referenced side with, read
 /// from the referring document: a property of `document_data` (`None` when it
-/// leaves it out or a path on the way is no object), the writer `owner_id`, or
-/// a time or height of `referring_system` as an integer. `None` for a literal
-/// or a list of them, which the condition carries.
+/// leaves it out), the writer `owner_id`, or a time or height of
+/// `referring_system` as an integer. `None` for a literal or a list of them,
+/// which the condition carries. An error when a path on the way to the property
+/// is no object, which the caller refuses as a mismatch, as an equality's
+/// unreadable side is, never as absence: a `containsAll` would read an absent
+/// list as empty and hold.
 fn where_bound_value<'a>(
     condition: &WhereCondition,
     document_data: &'a BTreeMap<String, Value>,
     owner_id: Identifier,
     referring_system: &DocumentSystemValues,
-) -> Option<Cow<'a, Value>> {
-    match condition.bound_read()? {
-        WhereBoundRead::Property(path) => document_data
-            .get_optional_at_path(path)
-            .ok()
-            .flatten()
-            .map(Cow::Borrowed),
+) -> Result<Option<Cow<'a, Value>>, ValueError> {
+    let Some(bound_read) = condition.bound_read() else {
+        return Ok(None);
+    };
+    Ok(match bound_read {
+        WhereBoundRead::Property(path) => {
+            document_data.get_optional_at_path(path)?.map(Cow::Borrowed)
+        }
         WhereBoundRead::Writer => Some(Cow::Owned(Value::Identifier(owner_id.to_buffer()))),
         WhereBoundRead::System(property) => referring_system
             .value(property)
             .map(|value| Cow::Owned(Value::I128(value))),
-    }
+    })
 }
 
 /// What a removal record holds of the document a moderator removed, read field
@@ -2288,12 +2317,23 @@ fn validate_pairs_against_removal(
                 Err(_) => None,
             }
         };
-        let holds = match (referring_value, referenced_value) {
-            (Some(referring_value), Some(referenced_value)) => {
-                referring_value.same_scalar_data(&referenced_value)
+        // Two typed arrays are equal as lists, a list the record holds none of
+        // the empty one, as against a document in state
+        let lists = typed_array_property(
+            referenced_document_type.flattened_properties(),
+            referenced_property,
+        )
+        .is_some();
+        let holds = if lists {
+            where_lists_equal(referring_value.as_deref(), referenced_value.as_ref())
+        } else {
+            match (referring_value, referenced_value) {
+                (Some(referring_value), Some(referenced_value)) => {
+                    referring_value.same_scalar_data(&referenced_value)
+                }
+                (None, None) => true,
+                (Some(_), None) | (None, Some(_)) => false,
             }
-            (None, None) => true,
-            (Some(_), None) | (None, Some(_)) => false,
         };
         if !holds {
             return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -2324,7 +2364,10 @@ fn validate_pairs_against_removal(
             return Ok(removed(referenced_property));
         };
         let kind = WhereLiteralKind::of_referenced(referenced_document_type, referenced_property);
-        let bound = where_bound_value(condition, document_data, owner_id, referring_system);
+        let Ok(bound) = where_bound_value(condition, document_data, owner_id, referring_system)
+        else {
+            return Ok(condition_mismatch(path, condition, referenced_property));
+        };
         if !condition.holds(referenced_value.as_ref(), kind, bound.as_deref()) {
             return Ok(condition_mismatch(path, condition, referenced_property));
         }

@@ -116,6 +116,36 @@ pub(super) async fn create_document<S: Signer<IdentityPublicKey>>(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> (Document, StateTransitionsProcessingResult) {
+    let (document, create) = create_transition(
+        contract,
+        type_name,
+        properties,
+        owner,
+        key,
+        nonce,
+        signer,
+        rng,
+        platform_version,
+    )
+    .await;
+    let result = process_and_commit(platform, platform_state, &create, platform_version);
+    (document, result)
+}
+
+/// The create transition of a document of `type_name` with exactly
+/// `properties` set, and the document it creates, not yet processed.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn create_transition<S: Signer<IdentityPublicKey>>(
+    contract: &DataContract,
+    type_name: &str,
+    properties: &[(&str, Value)],
+    owner: Identifier,
+    key: &IdentityPublicKey,
+    nonce: u64,
+    signer: &S,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> (Document, StateTransition) {
     let document_type = contract
         .document_type_for_name(type_name)
         .expect("doctype exists");
@@ -153,8 +183,7 @@ pub(super) async fn create_document<S: Signer<IdentityPublicKey>>(
     )
     .await
     .expect("expected the create transition");
-    let result = process_and_commit(platform, platform_state, &create, platform_version);
-    (document, result)
+    (document, create)
 }
 
 /// Replaces `document` in the block `block_info`.
