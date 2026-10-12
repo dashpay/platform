@@ -20,7 +20,7 @@ use crate::query::drive_document_sum_query::{
     SumMode,
 };
 use crate::query::{
-    answers_per_element, key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
     validate_resolved_time_range_clause_shapes, OrderClause, WhereClause,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -66,15 +66,11 @@ impl Drive {
         // pass either the bounded pair form (`[f > A, f < B]`) or the
         // pre-merged `between*` form and get equivalent mode detection.
         // A typed array's elements are keyed first: several only when the
-        // request answers per element (see [`answers_per_element`]).
-        let groups_by_element = answers_per_element(
-            matches!(request.mode, SumMode::GroupByIn),
-            &request.where_clauses,
-        );
+        // request answers per element (see [`key_array_element_clauses`]).
         request.where_clauses = key_array_element_clauses(
             std::mem::take(&mut request.where_clauses),
             request.document_type,
-            groups_by_element,
+            matches!(request.mode, SumMode::GroupByIn),
             platform_version,
         )?;
         request.where_clauses =

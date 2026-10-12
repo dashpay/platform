@@ -26,7 +26,7 @@ use crate::query::ResolvedTimeRange;
 // Shared with the sum / average / joint dispatchers and the SDK proof
 // verifiers — see `crate::query::canonicalize` for the shape contract.
 use crate::query::{
-    answers_per_element, key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
     validate_resolved_time_range_clause_shapes,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -285,15 +285,11 @@ impl Drive {
         // [`validate_and_canonicalize_where_clauses`]'s docstring
         // for the catalog of rejections / canonicalization rules.
         // A typed array's elements are keyed first: several only when the
-        // request answers per element (see [`answers_per_element`]).
-        let groups_by_element = answers_per_element(
-            matches!(request.mode, CountMode::GroupByIn),
-            &request.where_clauses,
-        );
+        // request answers per element (see [`key_array_element_clauses`]).
         let where_clauses = key_array_element_clauses(
             request.where_clauses,
             request.document_type,
-            groups_by_element,
+            matches!(request.mode, CountMode::GroupByIn),
             platform_version,
         )?;
         let where_clauses =

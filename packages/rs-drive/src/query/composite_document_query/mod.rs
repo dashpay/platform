@@ -370,7 +370,7 @@ fn sorted_values(values: &[Identifier]) -> Vec<Identifier> {
 /// The document reference a property type declares, of either kind. Only
 /// a scalar reference counts: a binding reads one identifier out of the
 /// property, and a typed array whose elements are references holds many,
-/// is no index property and so is never a join field.
+/// read only by their elements (`contains`), so it is never a join field.
 fn document_reference_of(
     property_type: &DocumentPropertyType,
 ) -> Option<DocumentReferenceDeclaration<'_>> {

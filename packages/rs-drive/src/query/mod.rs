@@ -175,9 +175,7 @@ use dpp::version::FeatureVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub use canonicalize::{
-    answers_per_element, key_array_element_clauses, validate_and_canonicalize_where_clauses,
-};
+pub use canonicalize::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -2536,7 +2534,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// clauses reading the elements of a typed array
     /// ([`Self::validate_array_element_shape`]): grouping v1 leaves no such
     /// clause out of `internal_clauses`, so every one is judged here. The
-    /// lowering keeps equivalent guards for callers that reach it directly.
+    /// lowering repeats the multi-`In` guards for callers that reach it
+    /// directly, but not the element rules: a caller of the lowering judges
+    /// element clauses here first, as `construct_path_query` and the verifiers
+    /// do.
     pub fn validate_where_clause_shape(
         &self,
         platform_version: &PlatformVersion,
@@ -2660,10 +2661,12 @@ impl<'a> DriveDocumentQuery<'a> {
     /// document. The first occurrence stays. The proof carries every
     /// occurrence, so the server and the verifier drop the same ones, and the
     /// page may hold fewer documents than the limit, which counts occurrences.
-    /// A row is told apart by the stored document's bytes, borrowed from the
-    /// row: nothing is copied.
+    /// A row is told apart by `row_key`, borrowed from the row so nothing is
+    /// copied: the stored document's bytes on the server, whose rows carry no
+    /// key, and the proved document id in a verifier. Either names one
+    /// document, since every serialized document holds its id.
     #[cfg(any(feature = "server", feature = "verify"))]
-    fn drop_repeated_element_matches<T, F>(&self, rows: Vec<T>, stored_document: F) -> Vec<T>
+    pub(crate) fn drop_repeated_element_matches<T, F>(&self, rows: Vec<T>, row_key: F) -> Vec<T>
     where
         F: Fn(&T) -> Option<&[u8]>,
     {
@@ -2673,7 +2676,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let first_occurrences: Vec<bool> = {
             let mut seen: HashSet<&[u8]> = HashSet::new();
             rows.iter()
-                .map(|row| stored_document(row).is_none_or(|bytes| seen.insert(bytes)))
+                .map(|row| row_key(row).is_none_or(|bytes| seen.insert(bytes)))
                 .collect()
         };
         rows.into_iter()
@@ -3061,7 +3064,7 @@ impl<'a> DriveDocumentQuery<'a> {
         Ok(())
     }
 
-    #[cfg(any(feature = "server", feature = "verify"))]
+    #[cfg(feature = "server")]
     /// Drops the repeats of a page reading several elements of a typed array
     /// ([`Self::drop_repeated_element_matches`]), then the cursor document
     /// from a page produced by a padded
@@ -3077,12 +3080,24 @@ impl<'a> DriveDocumentQuery<'a> {
         serialized_documents: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-        use dpp::document::DocumentV0Getters;
-        let mut serialized_documents = self
+        let serialized_documents = self
             .drop_repeated_element_matches(serialized_documents, |document| {
                 Some(document.as_slice())
             });
+        self.strip_cursor_from_distinct_page(serialized_documents, platform_version)
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// [`Self::strip_cursor_from_page`] for a page whose repeats are already
+    /// dropped: a verifier drops them by the proved document ids, which are
+    /// shorter to compare than the documents.
+    pub(crate) fn strip_cursor_from_distinct_page(
+        &self,
+        mut serialized_documents: Vec<Vec<u8>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::document::DocumentV0Getters;
         if !self.pads_cursor_page(platform_version) {
             return Ok((serialized_documents, 0));
         }

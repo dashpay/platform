@@ -4,6 +4,12 @@
 //! before any same-field duplicate / overlap checks on the `In` clauses,
 //! so every query with more than one non-primary-key `In` clause reports
 //! `MultipleInClauses` regardless of what else is wrong with it.
+//!
+//! The only change since is the `Contains` and `ContainsAny` arms the
+//! operator matches need, which group neither: unreachable, since the
+//! dispatcher (`group_where_clauses`) refuses every element operator before
+//! v0 runs, and no index keys the elements of a typed array before protocol
+//! version 14.
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -97,6 +103,7 @@ pub(super) fn group_where_clauses_v0(
             LessThan => true,
             LessThanOrEquals => true,
             StartsWith => false,
+            // Unreachable: the dispatcher refuses element operators first
             Contains => false,
             ContainsAny => false,
             Between => false,
@@ -116,6 +123,7 @@ pub(super) fn group_where_clauses_v0(
             LessThan => false,
             LessThanOrEquals => false,
             StartsWith => true,
+            // Unreachable: the dispatcher refuses element operators first
             Contains => false,
             ContainsAny => false,
             Between => true,
