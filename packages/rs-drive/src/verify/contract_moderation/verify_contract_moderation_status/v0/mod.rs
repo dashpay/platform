@@ -19,6 +19,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         lists: &[ContractModerationList],
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ContractModerationListStatuses), Error> {
         if lists.is_empty() {
@@ -32,8 +33,11 @@ impl Drive {
             lists,
             &platform_version.drive.grove_version,
         )?;
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
+        } else {
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
+        };
 
         let mut status = ContractModerationStatus::default();
         for (path, key, element) in proved_key_values {

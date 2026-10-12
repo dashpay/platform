@@ -2682,7 +2682,7 @@ mod tests {
         /// rebuild that fails at input selection is direct proof the funding
         /// reservation is still held.
         signer: crate::test_support::WalletSigner,
-        /// The handle `SpvEventForwarder` fires on IS/ChainLock events, so
+        /// The handle `LockNotifyHandler` fires on IS/ChainLock events, so
         /// a test can wake an in-flight proof wait the way the live wallet
         /// does.
         lock_notify: Arc<Notify>,

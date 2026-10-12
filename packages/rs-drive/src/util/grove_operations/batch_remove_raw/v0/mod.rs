@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -27,8 +27,6 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Option<Element>, Error> {
-        let mut current_batch_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
             // Drive stores no backward-reference participants; GroveDB checks the
             // claim for free from the value it reads for the write.
@@ -39,32 +37,40 @@ impl Drive {
             validate_tree_at_path_exists: false, //todo: not sure about this one
         };
 
-        let needs_removal_from_state =
-            match current_batch_operations.remove_if_insert(path.to_vec(), key) {
-                Some(
-                    GroveOp::InsertOrReplace { element }
-                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element },
-                )
-                | Some(
-                    GroveOp::Replace { element }
-                    | GroveOp::ReplaceDontCheckForBackwardsReferences { element },
-                )
-                | Some(
-                    GroveOp::Patch { element, .. }
-                    | GroveOp::PatchDontCheckForBackwardsReferences { element, .. },
-                ) => return Ok(Some(element)),
-                Some(GroveOp::InsertTreeWithRootHash { .. }) => {
-                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "we should not be seeing internal grovedb operations",
-                    )));
-                }
-                Some(GroveOp::Delete | GroveOp::DeleteDontCheckForBackwardsReferences)
-                | Some(
-                    GroveOp::DeleteTree(_, _)
-                    | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _),
-                ) => false,
-                _ => true,
-            };
+        // The first pending operation on this key, found as `remove_if_insert` found it on a
+        // copy of the whole batch. That copy then went to GroveDB without the operation when it
+        // was an insert, but GroveDB reads only the operations under the deleted element, never
+        // this one, so its delete and cost are the same at every protocol version.
+        let known_path = KeyInfoPath(path.to_vec().into_iter().map(KeyInfo::KnownKey).collect());
+        let known_key = Some(KeyInfo::KnownKey(key.to_vec()));
+        let needs_removal_from_state = match pending_grove_operations(drive_operations)
+            .find(|op| op.path == known_path && op.key == known_key)
+            .map(|op| &op.op)
+        {
+            Some(
+                GroveOp::InsertOrReplace { element }
+                | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element },
+            )
+            | Some(
+                GroveOp::Replace { element }
+                | GroveOp::ReplaceDontCheckForBackwardsReferences { element },
+            )
+            | Some(
+                GroveOp::Patch { element, .. }
+                | GroveOp::PatchDontCheckForBackwardsReferences { element, .. },
+            ) => return Ok(Some(element.clone())),
+            Some(GroveOp::InsertTreeWithRootHash { .. }) => {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "we should not be seeing internal grovedb operations",
+                )));
+            }
+            Some(GroveOp::Delete | GroveOp::DeleteDontCheckForBackwardsReferences)
+            | Some(
+                GroveOp::DeleteTree(_, _)
+                | GroveOp::DeleteTreeDontCheckForBackwardsReferences(_, _),
+            ) => false,
+            _ => true,
+        };
 
         let maybe_element = self.grove_get_raw_optional(
             path.clone(),
@@ -102,15 +108,19 @@ impl Drive {
                 .map(|r| r.map(Some)),
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum,
-                } => self.grove.delete_operation_for_delete_internal(
-                    path,
-                    key,
-                    &options,
-                    is_known_to_be_subtree_with_sum,
-                    &current_batch_operations.operations,
-                    transaction,
-                    &drive_version.grove_version,
-                ),
+                } => {
+                    // Every protocol version builds the same delete and cost as with the copy
+                    // of the whole pending batch: GroveDB reads the same operations, borrowed.
+                    self.grove.delete_operation_for_delete_internal(
+                        path,
+                        key,
+                        &options,
+                        is_known_to_be_subtree_with_sum,
+                        pending_grove_operations(drive_operations),
+                        transaction,
+                        &drive_version.grove_version,
+                    )
+                }
             };
 
             if let Some(delete_operation) =

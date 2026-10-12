@@ -80,7 +80,7 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
             }
         };
 
-        let proof_bytes = supported_grovedb_proof_bytes(proof, platform_version)?;
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
 
         let versions = if from_version_items {
             let (root_hash, versions) = Drive::verify_contracts_versions(
@@ -90,7 +90,7 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
             )
             .map_drive_error(proof, mtd)?;
 
-            verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+            verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
             versions
                 .into_iter()
@@ -112,7 +112,7 @@ impl FromProof<GetDataContractsLatestVersionsRequest> for DataContractsLatestVer
             )
             .map_drive_error(proof, mtd)?;
 
-            verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+            verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
             contracts
                 .into_iter()

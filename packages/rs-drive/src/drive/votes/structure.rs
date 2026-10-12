@@ -18,6 +18,12 @@ const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";
 const INDEX_VALUE: &str =
     "votes.contested_resource.active_polls.contract.document_type.indexes.value";
+const INDEX_VALUE_TREES: [ElementKind; 2] = [ElementKind::Tree, ElementKind::CountTree];
+const INDEX_VALUE_NOTE: &str =
+    "A count tree for the last value of the index when the poll started at \
+     protocol version 14 or later, counting its contenders plus its stored \
+     info, abstain and lock entries, so a join reads how many contenders the \
+     poll has in one fetch. A tree otherwise.";
 
 fn voting_storage() -> StructureNode {
     StructureNode::fixed(
@@ -249,7 +255,7 @@ fn index_value() -> StructureNode {
         "The value of the next index property; empty for \
          null",
     )
-    .kind(ElementKind::Tree)
+    .kinds(&INDEX_VALUE_TREES, INDEX_VALUE_NOTE)
     .flags(&OWNED, CONTENDER_FLAGS)
     .describe(
         "One value of the contested index. Below the last \
@@ -313,7 +319,7 @@ fn index_value() -> StructureNode {
             "The value of the next index property; empty for \
              null",
         )
-        .kind(ElementKind::Tree)
+        .kinds(&INDEX_VALUE_TREES, INDEX_VALUE_NOTE)
         .flags(&OWNED, CONTENDER_FLAGS)
         .recurse(INDEX_VALUE)
         .describe(

@@ -15,9 +15,10 @@ mod deletion_tests {
             // Protocol version 14 adds +740 per document write (the contract's version
             // item is one more node to rehash) and the larger DashPay v2 schema
             // increases byte-billed contract-tree reads.
-            // The app-connect contract adds one sibling to the genesis contracts tree,
-            // increasing the bytes billed when reading that tree (protocol 14 only).
-            1770160,
+            // The app-connect and moderation charters contracts each add one sibling to the
+            // genesis contracts tree, increasing the bytes billed when reading that tree
+            // (protocol 14 only).
+            1817440,
         )
         .await;
     }

@@ -11,9 +11,10 @@ use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatch
 use dash_sdk::dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::broadcast::{
+    require_execution_proved, BroadcastStateTransition, WaitForOutcome,
+};
 use dash_sdk::platform::ContextProvider;
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
@@ -29,16 +30,28 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .map(|transition| transition.data_contract_id())
             .collect(),
         // A ban's proof covers every list the contract keeps, which the verifier reads from
-        // the contract. The other moderations prove the one entry they edit, or for a document
-        // deletion the removal record it wrote, and need none.
-        StateTransition::ContractUserModeration(moderation)
-            if matches!(
-                moderation.action(),
-                ContractUserModerationAction::Ban { .. }
-            ) =>
-        {
-            BTreeSet::from([moderation.data_contract_id()])
-        }
+        // the contract. A restore's verifier decodes the document under the contract's document
+        // type, and a field change's reads the changed document back under it. A deletion's
+        // reads from the contract whether the type keeps removal records: one that keeps none
+        // is proved by the document's absence, read under the type. The other moderations
+        // prove the one list entry they edit, and a team action's proposal or approval the
+        // signer's approval of the action, read by a query rebuilt from the transition alone:
+        // they need none.
+        StateTransition::ContractUserModeration(moderation) => match moderation.action() {
+            ContractUserModerationAction::Ban { .. }
+            | ContractUserModerationAction::DeleteDocument { .. }
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                BTreeSet::from([moderation.data_contract_id()])
+            }
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Suspend { .. }
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::Warn { .. }
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::DeleteSettledDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => BTreeSet::new(),
+        },
         _ => BTreeSet::new(),
     }
 }
@@ -144,7 +157,7 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
 
         Ok(())
     }
@@ -174,12 +187,14 @@ impl WasmSdk {
         // Preserve the error kind: callers distinguish `ExecutionNotProved`,
         // which reports that this transition family has no execution proof
         // rather than that anything went wrong, from a genuine failure.
-        let result = st
-            .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(WasmSdkError::from)?;
+        let owner_balance = outcome.owner_balance();
+        let result = require_execution_proved(outcome).map_err(WasmSdkError::from)?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -202,12 +217,18 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let owner_balance = outcome.owner_balance();
+        let result = require_execution_proved(outcome)
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Waits for a state transition response, accepting proofs that only
@@ -217,7 +238,9 @@ impl WasmSdk {
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
     /// address funds movements, shields, no-history token operations, key
-    /// limits updates). This method accepts those outcomes instead. The result is a verified,
+    /// limits updates, contract updates, contract moderation and fee claims,
+    /// and creates and deletes of indexOnly documents). This method accepts
+    /// those outcomes instead. The result is a verified,
     /// height-pinned snapshot of the affected state — NOT evidence that this
     /// specific transition executed.
     ///
@@ -234,14 +257,16 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .wait_for_affected_state::<StateTransitionProofResult>(self.as_ref(), put_settings)
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
             })?;
+        let owner_balance = outcome.owner_balance();
+        let result = outcome.into_result();
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
 
     /// Broadcasts a state transition and waits for the result, accepting
@@ -261,16 +286,36 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
-        let result = st
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                self.as_ref(),
-                put_settings,
-            )
+        st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let (outcome, _metadata) = st
+            .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let owner_balance = outcome.owner_balance();
+        let result = outcome.into_result();
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
+}
+
+/// Hands the owner's credit balance the verified outcome carried (from
+/// protocol version 14, for owned fee-paying transitions) to JavaScript as an
+/// `ownerBalance` `BigInt` property on the verified result; absent otherwise.
+fn with_owner_balance(
+    result: StateTransitionProofResultTypeJs,
+    owner_balance: Option<u64>,
+) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+    if let Some(owner_balance) = owner_balance {
+        js_sys::Reflect::set(
+            result.as_ref(),
+            &JsValue::from_str("ownerBalance"),
+            &js_sys::BigInt::from(owner_balance).into(),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set ownerBalance".to_string()))?;
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -411,50 +456,87 @@ mod tests {
     }
 
     #[test]
-    fn should_prepare_the_moderated_contract_of_a_ban_only() {
+    fn should_prepare_the_moderated_contract_of_each_moderation_whose_verifier_reads_it() {
+        use dash_sdk::dpp::platform_value::Value;
         use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
         use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+        use std::collections::BTreeMap;
 
         let contract_id = Identifier::new([0x44; 32]);
-        let state_transition = StateTransition::ContractUserModeration(
-            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                ..Default::default()
-            }),
-        );
-
-        assert_eq!(
-            referenced_contract_ids(&state_transition)
-                .into_iter()
-                .collect::<Vec<_>>(),
-            vec![contract_id],
-        );
-
-        // Only a ban's proof is read against the contract.
-        let unban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
-            ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                action: ContractUserModerationAction::Unban {
-                    identity_id: Identifier::new([0x55; 32]),
+        let identity_id = Identifier::new([0x55; 32]);
+        let document_id = Identifier::new([0x66; 32]);
+        let moderation = |action| {
+            StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+                ContractUserModerationTransitionV0 {
+                    data_contract_id: contract_id,
+                    action,
+                    ..Default::default()
                 },
-                ..Default::default()
+            ))
+        };
+
+        // A ban's proof covers every barring list the contract keeps; a restore decodes the
+        // document under its type; a field change reads the document back under it; a deletion
+        // of a type that keeps no removal records is proved by the document's absence under it.
+        for action in [
+            ContractUserModerationAction::Ban {
+                identity_id,
+                reason: Default::default(),
             },
-        ));
-        assert!(referenced_contract_ids(&unban).is_empty());
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name: "post".to_string(),
+                document: BinaryData::new(vec![0x77; 8]),
+            },
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "post".to_string(),
+                document_id,
+                fields: BTreeMap::from([("hidden".to_string(), Value::Bool(true))]),
+                reason: Default::default(),
+            },
+        ] {
+            assert_eq!(
+                referenced_contract_ids(&moderation(action.clone()))
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                vec![contract_id],
+                "{action}",
+            );
+        }
 
-        // A document deletion is proved by the removal record it wrote, contract unread.
-        let deletion = StateTransition::ContractUserModeration(
-            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                action: ContractUserModerationAction::DeleteDocument {
-                    document_type_name: "post".to_string(),
-                    document_id: Identifier::new([0x66; 32]),
-                    reason: Default::default(),
-                },
-                ..Default::default()
-            }),
-        );
-        assert!(referenced_contract_ids(&deletion).is_empty());
+        // The other moderations prove the one list entry they edit, and a team action's proposal
+        // or approval the signer's approval of the action, contract unread.
+        for action in [
+            ContractUserModerationAction::Unban { identity_id },
+            ContractUserModerationAction::Suspend {
+                identity_id,
+                until: 1_000,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::Unsuspend { identity_id },
+            ContractUserModerationAction::Warn {
+                identity_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ClearWarnings { identity_id },
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: document_id,
+            },
+        ] {
+            assert!(
+                referenced_contract_ids(&moderation(action.clone())).is_empty(),
+                "{action}",
+            );
+        }
     }
 
     #[test]

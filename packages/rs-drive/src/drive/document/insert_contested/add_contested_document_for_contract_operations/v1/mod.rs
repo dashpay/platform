@@ -1,3 +1,5 @@
+use crate::drive::contract::paths::contract_root_path;
+use crate::drive::document::ContestWindows;
 use crate::drive::votes::paths::{
     vote_contested_resource_end_date_queries_at_time_tree_path_vec,
     vote_end_date_queries_tree_path_vec,
@@ -10,11 +12,14 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
 };
-use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
+use crate::query::GroveError;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::Network;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::ContestedIndexResolution;
+use dpp::moderation_charter::charter_election_target;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfo,
@@ -22,7 +27,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
 };
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -32,6 +37,10 @@ impl Drive {
     /// resolved without locking (`MasternodeVoteNoLocking`) ends when its join window closes
     /// while it has a single contender; the first additional contender moves its end date to
     /// the full poll duration, opening the vote window.
+    ///
+    /// A moderation election (an `electedCharter` contest) runs on the join window and the
+    /// vote window its target contract declares, on every network; every other contest runs on
+    /// the generic windows of the version tables.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_contested_document_for_contract_operations_v1(
@@ -68,30 +77,8 @@ impl Drive {
             platform_version,
         )?;
 
-        let (poll_time, join_time) = match self.config.network {
-            Network::Mainnet => (
-                platform_version
-                    .dpp
-                    .voting_versions
-                    .default_vote_poll_time_duration_mainnet_ms,
-                platform_version
-                    .dpp
-                    .validation
-                    .voting
-                    .allow_other_contenders_time_mainnet_ms,
-            ),
-            _ => (
-                platform_version
-                    .dpp
-                    .voting_versions
-                    .default_vote_poll_time_duration_test_network_ms,
-                platform_version
-                    .dpp
-                    .validation
-                    .voting
-                    .allow_other_contenders_time_testing_ms,
-            ),
-        };
+        let generic_windows = ContestWindows::generic(self.config.network, platform_version);
+        let estimating = estimated_costs_only_with_layer_info.is_some();
 
         let no_locking = contested_document_resource_vote_poll
             .index()?
@@ -122,13 +109,23 @@ impl Drive {
                 batch_operations.append(&mut operations);
             }
 
+            let windows = self.contest_windows_v1(
+                &contested_document_resource_vote_poll,
+                generic_windows,
+                estimating,
+                block_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
             // Without locking, a contest runs only to the end of its join window until a
             // second contender joins; with locking, it always runs the full poll duration
             // so the masternodes may lock a single contender out
             let end_date = if no_locking {
-                block_info.time_ms.saturating_add(join_time)
+                block_info.time_ms.saturating_add(windows.join_window_ms)
             } else {
-                block_info.time_ms.saturating_add(poll_time)
+                block_info.time_ms.saturating_add(windows.poll_duration_ms)
             };
 
             self.add_vote_poll_end_date_query_operations(
@@ -144,7 +141,7 @@ impl Drive {
                 transaction,
                 platform_version,
             )?;
-        } else if no_locking && estimated_costs_only_with_layer_info.is_none() {
+        } else if no_locking && !estimating {
             // The first additional contender opens the vote window: the end date moves from
             // the end of the join window to the full poll duration. Later contenders find
             // it there already. An estimation never reaches this branch, since a stateless
@@ -186,22 +183,57 @@ impl Drive {
                     )));
                 };
 
-                let join_end = start_block.time_ms.saturating_add(join_time);
-                let vote_end = start_block.time_ms.saturating_add(poll_time);
+                // The same windows the contest started on: a moderation election's target
+                // declared them at its creation and can never change them
+                let windows = self.contest_windows_v1(
+                    &contested_document_resource_vote_poll,
+                    generic_windows,
+                    estimating,
+                    block_info,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+                let join_end = start_block.time_ms.saturating_add(windows.join_window_ms);
+                let vote_end = start_block.time_ms.saturating_add(windows.poll_duration_ms);
                 let vote_poll = VotePoll::ContestedDocumentResourceVotePoll(
                     contested_document_resource_vote_poll.into(),
                 );
 
-                if join_end != vote_end {
-                    let unique_id = vote_poll.unique_id()?;
+                let unique_id = vote_poll.unique_id()?;
+                let join_end_path =
+                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(join_end);
+                // The windows are read again rather than remembered, so the entry the contest
+                // opened with is looked up before it is moved: should the windows ever differ
+                // from those it opened on (a later protocol version reading them differently),
+                // the contest keeps the end it has instead of failing to delete a missing entry
+                let join_entry_exists = match self.grove_get_raw_optional(
+                    join_end_path.as_slice().into(),
+                    unique_id.as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut batch_operations,
+                    &platform_version.drive,
+                ) {
+                    Ok(entry) => entry.is_some(),
+                    Err(Error::GroveDB(error))
+                        if matches!(
+                            *error,
+                            GroveError::PathNotFound(_)
+                                | GroveError::PathParentLayerNotFound(_)
+                                | GroveError::PathKeyNotFound(_)
+                        ) =>
+                    {
+                        false
+                    }
+                    Err(error) => return Err(error),
+                };
+
+                if join_end != vote_end && join_entry_exists {
                     // The join-window entry goes, and its time tree with it when it was
                     // the only entry at that time
                     self.batch_delete_up_tree_while_empty(
-                        KeyInfoPath::from_known_owned_path(
-                            vote_contested_resource_end_date_queries_at_time_tree_path_vec(
-                                join_end,
-                            ),
-                        ),
+                        KeyInfoPath::from_known_owned_path(join_end_path),
                         unique_id.as_slice(),
                         Some(vote_end_date_queries_tree_path_vec().len() as u16),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
@@ -229,5 +261,168 @@ impl Drive {
         }
 
         Ok(batch_operations)
+    }
+
+    /// The windows of a contest: those its target contract declares for a moderation election,
+    /// `generic_windows` for every other contest. The read of the target is billed into
+    /// `batch_operations`. An estimation reads nothing: the end date it writes has the same
+    /// size whatever the windows.
+    #[allow(clippy::too_many_arguments)]
+    fn contest_windows_v1(
+        &self,
+        contested_document_resource_vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+        generic_windows: ContestWindows,
+        estimating: bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContestWindows, Error> {
+        if estimating {
+            // The windows change nothing an estimate measures, but the read of a moderation
+            // election's target does: it is estimated as a read of the target's stored
+            // contract at the largest size contracts are estimated at
+            if let Some(target_contract_id) = charter_election_target(
+                &contested_document_resource_vote_poll.contract.as_ref().id(),
+                &contested_document_resource_vote_poll.document_type_name,
+                &contested_document_resource_vote_poll.index_values,
+            ) {
+                self.grove_get_raw_optional(
+                    (&contract_root_path(target_contract_id.as_bytes())).into(),
+                    &[0],
+                    DirectQueryType::StatelessDirectQuery {
+                        in_tree_type: TreeType::NormalTree,
+                        query_target: QueryTargetValue(
+                            platform_version
+                                .system_limits
+                                .estimated_contract_max_serialized_size
+                                as u32,
+                        ),
+                    },
+                    transaction,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
+            return Ok(generic_windows);
+        }
+        let (fee_result, charter_election_windows) = self.fetch_charter_election_windows(
+            contested_document_resource_vote_poll,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
+        if let Some(fee_result) = fee_result {
+            batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(fee_result));
+        }
+        Ok(charter_election_windows.unwrap_or(generic_windows))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup_contract;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::DataContract;
+    use dpp::moderation_charter::{
+        ELECTED_CHARTER_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
+    };
+    use dpp::platform_value::Value;
+    use grovedb::batch::key_info::KeyInfo;
+    use grovedb::GroveDb;
+
+    const CONTRACT_PATH: &str = "tests/supporting_files/contract/family/family-contract.json";
+
+    /// A contest on `document_type_name` of the contract `resolved_as` (only its id is read),
+    /// keyed by `target`.
+    fn contest(
+        resolved_as: &DataContract,
+        document_type_name: &str,
+        target: [u8; 32],
+    ) -> ContestedDocumentResourceVotePollWithContractInfo {
+        ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(resolved_as.clone()),
+            document_type_name: document_type_name.to_string(),
+            index_name: "byTargetContract".to_string(),
+            index_values: vec![Value::Identifier(target)],
+        }
+    }
+
+    /// An estimate reads nothing, so a moderation election's target read is estimated as the
+    /// read of a stored contract at `estimated_contract_max_serialized_size`, whether the target
+    /// exists or not; every other contest estimates no target read.
+    #[test]
+    fn should_estimate_the_target_read_of_a_moderation_election_whatever_the_state() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let stored = setup_contract(
+            &drive,
+            CONTRACT_PATH,
+            Some([0x7A; 32]),
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let mut charters = stored.clone();
+        charters.set_id(MODERATION_CHARTERS_CONTRACT_ID);
+        let generic = ContestWindows::generic(Network::Testnet, platform_version);
+        let block_info = BlockInfo::default();
+        let estimated_read = |target: [u8; 32]| {
+            GroveDb::average_case_for_get_raw(
+                &KeyInfoPath::from_known_path(contract_root_path(&target)),
+                &KeyInfo::KnownKey(vec![0]),
+                platform_version
+                    .system_limits
+                    .estimated_contract_max_serialized_size as u32,
+                TreeType::NormalTree,
+                &platform_version.drive.grove_version,
+            )
+            .expect("expected an average case cost")
+        };
+
+        for target in [stored.id().to_buffer(), [0x7B; 32]] {
+            let mut operations = vec![];
+            let windows = drive
+                .contest_windows_v1(
+                    &contest(&charters, ELECTED_CHARTER_DOCUMENT_TYPE_NAME, target),
+                    generic,
+                    true,
+                    &block_info,
+                    None,
+                    &mut operations,
+                    platform_version,
+                )
+                .expect("expected the windows");
+            assert_eq!(windows, generic, "an estimate keeps the generic windows");
+            assert_eq!(
+                operations,
+                vec![LowLevelDriveOperation::CalculatedCostOperation(
+                    estimated_read(target)
+                )]
+            );
+        }
+
+        let mut operations = vec![];
+        drive
+            .contest_windows_v1(
+                &contest(
+                    &stored,
+                    ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                    stored.id().to_buffer(),
+                ),
+                generic,
+                true,
+                &block_info,
+                None,
+                &mut operations,
+                platform_version,
+            )
+            .expect("expected the windows");
+        assert!(operations.is_empty(), "{operations:?}");
     }
 }

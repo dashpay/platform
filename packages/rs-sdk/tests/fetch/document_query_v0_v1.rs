@@ -75,9 +75,13 @@ async fn should_fetch_composite_documents_with_the_unified_query() {
     use super::common::bootstrap_mock_sdk_to_latest;
     use dash_sdk::platform::{CompositeDocuments, CompositeSubQuery, Fetch};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::config::moderation::{
+        ContractDocumentRemoval, ContractModerationReason,
+    };
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::DocumentV0Getters;
     use dpp::tests::json_document::json_document_to_contract;
+    use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
     use drive_proof_verifier::{CompositeSubQueryResult, SplitCountEntry};
 
     let mut sdk = SdkBuilder::new_mock().build().expect("mock SDK");
@@ -127,6 +131,23 @@ async fn should_fetch_composite_documents_with_the_unified_query() {
             CompositeSubQueryResult::Documents(vec![quoted]),
         ],
         sub_result_missing_ids: vec![vec![], vec![dpp::identifier::Identifier::from([9u8; 32])]],
+        // A removal record round-trips too, as a by-id join off a
+        // `moderatedDocument` property reports one
+        sub_result_removals: vec![
+            vec![],
+            vec![ContractDocumentRemovalEntry {
+                document_id: dpp::identifier::Identifier::from([8u8; 32]),
+                removal: ContractDocumentRemoval {
+                    document_owner_id: dpp::identifier::Identifier::from([7u8; 32]),
+                    moderator_id: dpp::identifier::Identifier::from([6u8; 32]),
+                    reason: ContractModerationReason::default(),
+                    removed_at: 1_700_000_000_000,
+                    document_hash: [5u8; 32],
+                    restoration: None,
+                    kept_fields: Default::default(),
+                },
+            }],
+        ],
         page_documents: vec![post],
     };
     sdk.mock()

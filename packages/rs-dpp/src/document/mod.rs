@@ -22,6 +22,10 @@ mod v0;
 pub use accessors::*;
 pub use v0::*;
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "extended-document")]
 pub use extended_document::property_names as extended_document_property_names;
 #[cfg(feature = "extended-document")]
@@ -58,10 +62,10 @@ pub enum Document {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Document {}
+impl JsonConvertible for Document {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Document {}
+impl ValueConvertible for Document {}
 
 impl fmt::Display for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -359,6 +363,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -387,6 +393,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: Some(42),
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -426,6 +434,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: Some(creator),
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -454,6 +464,8 @@ mod tests {
             updated_at_core_block_height: Some(60),
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -485,6 +497,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         doc.increment_revision()
@@ -510,6 +524,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let result = doc.increment_revision();
@@ -639,6 +655,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
         let err = doc.increment_revision().expect_err("MAX + 1 must overflow");
         match err {
@@ -669,6 +687,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         };
         let document: Document = v0.clone().into();
         match document {
@@ -699,6 +719,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
         let s = format!("{}", doc);
         assert!(
@@ -766,6 +788,8 @@ mod json_convertible_tests {
             updated_at_core_block_height: Some(51),
             transferred_at_core_block_height: None,
             creator_id: Some(Identifier::new([0xc3; 32])),
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 
@@ -831,5 +855,29 @@ mod json_convertible_tests {
         );
         let recovered = Document::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn should_carry_the_moderation_stamp_through_json_and_value() {
+        let mut original = fixture();
+        original.set_moderated_at(Some(1_700_000_002_000));
+        original.set_moderated_by(Some(Identifier::new([0xd4; 32])));
+
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json["$moderatedAt"], json!(1_700_000_002_000u64));
+        assert_eq!(json["$moderatedBy"], json!(Identifier::new([0xd4; 32])));
+        assert_eq!(Document::from_json(json).expect("from_json"), original);
+
+        let value = original.to_object().expect("to_object");
+        let map = value.to_btree_ref_string_map().expect("a map");
+        assert_eq!(
+            map.get("$moderatedAt"),
+            Some(&&platform_value::Value::U64(1_700_000_002_000))
+        );
+        assert_eq!(
+            map.get("$moderatedBy"),
+            Some(&&platform_value::Value::Identifier([0xd4; 32]))
+        );
+        assert_eq!(Document::from_object(value).expect("from_object"), original);
     }
 }

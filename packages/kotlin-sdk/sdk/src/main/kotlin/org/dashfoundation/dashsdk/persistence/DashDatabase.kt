@@ -684,6 +684,13 @@ abstract class DashDatabase : RoomDatabase() {
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
          * `platform-wallet-ffi`.
+         *
+         * Room runs WAL with `synchronous=NORMAL`: a committed transaction
+         * survives process death, but a power loss can roll back the most
+         * recent commit. That is accepted for every persistence capability
+         * the handler attests (the same class of risk as iOS);
+         * `synchronous=FULL` was deliberately not adopted because it costs
+         * an fsync on every commit.
          */
         fun create(context: Context): DashDatabase =
             Room.databaseBuilder(context, DashDatabase::class.java, DATABASE_NAME)

@@ -231,6 +231,9 @@ impl EventHandler for DashPayPaymentHandler {
         let event = event.clone();
         self.tasks.spawn(async move {
             let wallet_id = event.wallet_id();
+            // A fresh handle carries its own contact-payment gate, so it must
+            // only write incoming-payment history, never the external-account
+            // pools that `WalletPersister::lock_contact_payments` orders.
             let wallet_persister =
                 crate::wallet::persister::WalletPersister::new(wallet_id, persister);
             run_dashpay_payment_hooks(&wallet_manager, &wallet_id, &wallet_persister, &event).await;

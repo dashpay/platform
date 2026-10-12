@@ -200,3 +200,88 @@ async fn should_fetch_mocked_contract_fee_pots_by_contract_id() {
     assert_eq!(by_id, expected);
     assert_eq!(by_query, expected);
 }
+
+#[tokio::test]
+/// Given the moderation action counts of an elected contract, when I fetch them by the contract
+/// id or the named query using mock API, then I get the same counts back
+async fn should_fetch_mocked_moderation_action_counts_by_contract_id() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractModerationActionCounts, ContractModerationActionCountsQuery,
+    };
+    use std::collections::BTreeMap;
+
+    let mut sdk = Sdk::new_mock();
+
+    let contract_id = Identifier::from([7u8; 32]);
+    let expected = ContractModerationActionCounts(BTreeMap::from([
+        (Identifier::from([1u8; 32]), 3),
+        (Identifier::from([2u8; 32]), u32::MAX),
+    ]));
+
+    sdk.mock()
+        .expect_fetch(contract_id, Some(expected.clone()))
+        .await
+        .unwrap();
+
+    let by_id = ContractModerationActionCounts::fetch(&sdk, contract_id)
+        .await
+        .unwrap()
+        .expect("counts should exist");
+    let by_query = ContractModerationActionCounts::fetch(
+        &sdk,
+        ContractModerationActionCountsQuery { contract_id },
+    )
+    .await
+    .unwrap()
+    .expect("counts should exist");
+
+    assert_eq!(by_id, expected);
+    assert_eq!(by_query, expected);
+}
+
+#[tokio::test]
+/// Given a page of team actions, when I fetch it using mock API, then every action comes back
+/// with its approval count
+async fn should_fetch_mocked_team_actions_with_their_approval_counts() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractTeamAction, ContractTeamActionEntry, ContractTeamActionEvent, ContractTeamActions,
+        ContractTeamActionsPageQuery, GroupActionStatus,
+    };
+    use dpp::data_contract::config::moderation::ContractModerationReason;
+
+    let mut sdk = Sdk::new_mock();
+
+    let query = ContractTeamActionsPageQuery::new(
+        Identifier::from([7u8; 32]),
+        GroupActionStatus::ActionActive,
+        PlatformVersion::latest(),
+    );
+    let entry = |seed: u8, approval_count: u32| ContractTeamActionEntry {
+        action_id: Identifier::from([seed; 32]),
+        action: ContractTeamAction {
+            proposer_id: Identifier::from([seed.wrapping_add(1); 32]),
+            proposed_at: 1_700_000_000_000,
+            event: ContractTeamActionEvent::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id: Identifier::from([seed.wrapping_add(2); 32]),
+                document_last_modified_at: 1_600_000_000_000,
+                document_revision: Some(2),
+                reason: ContractModerationReason::from_text("doxxing"),
+            },
+        },
+        approval_count,
+    };
+    let expected = ContractTeamActions(vec![entry(1, 1), entry(3, 4)]);
+
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(expected.clone()))
+        .await
+        .unwrap();
+
+    let fetched = ContractTeamActions::fetch(&sdk, query)
+        .await
+        .unwrap()
+        .expect("actions should exist");
+
+    assert_eq!(fetched, expected);
+}

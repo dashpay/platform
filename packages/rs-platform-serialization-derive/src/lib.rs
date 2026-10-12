@@ -50,8 +50,8 @@ enum DecodeTrust {
 struct TrustNames {
     decode_from_slice: proc_macro2::TokenStream,
     deserializable: Ident,
-    deserialize: Ident,
-    deserialize_no_limit: Ident,
+    deserialize_with_bytes_len: Ident,
+    deserialize_no_limit_with_bytes_len: Ident,
     from_versioned_structure: Ident,
     versioned_deserialize: Ident,
     limit_from_versioned_structure: Ident,
@@ -71,8 +71,14 @@ impl DecodeTrust {
         TrustNames {
             decode_from_slice,
             deserializable: format_ident!("PlatformDeserializable{}", trait_suffix),
-            deserialize: format_ident!("deserialize_from_bytes_{}", fn_suffix),
-            deserialize_no_limit: format_ident!("deserialize_from_bytes_{}_no_limit", fn_suffix),
+            deserialize_with_bytes_len: format_ident!(
+                "deserialize_from_bytes_{}_with_bytes_len",
+                fn_suffix
+            ),
+            deserialize_no_limit_with_bytes_len: format_ident!(
+                "deserialize_from_bytes_{}_no_limit_with_bytes_len",
+                fn_suffix
+            ),
             from_versioned_structure: format_ident!(
                 "PlatformDeserializableFromVersionedStructure{}",
                 trait_suffix
@@ -277,7 +283,9 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
 
 /// Derive Platform deserialization for bytes this node wrote itself.
 ///
-/// Implements `PlatformDeserializableTrusted` (`deserialize_from_bytes_trusted`)
+/// Implements `PlatformDeserializableTrusted` (`deserialize_from_bytes_trusted`
+/// and the rest of the trait, through its two derived `_with_bytes_len`
+/// methods, which report how many bytes the value took)
 /// and, for versioned structures, the `...FromVersionedStructureTrusted` twins,
 /// all running bincode's ordinary decoder, which reserves each collection from
 /// its length prefix. Use the trusted entry points for Drive state read back
@@ -297,7 +305,9 @@ pub fn derive_platform_deserialize_trusted(input: TokenStream) -> TokenStream {
 
 /// Derive Platform deserialization for bytes from outside this node.
 ///
-/// Implements `PlatformDeserializableUntrusted` (`deserialize_from_bytes_untrusted`)
+/// Implements `PlatformDeserializableUntrusted` (`deserialize_from_bytes_untrusted`
+/// and the rest of the trait, through its two derived `_with_bytes_len`
+/// methods, which report how many bytes the value took)
 /// running bincode's untrusted decoder, so a short input whose length prefix
 /// claims a huge collection fails before anything is reserved for it. The type
 /// and every field need `DecodeUntrusted`. Existing configured budgets and

@@ -35,6 +35,19 @@ impl DriveDocumentQuery<'_> {
     /// the returned root hash with the surrounding tenderdash
     /// signature — see `rs-drive-proof-verifier` for the canonical
     /// composition.
+    ///
+    /// # Parameters
+    ///
+    /// * `proof`: The merged proof, as `query_chained_documents_with_proof` produced it.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, ChainedDocumentsResult))` with the proof's root hash, the proven inner
+    ///   projections, the proven outer documents and the join values proven to have none.
+    /// * `Err(Error)` when the method version is unknown, the query is not a valid chained
+    ///   query, or the proof is invalid: it fails verification, lacks a referenced document
+    ///   that cannot be deleted, or carries an outer document no join value asked for.
     pub fn verify_chained_documents_proof(
         &self,
         proof: &[u8],

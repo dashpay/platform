@@ -14,6 +14,13 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// Operations on the System
+///
+/// `AddToSystemCredits` and `RemoveFromSystemCredits` compute the new total from the one
+/// committed before their batch, and GroveDB keeps only the last write of a key, so a batch
+/// must carry at most one of them: a second would replace the first, and the total would no
+/// longer match the credits in the trees. Every batch does today (at most one per state
+/// transition, one per block for the epoch payout), and `DriveOperation::merge_balance_writes`
+/// does not merge them. A batch that needs two must sum them into one.
 #[derive(Clone, Debug)]
 pub enum SystemOperationType {
     /// We want to add credits to the system.

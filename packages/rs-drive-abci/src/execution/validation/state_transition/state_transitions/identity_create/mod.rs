@@ -348,17 +348,19 @@ mod tests {
     async fn test_identity_create_validation_latest_protocol_version() {
         run_test_identity_create_validation_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1919540,
-            99913867460,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            1914580,
+            99913872420,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
-    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
-    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
-    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
-    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14
+    /// adds the documents expirations tree under `Misc` (key `E`), beside the total system
+    /// credits item this transition rewrites, and the extra key reshapes the `Misc` Merk
+    /// the write rehashes. v14's `ContractGroups` root tree (key 124) sits under the
+    /// `Versions` node no fee-bearing transition rewrites and changes nothing here. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_identity_create_validation_protocol_version_13() {
         run_test_identity_create_validation_at_protocol_version(13, 1919540, 99913867460).await;
@@ -1090,17 +1092,19 @@ mod tests {
     async fn test_identity_create_asset_lock_reuse_after_issue_latest_protocol_version() {
         run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2195200,
-            99909262100,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            2190240,
+            99909267060,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
-    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
-    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
-    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
-    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14
+    /// adds the documents expirations tree under `Misc` (key `E`), beside the total system
+    /// credits item this transition rewrites, and the extra key reshapes the `Misc` Merk
+    /// the write rehashes. v14's `ContractGroups` root tree (key 124) sits under the
+    /// `Versions` node no fee-bearing transition rewrites and changes nothing here. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_identity_create_asset_lock_reuse_after_issue_protocol_version_13() {
         run_test_identity_create_asset_lock_reuse_after_issue_at_protocol_version(
@@ -2065,17 +2069,19 @@ mod tests {
     async fn test_identity_create_asset_lock_replay_attack_latest_protocol_version() {
         run_test_identity_create_asset_lock_replay_attack_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2195200,
-            99909262100,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            2190240,
+            99909267060,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
-    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
-    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
-    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
-    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14
+    /// adds the documents expirations tree under `Misc` (key `E`), beside the total system
+    /// credits item this transition rewrites, and the extra key reshapes the `Misc` Merk
+    /// the write rehashes. v14's `ContractGroups` root tree (key 124) sits under the
+    /// `Versions` node no fee-bearing transition rewrites and changes nothing here. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_identity_create_asset_lock_replay_attack_protocol_version_13() {
         run_test_identity_create_asset_lock_replay_attack_at_protocol_version(

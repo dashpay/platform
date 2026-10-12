@@ -1710,12 +1710,18 @@ extension ManagedPlatformWallet {
     /// `public_keys` map; the signer's role is to sign with whatever
     /// key was picked.
     ///
+    /// `maxContestFund` is the most, in credits, the identity pays into
+    /// the contest a contested name joins, and the identity must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// name that joins no contest ignores it.
+    ///
     /// Returns the full domain name (e.g. `"alice.dash"`).
     @discardableResult
     public func registerDpnsName(
         identityId: Identifier,
         name: String,
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        maxContestFund: UInt64? = nil
     ) async throws -> String {
         let handle = self.handle
         // Take the raw signer handle outside the Task. `KeychainSigner`
@@ -1731,6 +1737,8 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
+        // `0` asks the Rust side for the current fund to join.
+        let contestFund = maxContestFund ?? 0
         return try await Task.detached(priority: .userInitiated) { () -> String in
             _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
@@ -1740,6 +1748,7 @@ extension ManagedPlatformWallet {
                         handle,
                         idBp.baseAddress!,
                         namePtr,
+                        contestFund,
                         signerHandle,
                         &outPtr
                     )
@@ -2185,10 +2194,51 @@ extension ManagedPlatformWallet {
         /// contact-bootstrap precondition (may be nil even when `hasInviter`).
         public let inviterUsername: String?
         /// Always 0: the amount isn't in the link (it carries the funding txid,
-        /// not the proof) and is only known after the tx is fetched at claim time.
+        /// not the proof). Read it with ``invitationClaimStatus(uri:)``.
         public let amountDuffs: UInt64
         /// Always 0: the legacy link carries no expiry field.
         public let expiryUnix: UInt32
+        /// Inviter display name (`display-name`) when the link carried one.
+        public let inviterDisplayName: String?
+        /// Inviter avatar URL (`avatar-url`, percent-decoded) when the link
+        /// carried one. Unvalidated — treat as untrusted input.
+        public let inviterAvatarURL: String?
+    }
+
+    /// The invitee's pre-claim view of an invitation, from
+    /// ``invitationClaimStatus(uri:)``.
+    public struct InvitationClaimStatus: Sendable, Equatable {
+        /// The identity the claim would create (32 bytes).
+        public let prospectiveIdentityId: Data
+        /// Value of the credit output the voucher key controls (duffs). This is
+        /// the tier signal: the link does not say whether it funds a contested
+        /// or a non-contested username, the amount the inviter locked does.
+        public let amountDuffs: UInt64
+        /// The claim would submit an InstantSend proof.
+        public let isInstant: Bool
+        /// The funding transaction is chain-locked. `false` together with
+        /// `isInstant == false` is a ChainLock-only invitation that cannot be
+        /// claimed until its funding transaction is chain-locked.
+        public let isChainLocked: Bool
+        /// An identity already exists at `prospectiveIdentityId` — the
+        /// invitation was claimed. `false` does NOT prove the voucher is
+        /// unspent (a reclaim top-up consumes it without creating this
+        /// identity), so the claim can still fail late.
+        public let alreadyClaimed: Bool
+
+        public init(
+            prospectiveIdentityId: Data,
+            amountDuffs: UInt64,
+            isInstant: Bool,
+            isChainLocked: Bool,
+            alreadyClaimed: Bool
+        ) {
+            self.prospectiveIdentityId = prospectiveIdentityId
+            self.amountDuffs = amountDuffs
+            self.isInstant = isInstant
+            self.isChainLocked = isChainLocked
+            self.alreadyClaimed = alreadyClaimed
+        }
     }
 
     /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
@@ -2364,26 +2414,60 @@ extension ManagedPlatformWallet {
     /// transaction is refetched to locate the credit output the voucher
     /// controls. It claims nothing and mutates no wallet state.
     ///
-    /// Throws on anything undetermined — wrong network, a funding tx that has
-    /// not propagated, transport failure. Callers must treat a throw as
-    /// "proceed", never as an answer either way.
+    /// Two throws are definitive: a malformed link (`invalidParameter`) and a
+    /// link for the other network (`invalidNetwork`) can never be claimed by
+    /// this wallet. Every other throw is undetermined (a funding tx that has
+    /// not propagated, transport failure) and must be treated as "proceed",
+    /// never as an answer either way.
     public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            )
-            let result = uri.withCString { uriPtr in
-                platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> Data in
+            try withExtendedLifetime(self) {
+                var idTuple: (
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+                ) = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+                }
+                try result.check()
+                return withUnsafeBytes(of: idTuple) { Data($0) }
             }
-            try result.check()
-            return withUnsafeBytes(of: idTuple) { Data($0) }
+        }.value
+    }
+
+    /// What an invitation is worth and whether it was already claimed, without
+    /// claiming it — one funding-tx fetch and one identity fetch.
+    ///
+    /// Same error contract as ``invitationProspectiveIdentityId(uri:)``: a
+    /// malformed link (`ErrorInvalidParameter`) and a link for the other
+    /// network (`ErrorInvalidNetwork`) are definitive; every other throw is
+    /// undetermined (not propagated yet, transport failure) and must not be
+    /// read as an answer either way.
+    public func invitationClaimStatus(uri: String) async throws -> InvitationClaimStatus {
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
+            try withExtendedLifetime(self) {
+                var out = InvitationClaimStatusFFI()
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_claim_status(handle, uriPtr, &out)
+                }
+                try result.check()
+                return InvitationClaimStatus(
+                    prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
+                    amountDuffs: out.amount_duffs,
+                    isInstant: out.is_instant,
+                    isChainLocked: out.is_chain_locked,
+                    alreadyClaimed: out.already_claimed
+                )
+            }
         }.value
     }
 
@@ -2401,11 +2485,17 @@ extension ManagedPlatformWallet {
             platform_wallet_parse_invitation(uriPtr, &out)
         }
         try result.check()
-        // The Rust side heap-allocates the username C string when the link
-        // carries an inviter; free it once we've copied it into Swift.
+        // The Rust side heap-allocates the inviter C strings when the link
+        // carries them; free them once we've copied them into Swift.
         defer {
             if out.inviter_username != nil {
                 platform_wallet_string_free(out.inviter_username)
+            }
+            if out.inviter_display_name != nil {
+                platform_wallet_string_free(out.inviter_display_name)
+            }
+            if out.inviter_avatar_url != nil {
+                platform_wallet_string_free(out.inviter_avatar_url)
             }
         }
         // Always nil, matching the documented contract: the legacy link
@@ -2421,7 +2511,9 @@ extension ManagedPlatformWallet {
             inviterId: inviterId,
             inviterUsername: inviterUsername,
             amountDuffs: out.amount_duffs,
-            expiryUnix: out.expiry_unix
+            expiryUnix: out.expiry_unix,
+            inviterDisplayName: out.inviter_display_name.map { String(cString: $0) },
+            inviterAvatarURL: out.inviter_avatar_url.map { String(cString: $0) }
         )
     }
 
@@ -2553,6 +2645,39 @@ extension ManagedPlatformWallet {
                 requests.append(ContactRequest(handle: handles[i]))
             }
             return requests
+        }.value
+    }
+
+    /// Reserve a fresh Core payout address for a DashPay contact without
+    /// requiring transparent funds. Call only after confirming a withdrawal:
+    /// each successful call permanently consumes an address shared with Core
+    /// sends. The SDK persists the reservation before returning it.
+    /// This does not submit a payment or record its history.
+    public func reserveDashPayPaymentAddress(
+        fromIdentityId: Identifier,
+        toContactIdentityId: Identifier
+    ) async throws -> String {
+        let handle = self.handle
+        let fromBytes = fromIdentityId.withFFIBytes { Array(UnsafeBufferPointer(start: $0, count: 32)) }
+        let toBytes = toContactIdentityId.withFFIBytes { Array(UnsafeBufferPointer(start: $0, count: 32)) }
+        let resolver = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var address: UnsafeMutablePointer<CChar>?
+            let result = withExtendedLifetime(resolver) {
+                fromBytes.withUnsafeBufferPointer { from in
+                    toBytes.withUnsafeBufferPointer { to in
+                        platform_wallet_reserve_dashpay_payment_address(
+                            handle, from.baseAddress!, to.baseAddress!, resolver.handle, &address
+                        )
+                    }
+                }
+            }
+            try result.check()
+            guard let address else {
+                throw PlatformWalletError.invalidParameter("Missing reserved DashPay address")
+            }
+            defer { platform_wallet_string_free(address) }
+            return String(cString: address)
         }.value
     }
 
@@ -3789,6 +3914,11 @@ extension ManagedPlatformWallet {
     /// converts them to native bytes / identifiers). Pass `"{}"` for a
     /// document type with no required properties.
     ///
+    /// `maxContestFund` is the most, in credits, the owner pays into the
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
+    ///
     /// Lifetime contract: the `signer` instance MUST stay alive for the
     /// duration of the synchronous FFI call inside this async wrapper
     /// (Rust holds a `passUnretained` ctx pointer to the underlying
@@ -3800,10 +3930,13 @@ extension ManagedPlatformWallet {
         contractId: Identifier,
         documentType: String,
         propertiesJSON: String,
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        maxContestFund: UInt64? = nil
     ) async throws -> (Identifier, String) {
         let handle = self.handle
         let signerHandle = signer.handle
+        // `0` asks the Rust side for the current fund to join.
+        let contestFund = maxContestFund ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -3841,6 +3974,7 @@ extension ManagedPlatformWallet {
                                         contractBp.baseAddress!,
                                         typePtr,
                                         propsPtr,
+                                        contestFund,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr

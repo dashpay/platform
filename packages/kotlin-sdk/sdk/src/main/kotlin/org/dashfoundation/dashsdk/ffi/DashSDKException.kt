@@ -16,7 +16,7 @@ import org.dashfoundation.dashsdk.errors.PlatformConsensusError
  * 8=Timeout, 9=NotImplemented, 10=DriveInternalError, 99=InternalError.
  *
  * [consensusError] is the consensus rejection behind the failure when the
- * native result carried one, `null` otherwise.
+ * native result or `DashSDKError` carried one, `null` otherwise.
  *
  * Internal: the public API maps this into the
  * [org.dashfoundation.dashsdk.errors.DashSdkError] hierarchy.
@@ -30,7 +30,9 @@ class DashSDKException(
 
     /**
      * JNI entry for a failure that is a consensus rejection. [consensusKind]
-     * is the `PlatformWalletFFIConsensusErrorKind` discriminant.
+     * is the discriminant of the native kind: `PlatformWalletFFIConsensusErrorKind`
+     * for a platform-wallet result, `DashSDKConsensusErrorKind` for an
+     * rs-sdk-ffi error. The two share their values.
      */
     constructor(code: Int, message: String, consensusCode: Int, consensusKind: Int) : this(
         code,

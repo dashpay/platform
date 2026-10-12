@@ -67,17 +67,53 @@ pub trait PlatformSerializableWithPlatformVersion {
 /// length prefix, so it must never see bytes that arrived from a peer, a
 /// client, a proof or a host caller; those go through
 /// [`PlatformDeserializableUntrusted`].
+///
+/// The derive implements the two `_with_bytes_len` methods, which report how
+/// many bytes the value took; the other methods are defaults over them.
 pub trait PlatformDeserializableTrusted {
+    /// Decodes under the type's configured byte budget, returning the value
+    /// and the number of bytes it took.
+    fn deserialize_from_bytes_trusted_with_bytes_len(
+        data: &[u8],
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized;
+
+    /// [`Self::deserialize_from_bytes_trusted_with_bytes_len`] without the
+    /// byte budget.
+    fn deserialize_from_bytes_trusted_no_limit_with_bytes_len(
+        data: &[u8],
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized;
+
+    /// Decodes under the type's configured byte budget. Bytes left over after
+    /// the value are ignored; [`Self::deserialize_from_bytes_trusted_exact`]
+    /// refuses them.
     fn deserialize_from_bytes_trusted(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        Self::deserialize_from_bytes_trusted_no_limit(data)
+        Self::deserialize_from_bytes_trusted_with_bytes_len(data).map(|(value, _)| value)
     }
 
     fn deserialize_from_bytes_trusted_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        Self::deserialize_from_bytes_trusted_no_limit_with_bytes_len(data).map(|(value, _)| value)
+    }
+
+    /// [`Self::deserialize_from_bytes_trusted`] that also refuses bytes left
+    /// over after the value.
+    fn deserialize_from_bytes_trusted_exact(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let (value, consumed) = Self::deserialize_from_bytes_trusted_with_bytes_len(data)?;
+        refuse_left_over_bytes::<Self>(data.len(), consumed)?;
+        Ok(value)
+    }
 }
 
 /// Deserialization of bytes from outside this node: state transitions, query
@@ -86,17 +122,69 @@ pub trait PlatformDeserializableTrusted {
 /// Runs bincode's untrusted decoder, which reserves nothing from a length
 /// prefix before the elements it announces have actually been read, so a
 /// short input claiming a huge collection fails instead of allocating.
+///
+/// The derive implements the two `_with_bytes_len` methods, which report how
+/// many bytes the value took; the other methods are defaults over them.
 pub trait PlatformDeserializableUntrusted {
+    /// Decodes under the type's configured byte budget, returning the value
+    /// and the number of bytes it took.
+    fn deserialize_from_bytes_untrusted_with_bytes_len(
+        data: &[u8],
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized;
+
+    /// [`Self::deserialize_from_bytes_untrusted_with_bytes_len`] without the
+    /// byte budget.
+    fn deserialize_from_bytes_untrusted_no_limit_with_bytes_len(
+        data: &[u8],
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized;
+
+    /// Decodes under the type's configured byte budget. Bytes left over after
+    /// the value are ignored; [`Self::deserialize_from_bytes_untrusted_exact`]
+    /// refuses them.
     fn deserialize_from_bytes_untrusted(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        Self::deserialize_from_bytes_untrusted_no_limit(data)
+        Self::deserialize_from_bytes_untrusted_with_bytes_len(data).map(|(value, _)| value)
     }
 
     fn deserialize_from_bytes_untrusted_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        Self::deserialize_from_bytes_untrusted_no_limit_with_bytes_len(data).map(|(value, _)| value)
+    }
+
+    /// [`Self::deserialize_from_bytes_untrusted`] that also refuses bytes left
+    /// over after the value.
+    ///
+    /// A value followed by anything decodes loosely as the value alone, so a
+    /// caller that shows a user what the bytes contain and then signs them
+    /// must use this one to know the value is all there is.
+    fn deserialize_from_bytes_untrusted_exact(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let (value, consumed) = Self::deserialize_from_bytes_untrusted_with_bytes_len(data)?;
+        refuse_left_over_bytes::<Self>(data.len(), consumed)?;
+        Ok(value)
+    }
+}
+
+/// The error for a decode of `T` that took `consumed` of `len` input bytes.
+fn refuse_left_over_bytes<T>(len: usize, consumed: usize) -> Result<(), ProtocolError> {
+    if consumed == len {
+        return Ok(());
+    }
+    Err(ProtocolError::PlatformDeserializationError(format!(
+        "unable to deserialize {}: {} bytes left over after the value",
+        std::any::type_name::<T>(),
+        len.saturating_sub(consumed)
+    )))
 }
 
 /// We will deserialize a versioned structure into a code structure

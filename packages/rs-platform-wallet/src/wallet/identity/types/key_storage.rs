@@ -26,14 +26,27 @@ pub enum PrivateKeyData {
 }
 
 /// Identity lifecycle status on Platform.
+///
+/// Intended transitions: `Unknown` -> `PendingCreation` -> `Active`,
+/// `PendingCreation` -> `FailedCreation` -> `Active` (after a retry), and
+/// `Active` -> `NotFound` -> `Active`. Today the library itself sets only
+/// `Unknown` (the default) and `Active` (after loading or discovering the
+/// identity on Platform); the other variants exist for hosts and are
+/// persisted like the rest. The FFI stores each variant as a byte in
+/// declaration order (0 to 4), so never reorder them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IdentityStatus {
+    /// Not checked against Platform yet.
     #[default]
     Unknown,
+    /// Registration submitted, not yet confirmed.
     PendingCreation,
+    /// Confirmed on Platform.
     Active,
+    /// Registration failed; it can be retried.
     FailedCreation,
+    /// Was active, but Platform no longer returns it.
     NotFound,
 }
 

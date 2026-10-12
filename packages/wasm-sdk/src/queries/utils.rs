@@ -6,6 +6,14 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::serialization::conversions::{from_object, js_value_to_platform_value};
 
 use crate::WasmSdkError;
+use dash_sdk::platform::Identifier;
+use wasm_dpp2::identifier::IdentifierLikeJs;
+
+/// The contract a query names, from any `IdentifierLike`.
+pub(crate) fn parse_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {
+    id.try_into()
+        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract id: {err}")))
+}
 
 pub(crate) fn deserialize_required_query<T, Q>(
     query: Q,

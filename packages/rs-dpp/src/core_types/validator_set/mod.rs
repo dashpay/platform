@@ -3,6 +3,10 @@ use crate::core_types::validator::v0::ValidatorV0;
 use crate::core_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
 };
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "core-types-serialization")]
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
@@ -47,10 +51,10 @@ pub enum ValidatorSet {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ValidatorSet {}
+impl JsonConvertible for ValidatorSet {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ValidatorSet {}
+impl ValueConvertible for ValidatorSet {}
 
 impl Display for ValidatorSet {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

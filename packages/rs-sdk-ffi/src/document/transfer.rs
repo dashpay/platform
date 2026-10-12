@@ -175,9 +175,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create transfer transition: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to create transfer transition", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -342,9 +340,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
             .sdk
             .document_transfer(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to transfer document and wait: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to transfer document and wait", e))?;
 
         let dash_sdk::platform::documents::transitions::DocumentTransferResult::Document(
             transferred_document,
@@ -406,6 +402,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

@@ -2,6 +2,7 @@ use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyMethodVersions {
@@ -42,6 +43,10 @@ pub struct DriveVerifyContractModerationMethodVersions {
     pub verify_contract_moderation_entries: FeatureVersion,
     pub verify_contract_fee_pots: FeatureVersion,
     pub verify_contract_document_removals: FeatureVersion,
+    pub verify_contract_team_actions: FeatureVersion,
+    pub verify_contract_team_action_signers: FeatureVersion,
+    pub verify_contract_team_action_signature: FeatureVersion,
+    pub verify_contract_moderation_action_counts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

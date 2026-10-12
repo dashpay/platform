@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.QueriesNative
@@ -658,6 +659,84 @@ class Contracts internal constructor(private val sdk: Sdk) {
                 )
             }
         }
+
+    /**
+     * The `propertyConstraints` rules (protocol version 14) of [documentType],
+     * in name order (the order consensus checks them in). Empty for a type
+     * declaring none, and for every type while this SDK's protocol version is
+     * below 14. Port of Swift's `SDK.documentPropertyConstraints`.
+     *
+     * Each rule lists the properties it reads and how
+     * ([DocumentPropertyConstraint.reads]), whether it reads the owner
+     * ([DocumentPropertyConstraint.readsOwner]), the system times and
+     * heights it reads ([DocumentPropertyConstraint.readsSystem]) and the
+     * `countOf` and `sumOf` totals it reads ([DocumentPropertyConstraint.readsTotals]).
+     *
+     * [serializedContract] is the contract's platform serialization, the bytes
+     * kept beside a fetched contract ([ContractWithSerialization.binarySerialization],
+     * `DataContractEntity.binarySerialization`). Rust reads it at this SDK's
+     * protocol version; no network call.
+     *
+     * @throws DashSdkError.NotFound for a document type the contract does not declare.
+     * @throws DashSdkError.SerializationError for bytes that are not a contract.
+     * @throws DashSdkError.InvalidParameter for empty contract bytes.
+     */
+    suspend fun propertyConstraints(
+        serializedContract: ByteArray,
+        documentType: String,
+    ): List<DocumentPropertyConstraint> = sdk.queryGate.op {
+        val json = mapNativeErrors {
+            QueriesNative.dataContractGetPropertyConstraints(
+                sdk.handle,
+                serializedContract,
+                documentType,
+            )
+        } ?: throw DashSdkError.InternalError("No propertyConstraints rules returned")
+        DocumentPropertyConstraint.listFromJson(json)
+    }
+
+    /**
+     * The first `propertyConstraints` rule a document to create would break,
+     * or `null` when it meets them all (always so while this SDK's protocol
+     * version is below 14). Port of Swift's
+     * `SDK.checkDocumentPropertyConstraints`.
+     *
+     * [propertiesJson] is the properties JSON the document would be created
+     * with (what `DocumentTransactions.create` takes) and [ownerId] the 32-byte
+     * identity that would own it, which `$ownerId` reads. Rust builds the
+     * document the create path builds and judges it with the check consensus
+     * runs; nothing but the rules is checked. The device clock stands in for
+     * the block time the create records (`$createdAt`, `$updatedAt`,
+     * `$transferredAt`), so a rule comparing one is judged as of now; a rule
+     * reading a block height (`$createdAtBlockHeight`, ...) is not judged,
+     * since the height is unknown until the block, nor is a rule reading a
+     * `countOf` or `sumOf` total ([DocumentPropertyConstraint.readsTotals]),
+     * which the platform reads from state when the document is sent; consensus
+     * may still refuse the document for either. [serializedContract] is as for
+     * [propertyConstraints]; no network call.
+     *
+     * @throws DashSdkError.InvalidParameter for empty contract bytes, an owner
+     *   id that is not 32 bytes, or properties that are not a JSON object.
+     * @throws DashSdkError.NotFound for a document type the contract does not declare.
+     * @throws DashSdkError.SerializationError for bytes that are not a contract.
+     */
+    suspend fun checkPropertyConstraints(
+        serializedContract: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        ownerId: ByteArray,
+    ): PropertyConstraintViolation? = sdk.queryGate.op {
+        val json = mapNativeErrors {
+            QueriesNative.dataContractCheckPropertyConstraints(
+                sdk.handle,
+                serializedContract,
+                documentType,
+                propertiesJson,
+                ownerId,
+            )
+        } ?: throw DashSdkError.InternalError("No propertyConstraints verdict returned")
+        PropertyConstraintViolation.fromJson(json)
+    }
 }
 
 /**

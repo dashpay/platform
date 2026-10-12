@@ -1,5 +1,9 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
-use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
+use crate::drive::document::index_level_tree_types::{
+    continuation_contributes_zero, document_takes_part_in_index,
+    index_level_tree_types_with_continuation_demotion, level_reaches_entry,
+};
+use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -78,6 +82,23 @@ impl Drive {
     /// `ranked_axes` is empty for every pre-v14 contract, making the
     /// indexed path a bit-identical no-op for them.
     ///
+    /// Two more differences from v1, also from platform v14:
+    ///
+    /// - **`skipIfAbsent`**: the index ending at a level writes its entry
+    ///   only for a document carrying its skip set
+    ///   (`document_takes_part_in_index`), and a sub-level is built only
+    ///   when an entry of the document sits at or below it
+    ///   (`level_reaches_entry`).
+    /// - **Null flags follow each sub-level's own path**: a sub-level gets
+    ///   its parent's `any_fields_null` / `all_fields_null` combined with
+    ///   its own value. v1 updated them in place across the sibling loop,
+    ///   so a missing value in one branch marked every later sibling's
+    ///   path: a unique index there took the `[0]` tree layout with none of
+    ///   its own values missing, and a `nullSearchable: false` index got an
+    ///   entry for a document missing all of its values because a sibling
+    ///   had one. The v2 delete walker still finds entries written that way
+    ///   (see `drive::document::stored_index_entry`).
+    ///
     /// See v1's docs for the underlying value-tree / property-name-tree
     /// design (what "countable" gates versus "range_countable", etc.);
     /// everything not listed above matches v1.
@@ -88,8 +109,8 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
-        mut any_fields_null: bool,
-        mut all_fields_null: bool,
+        any_fields_null: bool,
+        all_fields_null: bool,
         parent_value_tree_type: TreeType,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
@@ -101,23 +122,31 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(index_type) = index_level.has_index_with_type() {
-            self.add_reference_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info.clone(),
-                index_type,
-                any_fields_null,
-                all_fields_null,
-                previous_batch_operations,
-                storage_flags,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
-        }
-
         let document_type = document_and_contract_info.document_type;
+
+        // The index ending here writes its entry only for a document it does
+        // not skip (`skipIfAbsent`): one carrying every property of its skip
+        // set. Every other index ending anywhere takes part unconditionally.
+        if let Some(index_type) = index_level.has_index_with_type() {
+            if document_takes_part_in_index(
+                &index_type.skip_if_absent_properties,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                self.add_reference_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    index_path_info.clone(),
+                    index_type,
+                    any_fields_null,
+                    all_fields_null,
+                    previous_batch_operations,
+                    storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
+        }
 
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
@@ -127,25 +156,27 @@ impl Drive {
         // wrapper-choice for child continuations all agree on the
         // exact variant.
         let current_layer_tree_type = parent_value_tree_type;
-        // True iff the parent value tree aggregates anything (count,
-        // sum, or both) — decides whether continuation children go
-        // through the zero-contribution helper or the plain one.
-        let parent_value_tree_aggregates = !matches!(parent_value_tree_type, TreeType::NormalTree);
-        // A prefix-ranking chain level (`rankedCountable: { at }`) inverts
-        // that choice for its CHAIN continuation: the value trees count the
-        // continuation's subtree — the total the grouping secondary ranks
-        // by — so it is inserted unwrapped and CONTRIBUTES its count
-        // instead of being zero-wrapped. A plain sibling's branch sharing
-        // such a level (stamped `count_exempt_branch` by the IndexLevel
-        // derivation) re-inverts per child: it is zero-wrapped
-        // (`Element::NonCounted`) so its entries never pollute the subtree
+        // Continuation children go through the zero-contribution helper
+        // when the parent value tree aggregates anything (count, sum, or
+        // both) — `continuation_contributes_zero`, shared with the
+        // preallocation path and `drive::document::layout`.
+        // A prefix-ranking chain level (a grouping or propagating level of a
+        // count, sum or average chain) inverts that choice for its CHAIN
+        // continuation: the value trees aggregate the continuation's
+        // subtree — the total the grouping secondary ranks by — so it is
+        // inserted unwrapped and CONTRIBUTES its count or sum instead of
+        // being zero-wrapped. A plain sibling's branch sharing such a level
+        // (stamped `count_exempt_branch` by the IndexLevel derivation)
+        // re-inverts per child: it is wrapped to contribute zero, as the
+        // parent needs (`zero_contribution_wrapper`: `Element::NonCounted`
+        // under a count tree, not summed or not counted or summed under a
+        // sum-bearing one), so its entries never pollute the subtree
         // totals — the same demotion range-countable value trees apply to
         // their sibling continuations. Contract validation guarantees every
         // admitted sibling is flag-free at and below the shared levels, so
         // nothing under a wrapped branch needs the counts the wrapper
         // suppresses.
-        let continuations_contribute =
-            index_level.ranked_count_grouping() || index_level.count_propagating();
+        let continuations_contribute = index_level.is_ranked_chain_level();
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -165,6 +196,15 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // A sub-level under which this document writes no entry is not
+            // built, so an index that skips the document leaves no
+            // property-name or value tree of its own behind.
+            if !level_reaches_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                continue;
+            }
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let ranked_axes = tree_types.ranked_axes.as_slice();
@@ -214,9 +254,11 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if parent_value_tree_aggregates
-                && (!continuations_contribute || sub_level.count_exempt_branch())
-            {
+            let property_name_tree_created = if continuation_contributes_zero(
+                parent_value_tree_type,
+                continuations_contribute,
+                sub_level,
+            ) {
                 // A ranked terminal level reaching this branch is
                 // rejected inside the helper (it passes `ranked_axes`
                 // straight through): an indexed tree can neither be
@@ -236,7 +278,7 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
+                )?
             } else {
                 self.batch_insert_empty_index_tree_if_not_exists(
                     path_key_info.clone(),
@@ -248,10 +290,43 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
-            }
+                )?
+            };
 
             sub_level_index_path_info.push(index_property_key)?;
+
+            // A summableOffCountIndex index ending at this sub-level keeps one counter
+            // per group at the value position, where another index grows a
+            // value tree: the counter stands for the value tree, its `0`
+            // bucket and every member entry, and nothing continues below it
+            // (registration refuses an index that would).
+            if sub_level.summable_off_count_index_info().is_some() {
+                self.add_summable_off_count_counter_operations(
+                    sub_level_index_path_info,
+                    document_index_field,
+                    property_name_tree_type,
+                    CounterChange::Increment {
+                        parent_created: property_name_tree_created,
+                    },
+                    *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                continue;
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -302,8 +377,10 @@ impl Drive {
                 &platform_version.drive,
             )?;
 
-            any_fields_null |= document_index_field.is_empty();
-            all_fields_null &= document_index_field.is_empty();
+            // The flags follow this sub-level's own path: a sibling's
+            // missing value says nothing about the indexes below this one.
+            let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+            let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
 
             // we push the actual value of the index path
             sub_level_index_path_info.push(document_index_field)?;
@@ -316,8 +393,8 @@ impl Drive {
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
-                any_fields_null,
-                all_fields_null,
+                sub_level_any_fields_null,
+                sub_level_all_fields_null,
                 value_tree_type,
                 previous_batch_operations,
                 storage_flags,

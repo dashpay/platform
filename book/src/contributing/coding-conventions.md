@@ -72,25 +72,46 @@ The mechanics of `PlatformVersion`, feature version tables, and the dispatcher
 shape are covered in the [Versioning](../versioning/platform-version.md)
 chapters. The rules here are about what to do with those mechanics.
 
-### Shipped generations are frozen
+### Shipped generations are frozen unless the change cannot modify consensus
 
 A behaviour change to a versioned method means a new `vN` module selected only
-by the tables of the unreleased protocol version. It never means editing a
-shipped `vN`, and that includes "harmless" edits: threading a new parameter
-through it, adding a version-table check inside it, or computing a gate that is
-always false for old versions. Inside the new generation the capability is a
-constant fact (`Index::try_from_value_map(map, true)`), not a runtime check.
+by the tables of the unreleased protocol version. A shipped `vN` may be edited
+in place only when we are sure the edit cannot modify consensus at any protocol
+version that selects it: the new code is unreachable there by construction
+(the data it acts on cannot exist under those versions, such as a keyword every
+one of their meta-schemas refuses and their parser ignores, judged through a
+dpp method whose own gate is `None` there), or the edit is a pure refactor with
+identical output. "Probably inert" is not enough. If the argument takes more
+than a sentence, or rests on a runtime check inside the shipped module, add a
+generation instead. Inside a new generation the capability is a constant fact
+(`Index::try_from_value_map(map, true)`), not a runtime check. For new
+changes, the patterns that compare `protocol_version` on purpose are the
+protocol upgrade ladder, the `is_allowed` gate for new transition kinds, and
+chain-creation content (`create_genesis_state` v1 and the Drive helpers that
+build the initial state structure); the [Versioned
+Dispatch](../versioning/versioned-dispatch.md) chapter describes them. Older
+comparisons elsewhere (for example the pre-version-9 arithmetic in
+`DocumentPropertyType`) stay because history replays through them; they are not
+a pattern to copy.
 
-Why: replay safety becomes structural instead of something a reviewer has to
-prove about a diff. A dead version check inside `v1` misleads the next reader
-into thinking `v1` can take that path. Shipped files should stay byte-identical
-to what shipped.
+Why: replay safety is structural when a shipped file stays byte-identical, and
+becomes a proof the reviewer has to check the moment it does not. An in-place
+edit is acceptable when that proof is short and written down; a dead version
+check inside `v1` that misleads the next reader into thinking `v1` can take
+that path is not.
 
-How: copy the previous generation into the new module, make the change there,
-move the tests that exercise the new behaviour into the new module, and bump
-the method's number in the new protocol version's tables only. Duplication
-between generations is the accepted cost; it is cheaper than a drift-prone
-flag.
+How, new generation: copy the previous generation into the new module, make
+the change there, move the tests that exercise the new behaviour into the new
+module, and bump the method's number in the new protocol version's tables
+only. Duplication between generations is the accepted cost; it is cheaper than
+a drift-prone flag.
+
+How, in place: make the edit, leave a comment at the edited lines naming why
+they are inert for every protocol version that selects the module, and give
+the pull request description an "In-place changes to shipped generations"
+section that lists each edited generation, the protocol versions that select
+it, and the reason consensus cannot change there. Reviewers read that section
+first.
 
 ### Table versions follow protocol-version boundaries, not PRs
 
@@ -133,8 +154,8 @@ behaviour-preserving. Add the next `SYSTEM_LIMITS_V{n+1}` for the unreleased
 protocol version with the new value. Keep a real method version only where the
 logic differs: in `packages/rs-dpp/src/withdrawal/daily_withdrawal_limit/`,
 `v0` computes a tiered percentage of total credits and `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`; that is a logic change and earns its own version. Raising the
+`daily_withdrawal_limit_percent` from `SystemLimits`; that is a logic change
+and earns its own version. Raising the
 percentage later would be a table edit, not a `v3`.
 
 Why: reviewers look for limits in the tables. A constant hidden in a method
@@ -244,7 +265,8 @@ Rules that fall out of the table:
 - Preserve mempool coverage. `Batch` runs advanced structure with state during
   `check_tx`, while full state validation is skipped there
   (`validates_full_state_on_check_tx` defaults to `false`; masternode votes
-  are the one transition that opts in, because they are unpaid). Moving a
+  are the one transition that opts in, because a block refuses them unpaid,
+  and they run advanced structure with state there too). Moving a
   contract-dependent structural check into state validation would remove that
   rejection from mempool admission.
 - Validation outcomes are `ConsensusValidationResult`, returned as `Ok`. A
@@ -357,8 +379,9 @@ error for a user mistake; the block loop treats the two classes differently.
   the crate root; do not extend it for convenience.
 - **State access is snapshot-based.** `Platform.state` is an `ArcSwap`;
   read with `load()` and pass `PlatformRef` or `PlatformStateRef` down. The
-  only locks are the ABCI application's `transaction` and
-  `block_execution_context`. In async code, a guard's scope, not a `drop()`
+  only locks are the ABCI application's `transaction`,
+  `block_execution_context` and `unsigned_withdrawal_txs_by_round`, taken in
+  that order. In async code, a guard's scope, not a `drop()`
   call, is what clears `clippy::await_holding_lock`; wrap the guard in a block
   that ends before the first `.await`.
 
@@ -471,6 +494,17 @@ now does.
 4. Move or write the behaviour tests in `v(N+1)/` against
    `PlatformVersion::latest()`; pin `vN/`'s tests to `PlatformVersion::get(n)`.
 5. Add a test that runs both versions through the dispatcher.
+
+**Editing a shipped generation in place**
+
+1. Only when the edit cannot modify consensus at any protocol version that
+   selects the module: unreachable by construction there, or output-identical.
+2. Comment the edited lines with why they are inert for those versions.
+3. Add a test that runs the module at the last shipped protocol version and
+   shows the outcome unchanged.
+4. Add an "In-place changes to shipped generations" section to the pull
+   request description: each edited generation, the versions that select it,
+   and the reason consensus cannot change there.
 
 **Changing a limit or a fee**
 

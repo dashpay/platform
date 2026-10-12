@@ -181,6 +181,38 @@ shape is that the fixture writes the same keys in the same batches as the
 block pipeline does, since a Merk batch of several keys gives another tree
 than the same keys written one at a time.
 
+## One document type's layout
+
+The description covers every document type at once, so its document layers
+are templates: an index property, one of its values, the `[0]` where an index
+ends, and which tree types each of them can be. Which of those a given
+document type gets depends on its keywords (`unique`, `countable`,
+`summable`, the ranked keys, `timeRange`, `indexOnly`, `documentsKeepHistory`,
+...), and the rules that pick them live in the index walkers.
+
+`drive::document::layout::document_type_layout` applies those rules to one
+document type and returns its concrete layout: the document type tree, the
+documents by id, and for each index the property and value trees down to
+where it ends, each with the tree or element type Drive writes, the
+zero-contribution wrapper a continuation tree gets under an aggregating value
+tree, the ranking axes of an indexed tree, the indexes that use the layer,
+and conditions such as the tree a unique index falls back to when a value is
+null. Each layer names the node of the description it is an instance of, so a
+viewer can link to it. It needs only the contract, so it is compiled with the
+`verify` feature as well, and the JavaScript SDKs expose it as
+`documentTypeLayout(contract, documentTypeName, platformVersion)`. It follows
+the v2 index walkers, so it refuses a platform version before 14.
+
+The tree types come from the functions the walkers call, and the element
+choices the walkers make inline are held to them by
+`should_lay_out_what_drive_writes`. It applies 19 test contracts (plain,
+unique, compound, countable, summable, ranked and chained indexes, history,
+time windows, indexOnly types with flat and preallocated indexes), inserts
+documents, and fails on any element whose kind or wrapper the layout does not
+predict, and on any layer of the layout Drive did not write. It does not cover
+contested indexes, time windows with a `ttl`, or document updates and
+deletes.
+
 ## Pull requests that change the structure
 
 When a pull request changes `grovedb-structure.json`, the

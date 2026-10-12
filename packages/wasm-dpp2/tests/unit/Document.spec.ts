@@ -621,6 +621,28 @@ describe('Document', () => {
     });
   });
 
+  describe('moderatedAt / moderatedBy', () => {
+    it('should be undefined on a document no moderator has written', () => {
+      const documentInstance = createDocument({ id });
+
+      expect(documentInstance.moderatedAt).to.equal(undefined);
+      expect(documentInstance.moderatedBy).to.equal(undefined);
+      expect(documentInstance.toObject()).to.not.have.property('$moderatedAt');
+      expect(documentInstance.toJSON()).to.not.have.property('$moderatedBy');
+    });
+
+    it('should read the stamp the last moderator left', () => {
+      const obj = createDocument({ id }).toObject();
+      Object.assign(obj, { $moderatedAt: 1700000000000n, $moderatedBy: ownerIdBytes });
+
+      const restored = wasm.Document.fromObject(obj);
+
+      expect(restored.moderatedAt).to.equal(1700000000000n);
+      expect(restored.moderatedBy?.toBase58()).to.equal(ownerId);
+      expect(restored.toJSON().$moderatedBy).to.equal(ownerId);
+    });
+  });
+
   describe('documentTypeName', () => {
     it('should set document type name', () => {
       const documentInstance = createDocument({ id });

@@ -46,9 +46,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform(
                 None, // settings (use defaults)
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to put data contract to platform: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to put data contract to platform", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -106,10 +104,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform_and_wait(
             )
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!(
-                    "Failed to put data contract to platform and wait: {}",
-                    e
-                ))
+                FFIError::sdk_call_failed("Failed to put data contract to platform and wait", e)
             })?;
 
         Ok(confirmed_contract)

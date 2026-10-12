@@ -164,9 +164,7 @@ pub unsafe extern "C" fn dash_sdk_document_purchase(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create purchase transition: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to create purchase transition", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -332,9 +330,7 @@ pub unsafe extern "C" fn dash_sdk_document_purchase_and_wait(
             .sdk
             .document_purchase(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to purchase document and wait: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to purchase document and wait", e))?;
 
         let dash_sdk::platform::documents::transitions::DocumentPurchaseResult::Document(
             purchased_document,
@@ -397,6 +393,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

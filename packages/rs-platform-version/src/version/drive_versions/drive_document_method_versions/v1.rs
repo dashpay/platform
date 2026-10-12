@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertContestedMethodVersions,
-    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveDocumentExpirationMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions,
 };
 
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
@@ -61,6 +62,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 0,
+            fetch_charter_election_windows: None,
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,
@@ -82,7 +84,17 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 0,
             validate_document_purchase_transition_action_uniqueness: 0,
             validate_document_update_price_transition_action_uniqueness: 0,
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
+            validate_uniqueness_of_data: 0,
         },
         primary_key_tree_type: 0,
+        fetch_property_constraint_aggregate: 0,
+        expiration: DriveDocumentExpirationMethodVersions {
+            insert_document_ttl_trees: 0,
+            add_document_expiration_operations: 0,
+            remove_document_expiration_operations: 0,
+            fetch_expired_documents: 0,
+            remove_expired_documents: 0,
+            add_estimation_costs_for_document_expiration: 0,
+        },
     };

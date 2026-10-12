@@ -75,6 +75,7 @@ fn wc(field: &str, operator: ProtoWhereOperator, value: Value) -> ProtoWhereClau
         field: field.to_string(),
         operator: operator as i32,
         value: Some(pv(value)),
+        integer_range: None,
         time_range: None,
     }
 }
@@ -421,6 +422,7 @@ fn nested_list_rejected_at_depth_two() {
         field: "any".to_string(),
         operator: ProtoWhereOperator::In as i32,
         value: Some(nested_list_value),
+        integer_range: None,
         time_range: None,
     };
     let request = GetDocumentsRequestV1 {
@@ -715,9 +717,9 @@ fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
     // `group_by=[in_field]` with an additional range clause is
     // valid: drive's `detect_mode` picks
     // `RangeAggregateCarrierProof` (grovedb #663) on the prove
-    // path and `RangeNoProof` per-In-branch on the no-prove path —
-    // both produce entries that line up with the caller's
-    // single-field GROUP BY shape.
+    // path, one entry per `In` value, and `RangeNoProof` on the
+    // no-prove path, which folds the per-In-branch totals into one
+    // entry.
     let request = GetDocumentsRequestV1 {
         selects: select_count_star(),
         group_by: vec!["brand".to_string()],
@@ -1157,6 +1159,8 @@ mod ported_v0_count_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 
@@ -4531,7 +4535,7 @@ mod time_range_proof_verification {
     /// handler resolves `IN_TIME_RANGE` from it and stamps it into the
     /// response metadata, which is what makes the client's re-derivation
     /// land on the same bucket.
-    fn state_with_committed_block_time(
+    pub(super) fn state_with_committed_block_time(
         base: &PlatformState,
         drive: &Drive,
         platform_version: &PlatformVersion,
@@ -4591,6 +4595,7 @@ mod time_range_proof_verification {
                 value: None,
                 // Grid-less: exactly one grid buckets the field here, so the
                 // bare relative selector is unambiguous.
+                integer_range: None,
                 time_range: Some(ProtoTimeRangeSelection {
                     selector: ProtoTimeRangeSelector::Newest as i32,
                     start_ms: None,
@@ -4627,7 +4632,7 @@ mod time_range_proof_verification {
     /// binding is supplied here over the *live* root hash and the handler's
     /// own response metadata. Tampering with either afterwards is what the
     /// negative case does.
-    fn prove_and_sign(
+    pub(super) fn prove_and_sign(
         platform: &TempPlatform<MockCoreRPCLike>,
         state: &PlatformState,
         request: GetDocumentsRequestV1,
@@ -4970,7 +4975,7 @@ mod time_range_proof_verification {
 
     use dash_platform_queries::documents::document_query::DocumentQuery as SdkDocumentQuery;
     use drive::query::SelectProjection;
-    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSum};
+    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSplitCounts, DocumentSum};
     use std::sync::Arc;
 
     const SUMMABLE_INDEX: &str = "trendingLikes";
@@ -5089,7 +5094,7 @@ mod time_range_proof_verification {
 
     /// Wrap a handler proof and its metadata the way the wire does, so the
     /// entry points consume exactly what a node returns.
-    fn signed_response(proof: Proof, mtd: &ResponseMetadata) -> GetDocumentsResponse {
+    pub(super) fn signed_response(proof: Proof, mtd: &ResponseMetadata) -> GetDocumentsResponse {
         GetDocumentsResponse {
             version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
@@ -5138,6 +5143,112 @@ mod time_range_proof_verification {
                 ProofVerifierError::GroveDBError { .. } | ProofVerifierError::DriveError { .. }
             ),
             "the rejection must come from the proof path, got: {error:?}"
+        );
+    }
+
+    /// A range-outer carrier count (two ranges, grouped by the outer one,
+    /// proved) without a limit walks the platform default number of outer
+    /// keys on the server, and the SDK entry point rebuilds the same walk:
+    /// with more brands in range than that default, the proof verifies to the
+    /// first of them.
+    #[test]
+    fn should_verify_a_range_outer_carrier_count_without_a_limit_through_the_sdk() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = DataContractFactory::new(version.protocol_version)
+            .expect("expected a factory")
+            .create_with_value_config(
+                Identifier::new([9u8; 32]),
+                0,
+                platform_value!({
+                    "widget": {
+                        "type": "object",
+                        "properties": {
+                            "brand": { "type": "string", "maxLength": 32, "position": 0 },
+                            "color": { "type": "string", "maxLength": 32, "position": 1 },
+                        },
+                        "indices": [{
+                            "name": "byBrandColor",
+                            "properties": [{ "brand": "asc" }, { "color": "asc" }],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                        }],
+                        "additionalProperties": false,
+                    }
+                }),
+                None,
+                None,
+            )
+            .expect("the brand contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(&platform, &contract, version);
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget doctype exists");
+        let brands: Vec<String> = (0..12).map(|i| format!("brand{i:02}")).collect();
+        for (i, brand) in brands.iter().enumerate() {
+            let mut document: Document = document_type
+                .random_document(Some(9_000 + i as u64), version)
+                .expect("random document");
+            document.set_properties(BTreeMap::from([
+                ("brand".to_string(), Value::Text(brand.clone())),
+                ("color".to_string(), Value::Text("red".to_string())),
+            ]));
+            store_document(&platform, &contract, document_type, &document, version);
+        }
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+
+        let request = GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            where_clauses: vec![
+                wc(
+                    "brand",
+                    ProtoWhereOperator::GreaterThan,
+                    Value::Text("a".to_string()),
+                ),
+                wc(
+                    "color",
+                    ProtoWhereOperator::GreaterThan,
+                    Value::Text("blue".to_string()),
+                ),
+            ],
+            selects: select_count_star(),
+            group_by: vec!["brand".to_string()],
+            prove: true,
+            limit: None,
+            ..empty_v1_request()
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let range = |field: &str, value: &str| WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text(value.to_string()),
+        };
+        let query = SdkDocumentQuery::new(Arc::new(contract.clone()), "widget")
+            .expect("the fixture has this document type")
+            .with_select(SelectProjection::count_star())
+            .with_where(range("brand", "a"))
+            .with_where(range("color", "blue"))
+            .with_group_by("brand");
+        let (counts, _mtd, _proof) =
+            <DocumentSplitCounts as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a range-outer carrier count without a limit must verify through the SDK");
+        let counts = counts.expect("brands are in range");
+        assert_eq!(
+            counts.0.len(),
+            10,
+            "the platform default caps the outer walk at ten brands of twelve"
+        );
+        assert!(
+            counts.0.iter().all(|entry| entry.count == Some(1)),
+            "each brand has one red widget: {:?}",
+            counts.0
         );
     }
 
@@ -5388,6 +5499,7 @@ mod time_range_proof_verification {
                 field: CREATED_AT.to_string(),
                 operator: ProtoWhereOperator::InTimeRange as i32,
                 value: None,
+                integer_range: None,
                 time_range: Some(ProtoTimeRangeSelection {
                     selector: ProtoTimeRangeSelector::Newest as i32,
                     start_ms: None,
@@ -5533,6 +5645,7 @@ mod time_range_proof_verification {
                 field: CREATED_AT.to_string(),
                 operator: ProtoWhereOperator::InTimeRange as i32,
                 value: None,
+                integer_range: None,
                 time_range: Some(ProtoTimeRangeSelection {
                     selector: ProtoTimeRangeSelector::ByStart as i32,
                     start_ms: Some(start_ms),
@@ -5791,6 +5904,7 @@ mod time_range_proof_verification {
                 field: CREATED_AT.to_string(),
                 operator: ProtoWhereOperator::InTimeRange as i32,
                 value: None,
+                integer_range: None,
                 time_range: Some(selection),
             }],
             order_by: vec![oc("$count", false)],
@@ -6085,6 +6199,307 @@ mod time_range_proof_verification {
             error.to_string().contains("provenance"),
             "expected the provenance rejection, got {error}"
         );
+    }
+}
+
+mod integer_range_proof_verification {
+    //! `IN_INTEGER_RANGE` end to end: the handler resolves the selected
+    //! window from the query alone, proves the window-start query, and the
+    //! SDK's `FromProof` entry points resolve the identical window from the
+    //! same query and verify the proof. With `range = 300, step = 100` a
+    //! listing is stored under three window starts, so a count that walked
+    //! windows instead of addressing one would count each listing three
+    //! times — and still verify.
+
+    use super::time_range_proof_verification::{
+        prove_and_sign, signed_response, state_with_committed_block_time,
+    };
+    use super::*;
+    use dapi_grpc::platform::v0::get_documents_request::IntegerRangeSelection as ProtoIntegerRangeSelection;
+    use dash_platform_queries::documents::document_query::DocumentQuery as SdkDocumentQuery;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::prelude::DataContract;
+    use drive::query::SelectProjection;
+    use drive_proof_verifier::types::Documents;
+    use drive_proof_verifier::{DocumentCount, Error as ProofVerifierError, FromProof};
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const DOCUMENT_TYPE: &str = "listing";
+
+    /// `(price, category)` for the listings: the two `books` listings at 750
+    /// and 720 share the windows starting at 500, 600 and 700; the `books`
+    /// listing at 450 sits in 200, 300 and 400 only (the negative control),
+    /// and the `maps` listing at 650 shares the windows but not the
+    /// category.
+    const LISTINGS: [(u64, &str); 4] = [
+        (750, "books"),
+        (720, "books"),
+        (450, "books"),
+        (650, "maps"),
+    ];
+
+    /// A countable `(integerRange(price, 300, 100), category)` index next to
+    /// a plain index over the same fields the other way round, so index
+    /// selection has a wrong index to pick that only the resolution
+    /// provenance rules out.
+    fn setup(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Vec<Document>) {
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "price": { "type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0 },
+                    "category": { "type": "string", "maxLength": 63, "position": 1 },
+                },
+                "indices": [
+                    {
+                        "name": "byPriceBand",
+                        "properties": [{ "price": "asc" }, { "category": "asc" }],
+                        "countable": true,
+                        "integerRange": { "on": "price", "range": 300u64, "step": 100u64 },
+                    },
+                    {
+                        "name": "byCategory",
+                        "properties": [{ "category": "asc" }, { "price": "asc" }],
+                        "countable": true,
+                    },
+                ],
+                "required": ["price", "category"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory")
+            .create_with_value_config(Identifier::new([8u8; 32]), 0, schemas, None, None)
+            .expect("the listing contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("listing doctype exists");
+        let documents = LISTINGS
+            .iter()
+            .enumerate()
+            .map(|(i, (price, category))| {
+                let mut document: Document = document_type
+                    .random_document(Some(8_000 + i as u64), platform_version)
+                    .expect("random document");
+                document.set_properties(BTreeMap::from([
+                    ("price".to_string(), Value::U64(*price)),
+                    ("category".to_string(), Value::Text(category.to_string())),
+                ]));
+                store_document(
+                    platform,
+                    &contract,
+                    document_type,
+                    &document,
+                    platform_version,
+                );
+                document
+            })
+            .collect();
+        (contract, documents)
+    }
+
+    fn window_clause(start: Value) -> ProtoWhereClause {
+        ProtoWhereClause {
+            field: "price".to_string(),
+            operator: ProtoWhereOperator::InIntegerRange as i32,
+            value: None,
+            time_range: None,
+            integer_range: Some(ProtoIntegerRangeSelection {
+                start: Some(pv(start)),
+                grid: None,
+            }),
+        }
+    }
+
+    fn request(
+        contract: &DataContract,
+        start: Value,
+        selects: Vec<V1Select>,
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            document_type: DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![
+                wc(
+                    "category",
+                    ProtoWhereOperator::Equal,
+                    Value::Text("books".to_string()),
+                ),
+                window_clause(start),
+            ],
+            order_by: Vec::new(),
+            limit: None,
+            start: None,
+            prove: true,
+            selects,
+            group_by: Vec::new(),
+            having: Vec::new(),
+            offset: None,
+            chained: None,
+            sub_queries: Vec::new(),
+        }
+    }
+
+    fn sdk_query(
+        contract: &DataContract,
+        start: u64,
+        select: SelectProjection,
+    ) -> SdkDocumentQuery {
+        SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+            .expect("the fixture has this document type")
+            .with_select(select)
+            .with_where(WhereClause {
+                field: "category".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("books".to_string()),
+            })
+            .with_integer_range("price", start)
+    }
+
+    #[test]
+    fn a_count_over_an_overlapping_integer_window_verifies_and_counts_each_document_once() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents) = setup(&platform, version);
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            request(&contract, Value::U64(600), select_count_star()),
+            version,
+        );
+        let (count, _mtd, _proof) =
+            <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                sdk_query(&contract, 600, SelectProjection::count_star()),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed window count must verify");
+        assert_eq!(
+            count.expect("the window is not empty"),
+            DocumentCount(2),
+            "the two books listings in the window count once each"
+        );
+    }
+
+    #[test]
+    fn a_documents_proof_over_an_integer_window_verifies_to_its_members() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, documents) = setup(&platform, version);
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            request(&contract, Value::U64(600), select_documents()),
+            version,
+        );
+        let (verified, _mtd, _proof) =
+            <Documents as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                sdk_query(&contract, 600, SelectProjection::documents()),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed documents proof must verify");
+        let mut verified_ids: Vec<_> = verified
+            .expect("the window is not empty")
+            .into_iter()
+            .filter_map(|(id, document)| document.map(|_| id))
+            .collect();
+        verified_ids.sort();
+        let mut expected = vec![documents[0].id(), documents[1].id()];
+        expected.sort();
+        assert_eq!(verified_ids, expected);
+    }
+
+    #[test]
+    fn a_proof_of_one_window_does_not_verify_another() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents) = setup(&platform, version);
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+        let (proof, mtd, provider) = prove_and_sign(
+            &platform,
+            &state,
+            request(&contract, Value::U64(600), select_count_star()),
+            version,
+        );
+        // Window 500 holds the same two listings, so only the proof path —
+        // not the count — can tell the windows apart.
+        let error = <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+            sdk_query(&contract, 500, SelectProjection::count_star()),
+            signed_response(proof, &mtd),
+            Network::Testnet,
+            version,
+            &provider,
+        )
+        .expect_err("a proof of window 600 must not verify window 500");
+        assert!(
+            matches!(
+                error,
+                ProofVerifierError::GroveDBError { .. } | ProofVerifierError::DriveError { .. }
+            ),
+            "the rejection must come from the proof path, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_integer_window_selections_are_refused() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents) = setup(&platform, version);
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+        let cases: Vec<(&str, GetDocumentsRequestV1, &str)> = vec![
+            (
+                "an off-grid start",
+                request(&contract, Value::U64(650), select_count_star()),
+                "not a window start",
+            ),
+            (
+                "a generic value next to the typed operand",
+                {
+                    let mut request = request(&contract, Value::U64(600), select_count_star());
+                    request.where_clauses[1].value = Some(pv(Value::U64(600)));
+                    request
+                },
+                "must set neither `value` nor `time_range`",
+            ),
+            (
+                "no selection at all",
+                {
+                    let mut request = request(&contract, Value::U64(600), select_count_star());
+                    request.where_clauses[1].integer_range = None;
+                    request
+                },
+                "no `integer_range` selection",
+            ),
+            (
+                "a field no integer grid buckets",
+                {
+                    let mut request = request(&contract, Value::U64(600), select_count_star());
+                    request.where_clauses[1].field = "category".to_string();
+                    request
+                },
+                "no integer-range index",
+            ),
+        ];
+        for (name, request, expected) in cases {
+            let result = platform
+                .query_documents_v1(request, &state, version)
+                .expect("query call should not error at the transport layer");
+            let message = format!("{:?}", result.errors);
+            assert!(
+                message.contains(expected),
+                "{name}: expected `{expected}` in {message}"
+            );
+        }
     }
 }
 

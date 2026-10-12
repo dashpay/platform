@@ -1,0 +1,55 @@
+{
+  "$formatVersion": "0",
+  "id": "9f2Lqx2VWjtk2vDk1sGgZwGSVvUu3c8TZkXcBVM5Cm3H",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "memo": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "ttl": 2592000,
+      "indices": [
+        {
+          "name": "byABCD",
+          "properties": [{ "a": "asc" }, { "b": "asc" }, { "c": "asc" }, { "d": "asc" }],
+          "skipIfAbsent": ["d"]
+        },
+        {
+          "name": "byBCAD",
+          "properties": [{ "b": "asc" }, { "c": "asc" }, { "a": "asc" }, { "d": "asc" }],
+          "skipIfAbsent": ["d"]
+        },
+        {
+          "name": "byCABD",
+          "properties": [{ "c": "asc" }, { "a": "asc" }, { "b": "asc" }, { "d": "asc" }],
+          "skipIfAbsent": ["d"]
+        }
+      ],
+      "properties": {
+        "a": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 0
+        },
+        "b": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 1
+        },
+        "c": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 2
+        },
+        "d": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 3
+        }
+      },
+      "required": ["a", "b", "c", "$createdAt"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -400,6 +400,27 @@ pub fn try_to_u64(value: &JsValue, field_name: &str) -> WasmDppResult<u64> {
     }
 }
 
+/// Set `key` on `object` as an own data property (writable, enumerable,
+/// configurable), so a key named like an inherited accessor (`__proto__`) is a
+/// key of the object, not a call to the accessor, as a plain `Reflect::set`
+/// would make it.
+pub fn define_own_property(object: &Object, key: &str, value: JsValue) -> WasmDppResult<()> {
+    let descriptor = Object::new();
+    for (flag, flag_value) in [
+        ("value", value),
+        ("writable", JsValue::TRUE),
+        ("enumerable", JsValue::TRUE),
+        ("configurable", JsValue::TRUE),
+    ] {
+        js_sys::Reflect::set(&descriptor, &JsValue::from_str(flag), &flag_value).map_err(|_| {
+            WasmDppError::serialization(format!("failed to describe property `{key}`"))
+        })?;
+    }
+    js_sys::Reflect::define_property(object, &JsValue::from_str(key), &descriptor)
+        .map_err(|_| WasmDppError::serialization(format!("failed to set property `{key}`")))?;
+    Ok(())
+}
+
 /// Convert a JS value to Object with validation.
 ///
 /// Uses `dyn_into()` to safely convert, returning an error if the value is not an object.

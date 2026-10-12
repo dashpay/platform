@@ -18,4 +18,7 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V2: SystemDataContractVersions =
         // The app-connect contract does not exist before protocol version 14: no
         // schema generation is selected here, so loading it is refused.
         app_connect: 0,
+        // The moderation charters contract does not exist before protocol version 14
+        // either: no schema generation is selected here.
+        moderation_charters: 0,
     };

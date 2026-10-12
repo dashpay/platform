@@ -1,5 +1,7 @@
 //! Error handling for FFI layer
 
+use dash_sdk::dpp::consensus::codes::ErrorWithCode;
+use dash_sdk::dpp::ProtocolError;
 use std::ffi::{CString, NulError};
 use std::os::raw::c_char;
 use thiserror::Error;
@@ -34,7 +36,53 @@ pub enum DashSDKErrorCode {
     InternalError = 99,
 }
 
+/// Which family a consensus rejection belongs to, paired with the numeric
+/// `consensus_code` on [`DashSDKError`].
+///
+/// rs-dpp numbers its consensus errors by family
+/// (`packages/rs-dpp/src/errors/consensus/codes.rs`): basic 1xxxx, signature
+/// 2xxxx, fee 3xxxx, state 4xxxx. The values are those of
+/// `PlatformWalletFFIConsensusErrorKind` in rs-platform-wallet-ffi, so a host
+/// decodes the kind of either FFI's error the same way.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashSDKConsensusErrorKind {
+    /// Not a consensus rejection; pairs with `consensus_code == 0`
+    ConsensusErrorKindNone = 0,
+    /// Structure or version validation refused the transition
+    ConsensusErrorKindBasic = 1,
+    /// The transition's signature or signing key was refused
+    ConsensusErrorKindSignature = 2,
+    /// The fee could not be covered
+    ConsensusErrorKindFee = 3,
+    /// The transition was well formed but Platform state refused it
+    ConsensusErrorKindState = 4,
+}
+
+impl DashSDKConsensusErrorKind {
+    /// The family rs-dpp's numbering puts `code` in. `ConsensusErrorKindNone`
+    /// for any other number: `ConsensusError::DefaultError` (1) names no
+    /// rejection, and a wait-for-result failure that is not a consensus
+    /// rejection carries a gRPC status code (1 to 16) instead.
+    fn of_code(code: u32) -> Self {
+        match code {
+            10_000..=19_999 => Self::ConsensusErrorKindBasic,
+            20_000..=29_999 => Self::ConsensusErrorKindSignature,
+            30_000..=39_999 => Self::ConsensusErrorKindFee,
+            40_000..=49_999 => Self::ConsensusErrorKindState,
+            _ => Self::ConsensusErrorKindNone,
+        }
+    }
+}
+
 /// Error structure returned by FFI functions
+///
+/// `code` and `message` are the pair every host has always read.
+/// `consensus_code` and `consensus_kind` name Platform's own rejection when
+/// the failure was one, so a host can branch on the number instead of
+/// matching the message. They are the same pair `PlatformWalletFFIResult`
+/// carries. Rust allocates and frees every `DashSDKError` and hosts read it
+/// through a pointer, so the two fields follow `message`.
 #[repr(C)]
 pub struct DashSDKError {
     /// Error code
@@ -42,6 +90,14 @@ pub struct DashSDKError {
     /// Human-readable error message (null-terminated C string)
     /// Caller must free this with dash_sdk_error_free
     pub message: *mut c_char,
+    /// The rs-dpp consensus error code Platform refused the operation with
+    /// (10422 for a violated propertyConstraints rule, 41107 for a banned
+    /// user), or 0 when the failure was not a consensus rejection. Real codes
+    /// start at 10000, so 0 is unambiguous.
+    pub consensus_code: u32,
+    /// The family `consensus_code` belongs to, or `ConsensusErrorKindNone`
+    /// when there is no code.
+    pub consensus_kind: DashSDKConsensusErrorKind,
 }
 
 /// Internal error type for FFI operations
@@ -52,6 +108,15 @@ pub enum FFIError {
 
     #[error("SDK error: {0}")]
     SDKError(#[from] dash_sdk::Error),
+
+    /// An SDK call failed. Renders and classifies as the
+    /// `InternalError(format!("{context}: {source}"))` it replaces, and keeps
+    /// `source` so the consensus code it carries reaches the host.
+    #[error("Internal error: {context}: {source}")]
+    SDKCallFailed {
+        context: String,
+        source: dash_sdk::Error,
+    },
 
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
@@ -87,6 +152,8 @@ impl DashSDKError {
         DashSDKError {
             code,
             message: c_message.into_raw(),
+            consensus_code: 0,
+            consensus_kind: DashSDKConsensusErrorKind::ConsensusErrorKindNone,
         }
     }
 
@@ -95,6 +162,56 @@ impl DashSDKError {
         DashSDKError {
             code: DashSDKErrorCode::Success,
             message: std::ptr::null_mut(),
+            consensus_code: 0,
+            consensus_kind: DashSDKConsensusErrorKind::ConsensusErrorKindNone,
+        }
+    }
+
+    /// Stamp the consensus rejection `error` carries, if any, onto this error.
+    ///
+    /// Leaves `code` and `message` alone: hosts already branch on them, so the
+    /// consensus code goes beside them rather than in place of them.
+    pub fn with_consensus_error_of(mut self, error: &dash_sdk::Error) -> Self {
+        if let Some(consensus_code) = consensus_code_of(error) {
+            let kind = DashSDKConsensusErrorKind::of_code(consensus_code);
+            if kind != DashSDKConsensusErrorKind::ConsensusErrorKindNone {
+                self.consensus_code = consensus_code;
+                self.consensus_kind = kind;
+            }
+        }
+        self
+    }
+}
+
+/// The consensus error code in the shapes a Platform refusal reaches the SDK
+/// in: a CheckTx refusal decoded from the `dash-serialized-consensus-error-bin`
+/// gRPC metadata (the same `Protocol(ConsensusError)` the SDK's own checks
+/// return before broadcasting), a wait-for-result failure, and the retry
+/// envelope around either. A wait-for-result failure keeps its `code` even
+/// when its consensus error did not come with it.
+fn consensus_code_of(error: &dash_sdk::Error) -> Option<u32> {
+    match error {
+        dash_sdk::Error::Protocol(ProtocolError::ConsensusError(consensus_error)) => {
+            Some(consensus_error.code())
+        }
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_error) => Some(
+            broadcast_error
+                .cause
+                .as_ref()
+                .map_or(broadcast_error.code, |cause| cause.code()),
+        ),
+        dash_sdk::Error::NoAvailableAddressesToRetry(last_error) => consensus_code_of(last_error),
+        _ => None,
+    }
+}
+
+impl FFIError {
+    /// `source` as an internal error with the message `"{context}: {source}"`,
+    /// keeping the SDK error so its consensus code reaches the host.
+    pub fn sdk_call_failed(context: impl Into<String>, source: dash_sdk::Error) -> Self {
+        FFIError::SDKCallFailed {
+            context: context.into(),
+            source,
         }
     }
 }
@@ -103,6 +220,7 @@ impl From<FFIError> for DashSDKError {
     fn from(err: FFIError) -> Self {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
+            FFIError::SDKCallFailed { .. } => (DashSDKErrorCode::InternalError, err.to_string()),
             FFIError::SDKError(sdk_err) => {
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
@@ -187,7 +305,13 @@ impl From<FFIError> for DashSDKError {
             FFIError::NulError(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
         };
 
-        DashSDKError::new(code, message)
+        let error = DashSDKError::new(code, message);
+        match &err {
+            FFIError::SDKError(source) | FFIError::SDKCallFailed { source, .. } => {
+                error.with_consensus_error_of(source)
+            }
+            _ => error,
+        }
     }
 }
 
@@ -320,5 +444,238 @@ mod tests {
         assert_eq!(dash_sdk_error.code, DashSDKErrorCode::InternalError);
         assert_eq!(rendered, expected);
         assert!(!rendered.contains("Failed to fetch balances"));
+    }
+
+    mod consensus_code {
+        use super::*;
+        use dash_sdk::dapi_client::transport::TransportError;
+        use dash_sdk::dapi_client::DapiClientError;
+        use dash_sdk::dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
+        use dash_sdk::dapi_grpc::tonic::{Code, Status};
+        use dash_sdk::dpp::consensus::basic::document::{
+            DocumentPropertyConstraintViolatedError, PropertyConstraintViolation,
+        };
+        use dash_sdk::dpp::consensus::state::contract_moderation::ContractUserBannedError;
+        use dash_sdk::dpp::consensus::ConsensusError;
+        use dash_sdk::dpp::platform_value::Identifier;
+        use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
+        use dash_sdk::dpp::version::PlatformVersion;
+        use dash_sdk::error::StateTransitionBroadcastError;
+
+        /// What a host reads from the error, with the message freed.
+        struct Converted {
+            code: DashSDKErrorCode,
+            message: String,
+            consensus_code: u32,
+            consensus_kind: DashSDKConsensusErrorKind,
+        }
+
+        fn convert(err: FFIError) -> Converted {
+            let error: DashSDKError = err.into();
+            let message = unsafe {
+                let message = std::ffi::CStr::from_ptr(error.message)
+                    .to_string_lossy()
+                    .into_owned();
+                let _ = CString::from_raw(error.message);
+                message
+            };
+            Converted {
+                code: error.code,
+                message,
+                consensus_code: error.consensus_code,
+                consensus_kind: error.consensus_kind,
+            }
+        }
+
+        fn property_constraint_violated() -> ConsensusError {
+            DocumentPropertyConstraintViolatedError::new(
+                "post".to_string(),
+                "rule 0".to_string(),
+                PropertyConstraintViolation::NotMet,
+            )
+            .into()
+        }
+
+        fn contract_user_banned() -> ConsensusError {
+            ContractUserBannedError::new(Identifier::new([1; 32]), Identifier::new([2; 32])).into()
+        }
+
+        /// What the SDK makes of DAPI refusing a transition at CheckTx: a gRPC
+        /// status carrying the serialized consensus error in its metadata.
+        fn refused_by_platform(consensus_error: &ConsensusError) -> dash_sdk::Error {
+            let bytes = consensus_error
+                .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+                .expect("serialize consensus error");
+            let mut metadata = MetadataMap::new();
+            metadata.insert_bin(
+                "dash-serialized-consensus-error-bin",
+                MetadataValue::from_bytes(&bytes),
+            );
+            let status =
+                Status::with_metadata(Code::InvalidArgument, consensus_error.to_string(), metadata);
+            dash_sdk::Error::from(DapiClientError::Transport(TransportError::Grpc(status)))
+        }
+
+        /// What the SDK makes of a transition Platform refused at block
+        /// execution: the wait-for-result error, with or without the decoded
+        /// consensus error it was sent with.
+        fn failed_in_block(code: u32, cause: Option<ConsensusError>) -> dash_sdk::Error {
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code,
+                message: "refused".to_string(),
+                cause,
+            })
+        }
+
+        #[test]
+        fn should_carry_the_code_of_a_consensus_error_platform_refused_the_transition_with() {
+            let refused = refused_by_platform(&property_constraint_violated());
+            let expected_message = refused.to_string();
+
+            let error = convert(FFIError::SDKError(refused));
+
+            assert_eq!(error.consensus_code, 10422);
+            assert_eq!(
+                error.consensus_kind,
+                DashSDKConsensusErrorKind::ConsensusErrorKindBasic
+            );
+            // The code and message hosts already read are the ones they read before.
+            assert_eq!(error.code, DashSDKErrorCode::ProtocolError);
+            assert_eq!(error.message, expected_message);
+        }
+
+        #[test]
+        fn should_carry_the_code_of_a_state_error_platform_refused_the_transition_with() {
+            let error = convert(FFIError::SDKError(refused_by_platform(
+                &contract_user_banned(),
+            )));
+
+            assert_eq!(error.consensus_code, 41107);
+            assert_eq!(
+                error.consensus_kind,
+                DashSDKConsensusErrorKind::ConsensusErrorKindState
+            );
+        }
+
+        #[test]
+        fn should_carry_the_code_through_the_message_of_the_call_that_failed() {
+            let context = "Failed to mint token and wait";
+            let stringified = FFIError::InternalError(format!(
+                "{}: {}",
+                context,
+                refused_by_platform(&contract_user_banned())
+            ));
+            let before = convert(stringified);
+
+            let error = convert(FFIError::sdk_call_failed(
+                context,
+                refused_by_platform(&contract_user_banned()),
+            ));
+
+            assert_eq!(error.consensus_code, 41107);
+            assert_eq!(
+                error.consensus_kind,
+                DashSDKConsensusErrorKind::ConsensusErrorKindState
+            );
+            // Same code and text as the stringified error it replaces, which
+            // carried no consensus code.
+            assert_eq!(error.code, before.code);
+            assert_eq!(error.message, before.message);
+            assert_eq!(before.consensus_code, 0);
+        }
+
+        #[test]
+        fn should_carry_the_code_of_a_transition_platform_refused_in_a_block() {
+            let with_cause = convert(FFIError::SDKError(failed_in_block(
+                41107,
+                Some(contract_user_banned()),
+            )));
+            let without_cause = convert(FFIError::SDKError(failed_in_block(40132, None)));
+
+            assert_eq!(with_cause.consensus_code, 41107);
+            assert_eq!(
+                with_cause.consensus_kind,
+                DashSDKConsensusErrorKind::ConsensusErrorKindState
+            );
+            assert_eq!(without_cause.consensus_code, 40132);
+            assert_eq!(
+                without_cause.consensus_kind,
+                DashSDKConsensusErrorKind::ConsensusErrorKindState
+            );
+        }
+
+        #[test]
+        fn should_name_the_family_of_a_code_from_its_range() {
+            use DashSDKConsensusErrorKind as Kind;
+
+            let families = [
+                (10_000, Kind::ConsensusErrorKindBasic),
+                (10_422, Kind::ConsensusErrorKindBasic),
+                (19_999, Kind::ConsensusErrorKindBasic),
+                (20_000, Kind::ConsensusErrorKindSignature),
+                (20_002, Kind::ConsensusErrorKindSignature),
+                (29_999, Kind::ConsensusErrorKindSignature),
+                (30_000, Kind::ConsensusErrorKindFee),
+                (39_999, Kind::ConsensusErrorKindFee),
+                (40_000, Kind::ConsensusErrorKindState),
+                (41_107, Kind::ConsensusErrorKindState),
+                (49_999, Kind::ConsensusErrorKindState),
+            ];
+            for (code, kind) in families {
+                let error = convert(FFIError::SDKError(failed_in_block(code, None)));
+                assert_eq!(error.consensus_code, code);
+                assert_eq!(error.consensus_kind, kind, "code {code}");
+            }
+
+            // A number outside the four families is no consensus code at all.
+            for code in [0, 1, 16, 9_999, 50_000] {
+                let error = convert(FFIError::SDKError(failed_in_block(code, None)));
+                assert_eq!(error.consensus_code, 0, "code {code}");
+                assert_eq!(
+                    error.consensus_kind,
+                    Kind::ConsensusErrorKindNone,
+                    "code {code}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_carry_the_code_of_the_last_refusal_once_retries_ran_out() {
+            let exhausted = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                refused_by_platform(&property_constraint_violated()),
+            ));
+
+            let error = convert(FFIError::SDKError(exhausted));
+
+            assert_eq!(error.consensus_code, 10422);
+            assert_eq!(
+                error.consensus_kind,
+                DashSDKConsensusErrorKind::ConsensusErrorKindBasic
+            );
+        }
+
+        #[test]
+        fn should_report_no_consensus_code_for_a_failure_that_is_not_a_consensus_refusal() {
+            let not_refusals = [
+                FFIError::SDKError(dash_sdk::Error::Generic("boom".to_string())),
+                // A wait-for-result failure with a gRPC status code (13, Internal).
+                FFIError::SDKError(failed_in_block(13, None)),
+                // The placeholder consensus error names no rule.
+                FFIError::SDKError(dash_sdk::Error::from(ConsensusError::DefaultError)),
+                FFIError::InternalError("boom".to_string()),
+                FFIError::NullPointer,
+            ];
+
+            for not_refusal in not_refusals {
+                let error = convert(not_refusal);
+                assert_eq!(error.consensus_code, 0, "{}", error.message);
+                assert_eq!(
+                    error.consensus_kind,
+                    DashSDKConsensusErrorKind::ConsensusErrorKindNone,
+                    "{}",
+                    error.message
+                );
+            }
+        }
     }
 }

@@ -18,6 +18,21 @@ impl Drive {
     /// [`DriveDocumentQuery::with_by_id_join`]) — without proofs and
     /// returns the materialized halves plus the processing cost (when an
     /// epoch is given).
+    ///
+    /// # Parameters
+    ///
+    /// * `query`: The inner query, carrying the by-id join.
+    /// * `epoch`: The epoch to price the reads in; `None` leaves the cost at zero.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(QueryChainedDocumentsOutcomeV0)` with the inner projections, the outer documents
+    ///   in first-appearance order, the join values with no outer document, and the processing
+    ///   cost (zero without an epoch).
+    /// * `Err(Error)` when the method version is unknown, the query is not a valid chained
+    ///   query, a read or a document deserialization fails, or the fee cannot be calculated.
     pub fn query_chained_documents(
         &self,
         query: &DriveDocumentQuery,
@@ -53,6 +68,17 @@ impl Drive {
     /// Returns the merged proof plus the materialized INNER
     /// projections (join values / hint / cursor derive from them); the
     /// outer half is covered by the proof and not materialized.
+    ///
+    /// # Parameters
+    ///
+    /// * `query`: The inner query, carrying the by-id join.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((Vec<u8>, Vec<Document>))` with the merged proof and the inner projections.
+    /// * `Err(Error)` when the method version is unknown, the query is not a valid chained
+    ///   query, a read or proving fails, or every attempt raced a block commit.
     pub fn query_chained_documents_with_proof(
         &self,
         query: &DriveDocumentQuery,

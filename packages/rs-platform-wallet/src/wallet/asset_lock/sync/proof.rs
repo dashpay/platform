@@ -994,7 +994,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Wait for an asset lock proof by checking transaction context state.
     ///
-    /// Wakes on `lock_notify` (fired by `SpvEventForwarder` on InstantLock /
+    /// Wakes on `lock_notify` (fired by `LockNotifyHandler` on InstantLock /
     /// ChainLock events) and re-checks the transaction record context.
     ///
     /// Returns a properly-constructed `AssetLockProof` on success, or

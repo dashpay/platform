@@ -13,11 +13,10 @@
 //!    so the joint decoder is well-defined on every shape the picker
 //!    accepts.
 //! 2. **Index selection**: the picker is
-//!    [`find_summable_index_for_where_clauses`] (sum's), but with an
-//!    additional `.filter(|idx| idx.countable.is_countable())` so the
-//!    chosen index also carries the `countable` declaration the count
-//!    side needs. The AVG prove path's point-lookup arm does the same
-//!    filter (see `drive_document_average_query::drive_dispatcher::
+//!    [`find_summable_index_with_counts_for_where_clauses`], sum's picker
+//!    restricted to indexes whose read element also carries the count the
+//!    count side needs. The AVG prove path's point-lookup arm uses the same
+//!    picker (see `drive_document_average_query::drive_dispatcher::
 //!    execute_document_average_prove`'s no-range arm).
 //!
 //! Routing semantics match sum's: this executor handles both the
@@ -27,7 +26,7 @@
 //! the executor body is the same one sum's `total.rs` carries.
 
 use super::super::super::drive_document_average_query::DocumentAverageResponse;
-use super::super::super::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
+use super::super::super::drive_document_sum_query::index_picker::find_summable_index_with_counts_for_where_clauses;
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -87,13 +86,12 @@ impl Drive {
             return Ok(DocumentAverageResponse::Aggregate { count, sum });
         }
 
-        let index = find_summable_index_for_where_clauses(
+        let index = find_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
             &sum_property,
             resolved_time_ranges,
         )
-        .filter(|idx| idx.countable.is_countable())
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "average query requires an index that declares BOTH \

@@ -11,6 +11,18 @@ impl Drive {
     /// Every stored member of a per-entry platform state collection, in key
     /// order, as `(key, bytes)` pairs with the collection's prefix removed from
     /// the key.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`: The collection: the masternodes or the validator sets.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<PlatformStateEntry>)` with the `(key, bytes)` pairs in key order; empty when
+    ///   the collection has no members.
+    /// * `Err(Error)` when the method version is unknown or the auxiliary read fails.
     pub fn fetch_platform_state_entries_bytes(
         &self,
         kind: PlatformStateEntryKind,

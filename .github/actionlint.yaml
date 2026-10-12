@@ -9,3 +9,5 @@ self-hosted-runner:
   labels:
     - rust-ci
     - kotlin-ci
+    - npm-build
+    - npm-pr

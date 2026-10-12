@@ -26,7 +26,7 @@ use dashcore::blsful::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchem
 use dashcore::hash_types::InputsHash;
 use dashcore::hashes::Hash;
 use dashcore::platform_node_id::PlatformNodeId;
-use dashcore::{Address as DashAddress, Network, Txid};
+use dashcore::{Address as DashAddress, Network, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -161,13 +161,14 @@ async fn fetch_operator_reward(
     operator_reward_from_registration(pro_tx_hash, &fetched.transaction)
 }
 
-/// Read `operatorReward` out of a fetched registration transaction —
+/// Read `operatorReward` out of a fetched registration transaction,
 /// binding the response to the request first: DAPI's get-transaction reply
 /// is not authenticated, so the decoded transaction must hash to the
-/// SPV-authenticated proTxHash before its payload is trusted. Without this
-/// check a faulty or malicious endpoint could answer with an unrelated
-/// zero-reward ProRegTx and steer [`resolve_operator_payout_script`] into
-/// clearing a real operator payout.
+/// requested proTxHash before its payload is trusted. Only the operator
+/// reward is read from it; the service values come from the synced
+/// masternode list's entry for that proTxHash. Without the hash check a
+/// reply carrying an unrelated zero-reward ProRegTx would steer
+/// [`resolve_operator_payout_script`] into clearing a real operator payout.
 pub(crate) fn operator_reward_from_registration(
     pro_tx_hash: &[u8; 32],
     transaction: &dashcore::Transaction,
@@ -351,12 +352,88 @@ pub(crate) fn service_payload_fields(service: SocketAddr) -> (u128, u16) {
     (u128::from_le_bytes(octets), service.port())
 }
 
+/// The funding builder for a ProUpServTx: the placeholder payload, the
+/// finalizer that commits it to the selected inputs and signs it, and one
+/// zero-value data output.
+///
+/// A ProUpServTx moves no value, so without that output a selection whose
+/// surplus is below the dust limit (all of it booked as fee, no change
+/// output) leaves the transaction with no outputs, which consensus refuses.
+/// The data output is the placeholder Dash Core's own `protx
+/// update_service` adds for the same reason, so the transaction always
+/// carries an output; change is still returned whenever the surplus clears
+/// the dust limit.
+pub(crate) fn update_service_builder(
+    placeholder: ProviderUpdateServicePayload,
+    operator_secret: Zeroizing<[u8; 32]>,
+) -> Result<TransactionBuilder, PlatformWalletError> {
+    Ok(TransactionBuilder::new()
+        .add_op_return(&[])
+        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?
+        .set_special_payload(TransactionPayload::ProviderUpdateServicePayloadType(
+            placeholder,
+        ))
+        .set_payload_finalizer(move |unsigned| {
+            finalize_update_service_payload(unsigned, &operator_secret)
+        }))
+}
+
+/// The payload finalizer: write `inputs_hash` over the selected inputs and
+/// the operator-BLS `payload_sig` (basic scheme over `base_payload_hash()`,
+/// modern serialization: the exact convention `verify_message_digest`
+/// checks real mainnet signatures with).
+///
+/// Refuses a transaction without outputs before signing anything. key-wallet
+/// releases the build's reservation on any finalizer error, so the refusal
+/// leaves the selected inputs spendable.
+pub(crate) fn finalize_update_service_payload(
+    unsigned: &Transaction,
+    operator_secret: &[u8; 32],
+) -> Result<TransactionPayload, BuilderError> {
+    if unsigned.output.is_empty() {
+        return Err(BuilderError::InvalidData(
+            "the assembled ProUpServTx has no outputs, which the network refuses".into(),
+        ));
+    }
+    let Some(TransactionPayload::ProviderUpdateServicePayloadType(placeholder)) =
+        &unsigned.special_transaction_payload
+    else {
+        return Err(BuilderError::InvalidData(
+            "the ProUpServTx placeholder payload is missing from the assembled transaction".into(),
+        ));
+    };
+    let mut finalized = placeholder.clone();
+    finalized.inputs_hash = unsigned.hash_inputs();
+
+    let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
+        BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(operator_secret),
+    )
+    .ok_or_else(|| {
+        BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())
+    })?;
+    let signature = secret
+        .sign(
+            SignatureSchemes::Basic,
+            finalized.base_payload_hash().as_byte_array(),
+        )
+        .map_err(|e| BuilderError::SigningFailed(format!("BLS payload signing failed: {e}")))?;
+    let signature_bytes: [u8; 96] = signature
+        .to_bytes_with_mode(dashcore::blsful::SerializationFormat::Modern)
+        .as_slice()
+        .try_into()
+        .map_err(|_| {
+            BuilderError::SigningFailed("BLS signature did not serialize to 96 bytes".into())
+        })?;
+    finalized.payload_sig = BLSSignature::from(signature_bytes);
+    Ok(TransactionPayload::ProviderUpdateServicePayloadType(
+        finalized,
+    ))
+}
+
 /// Fund and finalize the ProUpServTx: input selection reserves the funding
 /// inputs, the payload finalizer writes `inputs_hash` and the operator-BLS
-/// `payload_sig` (basic scheme over `base_payload_hash()`, modern
-/// serialization — the exact convention `verify_message_digest` checks real
-/// mainnet signatures with), and only then are the inputs ECDSA-signed,
-/// since their sighashes cover the finished payload.
+/// `payload_sig`, and only then are the inputs ECDSA-signed, since their
+/// sighashes cover the finished payload.
 ///
 /// Stops at the signed transaction; the caller broadcasts or abandons it.
 pub(crate) async fn build_sign_update_service<B, S>(
@@ -369,52 +446,7 @@ where
     B: TransactionBroadcaster + ?Sized,
     S: TransactionSigner + ?Sized + Sync,
 {
-    let builder = TransactionBuilder::new()
-        .set_special_payload(TransactionPayload::ProviderUpdateServicePayloadType(
-            placeholder,
-        ))
-        .set_payload_finalizer(move |unsigned| {
-            let Some(TransactionPayload::ProviderUpdateServicePayloadType(placeholder)) =
-                &unsigned.special_transaction_payload
-            else {
-                return Err(BuilderError::InvalidData(
-                    "the ProUpServTx placeholder payload is missing from the assembled \
-                     transaction"
-                        .into(),
-                ));
-            };
-            let mut finalized = placeholder.clone();
-            finalized.inputs_hash = unsigned.hash_inputs();
-
-            let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-                BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(&operator_secret),
-            )
-            .ok_or_else(|| {
-                BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())
-            })?;
-            let signature = secret
-                .sign(
-                    SignatureSchemes::Basic,
-                    finalized.base_payload_hash().as_byte_array(),
-                )
-                .map_err(|e| {
-                    BuilderError::SigningFailed(format!("BLS payload signing failed: {e}"))
-                })?;
-            let signature_bytes: [u8; 96] = signature
-                .to_bytes_with_mode(dashcore::blsful::SerializationFormat::Modern)
-                .as_slice()
-                .try_into()
-                .map_err(|_| {
-                    BuilderError::SigningFailed(
-                        "BLS signature did not serialize to 96 bytes".into(),
-                    )
-                })?;
-            finalized.payload_sig = BLSSignature::from(signature_bytes);
-            Ok(TransactionPayload::ProviderUpdateServicePayloadType(
-                finalized,
-            ))
-        });
-
+    let builder = update_service_builder(placeholder, operator_secret)?;
     core.finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, signer)
         .await
 }
@@ -430,9 +462,10 @@ mod tests {
     use super::super::list::test_support::{evonode, masternode};
     use super::*;
     use crate::broadcaster::BroadcastError;
-    use crate::test_support::funded_wallet_manager;
+    use crate::test_support::{
+        funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
+    };
     use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
-    use dashcore::Transaction;
     use key_wallet::account::StandardAccountType;
     use std::sync::{Arc, Mutex};
 
@@ -461,6 +494,40 @@ mod tests {
                 .push(transaction.clone());
             Ok(transaction.txid())
         }
+    }
+
+    impl RecordingBroadcaster {
+        fn sent_count(&self) -> usize {
+            self.sent.lock().expect("broadcaster lock").len()
+        }
+    }
+
+    /// A BIP44-funded core wallet holding one UTXO per value in `outputs`,
+    /// with a broadcaster that records what it is given.
+    async fn core_with_outputs(
+        outputs: &[u64],
+    ) -> (
+        CoreWallet<RecordingBroadcaster>,
+        Arc<RecordingBroadcaster>,
+        WalletSigner,
+    ) {
+        let (wallet_manager, wallet_id, generation, signer) =
+            funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, outputs).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(RecordingBroadcaster::default());
+        let core = CoreWallet::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            broadcaster.clone(),
+            generation,
+        );
+        (core, broadcaster, signer)
+    }
+
+    fn regular_placeholder() -> ProviderUpdateServicePayload {
+        let entry = operator_entry(0x44, false);
+        prepare_update_service_placeholder(&entry, None, ScriptBuf::new()).expect("placeholder")
     }
 
     /// The IPv4-mapped little-endian encoding, pinned against the known
@@ -703,6 +770,10 @@ mod tests {
         assert_eq!(tx.txid(), txid);
         assert_eq!(tx.version, 3);
         assert!(
+            !tx.output.is_empty(),
+            "a ProUpServTx always carries an output"
+        );
+        assert!(
             tx.input.iter().all(|input| !input.script_sig.is_empty()),
             "every funding input is ECDSA-signed"
         );
@@ -740,5 +811,117 @@ mod tests {
         signature
             .verify(&public_key, payload.base_payload_hash().as_byte_array())
             .expect("operator BLS signature verifies over base_payload_hash");
+    }
+
+    /// A lone 600-duff UTXO covers the fee but leaves less than the dust
+    /// limit over, so no change output is added. The zero-value data output
+    /// still gives the transaction an output.
+    #[tokio::test]
+    async fn should_carry_an_output_when_the_only_utxo_leaves_no_change() {
+        let (core, broadcaster, signer) = core_with_outputs(&[600]).await;
+
+        let prepared = build_sign_update_service(
+            &core,
+            regular_placeholder(),
+            Zeroizing::new(OPERATOR_SECRET),
+            &signer,
+        )
+        .await
+        .expect("600 duffs pay the fee");
+
+        let tx = prepared.transaction();
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.output.len(), 1, "one output even with no change");
+        assert!(tx.output[0].script_pubkey.is_op_return());
+        assert_eq!(tx.output[0].value, 0, "the data output moves no value");
+        assert_eq!(prepared.fee(), 600, "the sub-dust surplus is the fee");
+        assert_eq!(broadcaster.sent_count(), 0, "preparing must not broadcast");
+    }
+
+    /// Branch-and-bound prefers the small UTXO, whose surplus is booked as
+    /// fee; the transaction still carries an output.
+    #[tokio::test]
+    async fn should_carry_an_output_when_selection_prefers_the_small_utxo() {
+        let (core, _broadcaster, signer) = core_with_outputs(&[1_000_000_000, 600]).await;
+
+        let prepared = build_sign_update_service(
+            &core,
+            regular_placeholder(),
+            Zeroizing::new(OPERATOR_SECRET),
+            &signer,
+        )
+        .await
+        .expect("update service builds");
+
+        let tx = prepared.transaction();
+        assert!(
+            !tx.output.is_empty(),
+            "a ProUpServTx always carries an output"
+        );
+        let Some(TransactionPayload::ProviderUpdateServicePayloadType(payload)) =
+            &tx.special_transaction_payload
+        else {
+            panic!("the transaction must carry the ProUpServTx payload");
+        };
+        assert_eq!(payload.inputs_hash, tx.hash_inputs());
+    }
+
+    /// A wallet that cannot cover the fee fails in coin selection, before
+    /// anything is reserved, signed or sent.
+    #[tokio::test]
+    async fn should_fail_before_broadcast_when_the_fee_cannot_be_covered() {
+        let (core, broadcaster, signer) = core_with_outputs(&[200]).await;
+
+        let err = build_sign_update_service(
+            &core,
+            regular_placeholder(),
+            Zeroizing::new(OPERATOR_SECRET),
+            &signer,
+        )
+        .await
+        .expect_err("200 duffs cannot pay the fee");
+
+        assert!(
+            matches!(err, PlatformWalletError::CorePooledInsufficientFunds { .. }),
+            "an insufficient-funds error, got {err:?}"
+        );
+        assert_eq!(broadcaster.sent_count(), 0, "nothing is broadcast");
+    }
+
+    /// Without the data output a lone 600-duff UTXO assembles into a
+    /// transaction with no outputs. The finalizer refuses it before signing,
+    /// and the refusal releases the reservation: the same UTXO funds the
+    /// next build.
+    #[tokio::test]
+    async fn should_release_the_reservation_when_the_transaction_has_no_outputs() {
+        let (core, broadcaster, signer) = core_with_outputs(&[600]).await;
+
+        let secret = Zeroizing::new(OPERATOR_SECRET);
+        let without_output = TransactionBuilder::new()
+            .set_special_payload(TransactionPayload::ProviderUpdateServicePayloadType(
+                regular_placeholder(),
+            ))
+            .set_payload_finalizer(move |unsigned| {
+                finalize_update_service_payload(unsigned, &secret)
+            });
+        let err = core
+            .finalize_transaction(without_output, &SEND_FUNDING_SOURCES, 0, &signer)
+            .await
+            .expect_err("a transaction with no outputs is refused");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains("no outputs")),
+            "the refusal names the missing outputs, got {err:?}"
+        );
+        assert_eq!(broadcaster.sent_count(), 0, "nothing is broadcast");
+
+        let rebuilt = build_sign_update_service(
+            &core,
+            regular_placeholder(),
+            Zeroizing::new(OPERATOR_SECRET),
+            &signer,
+        )
+        .await
+        .expect("the released UTXO funds the next build");
+        assert_eq!(rebuilt.transaction().input.len(), 1);
     }
 }

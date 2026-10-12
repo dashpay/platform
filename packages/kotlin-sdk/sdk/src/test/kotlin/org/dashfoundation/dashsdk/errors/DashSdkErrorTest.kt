@@ -521,4 +521,36 @@ class DashSdkErrorTest {
         // An SDK error raised on the Kotlin side has no native cause at all.
         assertNull(DashSdkError.InvalidParameter("bad argument").consensusError)
     }
+
+    @Test
+    fun shouldSurfaceTheConsensusErrorOfAStateTransitionPlatformRejected() {
+        // What the JNI bridge throws for an rs-sdk-ffi DashSDKError Platform
+        // refused under a propertyConstraints rule: ProtocolError (5),
+        // consensus code 10422, kind Basic (1).
+        val native = DashSDKException(
+            5,
+            "Protocol error: document violates propertyConstraints rule 0",
+            10422,
+            1,
+        )
+        val mapped = DashSdkError.fromNative(native)
+
+        // The consensus error rides along; the type and message are what the
+        // code alone maps to.
+        assertTrue(mapped is DashSdkError.ProtocolError)
+        assertEquals(native.message, mapped.message)
+        assertEquals(
+            PlatformConsensusError(10422, ConsensusErrorKind.BASIC),
+            mapped.consensusError,
+        )
+    }
+
+    @Test
+    fun shouldHaveNoConsensusErrorForAnSdkFailureThatWasNotARejection() {
+        val plain = DashSdkError.fromNative(
+            DashSDKException(99, "Internal error: Failed to mint token and wait: timed out"),
+        )
+        assertTrue(plain is DashSdkError.InternalError)
+        assertNull(plain.consensusError)
+    }
 }

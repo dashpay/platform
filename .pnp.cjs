@@ -75,6 +75,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/masternode-reward-shares-contract"\
     },\
     {\
+      "name": "@dashevo/moderation-charters-contract",\
+      "reference": "workspace:packages/moderation-charters-contract"\
+    },\
+    {\
       "name": "@dashevo/platform-test-suite",\
       "reference": "workspace:packages/platform-test-suite"\
     },\
@@ -128,6 +132,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/grpc-common", ["workspace:packages/js-grpc-common"]],\
     ["@dashevo/keyword-search-contract", ["workspace:packages/keyword-search-contract"]],\
     ["@dashevo/masternode-reward-shares-contract", ["workspace:packages/masternode-reward-shares-contract"]],\
+    ["@dashevo/moderation-charters-contract", ["workspace:packages/moderation-charters-contract"]],\
     ["@dashevo/platform", ["workspace:."]],\
     ["@dashevo/platform-test-suite", ["workspace:packages/platform-test-suite"]],\
     ["@dashevo/token-history-contract", ["workspace:packages/token-history-contract"]],\
@@ -2659,7 +2664,8 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["sinon", "npm:18.0.1"],\
-          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"],\
+          ["ts-protoc-gen", "npm:0.15.0"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -2906,6 +2912,22 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/masternode-reward-shares-contract/",\
         "packageDependencies": [\
           ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
+          ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
+          ["mocha", "npm:11.1.0"],\
+          ["sinon", "npm:18.0.1"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["@dashevo/moderation-charters-contract", [\
+      ["workspace:packages/moderation-charters-contract", {\
+        "packageLocation": "./packages/moderation-charters-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/moderation-charters-contract", "workspace:packages/moderation-charters-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
           ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
@@ -12862,6 +12884,13 @@ const RAW_RUNTIME_STATE =
           ["google-protobuf", "npm:3.19.1"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.21.4", {\
+        "packageLocation": "./.yarn/cache/google-protobuf-npm-3.21.4-48c47540d3-0d87fe8ef2.zip/node_modules/google-protobuf/",\
+        "packageDependencies": [\
+          ["google-protobuf", "npm:3.21.4"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["gopd", [\
@@ -21642,6 +21671,16 @@ const RAW_RUNTIME_STATE =
           "@types/swc__core",\
           "@types/swc__wasm",\
           "@types/typescript"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["ts-protoc-gen", [\
+      ["npm:0.15.0", {\
+        "packageLocation": "./.yarn/cache/ts-protoc-gen-npm-0.15.0-4bb1076a19-de1d526b47.zip/node_modules/ts-protoc-gen/",\
+        "packageDependencies": [\
+          ["google-protobuf", "npm:3.21.4"],\
+          ["ts-protoc-gen", "npm:0.15.0"]\
         ],\
         "linkType": "HARD"\
       }]\

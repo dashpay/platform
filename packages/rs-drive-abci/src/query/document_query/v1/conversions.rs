@@ -37,11 +37,11 @@ use dapi_grpc::platform::v0::get_documents_request::{
     WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
-use drive::query::TimeRangeGridSpec;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     OrderClause, SelectFunction, SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
 };
+use drive::query::{IntegerRangeGridSpec, TimeRangeGridSpec};
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
 /// drive's [`WhereOperator`]. Unknown discriminants are wire-level
@@ -51,7 +51,7 @@ use drive::query::{
 pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryError> {
     let proto_op = ProtoWhereOperator::try_from(op).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown WhereOperator discriminant: {} (valid values: 0..=11, see \
+            "unknown WhereOperator discriminant: {} (valid values: 0..=12, see \
              `get_documents_request::WhereOperator`)",
             op
         ))
@@ -79,7 +79,85 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
                     .to_string(),
             ))
         }
+        // IN_INTEGER_RANGE is likewise resolved to a window-start equality
+        // before clause conversion (see `integer_range_clause_from_proto`).
+        ProtoWhereOperator::InIntegerRange => {
+            return Err(QueryError::InvalidArgument(
+                "IN_INTEGER_RANGE where clauses are resolved to a window-start equality \
+                 before operator conversion and must not be mixed into normal clause decoding"
+                    .to_string(),
+            ))
+        }
     })
+}
+
+/// Whether a wire where clause is an integer-range window selection
+/// (`operator == IN_INTEGER_RANGE`). The v1 handler partitions these out
+/// and resolves them via [`integer_range_clause_from_proto`].
+pub(super) fn is_integer_range_clause(clause: &ProtoWhereClause) -> bool {
+    clause.operator == ProtoWhereOperator::InIntegerRange as i32
+}
+
+/// Whether a wire where clause selects a window of a bucketed index —
+/// `IN_TIME_RANGE` or `IN_INTEGER_RANGE`. Both are partitioned out of
+/// normal clause decoding and resolved into a window-start equality.
+pub(super) fn is_window_selection_clause(clause: &ProtoWhereClause) -> bool {
+    is_time_range_clause(clause) || is_integer_range_clause(clause)
+}
+
+/// Decode an `IN_INTEGER_RANGE` wire where clause into its
+/// `(field, start, grid)`.
+///
+/// The operand is the typed `WhereClause.integer_range` message
+/// (`IntegerRangeSelection`); `value` and `time_range` must be unset.
+/// `start` is required and decoded like any operand (the resolver checks it
+/// is an integer on the grid, since only it sees the contract). `grid`,
+/// when present, must carry non-zero `range` and `step` — an all-default
+/// `Grid` is indistinguishable from a forgotten one; a zero `phase` is the
+/// canonical spelling of a phaseless grid.
+pub(super) fn integer_range_clause_from_proto(
+    clause: ProtoWhereClause,
+) -> Result<(String, Value, Option<IntegerRangeGridSpec>), QueryError> {
+    let field = clause.field;
+    if clause.value.is_some() || clause.time_range.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "IN_INTEGER_RANGE clause on field '{}' must set neither `value` nor \
+             `time_range`: the operand is the typed `integer_range` selection",
+            field
+        )));
+    }
+    let selection = clause.integer_range.ok_or_else(|| {
+        QueryError::InvalidArgument(format!(
+            "IN_INTEGER_RANGE clause on field '{}' has no `integer_range` selection set",
+            field
+        ))
+    })?;
+    let start = selection.start.ok_or_else(|| {
+        QueryError::InvalidArgument(format!(
+            "IN_INTEGER_RANGE clause on field '{}' requires `start` naming the window's start",
+            field
+        ))
+    })?;
+    let start = value_from_proto(start)?;
+    let grid = selection
+        .grid
+        .map(|grid| {
+            if grid.range == 0 || grid.step == 0 {
+                return Err(QueryError::InvalidArgument(format!(
+                    "IN_INTEGER_RANGE grid on field '{}' must carry the contract's declared \
+                     non-zero `range` and `step`; a zero phase is the canonical spelling of a \
+                     phaseless grid",
+                    field
+                )));
+            }
+            Ok(IntegerRangeGridSpec {
+                range: grid.range,
+                step: grid.step,
+                phase: grid.phase,
+            })
+        })
+        .transpose()?;
+    Ok((field, start, grid))
 }
 
 /// Whether a wire where clause is a time-range selection
@@ -119,6 +197,13 @@ pub(super) fn time_range_clause_from_proto(
         return Err(QueryError::InvalidArgument(format!(
             "IN_TIME_RANGE clause on field '{}' must not set `value`: the operand is the \
              typed `time_range` selection",
+            field
+        )));
+    }
+    if clause.integer_range.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "IN_TIME_RANGE clause on field '{}' must not set `integer_range`: the operand is \
+             the typed `time_range` selection",
             field
         )));
     }
@@ -254,6 +339,13 @@ pub(super) fn where_clause_from_proto(clause: ProtoWhereClause) -> Result<WhereC
         return Err(QueryError::InvalidArgument(format!(
             "WhereClause on field '{}' sets `time_range`, which is only valid with the \
              IN_TIME_RANGE operator",
+            clause.field
+        )));
+    }
+    if clause.integer_range.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "WhereClause on field '{}' sets `integer_range`, which is only valid with the \
+             IN_INTEGER_RANGE operator",
             clause.field
         )));
     }

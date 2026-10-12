@@ -10,6 +10,18 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Delete one member of a per-entry platform state collection. Deleting a
     /// member that is not stored is not an error.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`: The collection: the masternodes or the validator sets.
+    /// * `key`: The member's key within the collection (a ProTxHash or a quorum hash).
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the member is not stored in auxiliary storage.
+    /// * `Err(Error)` when the method version is unknown or the auxiliary delete fails.
     pub fn delete_platform_state_entry(
         &self,
         kind: PlatformStateEntryKind,

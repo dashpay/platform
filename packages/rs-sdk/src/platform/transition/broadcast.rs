@@ -18,7 +18,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::proof_result::{
-    StateTransitionProofOutcome, StateTransitionProofResult,
+    StateTransitionProofGuarantee, StateTransitionProofOutcome, StateTransitionProofResult,
 };
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
@@ -45,7 +45,9 @@ pub trait BroadcastStateTransition {
     /// transition executed. For the transition families whose proofs can
     /// only authenticate the affected state (balance top-ups, credit
     /// transfers and withdrawals, address funds movements, shields,
-    /// no-history token operations, key limits updates), this returns
+    /// no-history token operations, key limits updates, contract updates,
+    /// contract moderation and fee claims, and creates and deletes of
+    /// indexOnly documents), this returns
     /// [`Error::ExecutionNotProved`] — use
     /// [`wait_for_affected_state`](Self::wait_for_affected_state) for those
     /// flows and treat the result as a height-pinned snapshot.
@@ -387,14 +389,15 @@ fn is_missing_transition_owner(transition: &StateTransition, error: &Error) -> b
 }
 
 /// Reject snapshot outcomes for the strict wait APIs with a typed error.
-fn require_execution_proved(
+pub fn require_execution_proved(
     outcome: StateTransitionProofOutcome,
 ) -> Result<StateTransitionProofResult, Error> {
-    match outcome {
-        StateTransitionProofOutcome::ExecutionProved(result) => Ok(result),
-        StateTransitionProofOutcome::AffectedState(result) => Err(Error::ExecutionNotProved(
+    let (guarantee, result, _owner_balance) = outcome.into_parts();
+    match guarantee {
+        StateTransitionProofGuarantee::ExecutionProved => Ok(result),
+        StateTransitionProofGuarantee::AffectedState => Err(Error::ExecutionNotProved(
             format!(
-                "received a verified {} snapshot for this transition family; use the *_affected_state wait APIs and treat the result as a height-pinned snapshot",
+                "received a verified {} snapshot for this transition family; wait with the affected-state APIs instead (wait_for_affected_state in Rust, waitForAffectedState or broadcastAndWaitForAffectedState in JavaScript) and treat the result as a height-pinned snapshot",
                 result
             ),
         )),
@@ -402,7 +405,7 @@ fn require_execution_proved(
 }
 
 /// Convert the verified inner result into the caller's expected type.
-fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
+pub fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
     result: StateTransitionProofResult,
 ) -> Result<T, Error> {
     let variant_name = result.to_string();
@@ -418,7 +421,7 @@ fn convert_proof_result<T: TryFrom<StateTransitionProofResult>>(
 /// Internal wait primitive shared by the strict and affected-state public
 /// APIs.
 #[async_trait::async_trait]
-trait WaitForOutcome {
+pub trait WaitForOutcome {
     async fn wait_for_outcome_with_metadata(
         &self,
         sdk: &Sdk,
@@ -718,8 +721,18 @@ mod tests {
                 );
             }
             if round == 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(2100)).await;
-                assert_eq!(addresses.get_live_addresses().len(), addresses.len());
+                // Bans expire by the wall clock, which a CI runner can step
+                // back against the monotonic clock behind tokio's sleep, so
+                // a fixed sleep races the expiry. Poll instead: the deadline
+                // is far above the 2-second exclusion and far below the 60s
+                // first rung of the health ladder.
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while addresses.get_live_addresses().len() < addresses.len() {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .expect("every short exclusion expires");
             }
         }
     }
@@ -989,13 +1002,13 @@ mod tests {
     fn strict_wait_rejects_affected_state_outcomes() {
         let snapshot =
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
-        let err = require_execution_proved(StateTransitionProofOutcome::AffectedState(snapshot))
+        let err = require_execution_proved(StateTransitionProofOutcome::affected_state(snapshot))
             .expect_err("affected-state outcomes must be rejected by the strict wait");
         assert!(matches!(err, Error::ExecutionNotProved(_)));
 
         let proved =
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
-        require_execution_proved(StateTransitionProofOutcome::ExecutionProved(proved))
+        require_execution_proved(StateTransitionProofOutcome::execution_proved(proved))
             .expect("execution-proved outcomes must pass the strict wait");
     }
 }

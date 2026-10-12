@@ -213,9 +213,9 @@ impl PersistenceError {
 ///   (an evo-tool wrapper type around `dpp::Identity`) is currently written
 ///   directly by `Database::insert_local_qualified_identity` and
 ///   `Database::update_local_qualified_identity`, called from backend tasks.
-///   Moving this blob into the persister is planned as a future commit
-///   (evo-tool task #130 / Phase 9c). Until then, the persister does not
-///   write or read the `identity.data` column.
+///   Moving this blob into the persister is planned as a future evo-tool
+///   change. Until then, the persister does not write or read the
+///   `identity.data` column.
 /// - **Platform addresses** and **token balances**: these are dropped on
 ///   flush; backend tasks own their persistence.
 ///

@@ -585,13 +585,17 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
 ) -> PlatformWalletFFIResult {
     // Under the registry guard on purpose — it mutates the manager's
     // runtime; see `platform_wallet_manager_spv_start`.
+    //
+    // A stop that did not complete (the client stop ran over its budget, or
+    // the run loop survived the abort and was re-parked for a retry) is
+    // returned as an error: a start issued after it would find the parked
+    // run loop and spawn none.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
-        block_on_worker(async move {
-            let _ = spv.stop().await;
-        });
+        block_on_worker(async move { spv.stop().await })
     });
-    unwrap_option_or_return!(option);
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
     PlatformWalletFFIResult::ok()
 }
 

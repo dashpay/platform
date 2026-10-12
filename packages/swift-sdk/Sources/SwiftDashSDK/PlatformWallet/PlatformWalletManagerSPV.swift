@@ -272,7 +272,12 @@ extension PlatformWalletManager {
     ///
     /// Spawns the sync loop on the shared tokio runtime and returns
     /// immediately. Use [`stopSpv`] to cancel.
+    ///
+    /// Throws `walletOperation` while an async [`stopSpv()`] is still
+    /// tearing the previous client down: the main actor is free during that
+    /// stop, so a start issued meanwhile would otherwise race it.
     public func startSpv(config: PlatformSpvStartConfig) throws {
+        try ensureNoSpvStopInFlight(before: "starting SPV")
         // Peer array: allocate contiguous C strings.
         let peerCStrings: [UnsafeMutablePointer<CChar>?] = config.peers.map { strdup($0) }
         defer { peerCStrings.forEach { if let p = $0 { free(p) } } }
@@ -306,13 +311,74 @@ extension PlatformWalletManager {
     }
 
     /// Stop the SPV client (idempotent).
+    ///
+    /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
+    /// that stop is already tearing the client down, and this blocking one
+    /// would wait on the same teardown on the calling thread.
     public func stopSpv() throws {
+        try ensureNoSpvStopInFlight(before: "a blocking stopSpv()")
         try platform_wallet_manager_spv_stop(handle).check()
     }
 
+    /// Off-main variant of [`stopSpv()`]: the same native stop, run on
+    /// [`spvStopQueue`] instead of the calling thread. In an `async` context
+    /// overload resolution prefers this variant; sync contexts keep the sync
+    /// one.
+    ///
+    /// The native stop waits for the SPV run loop to finish its current sync
+    /// tick and drain its tasks — up to 15 s for the client stop and 15 s for
+    /// the run-loop join plus a 2 s abort grace, about 32 s in all — so on the
+    /// main actor the blocking variant freezes the UI for that long. It first
+    /// waits for an SPV broadcast still waiting for acceptance, which can add
+    /// that broadcast's timeout.
+    ///
+    /// Admitted like the other async native entry points: [`shutdown()`]
+    /// waits for an in-flight stop before destroying the handle, and a stop
+    /// requested once a shutdown has begun throws `invalidHandle` before any
+    /// native work. [`startSpv(config:)`] throws while a stop is in flight.
+    public func stopSpv() async throws {
+        try ensureConfigured()
+        // Admission and the in-flight count change on the main actor with no
+        // suspension in between, so neither `shutdown()`'s drain nor the
+        // in-flight guard of the other SPV calls can miss this stop.
+        try admitNativeOp("stopSpv")
+        defer { finishNativeOp() }
+        spvStopsInFlight += 1
+        defer { spvStopsInFlight -= 1 }
+
+        let h = handle
+        let stop = nativeTeardownCalls.spvStop
+        // Map the result on the queue: the raw result's Rust-owned message
+        // never crosses the continuation.
+        let failure: PlatformWalletError? = await withCheckedContinuation { continuation in
+            spvStopQueue.async {
+                let result = PlatformWalletResult(stop(h))
+                continuation.resume(
+                    returning: result.isSuccess ? nil : PlatformWalletError(result: result))
+            }
+        }
+        if let failure {
+            throw failure
+        }
+    }
+
     /// Clear all persisted SPV storage (headers, filters, state).
+    ///
+    /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
+    /// the stopping client can still hold and write the same data directory.
     public func clearSpvStorage() throws {
+        try ensureNoSpvStopInFlight(before: "clearing SPV storage")
         try platform_wallet_manager_spv_clear_storage(handle).check()
+    }
+
+    /// Throws `walletOperation` while an async [`stopSpv()`] is in flight.
+    /// The main actor is free during that stop, so SPV calls issued meanwhile
+    /// would otherwise race the client's teardown.
+    func ensureNoSpvStopInFlight(before operation: String) throws {
+        guard spvStopsInFlight == 0 else {
+            throw PlatformWalletError.walletOperation(
+                "SPV stop in progress; await stopSpv() before \(operation)")
+        }
     }
 
     /// Arm an organic compact-filter rescan for one wallet by rewinding

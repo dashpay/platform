@@ -13,6 +13,10 @@ use std::fmt;
 use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::ProtocolError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
@@ -567,10 +571,10 @@ impl fmt::Display for RewardDistributionType {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for RewardDistributionType {}
+impl JsonConvertible for RewardDistributionType {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for RewardDistributionType {}
+impl ValueConvertible for RewardDistributionType {}
 
 #[cfg(all(
     test,

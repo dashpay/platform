@@ -36,12 +36,14 @@
 //! path too.
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
-use super::super::super::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
+use super::super::super::drive_document_sum_query::index_picker::find_range_summable_index_with_counts_for_where_clauses;
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::ResolvedTimeRange;
+use crate::query::{
+    aggregate_or_zero_when_absent, index_keeps_empty_groups, is_absent_path, ResolvedTimeRange,
+};
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -80,13 +82,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
-        let index = find_range_summable_index_for_where_clauses(
+        let index = find_range_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
             &sum_property,
             resolved_time_ranges,
         )
-        .filter(|idx| idx.range_countable)
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "average range query requires an index that declares BOTH \
@@ -147,19 +148,13 @@ impl Drive {
         );
         let elements = match result {
             Ok((elements, _)) => elements,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
+            Err(error) if is_absent_path(&error) => {
                 return Ok(DocumentAverageResponse::Entries(Vec::new()));
             }
             Err(e) => return Err(e),
         };
 
+        let keeps_empty_groups = index_keeps_empty_groups(document_type, index);
         let mut entries: Vec<AverageEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
@@ -172,8 +167,11 @@ impl Drive {
             // zero (e.g. all zero, or signed values that cancel). The
             // joint executor preserves such rows and only drops
             // grovedb-absent rows that decode as `(0, 0)`. Diverges
-            // intentionally from sum's drop predicate.
-            if count == 0 && sum == 0 {
+            // intentionally from sum's drop predicate. Where an index can
+            // hold empty groups, even a `(0, 0)` group stays: the walk's
+            // limit counted it, and the proof keeps it, so leaving it out
+            // would shorten the page (`index_keeps_empty_groups`).
+            if count == 0 && sum == 0 && !keeps_empty_groups {
                 continue;
             }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {
@@ -214,17 +212,17 @@ impl Drive {
     ) -> Result<DocumentAverageResponse, Error> {
         let drive_version = &platform_version.drive;
 
-        // Open a shared read transaction across per-In branches in
-        // the compound shape so each branch's accumulator call sees
-        // the same grovedb snapshot. The flat path issues a single
-        // read and gets atomicity for free; the transaction is
-        // harmless there. Read-only; dropped without commit at scope
-        // end.
+        // Open a shared snapshot read transaction across per-In branches
+        // in the compound shape so each branch's accumulator call sees
+        // the same grovedb snapshot (a plain transaction reads the latest
+        // committed state on every read). The flat path issues a single
+        // read and gets atomicity for free; the transaction is harmless
+        // there. Read-only; dropped without commit at scope end.
         let local_tx;
         let effective_transaction: TransactionArg = if transaction.is_some() {
             transaction
         } else {
-            local_tx = self.grove.start_transaction();
+            local_tx = self.grove.start_snapshot_read_transaction();
             Some(&local_tx)
         };
 
@@ -358,6 +356,19 @@ impl Drive {
             transaction,
             &drive_version.grove_version,
         );
-        value.map_err(|e| Error::GroveDB(Box::new(e)))
+        // An absent value reads zero as the proof of the same total verifies it.
+        aggregate_or_zero_when_absent(
+            self,
+            &path_query.path,
+            value,
+            platform_version
+                .drive
+                .methods
+                .verify
+                .document_sum
+                .verify_aggregate_count_and_sum_proof,
+            transaction,
+            platform_version,
+        )
     }
 }

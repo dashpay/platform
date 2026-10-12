@@ -43,7 +43,7 @@ mod tests {
 
     #[stack_size(STACK_SIZE)]
     #[test]
-    async fn run_chain_with_temporarily_disabled_contested_documents() {
+    async fn run_chain_accepts_contested_documents_before_epoch_4() {
         let epoch_time_length_s = 60;
 
         let config = PlatformConfig {
@@ -52,7 +52,6 @@ mod tests {
                 store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
-                disable_contested_documents_is_allowed_validation: false,
                 disable_checkpoints: true,
                 ..Default::default()
             },
@@ -167,23 +166,13 @@ mod tests {
 
         let ChainExecutionOutcome {
             abci_app,
-            proposers,
-            validator_quorums,
-            current_validator_quorum_hash,
-            instant_lock_quorums,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
             state_transition_results_per_block,
-            identities,
-            addresses_with_balance,
             ..
         } = run_chain_for_strategy(
             &mut platform,
             2,
-            strategy.clone(),
-            config.clone(),
+            strategy,
+            config,
             15,
             &mut voting_signer,
             &mut None,
@@ -192,140 +181,17 @@ mod tests {
 
         let platform_state = abci_app.platform.state.load();
 
-        // On first block we have identity
-        // On second block we have should have documents
-        // but not in our case because we disabled contested documents
+        // The identity is created in the first block and the contested DPNS name in the second,
+        // long before epoch 4
+        assert_eq!(platform_state.last_committed_block_epoch().index, 1);
+
         let state_transitions_block_2 = state_transition_results_per_block
             .get(&2)
             .expect("expected to get block 2");
 
-        // Document transaction was rejected
-        assert!(state_transitions_block_2.is_empty());
+        assert_eq!(state_transitions_block_2.len(), 1);
 
-        assert_eq!(platform_state.last_committed_block_epoch().index, 1);
-
-        // Move over 2nd epochs
-
-        let block_start = platform_state
-            .last_committed_block_info()
-            .as_ref()
-            .unwrap()
-            .basic_info()
-            .height
-            + 1;
-
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            validator_quorums,
-            current_validator_quorum_hash,
-            instant_lock_quorums,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
-            ..
-        } = continue_chain_for_strategy(
-            abci_app,
-            ChainExecutionParameters {
-                block_start,
-                core_height_start: 1,
-                block_count: 3,
-                proposers,
-                validator_quorums,
-                current_validator_quorum_hash,
-                instant_lock_quorums,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
-                current_identity_nonce_counter: identity_nonce_counter,
-                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
-                current_votes: BTreeMap::default(),
-                start_time_ms: 1681094380000,
-                current_time_ms: end_time_ms,
-                current_identities: Vec::new(),
-                current_addresses_with_balance: AddressesWithBalance::default(),
-            },
-            NetworkStrategy::default(),
-            config.clone(),
-            StrategyRandomness::SeedEntropy(7),
-        )
-        .await;
-
-        let platform_state = abci_app.platform.state.load();
-
-        assert_eq!(platform_state.last_committed_block_epoch().index, 4);
-
-        // Insert successfully contested document
-
-        let block_start = platform_state
-            .last_committed_block_info()
-            .as_ref()
-            .unwrap()
-            .basic_info()
-            .height
-            + 1;
-
-        let strategy = NetworkStrategy {
-            strategy: Strategy {
-                operations: vec![Operation {
-                    op_type: OperationType::Document(document_op_1.clone()),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
-                    },
-                }],
-                signer: Some(simple_signer),
-                ..Default::default()
-            },
-            total_hpmns: 100,
-            extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
-            upgrading_info: None,
-
-            proposer_strategy: Default::default(),
-            rotate_quorums: false,
-            failure_testing: None,
-            query_testing: None,
-            verify_state_transition_results: true,
-            ..Default::default()
-        };
-
-        let ChainExecutionOutcome {
-            state_transition_results_per_block,
-            ..
-        } = continue_chain_for_strategy(
-            abci_app,
-            ChainExecutionParameters {
-                block_start,
-                core_height_start: 1,
-                block_count: 1,
-                proposers,
-                validator_quorums,
-                current_validator_quorum_hash,
-                instant_lock_quorums,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
-                current_identity_nonce_counter: identity_nonce_counter,
-                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
-                current_votes: BTreeMap::default(),
-                start_time_ms: 1681094380000,
-                current_time_ms: end_time_ms,
-                current_identities: identities,
-                current_addresses_with_balance: addresses_with_balance,
-            },
-            strategy,
-            config.clone(),
-            StrategyRandomness::SeedEntropy(7),
-        )
-        .await;
-
-        let state_transitions_block_6 = state_transition_results_per_block
-            .get(&6)
-            .expect("expected to get block 6");
-
-        // Contested document was created
-        assert_eq!(state_transitions_block_6.len(), 1);
-
-        let (state_transition, execution_result) = state_transitions_block_6
+        let (state_transition, execution_result) = state_transitions_block_2
             .first()
             .expect("expected a document insert");
 
@@ -1748,6 +1614,38 @@ mod tests {
     #[stack_size(STACK_SIZE)]
     #[test]
     async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution() {
+        // A vote costs 2_000_000 from protocol version 14.
+        // We did 5 votes in this epoch, and from protocol version 14 each contested document
+        // contributes 0.1 DASH (10_000_000_000) to the vote resolution fund instead of 0.2
+        // DASH, so the two contenders funded 20_000_000_000, of which 19 votes cost 38_000_000
+        // and 19_962_000_000 was left over when the vote finished.
+        // So we basically have 19_962_000_000 + 10_000_000
+        run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            19_972_000_000,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: a vote costs 10_000_000 and each contested document contributes
+    /// 0.2 DASH, so the two contenders funded 40_000_000_000, of which 19 votes cost
+    /// 190_000_000 and 39_810_000_000 was left over; with the 5 votes of the epoch that is
+    /// 39_810_000_000 + 50_000_000.
+    #[stack_size(STACK_SIZE)]
+    #[test]
+    async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_protocol_version_13(
+    ) {
+        run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_at_protocol_version(
+            13,
+            39_860_000_000,
+        )
+        .await;
+    }
+
+    async fn run_chain_with_voting_after_won_by_identity_with_specialized_funds_distribution_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fees: u64,
+    ) {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
@@ -1765,9 +1663,21 @@ mod tests {
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc();
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
+        // An older protocol version is held by the proposers the first run sets up, whose
+        // versions the continued run carries on; the latest needs no holding
+        let upgrading_info =
+            (protocol_version != PlatformVersion::latest().protocol_version).then(|| {
+                UpgradingInfo {
+                    current_protocol_version: protocol_version,
+                    proposed_protocol_versions_with_weight: vec![(protocol_version, 1)],
+                    upgrade_three_quarters_life: 0.2,
+                }
+            });
 
         let mut rng = StdRng::seed_from_u64(567);
 
@@ -1890,7 +1800,7 @@ mod tests {
             extra_normal_mns: 0,
             validator_quorum_count: 24,
             chain_lock_quorum_count: 24,
-            upgrading_info: None,
+            upgrading_info,
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2145,14 +2055,7 @@ mod tests {
             )
             .expect("expected to get processing fees made in epoch");
 
-        // A vote costs 10_000_000
-        // We did 5 votes in this epoch,
-        // From protocol version 14 each contested document contributes 0.1 DASH
-        // (10_000_000_000) to the vote resolution fund instead of 0.2 DASH, so the two
-        // contenders funded 20_000_000_000, of which 19 votes cost 190_000_000 and
-        // 19_810_000_000 was left over when the vote finished.
-        // So we basically have 19_810_000_000 + 50_000_000
-        assert_eq!(processing_fees, 19_860_000_000);
+        assert_eq!(processing_fees, expected_processing_fees);
     }
 
     #[stack_size(STACK_SIZE)]

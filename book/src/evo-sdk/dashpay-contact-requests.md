@@ -31,7 +31,15 @@ The current DashPay contract schema requires the system field
 `encryptedPublicKey` is exactly 96 bytes:
 
 - 16 bytes: AES-CBC initialization vector
-- 80 bytes: AES-CBC ciphertext for the sender's 78-byte serialized contact xpub
+- 80 bytes: AES-CBC ciphertext for the sender's 69-byte compact contact xpub
+
+The compact xpub is the parent fingerprint (4 bytes), chain code (32 bytes)
+and public key (33 bytes), without the version, depth and child number of a
+full 78-byte BIP32 serialization. Receivers, including the reference mobile
+wallets and the Rust, Swift and Kotlin SDKs, refuse any other plaintext
+length. Both 69 and 78 bytes pad to the same 80-byte ciphertext, so the
+contract cannot catch the mistake: a request that encrypts the full 78 bytes
+is stored on chain, and the recipient's wallet then drops it.
 
 The sender derives the contact xpub from the sender identity, recipient
 identity, account, and address index. The sender then encrypts that xpub with an
@@ -99,14 +107,17 @@ function deriveSharedKey({
   return crypto.createHash('sha256').update(Buffer.concat([compressedPrefix, x])).digest();
 }
 
-function serializedXpubPayload(xpub: string): Buffer {
+function compactXpubPayload(xpub: string): Buffer {
   const payload = dashcore.encoding.Base58Check.decode(xpub);
 
   if (payload.length !== 78) {
     throw new Error(`Invalid DashPay contact xpub length: ${payload.length}`);
   }
 
-  return payload;
+  // BIP32 layout: version(4) depth(1) parentFingerprint(4) childNumber(4)
+  // chainCode(32) publicKey(33). DIP-15 encrypts only the parent
+  // fingerprint, chain code and public key: 69 bytes.
+  return Buffer.concat([payload.subarray(5, 9), payload.subarray(13, 78)]);
 }
 
 function encryptContactXpub({
@@ -122,7 +133,7 @@ function encryptContactXpub({
     privateKeyWif: senderEncryptionPrivateKeyWif,
     publicKeyBytes: recipientDecryptionPublicKeyBytes,
   });
-  const payload = serializedXpubPayload(contactXpub);
+  const payload = compactXpubPayload(contactXpub);
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-cbc', aesKey, iv);
   const encrypted = Buffer.concat([

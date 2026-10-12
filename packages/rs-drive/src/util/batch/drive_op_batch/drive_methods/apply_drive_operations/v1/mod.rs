@@ -39,10 +39,44 @@ impl Drive {
     ///
     /// Generation 1 (protocol version 14) is generation 0, and a batch that carries a storage
     /// refund forfeiture ([`DriveOperation::forfeits_storage_refunds`], a moderator's document
-    /// deletion) refunds nobody: the bytes it removes still leave the system, but whoever paid
-    /// for them gets nothing back, and the credits stay in the storage pools they were
-    /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
-    /// same fee with or without the forfeiture.
+    /// deletion) refunds nobody for the storage its document operations remove: the document's
+    /// own bytes, and those of any index subtree the deletion empties, whoever paid for them
+    /// (an earlier author's document may have created it). The bytes still leave the system,
+    /// but nobody gets them back, and the credits stay in the storage pools they were
+    /// distributed to. When the batch also frees moderation storage someone is owed
+    /// ([`DriveOperation::refunds_moderation_storage`]: a restored removal record replaced,
+    /// which may shrink, or the approvals and the info of a team action its closing approval
+    /// moves), the document operations are applied as a GroveDB batch of their own, after the
+    /// rest and in the same transaction, and only that batch forfeits: the moderators who paid
+    /// for those keep their refunds. Otherwise nothing but the document operations frees bytes
+    /// (a fresh record or approval is an insert, the nonce and the counts keep their size), and
+    /// the batch is applied as one, forfeiting whole. An estimate carries no refund to begin
+    /// with and prices the batch as it is applied: one GroveDB batch, or two when a forfeiting
+    /// deletion also frees moderation storage.
+    ///
+    /// Every write of one identity balance, one contract fee pot or one prefunded specialized
+    /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
+    /// computes the new value from the one committed before the batch, so a second write in the
+    /// same batch would replace the first and the credits would no longer add up. Token writes
+    /// cannot be merged the same way, so a batch that writes one token balance, one token
+    /// supply or one token shielded pool total twice is refused
+    /// ([`DriveOperation::refuse_repeated_token_balance_writes`]); no state transition makes
+    /// one. A batch that writes each key once is applied exactly as by generation 0.
+    ///
+    /// An estimate is merged the same way, so it prices the batch execution applies. It reads
+    /// no balance and lets a merged removal take up to the largest balance there can be; fee
+    /// validation estimates for the payer it settles on, and refuses an identity that cannot
+    /// fund what it owes before estimating, so no merged removal it estimates takes more.
+    ///
+    /// Credits the batch adds to an identity that repay its debt
+    /// ([`LowLevelDriveOperation::RepaidIdentityDebt`], from `add_to_identity_balance_operations`
+    /// 1) go to the processing fee pool of the block's epoch once the batch applied: the debt
+    /// stood for processing fees that never reached a pool, and otherwise the credits would
+    /// reach no balance the credit sum counts. The pool write reads the state the batch left,
+    /// so it adds to a pool write the batch made itself (the fee distribution at the end of a
+    /// block) instead of racing it, and it is not billed. An estimate reads no debt and repays
+    /// none. The balance writes are merged before the batch is converted, so two credits to an
+    /// indebted identity repay its debt once, as one net credit.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -53,12 +87,21 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
+        DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
+        self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
+        let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
+        // The document operations of a moderator's deletion go in a batch of their own only
+        // when something else in the batch may free bytes someone is owed.
+        let separates_forfeited_operations = forfeits_storage_refunds
+            && operations
+                .iter()
+                .any(DriveOperation::refunds_moderation_storage);
         // With no caller transaction, TTL preparation (direct drainage
         // writes), conversion reads, and the batch apply would each commit
         // on their own, so a conversion error after preparation would leave
@@ -83,6 +126,9 @@ impl Drive {
             Some(HashMap::new())
         };
 
+        // The document operations of a moderator's deletion, whose removals refund nobody
+        let mut forfeited_low_level_operations = vec![];
+
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
         for drive_op in operations {
@@ -90,19 +136,33 @@ impl Drive {
                 finalize_tasks.extend(tasks);
             }
 
-            low_level_operations.append(
-                &mut drive_op.into_low_level_drive_operations_after_ttl_drain(
-                    self,
-                    &mut estimated_costs_only_with_layer_info,
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?,
-            );
+            let forfeited = separates_forfeited_operations
+                && matches!(drive_op, DriveOperation::DocumentOperation(_));
+            let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
+                self,
+                &mut estimated_costs_only_with_layer_info,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
+            if forfeited {
+                forfeited_low_level_operations.append(&mut converted);
+            } else {
+                low_level_operations.append(&mut converted);
+            }
         }
+
+        let repaid_identity_debt =
+            LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;
 
         let mut cost_operations = vec![];
 
+        let forfeited_estimated_costs_only_with_layer_info =
+            if forfeited_low_level_operations.is_empty() {
+                None
+            } else {
+                Some(estimated_costs_only_with_layer_info.clone())
+            };
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -110,12 +170,31 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+        if let Some(estimated_costs_only_with_layer_info) =
+            forfeited_estimated_costs_only_with_layer_info
+        {
+            let mut forfeited_cost_operations = vec![];
+            self.apply_batch_low_level_drive_operations(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                forfeited_low_level_operations,
+                &mut forfeited_cost_operations,
+                &platform_version.drive,
+            )?;
+            forfeit_storage_refunds(&mut forfeited_cost_operations);
+            cost_operations.append(&mut forfeited_cost_operations);
+        } else if forfeits_storage_refunds {
+            // One batch, in which only the document operations free bytes: it forfeits whole.
+            forfeit_storage_refunds(&mut cost_operations);
+        }
+        self.apply_repaid_identity_debt_to_processing_pool(
+            repaid_identity_debt,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
-        }
-
-        if forfeits_storage_refunds {
-            forfeit_storage_refunds(&mut cost_operations);
         }
 
         // Execute drive operation callbacks after updating state. Nothing was written when
@@ -141,9 +220,9 @@ impl Drive {
 
 /// Turns every removal attributed to an identity into a removal attributed to nobody: the same
 /// bytes leave the system (`FeeResult::removed_bytes_from_system`), and no refund is computed
-/// for them. The whole batch, which is exact: a moderator's deletion removes the document and
-/// nothing else, since its removal record is written once (a document id is produced at most
-/// once) and the nonce it bumps keeps its size.
+/// for them. Given the costs of a batch in which only a moderator's deletion's document
+/// operations free bytes: the document's, whoever paid for it, its owner or an earlier one, and
+/// those of any index subtree the deletion empties, whoever created it.
 fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {
         let LowLevelDriveOperation::CalculatedCostOperation(cost) = operation else {

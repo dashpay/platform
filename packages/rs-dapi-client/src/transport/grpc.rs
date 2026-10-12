@@ -32,12 +32,17 @@ impl TransportClient for PlatformGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError> {
-        Ok(pool
-            .get_or_create(
-                PoolPrefix::Platform,
-                &uri,
-                Some(settings),
-                || match create_channel(uri.clone(), Some(settings)) {
+        Self::with_uri_and_settings_and_generation(uri, settings, pool).map(|(client, _)| client)
+    }
+
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let (item, generation) =
+            pool.get_or_create_with_generation(PoolPrefix::Platform, &uri, Some(settings), || {
+                match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
                         let mut client = Self::new(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
@@ -49,9 +54,9 @@ impl TransportClient for PlatformGrpcClient {
                         "Channel creation failed: {}",
                         e
                     ))),
-                },
-            )?
-            .into())
+                }
+            })?;
+        Ok((item.into(), generation))
     }
 }
 
@@ -75,12 +80,17 @@ impl TransportClient for CoreGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError> {
-        Ok(pool
-            .get_or_create(
-                PoolPrefix::Core,
-                &uri,
-                Some(settings),
-                || match create_channel(uri.clone(), Some(settings)) {
+        Self::with_uri_and_settings_and_generation(uri, settings, pool).map(|(client, _)| client)
+    }
+
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let (item, generation) =
+            pool.get_or_create_with_generation(PoolPrefix::Core, &uri, Some(settings), || {
+                match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
                         let mut client = Self::new(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
@@ -92,9 +102,9 @@ impl TransportClient for CoreGrpcClient {
                         "Channel creation failed: {}",
                         e
                     ))),
-                },
-            )?
-            .into())
+                }
+            })?;
+        Ok((item.into(), generation))
     }
 }
 
@@ -252,6 +262,14 @@ macro_rules! impl_transport_request_grpc {
 
 const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Attempt timeout for unary requests whose responses run to megabytes.
+///
+/// The timeout bounds the whole attempt including the response body (see
+/// `RequestSettings::timeout`), so the 10 s default would fail these responses
+/// on a slow link every time and ban the node that was sending them. Dead
+/// connections are still caught early by the channel's HTTP/2 keepalive.
+const LARGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 impl_transport_request_grpc!(
     platform_proto::GetIdentityRequest,
     platform_proto::GetIdentityResponse,
@@ -328,6 +346,33 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_contract_document_removals
+);
+
+// rpc getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractTeamActionsRequest,
+    platform_proto::GetContractTeamActionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_team_actions
+);
+
+// rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractTeamActionSignersRequest,
+    platform_proto::GetContractTeamActionSignersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_team_action_signers
+);
+
+// rpc getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractModerationActionCountsRequest,
+    platform_proto::GetContractModerationActionCountsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_moderation_action_counts
 );
 
 // rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
@@ -617,7 +662,12 @@ impl_transport_request_grpc!(
     platform_proto::GetShieldedEncryptedNotesRequest,
     platform_proto::GetShieldedEncryptedNotesResponse,
     PlatformGrpcClient,
-    RequestSettings::default(),
+    RequestSettings {
+        // A full chunk carries thousands of encrypted notes (megabytes), and
+        // the notes sync fetches several chunks in parallel over one link.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        ..RequestSettings::default()
+    },
     get_shielded_encrypted_notes
 );
 
@@ -923,6 +973,7 @@ impl_transport_request_grpc!(
         // GetRecentCompactedAddressBalanceChangesResponse can have 100 values * 2048 addresses * ~44  bytes each = ~9MB
         // We set it to 16MB to be safe
         max_decoding_message_size: Some(16 * 1024 * 1024),
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
         ..RequestSettings::default()
     },
     get_recent_compacted_address_balance_changes

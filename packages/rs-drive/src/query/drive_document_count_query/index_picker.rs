@@ -5,9 +5,12 @@
 //! shape, returning `None` if no index can serve the query.
 
 use super::super::conditions::WhereClause;
-use super::DriveDocumentCountQuery;
-use crate::query::index_admissible_for_resolved_time_range;
+use super::{
+    document_count_chain_position, point_count_reads_documents,
+    prefix_to_last_count_reads_documents, terminal_reads_documents, DriveDocumentCountQuery,
+};
 use crate::query::ResolvedTimeRange;
+use crate::query::{index_admissible_for_query, pins_reach_chain, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,6 +36,10 @@ impl DriveDocumentCountQuery<'_> {
     /// partial coverage stays rejected: intermediate levels carry no
     /// aggregates, so there is nothing cheap to read.
     ///
+    /// A `summableOffCountIndex` index is a candidate in all three forms
+    /// through its sums, its document counts: countable or not, its counters'
+    /// trees always sum ([`document_count_chain_position`] for the chain).
+    ///
     /// Returns `None` if:
     /// - Any where clause uses an operator other than `Equal` / `In`.
     /// - The set of indexable where-clause fields neither exactly equals the
@@ -48,12 +55,16 @@ impl DriveDocumentCountQuery<'_> {
     /// produced by `IN_TIME_RANGE` resolution (see
     /// [`crate::query::resolve_time_range_bucket_clause`]); it gates which
     /// indexes are candidates at all — see
-    /// [`index_admissible_for_resolved_time_range`].
+    /// [`index_admissible_for_resolved_time_range`](crate::query::index_admissible_for_resolved_time_range).
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
         resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
+        // A skip index serves only a query binding every skip property
+        // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+        // above a deep one.
+        let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
         if Self::has_unsupported_operator(where_clauses) {
             return None;
         }
@@ -78,10 +89,10 @@ impl DriveDocumentCountQuery<'_> {
             // every document unless the query pins a single bucket, and only
             // a resolution-produced equality does that. Conversely a raw
             // clause must never bind to bucket keys.
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.countable.is_countable() {
+            if !point_count_reads_documents(index) {
                 continue;
             }
             if index.properties.len() != indexable_fields.len() {
@@ -109,21 +120,16 @@ impl DriveDocumentCountQuery<'_> {
         // form: a clause on the LAST property with an earlier one free is
         // not a prefix and reads nothing meaningful.
         for index in indexes.values() {
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !index.countable.is_countable() {
-                continue;
-            }
-            // A ranked axis makes the terminal property-name tree an
-            // INDEXED tree, which grovedb's query dispatch refuses to
-            // return as a result element ("path_queries can not refer to
-            // trees") — the element read this form performs would have
-            // nothing legal to select. Skipped until that dispatch admits
-            // indexed elements; a prefix-level ranking
-            // (`rankedCountable: { at }`) keeps its terminal non-indexed
-            // and stays servable.
-            if index.ranked_countable || index.ranked_summable || index.ranked_averageable {
+            // The terminal property-name tree's own element: its count on a
+            // range-countable index, its sum on a `summableOffCountIndex`
+            // index (where every index is sum-bearing). A ranked terminal is
+            // skipped until grovedb's dispatch admits indexed elements; a
+            // prefix-level ranking (`rankedCountable: { at }`) keeps its
+            // terminal non-indexed and stays servable.
+            if !prefix_to_last_count_reads_documents(index) {
                 continue;
             }
             let Some(leading_len) = index.properties.len().checked_sub(1) else {
@@ -152,27 +158,16 @@ impl DriveDocumentCountQuery<'_> {
         // refuses to return. Pins landing ABOVE the shallowest `at`
         // level stay rejected — those levels are plain trees.
         for index in indexes.values() {
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.countable.is_countable() {
+            if !point_count_reads_documents(index) {
                 continue;
             }
             let pin_depth = indexable_fields.len();
-            if pin_depth == 0 || pin_depth >= index.properties.len() {
-                continue;
-            }
-            let Some(min_at_position) = index
-                .ranked_countable_at
-                .iter()
-                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
-                .min()
-            else {
-                continue;
-            };
-            // The deepest pinned property (position pin_depth - 1) must
-            // sit at or below the shallowest ranked level.
-            if min_at_position > pin_depth - 1 {
+            // An average ranking's chain carries the counts as well, and a
+            // `summableOffCountIndex` index's sum chain its document counts.
+            if !pins_reach_chain(index, pin_depth, document_count_chain_position(index)) {
                 continue;
             }
             let leading_covered = index.properties[..pin_depth]
@@ -194,7 +189,9 @@ impl DriveDocumentCountQuery<'_> {
     /// - There is exactly one range-operator where-clause, on a property
     ///   that is the *last* property of the index (the IndexLevel
     ///   terminator). This is the property whose values get walked.
-    /// - The index has `range_countable = true` and `countable.is_countable()`.
+    /// - The index has `range_countable = true` and `countable.is_countable()`,
+    ///   or is a `summableOffCountIndex` index, read through its range sums
+    ///   ([`Self::counter_sums_query`]) since its count trees count groups.
     ///
     /// Returns `None` if no such index exists or if there's more than one
     /// range operator in the where clauses (which would require nested range
@@ -214,6 +211,10 @@ impl DriveDocumentCountQuery<'_> {
         where_clauses: &[WhereClause],
         resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
+        // A skip index serves only a query binding every skip property
+        // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+        // above a deep one.
+        let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
         let range_clauses: Vec<&WhereClause> = where_clauses
             .iter()
             .filter(|wc| Self::is_range_operator(wc.operator))
@@ -268,10 +269,10 @@ impl DriveDocumentCountQuery<'_> {
             // indexes store one entry per containing bucket, so only a query
             // pinned to a single bucket by a resolution-produced equality may
             // walk them, and raw clauses may never bind to bucket keys.
-            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
                 continue;
             }
-            if !index.range_countable || !index.countable.is_countable() {
+            if !terminal_reads_documents(index) {
                 continue;
             }
 

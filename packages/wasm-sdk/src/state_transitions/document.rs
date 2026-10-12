@@ -15,6 +15,7 @@ use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
 use js_sys::Reflect;
@@ -23,12 +24,13 @@ use wasm_bindgen::{prelude::*, JsCast};
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
 };
 use wasm_dpp2::utils::{
-    get_class_type, try_from_options_mut, try_from_options_optional, try_from_options_with,
-    try_to_string, try_to_u64, IntoWasm,
+    get_class_type, try_from_options_mut, try_from_options_optional,
+    try_from_options_optional_with, try_from_options_with, try_to_string, try_to_u64, IntoWasm,
 };
 use wasm_dpp2::IdentitySignerWasm;
 
@@ -125,6 +127,17 @@ export interface DocumentCreateOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
+   * The most, in credits, the document pays into the contest it joins when its
+   * document type has a contested index. From protocol version 14 it is charged
+   * the fund to join the contest, which doubles once the contest holds 250
+   * contenders and again for every 50 more, and is refused, paid, when that is
+   * more than this. The identity must hold what it states. Leave it out to state
+   * the fund to join read just before the document is submitted. A document that
+   * joins no contest ignores it.
+   */
+  contestFund?: bigint;
+
+  /**
    * Optional settings for the broadcast operation.
    * Includes retries, timeouts, userFeeIncrease, etc.
    */
@@ -156,7 +169,10 @@ impl WasmSdk {
     ///
     /// @returns Promise resolving to the confirmed Document as Platform
     ///          committed it — its final `id` and the consensus-populated system fields
-    ///          (`$createdAt` and friends) included. Keep THIS instance
+    ///          (`$createdAt` and friends) included. For an indexOnly document type
+    ///          the proof shows the document's entry at the proof's block, not that
+    ///          this create wrote it: no stronger proof exists for such a document.
+    ///          Keep THIS instance
     ///          when you later intend to delete an indexOnly document
     ///          whose type requires `$createdAt`: the delete carries the
     ///          document's values, and the pre-broadcast wrapper never
@@ -202,9 +218,20 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings =
+        let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
+        // The most the document pays into the contest it joins
+        if let Some(contest_fund) = try_from_options_optional_with(&options, "contestFund", |v| {
+            try_to_u64(v, "contestFund")
+        })? {
+            settings
+                .get_or_insert_with(Default::default)
+                .state_transition_creation_options
+                .get_or_insert_with(Default::default)
+                .contest_fund = Some(contest_fund);
+        }
 
         // Use PutDocument trait for creation, keeping the confirmed
         // document Platform returns — it carries the consensus-assigned
@@ -243,6 +270,66 @@ impl WasmSdk {
             document_type_name,
             Some(entropy_array),
         ))
+    }
+}
+
+// ============================================================================
+// Contest Fund To Join
+// ============================================================================
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Document")]
+    pub type DocumentJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// The prefunded voting balance a create of `document` states to join the
+    /// contest it enters: the contested index the document falls under and the
+    /// fund to join that contest now, or `undefined` when the document joins no
+    /// contest (its type has no contested index, or its values do not match one).
+    ///
+    /// `documentCreate` states this itself. A create transition built by hand
+    /// passes it as `prefundedVotingBalance` to `new DocumentCreateTransition`:
+    /// from protocol version 14 a contested create that states less than the
+    /// fund to join is refused and still pays its fees. The fund doubles once the
+    /// contest holds 250 contenders and again for every 50 more, so this reads
+    /// the contenders with proved queries, one per 100 of them. From protocol
+    /// version 14 a create may state more than this, as headroom against
+    /// contenders joining before it lands: Platform charges it only the fund to
+    /// join, but the identity must hold what it states. Before 14 it must state
+    /// exactly this.
+    ///
+    /// @param document - The document to create; its contract is fetched (or
+    ///                   read from the cache) to find the contested index
+    /// @returns The index name and credits to state, or undefined
+    #[wasm_bindgen(js_name = "getContestFundToJoin")]
+    pub async fn get_contest_fund_to_join(
+        &self,
+        document: DocumentJs,
+    ) -> Result<Option<PrefundedVotingBalanceWasm>, WasmSdkError> {
+        // Cloned out of the caller's `Document` before the first await, so the
+        // object is not borrowed while the contest is read
+        let document = DocumentWasm::try_from(&JsValue::from(document))?;
+        let contract_id: Identifier = document.data_contract_id().into();
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+        let document_type_name = document.document_type_name();
+        let document_type = data_contract
+            .document_type_for_name(&document_type_name)
+            .map_err(|e| {
+                WasmSdkError::not_found(format!(
+                    "Document type '{}' not found: {}",
+                    document_type_name, e
+                ))
+            })?;
+        let document: Document = document.into();
+
+        let prefunded_voting_balance = self
+            .inner_sdk()
+            .prefunded_voting_balance_to_join(document_type, &document)
+            .await?;
+        Ok(prefunded_voting_balance.map(PrefundedVotingBalanceWasm::from))
     }
 }
 
@@ -424,7 +511,10 @@ impl WasmSdk {
     /// 3. Broadcasts and waits for confirmation
     ///
     /// @param options - Delete options including document (or document identifiers), identity key, and signer
-    /// @returns Promise that resolves when the document is deleted
+    /// @returns Promise that resolves when the document is deleted. For an indexOnly
+    ///          document type the proof shows the document's entry gone at the proof's
+    ///          block, not that this delete removed it: no stronger proof exists for
+    ///          such a document.
     #[wasm_bindgen(js_name = "documentDelete")]
     pub async fn document_delete(
         &self,

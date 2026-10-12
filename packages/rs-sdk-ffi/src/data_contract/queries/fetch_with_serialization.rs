@@ -1,5 +1,7 @@
 use crate::sdk::SDKWrapper;
-use crate::{DashSDKError, DashSDKErrorCode, DataContractHandle, FFIError, SDKHandle};
+use crate::{
+    dash_sdk_error_free, DashSDKError, DashSDKErrorCode, DataContractHandle, FFIError, SDKHandle,
+};
 use dash_sdk::dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dash_sdk::dpp::data_contract::DataContractWithSerialization;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
@@ -222,7 +224,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_result_free(
     }
 
     if !result.error.is_null() {
-        let _ = Box::from_raw(result.error);
+        dash_sdk_error_free(result.error);
         result.error = std::ptr::null_mut();
     }
 }

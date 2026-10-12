@@ -11,7 +11,10 @@ use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
-use drive::query::{OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator};
+use drive::query::{
+    IntegerRangeGridSpec, OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause,
+    WhereOperator,
+};
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
@@ -155,6 +158,28 @@ export interface DocumentsQuery {
     startMs?: number;
     grid?: { range: number; step: number; phase?: number };
   }[];
+
+  /**
+   * Integer-range window selections. Each entry picks one window of an
+   * integer field covered by an `integerRange` index, named by its start:
+   * `start` must be a window start on the grid (`phase + k * step`, within
+   * the field's integer type, or the type's minimum for a clamped bottom
+   * window). An off-grid start is rejected rather than snapped, and an
+   * empty window is a provable empty answer. The server and the proof
+   * verifier resolve the same window from the query alone. Requires
+   * protocol version 14+.
+   *
+   * `start` is a number, or a decimal string for values beyond
+   * `Number.MAX_SAFE_INTEGER`. `grid` names one of the field's grids
+   * verbatim (`{ range, step, phase? }`) and is required when the contract
+   * buckets the field with more than one `integerRange` grid.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /**
@@ -235,6 +260,10 @@ pub(super) struct DocumentsQueryInput {
     /// selector }`. v1-only; resolved server-side from block time.
     #[serde(rename = "timeRange", default)]
     pub(super) time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections (`IN_INTEGER_RANGE`), each
+    /// `{ field, start, grid? }`. v1-only; resolved from the query alone.
+    #[serde(rename = "integerRange", default)]
+    pub(super) integer_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -284,6 +313,7 @@ pub(super) async fn build_documents_query(
         start_at,
         group_by: _,
         time_range,
+        integer_range,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -327,6 +357,8 @@ pub(super) async fn build_documents_query(
             };
         }
     }
+
+    query = apply_integer_range_selections(query, integer_range.as_deref())?;
 
     if let Some(order_values) = order_by {
         for clause_json in order_values.iter() {
@@ -616,6 +648,94 @@ pub(super) fn parse_time_range_clause(
         }
     };
     Ok((field, selector, grid))
+}
+
+/// Attach integer-range window selections (`{ field, start, grid? }`) to a
+/// query, for [`DocumentQuery::with_integer_range`] /
+/// `with_integer_range_grid`.
+pub(super) fn apply_integer_range_selections(
+    mut query: DocumentQuery,
+    entries: Option<&[JsonValue]>,
+) -> Result<DocumentQuery, WasmSdkError> {
+    for entry in entries.unwrap_or(&[]) {
+        let (field, start, grid) = parse_integer_range_clause(entry)?;
+        query = match grid {
+            Some(grid) => query.with_integer_range_grid(field, start, grid),
+            None => query.with_integer_range(field, start),
+        };
+    }
+    Ok(query)
+}
+
+/// Parse a JSON integer-range clause `{ field, start, grid? }`.
+///
+/// `start` is the selected window's start: a JSON integer, or a decimal
+/// string for values a JS number cannot hold exactly. Whether it is a window
+/// start of the grid is the server's check (and the verifier's), since only
+/// they see the contract. `grid` is `{ range, step, phase? }`, verbatim from
+/// the contract's `integerRange`; a zero phase is spelled by omission.
+pub(super) fn parse_integer_range_clause(
+    json_clause: &JsonValue,
+) -> Result<(String, Value, Option<IntegerRangeGridSpec>), WasmSdkError> {
+    let object = json_clause.as_object().ok_or_else(|| {
+        WasmSdkError::invalid_argument(
+            "integerRange clause must be an object { field, start, grid? }",
+        )
+    })?;
+    let field = object
+        .get("field")
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument("integerRange clause requires a string `field`")
+        })?
+        .to_string();
+    let start_error = || {
+        WasmSdkError::invalid_argument(
+            "integerRange clause `start` must be an integer, or a decimal string of one",
+        )
+    };
+    let start = match object.get("start") {
+        Some(JsonValue::Number(number)) => match (number.as_i64(), number.as_u64()) {
+            (Some(signed), _) => Value::I64(signed),
+            (None, Some(unsigned)) => Value::U64(unsigned),
+            _ => return Err(start_error()),
+        },
+        Some(JsonValue::String(text)) => match text.parse::<i64>() {
+            Ok(signed) => Value::I64(signed),
+            Err(_) => Value::U64(text.parse::<u64>().map_err(|_| start_error())?),
+        },
+        _ => return Err(start_error()),
+    };
+    let grid = match object.get("grid") {
+        None | Some(JsonValue::Null) => None,
+        Some(grid_json) => {
+            let grid_object = grid_json.as_object().ok_or_else(|| {
+                WasmSdkError::invalid_argument(
+                    "integerRange clause `grid` must be an object { range, step, phase? }",
+                )
+            })?;
+            let grid_number = |key: &str| -> Result<u64, WasmSdkError> {
+                grid_object
+                    .get(key)
+                    .and_then(JsonValue::as_u64)
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument(format!(
+                            "integerRange clause `grid.{}` must be an unsigned integer, exactly \
+                             as the contract declares it",
+                            key
+                        ))
+                    })
+            };
+            let range = grid_number("range")?;
+            let step = grid_number("step")?;
+            let phase = match grid_object.get("phase") {
+                None | Some(JsonValue::Null) => 0,
+                Some(_) => grid_number("phase")?,
+            };
+            Some(IntegerRangeGridSpec { range, step, phase })
+        }
+    };
+    Ok((field, start, grid))
 }
 
 /// Parse JSON order by clause into OrderClause
@@ -1364,5 +1484,56 @@ mod tests {
             "grid": { "range": 21_600, "step": 7_200, "phase": 0.5 },
         }))
         .expect_err("a fractional phase is not a contract-declared value");
+    }
+
+    #[test]
+    fn integer_range_clause_parses_a_numeric_start_and_an_optional_grid() {
+        let (field, start, grid) =
+            parse_integer_range_clause(&json!({ "field": "price", "start": 600 }))
+                .expect("a numeric start parses");
+        assert_eq!(field, "price");
+        assert_eq!(start, Value::I64(600));
+        assert_eq!(grid, None);
+
+        let (_, start, grid) = parse_integer_range_clause(&json!({
+            "field": "price",
+            "start": -128,
+            "grid": { "range": 300, "step": 100 },
+        }))
+        .expect("a negative start and a phaseless grid parse");
+        assert_eq!(start, Value::I64(-128));
+        assert_eq!(
+            grid,
+            Some(IntegerRangeGridSpec {
+                range: 300,
+                step: 100,
+                phase: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn integer_range_clause_reads_a_decimal_string_beyond_js_number_precision() {
+        let (_, start, _) = parse_integer_range_clause(&json!({
+            "field": "balance",
+            "start": "18446744073709551600",
+        }))
+        .expect("a u64 start parses from a decimal string");
+        assert_eq!(start, Value::U64(18_446_744_073_709_551_600));
+    }
+
+    #[test]
+    fn integer_range_clause_refuses_malformed_shapes() {
+        for clause in [
+            json!(["price", 600]),
+            json!({ "start": 600 }),
+            json!({ "field": "price" }),
+            json!({ "field": "price", "start": 1.5 }),
+            json!({ "field": "price", "start": "six hundred" }),
+            json!({ "field": "price", "start": 600, "grid": { "range": 300 } }),
+            json!({ "field": "price", "start": 600, "grid": { "range": 300, "step": -1 } }),
+        ] {
+            parse_integer_range_clause(&clause).expect_err(&format!("{clause} should be refused"));
+        }
     }
 }

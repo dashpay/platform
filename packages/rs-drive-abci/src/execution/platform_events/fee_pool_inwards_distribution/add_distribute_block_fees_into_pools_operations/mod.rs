@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -65,9 +66,19 @@ impl<C> Platform<C> {
                 batch,
                 platform_version,
             ),
+            // v1 (protocol version 14): lifetime storage fees go to the lifetime storage fee
+            // pools of the current epoch.
+            1 => self.add_distribute_block_fees_into_pools_operations_v1(
+                current_epoch,
+                block_fees,
+                cached_aggregated_storage_fees,
+                transaction,
+                batch,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "add_distribute_block_fees_into_pools_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

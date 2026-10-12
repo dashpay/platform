@@ -43,7 +43,9 @@ pub struct ContractModerationDocument {
 ///
 /// Nothing checks what a moderator writes: the text is free, so is the code, and the documents
 /// a reason cites are not looked up. A cited document may have been deleted since, by its
-/// author or by a moderator (whose deletion left a record), or may never have existed.
+/// author or by a moderator (whose deletion left a record), or may never have existed. The
+/// one exception is the reason document a seated elected team names: it must be one its
+/// proposal lists.
 #[derive(
     Debug, Clone, PartialEq, Eq, Default, Encode, Decode, DecodeUntrusted, Serialize, Deserialize,
 )]
@@ -62,16 +64,30 @@ pub struct ContractModerationReason {
     /// JSON when there are none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub documents: Vec<ContractModerationDocument>,
+    /// The `reason` document of the moderation charters system contract the action is taken
+    /// on (protocol version 14). A seated elected team's ban, suspension, warning or document
+    /// deletion must name one its proposal lists (`ModerationReasonNotListedError`); for every
+    /// other moderator it is stored as written and checked against nothing. Last, so that a
+    /// reason written before it existed decodes; left out of the JSON when there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_document_id: Option<Identifier>,
 }
 
 impl ContractModerationReason {
-    /// A reason without a code, about no document.
+    /// A reason without a code, about no document, naming no reason document.
     pub fn from_text(text: impl Into<String>) -> Self {
         Self {
             code: None,
             text: text.into(),
             documents: vec![],
+            reason_document_id: None,
         }
+    }
+
+    /// The same reason, naming the reason document `reason_document_id`.
+    pub fn with_reason_document(mut self, reason_document_id: Identifier) -> Self {
+        self.reason_document_id = Some(reason_document_id);
+        self
     }
 
     /// The same reason, about `documents`.
@@ -151,6 +167,7 @@ mod tests {
             code: Some(7),
             text: "spam".to_string(),
             documents: vec![],
+            reason_document_id: None,
         };
         let json = serde_json::to_value(&reason).expect("to json");
         assert_eq!(json, serde_json::json!({"code": 7, "text": "spam"}));
@@ -241,6 +258,24 @@ mod tests {
     }
 
     #[test]
+    fn should_round_trip_the_reason_document_through_json_and_leave_it_out_when_none() {
+        let reason = ContractModerationReason::from_text("spam")
+            .with_reason_document(Identifier::from([4; 32]));
+        let json = serde_json::to_value(&reason).expect("to json");
+        assert_eq!(
+            json["reasonDocumentId"],
+            Identifier::from([4; 32]).to_string(Encoding::Base58)
+        );
+        assert_eq!(
+            serde_json::from_value::<ContractModerationReason>(json).expect("from json"),
+            reason
+        );
+        let json =
+            serde_json::to_value(ContractModerationReason::from_text("spam")).expect("to json");
+        assert!(json.get("reasonDocumentId").is_none());
+    }
+
+    #[test]
     fn should_refuse_an_unknown_field() {
         serde_json::from_value::<ContractModerationReason>(
             serde_json::json!({"text": "spam", "note": "x"}),
@@ -259,6 +294,7 @@ mod tests {
             code: Some(u16::MAX),
             text: "é".repeat(max_length / 2),
             documents: vec![],
+            reason_document_id: None,
         };
         assert_eq!(reason.text.len(), max_length);
         assert!(reason.validate(platform_version).is_valid());

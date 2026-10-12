@@ -9,10 +9,12 @@
 //! re-derives the whole composition from the proven page.
 
 use super::count::into_v1_entry;
+use super::document_serialization_failure;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::contract_moderation_queries::removal_entry_to_response;
 use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
@@ -129,10 +131,11 @@ impl<C> Platform<C> {
                     .iter()
                     .flat_map(|sub| sub.where_clauses.iter()),
             )
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             return Ok(unsupported(
-                "a composite request supports no time-range (IN_TIME_RANGE) clauses",
+                "a composite request supports no window selection (IN_TIME_RANGE or \
+                 IN_INTEGER_RANGE) clauses",
             ));
         }
 
@@ -323,32 +326,44 @@ impl<C> Platform<C> {
                 };
             let serialize_all = |documents: &[dpp::document::Document],
                                  sub: Option<&DriveSubQuery>|
-             -> Result<Vec<Vec<u8>>, Error> {
+             -> Result<Vec<Vec<u8>>, dpp::ProtocolError> {
                 let (document_type, contract) = match sub {
                     None => (composite.document_type, composite.contract),
                     Some(sub) => (sub.document_type, sub.contract),
                 };
                 documents
                     .iter()
-                    .map(|document| {
-                        document
-                            .serialize(document_type, contract, platform_version)
-                            .map_err(Error::Protocol)
-                    })
+                    .map(|document| document.serialize(document_type, contract, platform_version))
                     .collect()
             };
-            let page_documents = serialize_all(&outcome.result.page_documents, None)?;
+            let page_documents = match serialize_all(&outcome.result.page_documents, None) {
+                Ok(documents) => documents,
+                Err(error) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        document_serialization_failure(error, composite.document_type)?,
+                    ))
+                }
+            };
             let mut sub_results = Vec::with_capacity(composite.sub_queries.len());
-            for ((sub, result), missing_ids) in composite
+            for (((sub, result), missing_ids), removed) in composite
                 .sub_queries
                 .iter()
                 .zip(outcome.result.sub_results)
                 .zip(outcome.result.sub_result_missing_ids)
+                .zip(outcome.result.sub_result_removals)
             {
                 let result = match result {
                     SubQueryResult::Documents(documents) => {
+                        let documents = match serialize_all(&documents, Some(sub)) {
+                            Ok(documents) => documents,
+                            Err(error) => {
+                                return Ok(QueryValidationResult::new_with_error(
+                                    document_serialization_failure(error, sub.document_type)?,
+                                ))
+                            }
+                        };
                         composite_documents::sub_query_result::Result::Documents(Documents {
-                            documents: serialize_all(&documents, Some(sub))?,
+                            documents,
                         })
                     }
                     SubQueryResult::Counts(entries) => {
@@ -360,6 +375,7 @@ impl<C> Platform<C> {
                 sub_results.push(composite_documents::SubQueryResult {
                     result: Some(result),
                     missing_ids: missing_ids.iter().map(|id| id.to_vec()).collect(),
+                    removed: removed.into_iter().map(removal_entry_to_response).collect(),
                 });
             }
             GetDocumentsResponseV1 {
@@ -380,7 +396,10 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{setup_platform, store_data_contract, store_document};
+    use crate::query::tests::{
+        removal_of, remove_post_by_moderator, setup_platform, store_data_contract, store_document,
+        with_moderated_posts,
+    };
     use dapi_grpc::platform::v0::get_documents_request::document_field_value;
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
         sub_query::Binding as ProtoBinding, ChainedJoin,
@@ -396,6 +415,7 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
+    use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
 
     const FEED_CONTRACT_PATH: &str =
@@ -418,9 +438,25 @@ mod tests {
         DataContract,
         DataContract,
     ) {
+        setup_feed_state_with(|feed, _| feed)
+    }
+
+    /// The same state, the feed contract passed through `modify_feed` first
+    fn setup_feed_state_with(
+        modify_feed: impl FnOnce(DataContract, &PlatformVersion) -> DataContract,
+    ) -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        std::sync::Arc<PlatformState>,
+        &'static PlatformVersion,
+        DataContract,
+        DataContract,
+    ) {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let feed = json_document_to_contract(FEED_CONTRACT_PATH, false, version)
-            .expect("expected to parse the feed contract");
+        let feed = modify_feed(
+            json_document_to_contract(FEED_CONTRACT_PATH, false, version)
+                .expect("expected to parse the feed contract"),
+            version,
+        );
         let dashpay = json_document_to_contract(DASHPAY_CONTRACT_PATH, false, version)
             .expect("expected to parse the dashpay contract");
         store_data_contract(&platform.platform, &feed, version);
@@ -523,6 +559,7 @@ mod tests {
                     value: Some(ProtoDocumentFieldValue {
                         variant: Some(document_field_value::Variant::Text("dash".to_string())),
                     }),
+                    integer_range: None,
                     time_range: None,
                 },
             ],
@@ -737,6 +774,82 @@ mod tests {
         assert_eq!(verified.sub_results[0].counts().len(), 2);
         assert_eq!(verified.sub_results[1].documents().len(), 1);
         assert_eq!(verified.sub_results[2].documents().len(), 1);
+    }
+
+    /// A by-id join off a `moderatedDocument` property reports a quoted post a moderator
+    /// removed by its removal record, on both wire modes: the unproven sub-result carries the
+    /// record in `removed`, as the removals query writes it, and the proven one verifies to
+    /// the same record. Nothing is reported missing.
+    #[test]
+    fn should_report_a_removed_quoted_post_of_a_moderated_document_join_with_its_record() {
+        let (platform, state, version, feed, dashpay) = setup_feed_state_with(with_moderated_posts);
+        let removal = removal_of(POST_D, OWNER_2);
+        remove_post_by_moderator(&platform.platform, &feed, POST_D, removal.clone(), version);
+        let entry = ContractDocumentRemovalEntry {
+            document_id: Identifier::from(POST_D),
+            removal,
+        };
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                composite_request(false, feed.id().to_vec(), dashpay.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Data(data)) = result.data.expect("response data").result else {
+            panic!("expected a data result");
+        };
+        let Some(result_data::Variant::Composite(composite)) = data.variant else {
+            panic!("expected the composite variant");
+        };
+        let quoted = &composite.sub_results[1];
+        let Some(composite_documents::sub_query_result::Result::Documents(documents)) =
+            &quoted.result
+        else {
+            panic!("expected quoted documents");
+        };
+        assert!(
+            documents.documents.is_empty(),
+            "the quoted post was removed"
+        );
+        assert!(quoted.missing_ids.is_empty());
+        assert_eq!(
+            quoted.removed,
+            vec![removal_entry_to_response(entry.clone())]
+        );
+        let record = &quoted.removed[0];
+        assert_eq!(record.document_id, POST_D.to_vec());
+        assert_eq!(record.document_owner_id, OWNER_2.to_vec());
+        assert_eq!(record.document_hash, POST_D.to_vec());
+        for other in [&composite.sub_results[0], &composite.sub_results[2]] {
+            assert!(other.removed.is_empty() && other.missing_ids.is_empty());
+        }
+
+        let result = platform
+            .platform
+            .query_documents_v1(
+                composite_request(true, feed.id().to_vec(), dashpay.id().to_vec()),
+                &state,
+                version,
+            )
+            .expect("query executes");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let Some(ResponseResult::Proof(proof)) = result.data.expect("response data").result else {
+            panic!("expected a proof result");
+        };
+        let query = client_query(&feed, &dashpay);
+        let (_root_hash, verified) = query
+            .verify_composite_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("the proof verifies with the removed post's record proven");
+        assert!(verified.sub_results[1].documents().is_empty());
+        assert_eq!(
+            verified.sub_result_removals,
+            vec![Vec::new(), vec![entry], Vec::new()]
+        );
+        assert!(verified.sub_result_missing_ids.iter().all(Vec::is_empty));
     }
 
     #[test]

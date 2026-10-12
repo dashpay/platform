@@ -10,6 +10,19 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Store one member of a per-entry platform state collection: `bytes` under
     /// the collection's key prefix followed by `key`, replacing any earlier value.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`: The collection: the masternodes or the validator sets.
+    /// * `key`: The member's key within the collection (a ProTxHash or a quorum hash).
+    /// * `bytes`: The member's serialized value.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once `bytes` is stored in auxiliary storage under the member's key.
+    /// * `Err(Error)` when the method version is unknown or the auxiliary write fails.
     pub fn store_platform_state_entry_bytes(
         &self,
         kind: PlatformStateEntryKind,

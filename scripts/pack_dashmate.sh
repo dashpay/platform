@@ -46,6 +46,34 @@ cd $ROOT_PATH/packages/dashmate/package || exit 1
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
+# CI signs the finished installer in a separate job with access to the Apple
+# keychain. Keep the normal local signing behavior unless explicitly disabled.
+if [ "$COMMAND" = macos ] && [ "${DASHMATE_UNSIGNED:-false}" = true ]; then
+  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); delete p.oclif.macos.sign; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");'
+fi
+# The release workflow passes the npm tarballs it publishes. Install the
+# workspace packages from them rather than from the registry, which can take
+# many minutes to serve a version it has just accepted. The paths must be
+# absolute: `oclif pack` installs again from a copy of this lockfile in its
+# own tmp directory.
+if [ -n "${DASHMATE_NPM_TARBALLS_DIR:-}" ]; then
+  DASHMATE_NPM_TARBALLS_DIR="$(realpath "$DASHMATE_NPM_TARBALLS_DIR")" node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const { execFileSync } = require("child_process");
+    const dir = process.env.DASHMATE_NPM_TARBALLS_DIR;
+    const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    const tarballs = fs.readdirSync(dir).filter((file) => file.endsWith(".tgz"));
+    if (tarballs.length === 0) throw new Error(`No npm tarballs in ${dir}`);
+    p.resolutions = {};
+    for (const file of tarballs) {
+      const tarball = path.join(dir, file);
+      const { name } = JSON.parse(execFileSync("tar", ["-xOzf", tarball, "package/package.json"], { encoding: "utf8" }));
+      if (name !== p.name) p.resolutions[name] = `file:${tarball}`;
+    }
+    fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+  '
+fi
 yarn install --no-immutable
 yarn oclif manifest
 yarn oclif pack $COMMAND $FLAGS

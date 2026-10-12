@@ -389,3 +389,62 @@ pub unsafe extern "C" fn platform_wallet_platform_node_id_from_ed25519_pubkey(
     unsafe { std::ptr::copy_nonoverlapping(node_id.as_ptr(), out_node_id_20, 20) };
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::platform_wallet_platform_node_id_from_ed25519_pubkey;
+
+    #[test]
+    fn should_return_canonical_platform_node_id_bytes() {
+        // RFC 8032 test 1 public key; expected SHA-256 prefix computed independently.
+        let public_key =
+            hex::decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+                .expect("valid public key hex");
+        let mut output = [0xa5; 22];
+        assert!(unsafe {
+            platform_wallet_platform_node_id_from_ed25519_pubkey(
+                public_key.as_ptr(),
+                public_key.len(),
+                output[1..].as_mut_ptr(),
+            )
+        });
+        assert_eq!(
+            hex::encode(&output[1..21]),
+            "21fe31dfa154a261626bf854046fd2271b7bed4b"
+        );
+        assert_eq!(output[0], 0xa5);
+        assert_eq!(output[21], 0xa5);
+    }
+
+    #[test]
+    fn should_reject_invalid_node_id_inputs_without_writing() {
+        let public_key = [0u8; 33];
+        for length in [0, 31, 33] {
+            let mut output = [0xa5; 20];
+            assert!(!unsafe {
+                platform_wallet_platform_node_id_from_ed25519_pubkey(
+                    public_key.as_ptr(),
+                    length,
+                    output.as_mut_ptr(),
+                )
+            });
+            assert_eq!(output, [0xa5; 20]);
+        }
+        let mut output = [0xa5; 20];
+        assert!(!unsafe {
+            platform_wallet_platform_node_id_from_ed25519_pubkey(
+                std::ptr::null(),
+                32,
+                output.as_mut_ptr(),
+            )
+        });
+        assert_eq!(output, [0xa5; 20]);
+        assert!(!unsafe {
+            platform_wallet_platform_node_id_from_ed25519_pubkey(
+                public_key.as_ptr(),
+                32,
+                std::ptr::null_mut(),
+            )
+        });
+    }
+}

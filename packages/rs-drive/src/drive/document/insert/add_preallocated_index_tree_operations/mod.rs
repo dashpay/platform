@@ -2,9 +2,11 @@
 //!
 //! A `preallocated` index on an indexOnly document type (see
 //! `dpp::data_contract::document_type::index::PREALLOCATED`) has a path that
-//! is a pure function of one same-contract refersTo-referenced document:
+//! is a pure function of one same-contract refersTo-referenced document (a
+//! `permanentDocument` one, or a `moderatedDocument` one whose removal record
+//! keeps every key of the path):
 //! every index property is either the referring property (its value is the
-//! referenced document's `$id`) or a `propertyAgreement` key
+//! referenced document's `$id`) or a `where` referring value
 //! (consensus-enforced equal to a referenced-document property at entry
 //! write time). So the moment the referenced document is inserted, every
 //! dynamic tree an entry referencing it will ever need — the per-value trees
@@ -36,14 +38,16 @@
 //! this code. The delete-side counterpart is versioned the same way
 //! (`remove_reference_for_index_level_for_contract_operations_v1`).
 
+use crate::drive::document::bound_value_fits_referring_property;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, terminal_member_tree_type,
-    terminal_value_tree_type,
+    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
+    terminal_member_tree_type, terminal_value_tree_type,
 };
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::document::preallocation_bindings_targeting;
 use crate::drive::document::unique_event_id;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -57,8 +61,10 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{Index, IndexLevel, PreallocatedKeySource};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{
+    DocumentReferenceKind, DocumentTypeRef, Index, PreallocatedKeySource, PreallocationBinding,
+};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -90,81 +96,94 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let contract = document_and_contract_info.contract;
-        let target_name = document_and_contract_info.document_type.name().as_str();
-
-        for (referring_name, referring_document_type) in contract.document_types() {
-            let referring_type = referring_document_type.as_ref();
-            // `preallocated` is only valid on indexOnly document types, so
-            // this filter also keeps the per-insert scan trivially cheap for
-            // contracts without the feature.
-            if !referring_type.index_only() {
-                continue;
-            }
-            // Flags exist to route refunds when an element is deleted, and
-            // a preallocated tree has exactly one deletion path: the
-            // contract's own — entry deletes retain it by design (the
-            // delete walker's no-prune rule), and entry-level deletability
-            // (`documents_can_be_deleted`) never reaches it. So unlike the
-            // entry walkers' rule, flags ride only when the contract is
-            // deletable; on a permanent contract they would be dead bytes
-            // charged to the referenced document's creator on every tree.
-            // (Fallback-created trees may carry entry-rule flags from
-            // before the no-prune retention — harmless: unrefundable flags
-            // are inert, and if-not-exists inserts never rewrite them.)
-            let storage_flags = if contract.config().can_be_deleted() {
-                document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_storage_flags_ref()
-            } else {
-                None
-            };
-            for index in referring_type.indexes().values() {
-                if !index.preallocated {
-                    continue;
-                }
-                // Target-filtered derivation: candidates naming other
-                // target types are rejected before any binding plan is
-                // allocated — this runs on every document insert.
-                for binding in index.preallocation_bindings_for_target(
-                    referring_type.flattened_properties(),
-                    contract.id(),
-                    target_name,
-                ) {
-                    self.add_preallocated_index_tree_operations_for_binding(
+        // Flags exist to route refunds when an element is deleted, and a
+        // preallocated tree has exactly one deletion path: the contract's own
+        // — entry deletes retain it by design (the delete walker's no-prune
+        // rule), and entry-level deletability (`documents_can_be_deleted`)
+        // never reaches it. So unlike the entry walkers' rule, flags ride only
+        // when the contract is deletable; on a permanent contract they would
+        // be dead bytes charged to the referenced document's creator on every
+        // tree. (Fallback-created trees may carry entry-rule flags from before
+        // the no-prune retention — harmless: unrefundable flags are inert, and
+        // if-not-exists inserts never rewrite them.)
+        let storage_flags = if contract.config().can_be_deleted() {
+            document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_storage_flags_ref()
+        } else {
+            None
+        };
+        // Each binding walks its own index, so two preallocated indexes sharing
+        // leading properties reach the same trees: each binding's inserts are
+        // checked against the operations the earlier ones queued (after the
+        // earlier documents' of the batch), so a tree is queued once, as the
+        // entry walkers, walking the shared index levels once, do. A tree
+        // already in state is not queued, so each binding reaching it reads its
+        // existence again (a billed read per binding, where the entry walkers
+        // read it once).
+        let mut queued = Vec::new();
+        for (referring_type, index, binding) in
+            preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
+        {
+            let mut binding_operations = Vec::new();
+            let result = match previous_batch_operations {
+                Some(previous) => {
+                    // The earlier documents' operations and this document's,
+                    // checked as one queue; inserts never leave it, so ours
+                    // are its tail again afterwards.
+                    let ours = queued.len();
+                    previous.append(&mut queued);
+                    let result = self.add_preallocated_index_tree_operations_for_binding(
                         document_and_contract_info,
-                        referring_name,
-                        referring_type.index_structure(),
+                        referring_type,
                         index,
-                        &binding.key_sources,
+                        &binding,
                         storage_flags,
-                        previous_batch_operations,
+                        &mut Some(&mut **previous),
                         estimated_costs_only_with_layer_info,
                         transaction,
-                        batch_operations,
+                        &mut binding_operations,
                         platform_version,
-                    )?;
+                    );
+                    queued = previous.split_off(previous.len() - ours);
+                    result
                 }
-            }
+                None => self.add_preallocated_index_tree_operations_for_binding(
+                    document_and_contract_info,
+                    referring_type,
+                    index,
+                    &binding,
+                    storage_flags,
+                    &mut Some(&mut queued),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut binding_operations,
+                    platform_version,
+                ),
+            };
+            result?;
+            queued.append(&mut binding_operations);
         }
+        batch_operations.append(&mut queued);
         Ok(())
     }
 
     /// Adds the operations preallocating ONE index's trees for entries
     /// referencing the inserted document: walks the referring type's
-    /// [`IndexLevel`] along the index's properties, resolving each path key
-    /// from the inserted document per the binding's key sources, and creates
-    /// each property-name tree, value tree and the terminal `0` member
-    /// bucket with exactly the tree types and estimation layers the
-    /// entry-insert walkers use.
+    /// [`IndexLevel`](dpp::data_contract::document_type::IndexLevel) along
+    /// the index's properties, resolving each path key from the inserted
+    /// document per the binding's key sources, and creates each
+    /// property-name tree, value tree and the terminal `0` member bucket
+    /// with exactly the tree types and estimation layers the entry-insert
+    /// walkers use.
     #[allow(clippy::too_many_arguments)]
     fn add_preallocated_index_tree_operations_for_binding(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        referring_type_name: &str,
-        referring_index_structure: &IndexLevel,
+        referring_type: DocumentTypeRef,
         index: &Index,
-        key_sources: &[PreallocatedKeySource],
+        binding: &PreallocationBinding,
         storage_flags: Option<&StorageFlags>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -180,8 +199,9 @@ impl Drive {
         let document_info = &document_and_contract_info.owned_document_info.document_info;
         let event_id = unique_event_id();
 
+        let referring_index_structure = referring_type.index_structure();
         let contract_document_type_path =
-            contract_document_type_path_vec(contract.id_ref().as_bytes(), referring_type_name);
+            contract_document_type_path_vec(contract.id_ref().as_bytes(), referring_type.name());
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // The referring doctype tree layer — mirror of the entry-insert
@@ -211,7 +231,8 @@ impl Drive {
         // size, so the dry-run always sweeps the full path.
         let mut resolved_levels = Vec::with_capacity(index.properties.len());
         let mut current_level = referring_index_structure;
-        for (index_property, key_source) in index.properties.iter().zip(key_sources.iter()) {
+        for (index_property, key_source) in index.properties.iter().zip(binding.key_sources.iter())
+        {
             let property_name = index_property.name.as_str();
             let sub_level = current_level
                 .sub_levels()
@@ -223,13 +244,43 @@ impl Drive {
             // property otherwise — validated at contract registration to
             // share one value kind with the referring side, so the encoded
             // bytes match what an entry insert would write.
-            let source_property = match *key_source {
-                PreallocatedKeySource::ReferencedDocumentId => "$id",
-                PreallocatedKeySource::ReferencedDocumentProperty(referenced) => referenced,
+            let (source_property, source_type) = match *key_source {
+                PreallocatedKeySource::ReferencedDocumentId => ("$id", target_document_type),
+                PreallocatedKeySource::ReferencedDocumentProperty(referenced) => {
+                    match document_info.get_borrowed_document() {
+                        // Without a document the key is sized as the
+                        // referring property, the bound every key an entry
+                        // writes at this level has
+                        None => (property_name, referring_type),
+                        Some(document) => {
+                            let referring_property_type = &referring_type
+                                .flattened_properties()
+                                .get(property_name)
+                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "a preallocated index's property must be a property of \
+                                     its document type",
+                                )))?
+                                .property_type;
+                            if !bound_value_fits_referring_property(
+                                document,
+                                referenced,
+                                referring_property_type,
+                                platform_version,
+                            )? {
+                                // No entry can ever agree with a value wider
+                                // than the referring property holds, and it
+                                // may not fit a tree key at all. Nothing to
+                                // preallocate.
+                                return Ok(());
+                            }
+                            (referenced, target_document_type)
+                        }
+                    }
+                }
             };
             let Some(value_key) = document_info.get_raw_for_document_type(
                 source_property,
-                target_document_type,
+                source_type,
                 document_and_contract_info.owned_document_info.owner_id,
                 Some((sub_level, event_id)),
                 platform_version,
@@ -247,13 +298,7 @@ impl Drive {
                 // the fallback.
                 return Ok(());
             }
-            resolved_levels.push((
-                property_name,
-                sub_level,
-                source_property,
-                *key_source,
-                value_key,
-            ));
+            resolved_levels.push((property_name, sub_level, value_key));
             current_level = sub_level;
         }
         let terminal_level = current_level;
@@ -263,30 +308,34 @@ impl Drive {
         // property-name tree needs the zero-contribution wrapper — exactly
         // the `parent_value_tree_type` the recursive walker threads through.
         let mut parent_value_tree_type = TreeType::NormalTree;
-        // Whether the level above is a prefix-ranking chain level
-        // (`rankedCountable: { at }` grouping or count-propagating): its
-        // value trees count exactly their single continuation, so the
-        // continuation is inserted unwrapped and contributes — the same
+        // Whether the level above is a prefix-ranking chain level (a
+        // grouping or propagating level of a count, sum or average chain):
+        // its value trees aggregate exactly their single continuation, so
+        // the continuation is inserted unwrapped and contributes — the same
         // inversion the entry-insert walkers apply.
         let mut parent_counts_continuations = false;
 
-        for (property_name, sub_level, source_property, key_source, value_key) in resolved_levels {
+        for (property_name, sub_level, value_key) in resolved_levels {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let ranked_axes = tree_types.ranked_axes.as_slice();
             let value_tree_type = tree_types.value_tree_type;
 
-            let mut path_info = match index_path_info.take() {
+            // Whether this level's property-name tree was created by this walk
+            // (a static first level never is): a counter under it cannot
+            // exist yet.
+            let (mut path_info, property_name_tree_created) = match index_path_info.take() {
                 None => {
                     // First property: its property-name tree is static —
                     // created at contract registration — so only enter it.
                     let mut index_path = contract_document_type_path.clone();
                     index_path.push(Vec::from(property_name.as_bytes()));
-                    if document_info.is_document_size() {
+                    let path_info = if document_info.is_document_size() {
                         PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
                     } else {
                         PathInfo::PathAsVec::<0>(index_path)
-                    }
+                    };
+                    (path_info, false)
                 }
                 Some(mut path_info) => {
                     // Deeper property-name trees are dynamic: create this
@@ -312,9 +361,11 @@ impl Drive {
                     // may itself be the plain sibling): its branch tree is
                     // zero-wrapped even under a chain level that counts its
                     // own continuation — matching the entry-insert walkers.
-                    if !matches!(parent_value_tree_type, TreeType::NormalTree)
-                        && (!parent_counts_continuations || sub_level.count_exempt_branch())
-                    {
+                    let created = if continuation_contributes_zero(
+                        parent_value_tree_type,
+                        parent_counts_continuations,
+                        sub_level,
+                    ) {
                         self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                             path_key_info,
                             parent_value_tree_type,
@@ -326,7 +377,7 @@ impl Drive {
                             previous_batch_operations,
                             batch_operations,
                             drive_version,
-                        )?;
+                        )?
                     } else {
                         self.batch_insert_empty_index_tree_if_not_exists(
                             path_key_info,
@@ -338,29 +389,55 @@ impl Drive {
                             previous_batch_operations,
                             batch_operations,
                             drive_version,
-                        )?;
-                    }
+                        )?
+                    };
                     path_info.push(KeyRef(property_name.as_bytes()))?;
-                    path_info
+                    (path_info, created)
                 }
             };
+
+            // A summableOffCountIndex index keeps its group's counter at the value
+            // position of its last property: preallocating it is creating the
+            // counter at zero, in place of the value tree and its `0` bucket.
+            // Nothing continues below it, so this is the last level.
+            if sub_level.summable_off_count_index_info().is_some() {
+                return self.add_summable_off_count_zero_counter_operations(
+                    path_info,
+                    value_key,
+                    property_name_tree_type,
+                    property_name_tree_created || binding.kind == DocumentReferenceKind::Permanent,
+                    storage_flags,
+                    previous_batch_operations,
+                    || {
+                        document_info.get_estimated_size_for_document_type(
+                            property_name,
+                            referring_type,
+                            platform_version,
+                        )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                );
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // The property-name layer: children are value trees keyed by
-                // the source property's values (32 bytes for `$id`).
-                let value_key_estimated_size = match key_source {
-                    PreallocatedKeySource::ReferencedDocumentId => DEFAULT_HASH_SIZE_U8 as u16,
-                    PreallocatedKeySource::ReferencedDocumentProperty(_) => document_info
-                        .get_estimated_size_for_document_type(
-                            source_property,
-                            target_document_type,
-                            platform_version,
-                        )?,
-                };
+                // the referring property's values, sized exactly as an entry
+                // insert sizes this layer (32 bytes for the reference
+                // property). A referenced document only keys it with a value
+                // that fits that property, so a wider referenced property
+                // does not widen the estimate.
+                let value_key_estimated_size = document_info.get_estimated_size_for_document_type(
+                    property_name,
+                    referring_type,
+                    platform_version,
+                )?;
                 if value_key_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
-                        "referenced document field is too big for being an index",
+                        "document field is too big for being an index",
                     )));
                 }
                 estimated_costs_only_with_layer_info.insert(
@@ -424,8 +501,7 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
-            parent_counts_continuations =
-                sub_level.ranked_count_grouping() || sub_level.count_propagating();
+            parent_counts_continuations = sub_level.is_ranked_chain_level();
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(
@@ -471,9 +547,6 @@ impl Drive {
             // Same per-entry padding (and sum-item worst case) the
             // entry-insert terminal claims for this layer — see
             // `add_index_only_terminal_item_operations`.
-            let referring_type = contract
-                .document_type_for_name(referring_type_name)
-                .map_err(|e| Error::Protocol(Box::new(dpp::ProtocolError::DataContractError(e))))?;
             let estimated_item_value_size =
                 index_only_item_estimated_value_size(referring_type, platform_version)?;
             let member_key_max_size = match level_info.terminal.as_deref() {

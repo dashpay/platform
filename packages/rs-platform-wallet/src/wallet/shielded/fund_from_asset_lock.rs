@@ -721,7 +721,7 @@ where
     AS: ::key_wallet::signer::Signer,
     P: OrchardProver,
 {
-    use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+    use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
 
     let st = build_shield_from_asset_lock_transition_with_signer(
@@ -739,12 +739,8 @@ where
     )
     .await?;
 
-    // `actions` is a public field on the V0 struct (no accessor trait for
-    // Shield / ShieldFromAssetLock).
     let actions = match &st {
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => {
-            v0.actions.clone()
-        }
+        StateTransition::ShieldFromAssetLock(transition) => transition.actions().to_vec(),
         _ => Vec::new(),
     };
 

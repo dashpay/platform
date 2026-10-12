@@ -61,6 +61,13 @@ pub struct DriveAbciValidationConstants {
     /// (Merk node framing, dense path records, the amortized chunk-blob
     /// framing).
     pub shielded_storage_bytes_per_action: u64,
+    /// Effective bytes per action added by `compute_shielded_identity_balance_write_fee_v0`
+    /// to cover the estimated processing of identity-paid note and nullifier writes.
+    /// This is an admission allowance, not a physical payload size or a charged fee.
+    pub shielded_identity_action_write_storage_bytes: u64,
+    /// Flat effective-byte allowance read by `compute_shielded_identity_balance_write_fee_v0`
+    /// for estimated identity nonce/balance writes and the complete validation context.
+    pub shielded_identity_balance_write_storage_bytes: u64,
     /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
     /// donate to the fee pools when no `surplus_output` address is set. Above this
     /// cap the transition is rejected so a client cannot accidentally forfeit a
@@ -156,6 +163,12 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_shielded_pool_state_transition:
         DriveAbciStateTransitionValidationVersion,
+    pub token_shielded_transfer_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_unshield_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_purchase_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -237,7 +250,6 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
     pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
-    pub is_allowed: FeatureVersion,
     /// Version of the signer's minimum balance pre-check of a batch, which runs before its data
     /// contracts are loaded. v0 requires the principal plus a fee minimum per transition from
     /// the signer; v1 requires only the principal from a batch that asks the contract owner to
@@ -288,6 +300,20 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_direct_purchase_transition_state_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_structure_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_state_validation: FeatureVersion,
+    pub token_shield_transition_structure_validation: FeatureVersion,
+    pub token_shield_transition_state_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_state_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_structure_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_state_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_state_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_state_validation: FeatureVersion,
+    pub token_unshield_transition_structure_validation: FeatureVersion,
+    pub token_unshield_transition_state_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_structure_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

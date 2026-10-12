@@ -109,6 +109,24 @@ pub(super) fn assert_grovedb_is_consistent(drive: &Drive) {
     );
 }
 
+/// The live grovedb root hash, which a verified proof must reconstruct.
+pub(super) fn live_root_hash(drive: &Drive) -> [u8; 32] {
+    drive
+        .grove
+        .root_hash(None, &platform_version().drive.grove_version)
+        .unwrap()
+        .expect("root hash must be readable")
+}
+
+/// A verified proof's root hash must be the live grovedb root.
+pub(super) fn assert_live_root_hash(drive: &Drive, root_hash: [u8; 32]) {
+    assert_eq!(
+        root_hash,
+        live_root_hash(drive),
+        "the proof must reconstruct the live grovedb root hash"
+    );
+}
+
 /// A like on `post` under `hashtag` by `owner`.
 pub(super) fn build_like(
     contract: &DataContract,
@@ -217,6 +235,7 @@ pub(super) fn count_top_k(
 
 const POST_A: [u8; 32] = [0xA1; 32];
 const POST_B: [u8; 32] = [0xB2; 32];
+const POST_C: [u8; 32] = [0xC3; 32];
 const OWNER_1: [u8; 32] = [0x11; 32];
 const OWNER_2: [u8; 32] = [0x22; 32];
 const OWNER_3: [u8; 32] = [0x33; 32];
@@ -1011,15 +1030,120 @@ fn should_serve_terminal_range_keyset_pagination() {
     assert_grovedb_is_consistent(&drive);
 }
 
-/// Mixed shape: a range on a PREFIX property (the pivot) with a terminal
-/// equality — `hashtag == h AND postId > p AND $ownerId == me`. The path
-/// stops at the pivot, the range selects its values, and the terminal
-/// equality runs beneath each of them. Proved and unproved paths agree.
-#[test]
-fn should_serve_prefix_pivot_with_terminal_equality() {
-    use crate::query::{OrderClause, WhereClause, WhereOperator};
+/// The one refusal a query shape gets on every side: the unproved read,
+/// proof generation and the verifier each refuse it as an unsupported
+/// shape whose message carries every `expected` fragment.
+fn assert_refused_on_read_prove_and_verify(
+    drive: &Drive,
+    query: &crate::query::DriveDocumentQuery<'_>,
+    expected: &[&str],
+) {
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+
+    let assert_refusal = |error: Error, side: &str| match &error {
+        Error::Query(QuerySyntaxError::Unsupported(message)) => {
+            for fragment in expected {
+                assert!(
+                    message.contains(fragment),
+                    "{side}: the refusal should say {fragment:?}: {message}"
+                );
+            }
+        }
+        other => panic!("{side}: expected an unsupported query shape, got: {other}"),
+    };
+    assert_refusal(
+        drive
+            .query_documents(query.clone(), None, false, None, None)
+            .expect_err("the unproved read must refuse the shape"),
+        "unproved read",
+    );
+    assert_refusal(
+        query
+            .clone()
+            .execute_with_proof(drive, None, None, platform_version())
+            .expect_err("proof generation must refuse the shape"),
+        "proof generation",
+    );
+    assert_refusal(
+        query
+            .verify_proof(&[], platform_version())
+            .expect_err("the verifier must refuse the shape"),
+        "verifier",
+    );
+}
+
+/// The `postId` values of `documents`, in result order.
+fn post_ids(documents: &[Document]) -> Vec<[u8; 32]> {
     use dpp::document::DocumentV0Getters;
-    use dpp::platform_value::Value;
+
+    documents
+        .iter()
+        .map(|document| {
+            document
+                .properties()
+                .get("postId")
+                .expect("postId recovered")
+                .to_identifier_bytes()
+                .expect("postId is an identifier")
+                .try_into()
+                .expect("32 bytes")
+        })
+        .collect()
+}
+
+/// `hashtag == dash AND postId <operator> <value> AND $ownerId == owner`,
+/// ordered by `postId`: the mixed shape with its clause on a prefix
+/// property (the pivot) of `byHashtagPost` and an equality on its
+/// terminal.
+fn hashtag_post_pivot_query(
+    contract: &DataContract,
+    operator: crate::query::WhereOperator,
+    value: Value,
+    owner: [u8; 32],
+    limit: u16,
+) -> crate::query::DriveDocumentQuery<'_> {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+
+    let mut query = likes_query(
+        contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator,
+                value,
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner),
+            },
+        ],
+        Some(limit),
+    );
+    query.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: true,
+        },
+    );
+    query
+}
+
+/// A range on a PREFIX property (the pivot) with a terminal equality,
+/// `hashtag == h AND postId > p AND $ownerId == me`, is refused on the
+/// unproved read, in proof generation and by the verifier: its pages
+/// could hold fewer rows than exist. The refusal names the index shape
+/// that serves the query instead.
+#[test]
+fn should_refuse_range_pivot_with_terminal_equality() {
+    use crate::query::WhereOperator;
 
     let (drive, contract) = setup_likes();
     for (post, owner, seed) in [
@@ -1031,72 +1155,31 @@ fn should_serve_prefix_pivot_with_terminal_equality() {
         insert_like(&drive, &contract, &like, true).expect("insert like");
     }
 
-    let mut query = likes_query(
+    let query = hashtag_post_pivot_query(
         &contract,
-        vec![
-            WhereClause {
-                field: "hashtag".to_string(),
-                operator: WhereOperator::Equal,
-                value: Value::Text("dash".to_string()),
-            },
-            WhereClause {
-                field: "postId".to_string(),
-                operator: WhereOperator::GreaterThan,
-                value: Value::Identifier(POST_A),
-            },
-            WhereClause {
-                field: "$ownerId".to_string(),
-                operator: WhereOperator::Equal,
-                value: Value::Identifier(OWNER_1),
-            },
+        WhereOperator::GreaterThan,
+        Value::Identifier(POST_A),
+        OWNER_1,
+        10,
+    );
+    assert_refused_on_read_prove_and_verify(
+        &drive,
+        &query,
+        &[
+            "range clause on `postId`",
+            "index \"byHashtagPost\"",
+            "(hashtag, $ownerId) before `postId`",
         ],
-        Some(10),
     );
-    query.order_by.insert(
-        "postId".to_string(),
-        OrderClause {
-            field: "postId".to_string(),
-            ascending: true,
-        },
-    );
-
-    let outcome = drive
-        .query_documents(query.clone(), None, false, None, None)
-        .expect("pivot query executes");
-    let documents = outcome.documents();
-    assert_eq!(documents.len(), 1, "only OWNER_1's like beyond POST_A");
-    assert_eq!(documents[0].owner_id().to_buffer(), OWNER_1);
-    assert_eq!(
-        documents[0]
-            .properties()
-            .get("postId")
-            .expect("postId recovered")
-            .to_identifier_bytes()
-            .expect("identifier"),
-        POST_B.to_vec()
-    );
-
-    let (proof, _) = query
-        .clone()
-        .execute_with_proof(&drive, None, None, platform_version())
-        .expect("pivot proof generation");
-    let (_root, verified) = query
-        .verify_proof(proof.as_slice(), platform_version())
-        .expect("pivot proof verification");
-    assert_eq!(verified.len(), 1);
-    assert_eq!(verified[0].id(), documents[0].id());
-
-    assert_grovedb_is_consistent(&drive);
 }
 
-/// A pivot on the FIRST property with the one below it unconstrained:
-/// `hashtag >= h AND $ownerId == me` walks every post under each matched
-/// hashtag through an insert-all level before the terminal equality.
+/// A range pivot on the FIRST property with the one below it
+/// unconstrained, `hashtag >= h AND $ownerId == me`, would walk every post
+/// under each matched hashtag before the terminal equality, and is
+/// refused the same way.
 #[test]
-fn should_serve_first_property_pivot_with_unconstrained_below() {
+fn should_refuse_range_pivot_on_first_property_with_unconstrained_below() {
     use crate::query::{OrderClause, WhereClause, WhereOperator};
-    use dpp::document::DocumentV0Getters;
-    use dpp::platform_value::Value;
 
     let (drive, contract) = setup_likes();
     for (post, owner, seed) in [
@@ -1131,39 +1214,349 @@ fn should_serve_first_property_pivot_with_unconstrained_below() {
             ascending: true,
         },
     );
+    assert_refused_on_read_prove_and_verify(
+        &drive,
+        &query,
+        &["range clause on `hashtag`", "($ownerId) before `hashtag`"],
+    );
+}
 
+/// The sparse layout a range pivot cannot page through: OWNER_1 liked
+/// POST_C but not POST_B, so under `postId > POST_A` the POST_B branch
+/// holds no row for OWNER_1. That branch takes a slot of the limit, so a
+/// LIMIT 1 page would come back empty although a row exists. Every limit
+/// is refused instead of serving such a page, and the index the refusal
+/// points to (`byLiker`, with `$ownerId` in its prefix) returns the row on
+/// the first page.
+#[test]
+fn should_refuse_range_pivot_rather_than_return_a_short_page() {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, seed) in [(POST_B, OWNER_2, 1u64), (POST_C, OWNER_1, 2)] {
+        let like = build_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    for limit in 1..=3u16 {
+        let query = hashtag_post_pivot_query(
+            &contract,
+            WhereOperator::GreaterThan,
+            Value::Identifier(POST_A),
+            OWNER_1,
+            limit,
+        );
+        assert_refused_on_read_prove_and_verify(
+            &drive,
+            &query,
+            &[
+                "range clause on `postId`",
+                "could hold fewer rows than exist",
+            ],
+        );
+    }
+
+    let mut keyset = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(POST_A),
+            },
+        ],
+        Some(1),
+    );
+    keyset.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: true,
+        },
+    );
+    assert_eq!(
+        keyset
+            .index_only_query_index(platform_version())
+            .expect("the keyset query resolves an index")
+            .name,
+        "byLiker"
+    );
+    let outcome = drive
+        .query_documents(keyset.clone(), None, false, None, None)
+        .expect("the keyset page executes");
+    assert_eq!(
+        post_ids(outcome.documents()),
+        vec![POST_C],
+        "the first page holds the row"
+    );
+    let (proof, _) = keyset
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("keyset proof generation");
+    let (_root, verified) = keyset
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("keyset proof verification");
+    assert_eq!(post_ids(&verified), vec![POST_C]);
+}
+
+/// The pivot that stays served: an `in` clause on the LAST prefix
+/// property with a terminal equality. Each value opens at most one branch,
+/// so a limit of at least the number of values returns every row, even
+/// with a value (POST_A) whose branch holds no row for the owner. Proved
+/// and unproved paths agree row for row.
+#[test]
+fn should_serve_in_pivot_on_last_prefix_property_as_complete_pages() {
+    use crate::query::WhereOperator;
+    use dpp::document::DocumentV0Getters;
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, seed) in [
+        (POST_A, OWNER_2, 1u64),
+        (POST_B, OWNER_1, 2),
+        (POST_C, OWNER_1, 3),
+        (POST_C, OWNER_3, 4),
+    ] {
+        let like = build_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let query = hashtag_post_pivot_query(
+        &contract,
+        WhereOperator::In,
+        Value::Array(vec![
+            Value::Identifier(POST_A),
+            Value::Identifier(POST_B),
+            Value::Identifier(POST_C),
+        ]),
+        OWNER_1,
+        3,
+    );
     let outcome = drive
         .query_documents(query.clone(), None, false, None, None)
-        .expect("first-property pivot query executes");
+        .expect("the in pivot executes");
     let documents = outcome.documents();
-    assert_eq!(documents.len(), 2, "both of OWNER_1's likes");
-    let mut posts: Vec<Vec<u8>> = documents
+    assert_eq!(
+        post_ids(documents),
+        vec![POST_B, POST_C],
+        "every like of OWNER_1 among the values, in postId order"
+    );
+    assert!(documents
         .iter()
-        .map(|document| {
-            assert_eq!(document.owner_id().to_buffer(), OWNER_1);
-            document
-                .properties()
-                .get("postId")
-                .expect("postId recovered")
-                .to_identifier_bytes()
-                .expect("identifier")
-        })
-        .collect();
-    posts.sort();
-    assert_eq!(posts, vec![POST_A.to_vec(), POST_B.to_vec()]);
+        .all(|document| document.owner_id().to_buffer() == OWNER_1));
 
     let (proof, _) = query
         .clone()
         .execute_with_proof(&drive, None, None, platform_version())
-        .expect("first-property pivot proof generation");
+        .expect("in pivot proof generation");
     let (_root, verified) = query
         .verify_proof(proof.as_slice(), platform_version())
-        .expect("first-property pivot proof verification");
-    let mut verified_ids: Vec<_> = verified.iter().map(|d| d.id()).collect();
-    let mut queried_ids: Vec<_> = documents.iter().map(|d| d.id()).collect();
-    verified_ids.sort();
-    queried_ids.sort();
-    assert_eq!(verified_ids, queried_ids);
+        .expect("in pivot proof verification");
+    assert_eq!(
+        verified.iter().map(|d| d.id()).collect::<Vec<_>>(),
+        documents.iter().map(|d| d.id()).collect::<Vec<_>>(),
+        "proved and unproved pages must agree row for row"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// An `in` pivot whose limit is below its number of values could stop
+/// before the last value, so it is refused with the limit it needs.
+#[test]
+fn should_refuse_in_pivot_with_limit_below_its_value_count() {
+    use crate::query::WhereOperator;
+
+    let (drive, contract) = setup_likes();
+    let query = hashtag_post_pivot_query(
+        &contract,
+        WhereOperator::In,
+        Value::Array(vec![
+            Value::Identifier(POST_A),
+            Value::Identifier(POST_B),
+            Value::Identifier(POST_C),
+        ]),
+        OWNER_1,
+        2,
+    );
+    assert_refused_on_read_prove_and_verify(
+        &drive,
+        &query,
+        &["needs a limit of at least its 3 values, got 2"],
+    );
+}
+
+/// An `in` pivot ABOVE the last prefix property walks the properties
+/// below it value by value, so it is refused like a range pivot.
+#[test]
+fn should_refuse_in_pivot_above_the_last_prefix_property() {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+
+    let (drive, contract) = setup_likes();
+    let mut query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text("news".to_string()),
+                ]),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(10),
+    );
+    query.order_by.insert(
+        "hashtag".to_string(),
+        OrderClause {
+            field: "hashtag".to_string(),
+            ascending: true,
+        },
+    );
+    assert_refused_on_read_prove_and_verify(
+        &drive,
+        &query,
+        &[
+            "`in` clause on `hashtag`",
+            "must sit on the index's last prefix property",
+        ],
+    );
+}
+
+/// The matcher breaks a tie between equally good indexes by name, so an
+/// index on which the query forms an incomplete pivot can sort ahead of
+/// one that serves the query in full. `aByPost` ([postId] → $ownerId)
+/// sorts before `byLiker` ([$ownerId] → postId): `$ownerId == me AND
+/// postId > p` is a range pivot on the first and a terminal range under a
+/// fixed prefix on the second, so the second serves it.
+#[test]
+fn should_serve_through_an_index_without_a_pivot_when_one_matches() {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::platform_value::platform_value;
+
+    let pv = platform_version();
+    let contract = DataContract::from_value(
+        platform_value!({
+            "$formatVersion": "1",
+            "id": Identifier::from([0x5C; 32]),
+            "ownerId": Identifier::from([0x5D; 32]),
+            "version": 1u32,
+            "documentSchemas": {
+                "like": {
+                    "type": "object",
+                    "indexOnly": true,
+                    "documentsMutable": false,
+                    "canBeDeleted": true,
+                    "indices": [
+                        {
+                            "name": "aByPost",
+                            "properties": [{ "postId": "asc" }],
+                            "terminal": "$ownerId"
+                        },
+                        {
+                            "name": "byLiker",
+                            "properties": [{ "$ownerId": "asc" }],
+                            "terminal": "postId"
+                        }
+                    ],
+                    "properties": {
+                        "postId": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32u32,
+                            "maxItems": 32u32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "position": 0u32
+                        }
+                    },
+                    "required": ["postId"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        true,
+        pv,
+    )
+    .expect("the contract parses");
+    let drive = setup_drive_with_initial_state_structure(None);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("the contract applies");
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    for (post, owner, seed) in [(POST_B, OWNER_2, 1u64), (POST_C, OWNER_1, 2)] {
+        let mut like = document_type
+            .random_document(Some(seed), pv)
+            .expect("random document");
+        like.set_properties(std::collections::BTreeMap::from([(
+            "postId".to_string(),
+            Value::Identifier(post),
+        )]));
+        like.set_owner_id(Identifier::from(owner));
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let mut query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(POST_A),
+            },
+        ],
+        Some(1),
+    );
+    query.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: true,
+        },
+    );
+    assert_eq!(
+        query
+            .index_only_query_index(pv)
+            .expect("the query resolves an index")
+            .name,
+        "byLiker"
+    );
+    let outcome = drive
+        .query_documents(query.clone(), None, false, None, None)
+        .expect("the keyset page executes");
+    assert_eq!(post_ids(outcome.documents()), vec![POST_C]);
+    let (proof, _) = query
+        .clone()
+        .execute_with_proof(&drive, None, None, pv)
+        .expect("keyset proof generation");
+    let (_root, verified) = query
+        .verify_proof(proof.as_slice(), pv)
+        .expect("keyset proof verification");
+    assert_eq!(post_ids(&verified), vec![POST_C]);
 
     assert_grovedb_is_consistent(&drive);
 }
@@ -1273,10 +1666,10 @@ fn should_refuse_equality_below_pivot() {
     );
 }
 
-/// A pivot range without an orderBy on it is refused, mirroring the
+/// A pivot `in` clause without an orderBy on it is refused, mirroring the
 /// stored-document rule.
 #[test]
-fn should_require_order_by_for_pivot_range() {
+fn should_require_order_by_for_in_pivot() {
     use crate::error::query::QuerySyntaxError;
     use crate::query::{WhereClause, WhereOperator};
     use assert_matches::assert_matches;
@@ -1293,8 +1686,8 @@ fn should_require_order_by_for_pivot_range() {
             },
             WhereClause {
                 field: "postId".to_string(),
-                operator: WhereOperator::GreaterThan,
-                value: Value::Identifier(POST_A),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::Identifier(POST_A), Value::Identifier(POST_B)]),
             },
             WhereClause {
                 field: "$ownerId".to_string(),
@@ -1306,7 +1699,7 @@ fn should_require_order_by_for_pivot_range() {
     );
     let error = drive
         .query_documents(query, None, false, None, None)
-        .expect_err("a pivot range without orderBy must be refused");
+        .expect_err("a pivot `in` clause without orderBy must be refused");
     assert_matches!(
         &error,
         crate::error::Error::Query(QuerySyntaxError::MissingOrderByForRange(_)),
@@ -2129,6 +2522,78 @@ fn tip_estimated_fees_upper_bound_actual_fees() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// The range pivot on an integer prefix property: `$ownerId == me AND
+/// amount > n AND postId == p` through `byTipperAmount` ([$ownerId,
+/// amount] → postId) puts the range on `amount`, above the terminal
+/// equality, and is refused like the `postId` pivot of `like`, pointing to
+/// an index with `postId` ahead of `amount`.
+#[test]
+fn should_refuse_amount_range_pivot_on_tips_by_tipper_amount() {
+    use crate::query::{InternalClauses, OrderClause, WhereClause, WhereOperator};
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, amount, seed) in [
+        (POST_A, OWNER_1, 5u64, 1u64),
+        (POST_B, OWNER_1, 50, 2),
+        (POST_A, OWNER_2, 500, 3),
+    ] {
+        let tip = build_tip(&contract, post, owner, amount, seed);
+        insert_tip(&drive, &contract, &tip, true).expect("insert tip");
+    }
+
+    let mut query = crate::query::DriveDocumentQuery {
+        contract: &contract,
+        document_type: contract
+            .document_type_for_name(TIP_DOCTYPE)
+            .expect("tip doctype exists"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(OWNER_1),
+                },
+                WhereClause {
+                    field: "amount".to_string(),
+                    operator: WhereOperator::GreaterThan,
+                    value: Value::U64(10),
+                },
+                WhereClause {
+                    field: "postId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(POST_A),
+                },
+            ],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    query.order_by.insert(
+        "amount".to_string(),
+        OrderClause {
+            field: "amount".to_string(),
+            ascending: true,
+        },
+    );
+    assert_refused_on_read_prove_and_verify(
+        &drive,
+        &query,
+        &[
+            "range clause on `amount`",
+            "index \"byTipperAmount\"",
+            "($ownerId, postId) before `amount`",
+        ],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // timeRange buckets: bucketed entries (the `beat` doctype)
 // ---------------------------------------------------------------------------
@@ -2336,7 +2801,7 @@ fn beat_bucket_counts_serve_trending() {
         ttl_seconds: None,
     };
     let resolved = vec![ResolvedTimeRange {
-        transform: transform.clone(),
+        transform: transform.clone().into(),
     }];
     let bucket = BEAT_BUCKET_STARTS_MS[3];
     let count_in_bucket = |hashtag: &str, prove: bool| {
@@ -2477,7 +2942,8 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
                 step_seconds: 900,
                 phase_seconds: 0,
                 ttl_seconds: None,
-            },
+            }
+            .into(),
         }],
         sub_queries: vec![],
     };
@@ -2490,6 +2956,60 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
             .contains("IN_TIME_RANGE document queries are not supported on an indexOnly type"),
         "expected the bucketed-synthesis refusal, got: {error}"
     );
+}
+
+/// A beat requires `$createdAt`, which `byHashtag` does not hold, so no beat it
+/// synthesizes can be serialized: a read without a proof through it is
+/// refused before reading, whether or not a beat matches, rather than
+/// answering an empty page and refusing once one exists.
+#[test]
+fn beat_read_without_a_proof_through_an_index_lacking_created_at_is_refused() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+
+    let (drive, contract) = setup_likes();
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let by_hashtag = || DriveDocumentQuery {
+        contract: &contract,
+        document_type,
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(10),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let assert_refused = |drive: &Drive| {
+        let error = by_hashtag()
+            .execute_raw_results_no_proof(drive, None, None, platform_version())
+            .expect_err("a beat without its $createdAt cannot be serialized");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::Unsupported(message))
+                    if message.contains("does not cover every required property")
+            ),
+            "expected the required-property refusal, got: {error}"
+        );
+    };
+    assert_refused(&drive);
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+    assert_refused(&drive);
 }
 
 /// Delete-by-values removes every bucket entry (the carried `$createdAt`

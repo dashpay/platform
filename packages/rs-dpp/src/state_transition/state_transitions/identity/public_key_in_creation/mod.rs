@@ -133,7 +133,9 @@ mod test {
     use super::*;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
-    use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+    use crate::state_transition::public_key_in_creation::accessors::{
+        IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+    };
     use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
     use crate::version::LATEST_PLATFORM_VERSION;
     use platform_value::BinaryData;
@@ -206,6 +208,35 @@ mod test {
         let pk: IdentityPublicKey = key.clone().into();
         let back: IdentityPublicKeyInCreation = (&pk).into();
         assert_eq!(back.id(), key.id());
+    }
+
+    /// The limits are part of what the identity signs, so a V1 key (one carrying a budget or an
+    /// expiry) must become a V1 key in creation with the limits intact, and a V0 key must stay V0
+    /// so identities that do not use limits keep their historical bytes.
+    #[test]
+    fn test_from_identity_public_key_keeps_limits() {
+        let plain: IdentityPublicKey = make_high_key(5).into();
+        let plain_in_creation = IdentityPublicKeyInCreation::from(&plain);
+        assert!(matches!(
+            plain_in_creation,
+            IdentityPublicKeyInCreation::V0(_)
+        ));
+        assert!(!plain_in_creation.has_limits());
+
+        for (total_budget, expires_at) in [
+            (Some(10_000_000_000), None),
+            (None, Some(1_800_000_000_000)),
+            (Some(10_000_000_000), Some(1_800_000_000_000)),
+        ] {
+            let limited = plain.clone().with_limits(total_budget, expires_at);
+            assert!(matches!(limited, IdentityPublicKey::V1(_)));
+
+            let in_creation = IdentityPublicKeyInCreation::from(&limited);
+            assert!(matches!(in_creation, IdentityPublicKeyInCreation::V1(_)));
+            assert_eq!(in_creation.total_budget(), total_budget);
+            assert_eq!(in_creation.expires_at(), expires_at);
+            assert_eq!(IdentityPublicKey::from(in_creation), limited);
+        }
     }
 
     #[test]

@@ -178,6 +178,11 @@ public struct DataContractParser {
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
+            } else if (typeDict["canBeDeleted"] as? String) == "onlyWhenConsumed" {
+                // Protocol version 14: only a create that consumes the document
+                // (a `refersTo` with `consume`) deletes it. Its owner cannot, so
+                // for the app this is `false`; offering a delete would be refused.
+                docType.documentsCanBeDeleted = false
             }
 
             // The actual field name is "transferable" and it can be an integer (0 = false, non-zero = true)
@@ -313,15 +318,15 @@ public struct DataContractParser {
             if let rangeAverageable = indexData["rangeAverageable"] as? Bool {
                 index.rangeAverageable = rangeAverageable
             }
-            if let rankedCountable = indexData["rankedCountable"] as? Bool {
-                index.rankedCountable = rankedCountable
-            }
-            if let rankedSummable = indexData["rankedSummable"] as? Bool {
-                index.rankedSummable = rankedSummable
-            }
-            if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
-                index.rankedAverageable = rankedAverageable
-            }
+            // A ranking is authored as `true` or as `{ "at": <property or
+            // properties> }`; the column records that it is declared. The
+            // `at` levels and `summableOffCountIndex` have no column: they
+            // are read back off the document type's persisted schema through
+            // `PersistentIndex.rankedCountableAt` (and its siblings) and
+            // `PersistentIndex.summableOffCountIndex`.
+            index.rankedCountable = declaresRanking(indexData["rankedCountable"])
+            index.rankedSummable = declaresRanking(indexData["rankedSummable"])
+            index.rankedAverageable = declaresRanking(indexData["rankedAverageable"])
             // A composite terminal is an ordered list of component names;
             // the persisted string keeps them joined, in order, so display
             // layers show the whole member key.
@@ -360,6 +365,15 @@ public struct DataContractParser {
         }
     }
 
+    /// Whether a ranking keyword's value declares the ranking: `true`, or the
+    /// `{ "at": ... }` object form (protocol version 14).
+    private static func declaresRanking(_ value: Any?) -> Bool {
+        if let flag = value as? Bool {
+            return flag
+        }
+        return value is [String: Any]
+    }
+
     // MARK: - Parse Properties
     private static func parseProperties(properties: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws {
         for (propertyName, propertyData) in properties {
@@ -370,6 +384,14 @@ public struct DataContractParser {
 
             // Extract type
             let type = propertyDict["type"] as? String ?? "unknown"
+
+            // A protocol-version-14 typed array (an array declaring `items`
+            // instead of `byteArray`) is persisted like any array: `type`
+            // "array", `byteArray` false, `minItems` / `maxItems` counting
+            // elements. Its element schema needs no column of its own:
+            // `schemaJSON` is the whole type dictionary, and
+            // `PersistentDocumentType.typedArrays` reads it back. Keep that
+            // true when touching the schema stored there.
 
             // Create persistent property
             let property = PersistentProperty(

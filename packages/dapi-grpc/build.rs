@@ -86,10 +86,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 66] = [
+    const VERSIONED_REQUESTS: [&str; 69] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
+        "GetContractTeamActionsRequest",
+        "GetContractTeamActionSignersRequest",
+        "GetContractModerationActionCountsRequest",
         "GetContractFeePotsRequest",
         "GetContractGroupInfoRequest",
         "GetContractGroupMembersRequest",
@@ -167,10 +170,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 63] = [
+    const VERSIONED_RESPONSES: [&str; 66] = [
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
+        "GetContractTeamActionsResponse",
+        "GetContractTeamActionSignersResponse",
+        "GetContractModerationActionCountsResponse",
         "GetContractFeePotsResponse",
         "GetContractGroupInfoResponse",
         "GetContractGroupMembersResponse",
@@ -365,6 +371,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // vectors captured while the operand still rode `value` carry no
         // `time_range` key.
         .field_attribute("GetDocumentsRequest.WhereClause.time_range", SERDE_DEFAULT)
+        .field_attribute(
+            "GetDocumentsRequest.WhereClause.integer_range",
+            SERDE_DEFAULT,
+        )
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)

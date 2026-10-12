@@ -94,6 +94,7 @@ export default function getBaseConfigFactory() {
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
                 'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
                 'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
+                'getspecialtxes',
               ],
               lowPriority: false,
             },
@@ -374,7 +375,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.8.0',
+              image: 'dashpay/tenderdash:1.8',
             },
             p2p: {
               host: '0.0.0.0',

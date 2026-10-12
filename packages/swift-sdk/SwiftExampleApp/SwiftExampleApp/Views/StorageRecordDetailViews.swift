@@ -1392,6 +1392,12 @@ struct PropertyStorageDetailView: View {
                     label: "Max Items",
                     value: record.maxItems.map { "\($0)" } ?? "—"
                 )
+                // A typed array's element schema has no column: it is read
+                // off the document type's persisted schema
+                if let typedArray = record.documentType?.typedArray(named: record.name) {
+                    FieldRow(label: "Items", value: typedArray.element.summary)
+                    FieldRow(label: "Unique Items", value: typedArray.uniqueItems ? "Yes" : "No")
+                }
                 FieldRow(
                     label: "Min Value",
                     value: record.minValue.map { "\($0)" } ?? "—"

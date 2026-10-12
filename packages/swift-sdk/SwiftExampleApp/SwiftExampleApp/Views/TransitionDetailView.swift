@@ -39,6 +39,12 @@ struct TransitionDetailView: View {
   @State private var selectedContractId: String = ""
   @State private var selectedDocumentType: String = ""
   @State private var documentFieldValues: [String: Any] = [:]
+  /// Why the document fields could not be encoded (a typed array refused by
+  /// its client-side check, a malformed object field, a non-finite number).
+  /// While set, `formInputs["documentFields"]` is cleared, so the submit stays
+  /// disabled and cannot send stale fields, and the reason is shown below the
+  /// fields.
+  @State private var documentFieldsError: String?
   /// Guards the one-time form setup in `.onAppear`. Contract / document-type
   /// selection now pushes a child list onto the navigation stack; popping it
   /// re-fires this view's `.onAppear`, and re-running `clearForm()` there
@@ -303,15 +309,34 @@ struct TransitionDetailView: View {
               get: { documentFieldValues },
               set: { newValues in
                 documentFieldValues = newValues
-                // Convert to JSON string for the form
-                if let jsonData = try? JSONSerialization.data(withJSONObject: newValues, options: [.prettyPrinted]),
-                   let jsonString = String(data: jsonData, encoding: .utf8) {
-                  formInputs["documentFields"] = jsonString
+                // The Create Document screen's encoding: `Data` as hex (which
+                // the Rust sanitizer decodes), object text as objects, and a
+                // refusal for a typed array that failed its check or a value
+                // JSON cannot carry. `JSONSerialization.data` raises an
+                // Objective-C exception on such a value, which `try?` cannot
+                // catch.
+                do {
+                  formInputs["documentFields"] = try CreateDocumentView.propertiesJSON(
+                    from: newValues, documentType: documentType)
+                  documentFieldsError = nil
+                } catch {
+                  formInputs["documentFields"] = nil
+                  documentFieldsError = error.localizedDescription
                 }
               }
             ),
             immutability: immutability
           )
+          // A new editor per document type, so switching type re-encodes the
+          // fields rather than keeping the previous type's
+          .id(documentType.id)
+
+          if let documentFieldsError {
+            Text("Could not encode document fields: \(documentFieldsError)")
+              .font(.caption)
+              .foregroundColor(.red)
+              .accessibilityIdentifier("transition.documentFields.error")
+          }
         } else {
           Text("Document type '\(documentTypeName)' not found in contract")
             .font(.caption)
@@ -1079,6 +1104,10 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("Document type is required")
     }
 
+    if let documentFieldsError {
+      throw SDKError.invalidParameter("Could not encode document fields: \(documentFieldsError)")
+    }
+
     guard let propertiesJson = formInputs["documentFields"], !propertiesJson.isEmpty else {
       throw SDKError.invalidParameter("Document properties are required")
     }
@@ -1379,6 +1408,10 @@ struct TransitionDetailView: View {
 
     guard let documentId = formInputs["documentId"], !documentId.isEmpty else {
       throw SDKError.invalidParameter("Document ID is required")
+    }
+
+    if let documentFieldsError {
+      throw SDKError.invalidParameter("Could not encode document fields: \(documentFieldsError)")
     }
 
     guard let propertiesJson = formInputs["documentFields"], !propertiesJson.isEmpty else {

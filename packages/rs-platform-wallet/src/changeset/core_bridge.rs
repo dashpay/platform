@@ -18,6 +18,14 @@
 //! rows it implies and freeze forever. The unbounded
 //! persistence channel can never `Lagged`, so that freeze cannot occur.
 //!
+//! # Why persistence lives outside the manager
+//!
+//! Upstream `WalletManager` deliberately has no per-wallet locks and no
+//! built-in persistence. An earlier attempt that put per-wallet
+//! `Arc<RwLock<_>>` locks and a persistence trait inside the manager made
+//! SPV sync about 7x slower from lock contention, so persistence is this
+//! external consumer instead. Do not move it back into the manager.
+//!
 //! # Why a single consumer, not per-wallet
 //!
 //! The persistence channel carries every event for every wallet. Each

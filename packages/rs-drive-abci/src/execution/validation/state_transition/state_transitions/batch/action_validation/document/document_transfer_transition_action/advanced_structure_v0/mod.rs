@@ -1,6 +1,9 @@
+use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, SystemChange};
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::document::DocumentV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0};
@@ -16,7 +19,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 impl DocumentTransferTransitionActionStructureValidationV0 for DocumentTransferTransitionAction {
     fn validate_structure_v0(
         &self,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let contract_fetch_info = self.base().data_contract_fetch_info();
         let data_contract = &contract_fetch_info.contract;
@@ -32,15 +35,52 @@ impl DocumentTransferTransitionActionStructureValidationV0 for DocumentTransferT
         };
 
         if !document_type.documents_transferable().is_transferable() {
-            Ok(SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
                     "{} is not a transferable document type",
                     document_type_name
                 ))
                 .into(),
-            ))
-        } else {
-            Ok(SimpleConsensusValidationResult::default())
+            ));
         }
+
+        // Added in place at protocol version 14, inert for every earlier version this
+        // generation serves: their meta-schemas refuse `distinctFrom`, their parser ignores
+        // it (`apply_distinct_from` is `None`), and `validate_distinct_from` is `None` there,
+        // so the call sees no declaration and returns an empty result. From 14, the
+        // document changes owner and a `distinctFrom: $ownerId` property of the stored
+        // document must differ from the new owner, which the action already carries on the
+        // document. The data was schema-validated when it was written, so every value
+        // compared is a 32-byte identifier.
+        let distinct_from_result = document_type
+            .validate_distinct_from_properties(
+                self.document().properties(),
+                self.document().owner_id(),
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !distinct_from_result.is_valid() {
+            return Ok(distinct_from_result);
+        }
+
+        // Added in place at protocol version 14, inert for every earlier version this
+        // generation serves: `validate_property_constraints` is `None` there, so the call
+        // returns an empty result. From 14, the document as it changes hands (its new owner,
+        // and the transfer's time and heights) is judged against the rules of
+        // `propertyConstraints` that read them: the stored properties met every rule when
+        // they were written, and these are all this action changes that a rule reads. A
+        // `countOf` or `sumOf` that depends on the owner reads the total the action read
+        // from state, as it will be once the document changes hands.
+        document_type
+            .validate_property_constraints_for_system_change(
+                self.document().properties(),
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..DocumentSystemValues::of_document(self.document())
+                },
+                SystemChange::Transfer,
+                platform_version,
+            )
+            .map_err(Error::Protocol)
     }
 }

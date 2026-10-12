@@ -1,6 +1,10 @@
 use crate::address_funds::AddressWitness;
 use crate::address_funds::AddressWitnessVerificationOperations;
 use crate::prelude::AddressNonce;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -52,10 +56,10 @@ pub enum PlatformAddress {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for PlatformAddress {}
+impl JsonConvertible for PlatformAddress {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for PlatformAddress {}
+impl ValueConvertible for PlatformAddress {}
 
 #[cfg(all(
     test,

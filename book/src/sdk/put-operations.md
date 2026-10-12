@@ -255,6 +255,22 @@ The wait includes full proof verification: the SDK verifies a GroveDB proof that
 the state transition was actually applied. This is not just checking a status flag --
 it is cryptographic proof of inclusion.
 
+From protocol version 14 the proof of an owned, fee-paying transition (document
+and token batches, contract creates and updates, identity updates and key limit
+updates, contract moderation) also carries the credit balance of the owner
+after it, read from the same state as the result, so a wallet learns what the
+write left it with without a second query. The verified
+`StateTransitionProofOutcome` hands it out through `owner_balance()` (`None`
+for a proof made at an earlier version or a transition without an owner);
+`wait_for_document_and_owner_balance` and
+`put_to_platform_and_wait_for_response_with_owner_balance` return it next to
+the document. The balance is a snapshot at the proof's block: it may already
+include later transitions of the same identity. A wait that asks for no proof
+but sets `request_user_balance` gets the owner's balance back unverified, as
+the response's `success_with_owner_balance` result, read from a Drive state at
+or past the block that executed the write; that works for any transition with
+an owner.
+
 ### Timeout Handling
 
 `wait_for_response` supports an optional timeout:

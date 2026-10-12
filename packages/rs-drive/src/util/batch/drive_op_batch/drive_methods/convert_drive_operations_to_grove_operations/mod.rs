@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -48,9 +49,15 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.convert_drive_operations_to_grove_operations_v1(
+                drive_batch_operations,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "convert_drive_operations_to_grove_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
