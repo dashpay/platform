@@ -64,13 +64,13 @@ A `like` of a social contract whose `post` type cannot be deleted:
 
 `true` stores the type's documents only as index entries. Each entry sits under the index's values, is keyed by the terminal's values in place of the document id, and holds a 32-byte **row commitment**: a hash over all of the document's values that ties its entries in the different indexes together as one document.
 
-**Create.** A create writes one entry into each index. If any of those entries already exists the create is refused with `DuplicateUniqueIndexError` (40105), so every index is a uniqueness rule over its properties and its terminal. `refersTo` and the other property checks run as on any document.
+**Create.** A create writes one entry into each index, or one per element into an index on a [typed array](#typed-arrays). If any of those entries already exists the create is refused with `DuplicateUniqueIndexError` (40105), so every index is a uniqueness rule over its properties and its terminal, except an index on a typed array, which another index keeps apart. `refersTo` and the other property checks run as on any document.
 
-**Delete.** A document has no id to delete by. It is deleted with an `indexOnlyDelete` transition that carries all of its values (and `$createdAt` when the type requires it); every entry those values produce must exist and carry the matching row commitment, or the delete is refused with `DocumentNotFoundError` (40101). Deleting by id on an index-only type, or with `indexOnlyDelete` on an ordinary type, is refused with `InvalidDocumentTransitionActionError` (10404). The owner can only ever reach its own entries, since every index that keeps entries holds `$ownerId`; a [`summableOffCountIndex`](#summableoffcountindex) counter moves only with the entry the delete removes from its source. `canBeDeleted: false` forbids deletes as on any type.
+**Delete.** A document has no id to delete by. It is deleted with an `indexOnlyDelete` transition that carries all of its values (and `$createdAt` when the type requires it); every entry those values produce must exist and carry the matching row commitment, or the delete is refused with `DocumentNotFoundError` (40101). The commitment holds a typed array as its whole list in its order, so a delete carries the list exactly as the create did. Deleting by id on an index-only type, or with `indexOnlyDelete` on an ordinary type, is refused with `InvalidDocumentTransitionActionError` (10404). The owner can only ever reach its own entries, since every index that keeps entries holds `$ownerId`; a [`summableOffCountIndex`](#summableoffcountindex) counter moves only with the entry the delete removes from its source. `canBeDeleted: false` forbids deletes as on any type.
 
 **No other action.** A document cannot be replaced, transferred, sold or repriced.
 
-**Queries.** A query goes through one index and returns documents rebuilt from its entries: the index's properties, the terminal, and `$ownerId` and `$createdAt` where the index holds them. A query through an index that holds only some of the properties yields only those with a proof; without one it is refused (`Unsupported`), since the documents could not be serialized, and so is a chained or composite read of them. The rebuilt `$id` is a hash of the entry's position and addresses nothing, so there is no fetch by `$id` and no `startAt` cursor; a query pages by the terminal instead (`postId > <last seen>`, with a limit). A query that sets the terminal with an equality can put an `in` on the index's last property, with a limit of at least its number of values; a range on an index property in such a query is refused, because its pages could hold fewer rows than exist. List the equality-bound properties first in an index, and page by a range on its terminal instead. The proof that a create or delete took effect is the presence or absence of its entry in the **proof index**, an index that involves no `$createdAt`, does not skip and keeps entries.
+**Queries.** A query goes through one index and returns documents rebuilt from its entries: the index's properties, the terminal, and `$ownerId` and `$createdAt` where the index holds them. A query through an index that holds only some of the properties yields only those with a proof; without one it is refused (`Unsupported`), since the documents could not be serialized, and so is a chained or composite read of them. The rebuilt `$id` is a hash of the entry's position and addresses nothing, so there is no fetch by `$id` and no `startAt` cursor; a query pages by the terminal instead (`postId > <last seen>`, with a limit). A query that sets the terminal with an equality can put an `in` on the index's last property, with a limit of at least its number of values; a range on an index property in such a query is refused, because its pages could hold fewer rows than exist. List the equality-bound properties first in an index, and page by a range on its terminal instead. The proof that a create or delete took effect is the presence or absence of its entry in the **proof index**, an index that involves no `$createdAt`, does not skip, keeps entries and names no typed array.
 
 Rules at registration:
 
@@ -80,10 +80,10 @@ Rules at registration:
 - Every index holds `$ownerId`, as a property or in its terminal, except a [`summableOffCountIndex`](#summableoffcountindex) index, which keeps counters instead of entries.
 - The only system properties an index may list are `$ownerId` and `$createdAt`, and an indexed `$createdAt` must be in `required`.
 - No index declares [`integerRange`](integer-range.md): rows that differ only in the bucketed integer would claim the same entry in the windows they share.
-- No index names a [typed array](typed-arrays.md): every index is a uniqueness rule over a document's values, and an index on a typed array enters a document once per element (10231).
-- At least one index involves no `$createdAt`, does not set `skipIfAbsent` and keeps entries (it is no `summableOffCountIndex` index): the proof index.
+- An index naming a [typed array](typed-arrays.md) follows the rules of [Typed arrays](#typed-arrays) below (10231).
+- At least one index involves no `$createdAt`, does not set `skipIfAbsent`, keeps entries (it is no `summableOffCountIndex` index) and names no typed array: the proof index.
 - Every property is in `required`, except a skip property of a `skipIfAbsent` index. An object holding an indexed property is required too.
-- Every required property appears in at least one index that does not skip and keeps entries, as a property or a terminal component, except the `entryPayload` properties and a property a `summableOffCountIndex` index's source fixes. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone, except, again, one such a source fixes.
+- Every required property appears in at least one index that does not skip, keeps entries and names no typed array other than the property itself, as a property or a terminal component, except the `entryPayload` properties and a property a `summableOffCountIndex` index's source fixes. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone, except, again, one such a source fixes.
 - The type cannot also set [`ttl`](ttl.md) or `moderatorAbilities.delete`, and no document reference can target it: a `refersTo` `findBy` finds no unique index in it, and a reference by id (or with `inList`) is refused when the referring contract is registered (`ReferencedDocumentTypeIndexOnlyError`, 40146), since its documents can not be fetched by `$id`.
 
 A property a `summableOffCountIndex` index's source fixes may sit in no index that keeps entries: in the [`summableOffCountIndex`](#summableoffcountindex) example, a like's `postAuthor`, which the `postId` reference's `where` entry `"$ownerId": "postAuthor"` fixes to the post's owner, sits only in `byAuthorPost`. No query returns such a property: a proved read gives documents without it, required or not, and since no index of the type then holds every property, every documents read of the type without a proof is refused. Its value is the referenced document's (here the post's `$ownerId`), so a client building a delete reads it back from there.
@@ -299,6 +299,64 @@ Rules at registration:
 - Every schema property must also sit in an index that neither skips nor outlives deletes, which a delete checks.
 - The index's key (its properties but `$createdAt`, and its terminal) must hold the whole key of an index a delete clears and that skips nothing, so no two documents in state share one of its entries. `[$createdAt, postId] → $ownerId` holds `byPost`'s `[postId] → $ownerId`; `[$createdAt] → $ownerId` holds no such key and is refused.
 - The proof index may not outlive deletes.
+
+## Typed arrays
+
+An index may name a [typed array](typed-arrays.md), as on any document type: a document has an entry under each distinct element of its list, and none for an empty, `null` or absent list. A `like` carrying its post's tags, counted per tag and per tag in a day's window:
+
+```json
+"like": {
+  "type": "object",
+  "indexOnly": true,
+  "documentsMutable": false,
+  "canBeDeleted": true,
+  "indices": [
+    { "name": "byPost", "properties": [{ "postId": "asc" }], "rangeCountable": true },
+    {
+      "name": "byTagPost",
+      "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+      "rangeCountable": true
+    },
+    {
+      "name": "byTrendTagPost",
+      "properties": [{ "$createdAt": "asc" }, { "tags": "asc" }, { "postId": "asc" }],
+      "rangeCountable": true,
+      "timeRange": { "on": "$createdAt", "range": 86400, "step": 21600, "ttl": 604800 },
+      "outlivesDelete": true
+    },
+    {
+      "name": "byAuthorPostTime",
+      "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }]
+    }
+  ],
+  "properties": {
+    "postId": { "type": "identifier", "position": 0 },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 61 },
+      "maxItems": 4,
+      "uniqueItems": true,
+      "position": 1
+    },
+    "postAuthor": { "type": "identifier", "position": 2 }
+  },
+  "required": ["$createdAt", "postId", "postAuthor"],
+  "additionalProperties": false
+}
+```
+
+A like tagged `dash` and `news` has one entry in `byPost`, two in `byTagPost`, and two in each of the four windows `byTrendTagPost` puts it in. An untagged like is only in `byPost` and `byAuthorPostTime`.
+
+Every other index of an index-only type is a uniqueness rule, and an index on a typed array would be one over "any shared element", so it must be kept apart by another index instead. Rules at registration, on top of those of [indexes on typed arrays](indexes.md#typed-arrays):
+
+- Another index of the type keeps one entry for every document (it involves no `$createdAt`, sets neither `skipIfAbsent` nor `outlivesDelete`, keeps entries and names no typed array), and its whole key, its properties and its terminal, is part of this index's key without the array. Here `byPost`'s key (`postId`, `$ownerId`) is part of both tag indexes' keys. Two documents could only share an entry of the array index by sharing that index's entry, which the second create is refused for, so the array index adds no uniqueness rule of its own.
+- The array declares `uniqueItems: true`, so each element of a list has an entry of its own. An update can not remove it while such an index names the array.
+- The index is neither `preallocated` nor a `summableOffCountIndex` index, and no `summableOffCountIndex` index counts it as its source.
+- An index on a typed array is never the proof index, nor the only index keeping another required property: it has no entry for a document without elements.
+
+A create does not read the array index's entries, since the other index already refuses any collision on them. A delete checks every element entry against the row commitment, which holds the list in its order: a delete carrying the tags reordered, shortened or changed is refused with `DocumentNotFoundError` (40101). An empty, `null` and absent list are one value to the commitment, since they write the same entries, so a delete may carry any of them for a document created with any of them.
+
+A query reads the elements with `contains` and `containsAny`, as on any type. Each entry is rebuilt as a document listing the one element it sits under: `tags contains "dash"` returns the likes tagged `dash`, each with `tags: ["dash"]`, and `containsAny` returns a like once for each listed tag it holds. Counts work as on any type: `byTagPost` counts a tag's likes and a post's likes under a tag, and `byTrendTagPost` a window's likes under a tag.
 
 ## See also
 

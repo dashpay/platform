@@ -725,8 +725,8 @@ impl Context<'_> {
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
             if sub_level.summable_off_count_index_info().is_some() {
-                // An indexOnly type indexes no typed array: the counter's group
-                // is one value.
+                // A summableOffCountIndex index names no typed array (registration
+                // refuses one): the counter's group is one value.
                 let raw = keys.into_iter().next().unwrap_or_default();
                 let indexes = self.writing_indexes(&sub_names);
                 self.counter_write(

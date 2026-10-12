@@ -221,7 +221,8 @@ impl Drive {
             // pruning the trees it leaves empty as a drained member bucket's
             // are. Nothing continues below it.
             if let Some(index_type) = sub_level.summable_off_count_index_info() {
-                // An indexOnly type indexes no typed array: the counter's group is one value.
+                // A summableOffCountIndex index names no typed array (registration refuses
+                // one): the counter's group is one value.
                 let document_index_field =
                     document_index_fields.into_iter().next().unwrap_or_default();
                 self.add_summable_off_count_counter_operations(
