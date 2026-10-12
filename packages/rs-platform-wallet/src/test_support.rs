@@ -13,10 +13,9 @@ use async_trait::async_trait;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
-#[cfg(test)]
-use dashcore::Txid;
-use dashcore::{Network, Transaction};
+use dashcore::{Network, OutPoint, Transaction, TxOut, Txid};
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
 // Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
 // `next_address_with_info` on a non-standard account); gate it to match so a
@@ -26,15 +25,17 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-use key_wallet::{DerivationPath, Wallet};
+use key_wallet::{DerivationPath, Utxo, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 #[cfg(test)]
-use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::broadcaster::BroadcastError;
+use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::{CoreWallet, PlatformWallet};
 
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
@@ -581,7 +582,41 @@ pub async fn funded_spv_core_wallet(
     crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
     WalletSigner,
 ) {
-    let (manager, wallet_id, generation, signer) = funded_wallet_manager(account_type).await;
+    funded_spv_core_wallet_with_outputs(account_type, &[10_000_000], &[]).await
+}
+
+/// Like [`funded_spv_core_wallet`] with caller-chosen funding outputs; every
+/// coin whose value is listed in `not_final` is marked neither mined nor
+/// InstantSend-locked — a coin the network has not confirmed yet.
+pub async fn funded_spv_core_wallet_with_outputs(
+    account_type: StandardAccountType,
+    outputs: &[u64],
+    not_final: &[u64],
+) -> (
+    crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
+    WalletSigner,
+) {
+    let (manager, wallet_id, generation, signer) =
+        funded_wallet_manager_with_outputs(account_type, outputs).await;
+    {
+        let mut guard = manager.write().await;
+        let (_, info) = guard.get_wallet_and_info_mut(&wallet_id).expect("wallet");
+        let account = AccountType::Standard {
+            index: 0,
+            standard_account_type: account_type,
+        };
+        let managed = info
+            .core_wallet
+            .accounts
+            .funds_account_mut(&account)
+            .expect("funded account");
+        for utxo in managed.utxos.values_mut() {
+            if not_final.contains(&utxo.value()) {
+                utxo.is_confirmed = false;
+                utxo.is_instantlocked = false;
+            }
+        }
+    }
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
@@ -624,6 +659,30 @@ where
         info.core_wallet.update_last_processed_height(target);
     }
     target
+}
+
+/// The coins of `core`'s standard account 0 of `account_type`, as the wallet
+/// holds them now.
+pub async fn standard_account_coins<B>(
+    core: &CoreWallet<B>,
+    account_type: StandardAccountType,
+) -> Vec<Utxo>
+where
+    B: TransactionBroadcaster + ?Sized,
+{
+    let wm = core.wallet_manager.read().await;
+    let info = wm
+        .get_wallet_info(&core.wallet_id())
+        .expect("wallet present in manager");
+    let account = AccountType::Standard {
+        index: 0,
+        standard_account_type: account_type,
+    };
+    info.core_wallet
+        .accounts
+        .funds_account(&account)
+        .map(|managed| managed.utxos.values().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests
@@ -675,7 +734,14 @@ pub async fn test_platform_wallet_manager() -> (
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
-    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    // The SDK's network is the wallet's (`PlatformWallet::network`): testnet,
+    // like the wallet created below.
+    let sdk = Arc::new(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+    );
     let persister = Arc::new(NoopTestPersister);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
@@ -700,6 +766,82 @@ pub async fn test_platform_wallet_manager() -> (
         .expect("create test wallet");
     let wallet_id = wallet.wallet_id();
     (manager, wallet_id)
+}
+
+/// Give `wallet`'s BIP44 account 0 one coin of `value` duffs at its next
+/// receive address — final (InstantSend-locked) or not, as the network would
+/// see it — and return its outpoint. For FFI tests that drive the real
+/// finalizers through a wallet handle.
+pub async fn add_bip44_coin(
+    wallet: &PlatformWallet,
+    value: u64,
+    final_: bool,
+    tag: u8,
+) -> OutPoint {
+    let mut manager = wallet.wallet_manager().write().await;
+    let (keys, info) = manager
+        .get_wallet_and_info_mut(&wallet.wallet_id())
+        .expect("wallet present in manager");
+    let xpub = keys
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("bip44 account")
+        .account_xpub;
+    let account = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let managed = info
+        .core_wallet
+        .accounts
+        .funds_account_mut(&account)
+        .expect("bip44 managed account");
+    let address = managed
+        .next_receive_address(Some(&xpub), true)
+        .expect("receive address");
+    let outpoint = OutPoint {
+        txid: Txid::from_byte_array([tag; 32]),
+        vout: 0,
+    };
+    let mut utxo = Utxo::new(
+        outpoint,
+        TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        },
+        address,
+        1,
+        false,
+    );
+    utxo.is_instantlocked = final_;
+    managed.utxos.insert(outpoint, utxo);
+    outpoint
+}
+
+/// Pin `outpoint` the way an in-flight broadcast of `wallet` does. Dropping
+/// the returned guard settles it as a pending spend, so the outpoint stays
+/// pinned until the wallet sees it spent — use a fresh wallet per test. For
+/// FFI tests of the mid-broadcast refusal.
+pub async fn pin_in_broadcast(
+    wallet: &PlatformWallet,
+    outpoint: OutPoint,
+) -> Box<dyn std::any::Any + Send> {
+    let manager = wallet.wallet_manager().read().await;
+    let info = manager
+        .get_wallet_info(&wallet.wallet_id())
+        .expect("wallet present in manager");
+    let spend = Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![dashcore::TxIn {
+            previous_output: outpoint,
+            ..Default::default()
+        }],
+        output: Vec::new(),
+        special_transaction_payload: None,
+    };
+    Box::new(info.generation.pin_in_broadcast(&spend))
 }
 
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not

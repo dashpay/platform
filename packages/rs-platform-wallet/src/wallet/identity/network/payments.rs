@@ -12,6 +12,9 @@ use key_wallet_manager::WalletManager;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::{
+    build_error_awaiting_network, trial_with_waiting_coins, waiting_may_help,
+};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 // ---------------------------------------------------------------------------
@@ -1241,10 +1244,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // links them and undoes the mixing — and so do the contact
             // *external* accounts, which hold the counterparty's xpub and no
             // key this wallet can sign with.
-            let mut builder = TransactionBuilder::new()
-                .set_current_height(current_height)
-                .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .add_output(&payment_address, amount_duffs);
+            // Final coins only, like every send (`is_final`).
+            // One configuration, made twice on a shortfall: the build, and
+            // the waiting-coins trial (`trial_with_waiting_coins`).
+            let make = || {
+                TransactionBuilder::new()
+                    .set_current_height(current_height)
+                    .set_selection_strategy(SelectionStrategy::LargestFirst)
+                    .require_final_inputs()
+                    .add_output(&payment_address, amount_duffs)
+            };
+            let mut builder = make();
 
             // Derivation paths for every offered UTXO, since the signer closure
             // below cannot resolve them from one account.
@@ -1330,7 +1340,33 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     {
                         return_contact_payment_address_to_pool(external_account, &payment_address);
                     }
-                    return Err(PlatformWalletError::TransactionBuild(e.to_string()));
+                    // A shortfall the coins not final yet would fund is
+                    // reported as waiting on the network: key-wallet decides
+                    // on a fresh copy of the build, on this failure path only.
+                    // Only a shortfall or too many inputs can turn on coins
+                    // that are not final.
+                    // The trial's refusals are about coins seeded on the
+                    // builder (`add_inputs`): one no funding account holds,
+                    // or one seeded twice. `make` seeds none, so none can
+                    // come from here. Should `make` ever seed coins, map
+                    // those refusals through instead of dropping them: as it
+                    // is, the payment would report the build error.
+                    let waiting = if waiting_may_help(&e) {
+                        trial_with_waiting_coins(
+                            &|| Ok(make()),
+                            wallet,
+                            info,
+                            &offered_accounts,
+                            &[],
+                            None,
+                            current_height,
+                        )
+                        .ok()
+                        .flatten()
+                    } else {
+                        None
+                    };
+                    return Err(build_error_awaiting_network(e, waiting));
                 }
             };
 
@@ -6683,6 +6719,68 @@ mod tests {
                 "an immediate retry must reselect every pooled input — a reservation left \
                  on the contact-receiving account strands funds until the TTL backstop",
             );
+    }
+
+    /// The contact payment decides code 59 with the same trial as a plain
+    /// send: its only coin is not final yet, so a payment that coin covers is
+    /// waiting on the network, and one it cannot cover stays a build error.
+    #[tokio::test]
+    async fn contact_payment_reports_waiting_only_when_the_trial_builds() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 200_000).await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let mut wm = wallet_arc.wallet_manager().write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            for utxo in info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("BIP-44 managed account 0")
+                .utxos
+                .values_mut()
+            {
+                utxo.is_confirmed = false;
+                utxo.is_instantlocked = false;
+            }
+        }
+        let iw = wallet_arc.identity();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        let accepting = with_accepting_broadcaster(iw);
+
+        let covered = accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+            .await
+            .expect_err("nothing is final");
+        assert!(
+            matches!(
+                covered,
+                PlatformWalletError::CoreFundsAwaitingNetwork {
+                    waiting: 200_000,
+                    ..
+                }
+            ),
+            "got {covered:?}"
+        );
+
+        let beyond = accepting
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 5_000_000, None, &signer, &provider)
+            .await
+            .expect_err("beyond every coin");
+        assert!(
+            matches!(beyond, PlatformWalletError::TransactionBuild(_)),
+            "got {beyond:?}"
+        );
     }
 
     /// A definitively rejected broadcast must return the consumed payment

@@ -204,7 +204,19 @@ public final class CoreTransactionBuilder {
 
     /// Add a chosen subset of the account's UTXOs (as returned by
     /// `PlatformWalletManager.accountUtxos`) as inputs. Each must belong to
-    /// the account.
+    /// the account, be spendable (a locked coin, or a coinbase output not yet
+    /// matured — 100 blocks — is refused as an invalid parameter, not code 59),
+    /// not be pinned by an in-flight broadcast (refused as an unknown error
+    /// naming the coin, until that refusal has a code of its own), and be
+    /// final (code 59 otherwise).
+    ///
+    /// The finalizer looks each one up again in the accounts it funds from
+    /// (its own `accountType` and index) and never drops a chosen coin
+    /// silently: one those accounts don't hold (another account's, or spent
+    /// since) fails the build by name, one no longer final fails with code
+    /// 59, one an in-flight broadcast pins as mid-broadcast. The one
+    /// exception: a coin another in-flight build holds reserved (a pending
+    /// deferred payment) is left out.
     @discardableResult
     public func addInputs(
         wallet: ManagedPlatformWallet,
@@ -283,6 +295,9 @@ public final class CoreTransactionBuilder {
         return self
     }
 
+    /// Set the fee rate in duffs per kB. Throws an invalid-parameter error
+    /// above about 42.9 DASH per kB, where the fee arithmetic would overflow;
+    /// the builder is unchanged then.
     @discardableResult
     public func setFeeRate(satPerKb: UInt64) throws -> CoreTransactionBuilder {
         try core_wallet_tx_builder_set_fee_rate(handle, satPerKb).check()

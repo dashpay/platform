@@ -271,6 +271,20 @@ pub enum PlatformWalletError {
     )]
     InputMidBroadcast { outpoint: dashcore::OutPoint },
 
+    /// A coin the caller chose as an input — by outpoint
+    /// (`FinalizeOptions::inputs`, FFI `add_inputs_from_outpoints`), or seeded
+    /// on the builder itself (`TransactionBuilder::add_inputs`) and selected —
+    /// cannot be spent by this build: the finalizer's funding accounts don't hold it
+    /// (another account's coin, or spent since it was chosen — refresh the
+    /// list), or it is not spendable yet (an immature coinbase output, a
+    /// locked coin). Refused by name rather than left out: the caller picked
+    /// it.
+    #[error("chosen input {outpoint} cannot be spent by this build: {problem}")]
+    ChosenInputUnavailable {
+        outpoint: dashcore::OutPoint,
+        problem: ChosenInputProblem,
+    },
+
     /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
     /// target at all: unparseable, encoded for a different network than the
     /// wallet's, or not P2PKH. A caller-input error — the classic Dash
@@ -391,6 +405,34 @@ pub enum PlatformWalletError {
         sources: Vec<AccountTypePreference>,
         available: Option<u64>,
         required: Option<u64>,
+    },
+
+    /// A Core payment the wallet's balance covers, but only with coins the
+    /// network has not confirmed yet — neither InstantSend-locked nor mined.
+    /// Builds spend only final coins (`require_final_inputs`): the change of
+    /// a send that never reached the network never becomes final, so building
+    /// on it would make a transaction no node accepts. Coins become spendable
+    /// once their transaction is InstantSend-locked (usually seconds) or mined.
+    /// Not a shortfall: the host should say the money is waiting on the
+    /// network.
+    ///
+    /// `waiting` is the value of the not-yet-final coins the build would
+    /// spend once they are final; with `outpoint` set, of that one coin, which
+    /// the caller chose as an input itself and which is not final.
+    /// `available` / `required` are key-wallet's figures for the build when it
+    /// names them.
+    #[error(
+        "Core funds are waiting for network confirmation: {} DASH not yet confirmed{}{}{}",
+        dash_amount(*waiting),
+        optional_amount(", available", available),
+        optional_amount(", needed", required),
+        refused_input(outpoint)
+    )]
+    CoreFundsAwaitingNetwork {
+        available: Option<u64>,
+        waiting: u64,
+        required: Option<u64>,
+        outpoint: Option<dashcore::OutPoint>,
     },
 
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
@@ -974,6 +1016,28 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+}
+
+/// Why a chosen input cannot be spent
+/// ([`PlatformWalletError::ChosenInputUnavailable`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChosenInputProblem {
+    /// The finalizer's funding accounts don't hold it: another account's
+    /// coin, or spent since it was chosen.
+    NotInFundingAccounts,
+    /// Held, but not spendable yet: an immature coinbase output, or locked.
+    NotSpendable,
+}
+
+impl std::fmt::Display for ChosenInputProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NotInFundingAccounts => {
+                "not a coin of any funding account (another account's, or spent since it was chosen)"
+            }
+            Self::NotSpendable => "not spendable yet (immature or locked)",
+        })
+    }
 }
 
 impl PlatformWalletError {
@@ -1818,6 +1882,33 @@ mod asset_lock_already_consumed_tests {
             &out_point()
         ));
     }
+}
+
+/// Duffs as DASH for an error message: up to eight decimals, trailing zeros
+/// dropped (`85998722` → `0.85998722`, `1000000` → `0.01`).
+fn dash_amount(duffs: u64) -> String {
+    let whole = duffs / 100_000_000;
+    let fraction = duffs % 100_000_000;
+    if fraction == 0 {
+        return whole.to_string();
+    }
+    let fraction = format!("{fraction:08}");
+    format!("{whole}.{}", fraction.trim_end_matches('0'))
+}
+
+/// `", <label> <amount> DASH"`, or nothing when the amount is not known.
+fn optional_amount(label: &str, duffs: &Option<u64>) -> String {
+    duffs
+        .map(|duffs| format!("{label} {} DASH", dash_amount(duffs)))
+        .unwrap_or_default()
+}
+
+/// The refused input of a `CoreFundsAwaitingNetwork`, for its message: a host
+/// doing coin control learns which coin to leave out.
+fn refused_input(outpoint: &Option<dashcore::OutPoint>) -> String {
+    outpoint
+        .map(|outpoint| format!(", refused input {}:{}", outpoint.txid, outpoint.vout))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

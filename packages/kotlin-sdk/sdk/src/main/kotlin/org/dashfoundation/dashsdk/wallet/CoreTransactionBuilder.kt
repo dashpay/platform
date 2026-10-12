@@ -133,7 +133,10 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         WalletManagerNative.coreTxBuilderChangeToFirstInput(handle)
     }
 
-    /** Set the fee rate in duffs/kB (> 0). */
+    /**
+     * Set the fee rate in duffs/kB (> 0: the JNI glue refuses 0). Refused (invalid parameter) above
+     * about 42.9 DASH/kB, where the fee arithmetic would overflow.
+     */
     internal fun setFeeRate(satPerKb: Long): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetFeeRate(handle, satPerKb)
     }
