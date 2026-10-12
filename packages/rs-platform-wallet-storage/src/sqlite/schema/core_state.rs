@@ -1039,6 +1039,14 @@ pub(crate) fn load_spent_claims(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
+    // The row loop selects both payloads beside their lengths, and SQLite
+    // evaluates every result column on the step: gate the lengths first.
+    blob::check_max_column_len(
+        conn,
+        "SELECT MAX(MAX(length(outpoint)), IFNULL(MAX(length(spent_in_txid)), 0)) \
+         FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
+        wallet_id,
+    )?;
     let mut stmt = conn.prepare_cached(
         "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
@@ -3128,6 +3136,41 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn should_reject_oversize_spent_claim_before_reading_it() {
+        use rusqlite::limits::Limit;
+
+        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
+
+        const WALLET: [u8; 32] = [0x5F; 32];
+        // Over the connection's length cap, so reading the column itself
+        // fails: only a length-only pre-read reports it as oversize.
+        let oversize = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
+        let outpoint =
+            blob::encode_outpoint(&OutPoint::new(Txid::from_byte_array([0x42; 32]), 0)).unwrap();
+        for (stored_outpoint, claimant) in [
+            (&oversize[..], &[0x43u8; 32][..]),
+            (&outpoint[..], &oversize[..]),
+        ] {
+            let conn = wallet_db(&WALLET);
+            conn.execute(
+                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, spent_in_txid) \
+                 VALUES (?1, ?2, 0, X'00', 1, ?3)",
+                params![&WALLET[..], stored_outpoint, claimant],
+            )
+            .unwrap();
+            conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
+                .unwrap();
+
+            let err = load_spent_claims(&conn, &WALLET).unwrap_err();
+
+            assert!(
+                matches!(err, WalletStorageError::BlobTooLarge { .. }),
+                "got {err:?}"
+            );
+        }
     }
 
     /// A mempool record spending `coins`, as the bridge stores it beside `spent_utxos`.
