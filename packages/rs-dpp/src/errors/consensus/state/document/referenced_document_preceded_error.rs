@@ -10,7 +10,7 @@ use thiserror::Error;
 
 /// The commitment a `refersTo` lookup found for a create is preceded by another identity's: a
 /// document of the same type, from an earlier block, holding the same value at the property the
-/// reference's `firstAmong` names, not past its `ttl`, and valid, its `findBy` value the
+/// reference's `chooseFirst` names, not past its `ttl`, and valid, its `findBy` value the
 /// `findBy` function computed with its own owner in place of the writer. The first identity to
 /// commit wins, so the create is refused.
 #[derive(
@@ -67,7 +67,7 @@ impl ReferencedDocumentPrecededError {
         &self.preceding_document_id
     }
 
-    /// The property of the referenced document type the reference's `firstAmong` names, which
+    /// The property of the referenced document type the reference's `chooseFirst` names, which
     /// both commitments hold the same value at
     pub fn property(&self) -> &str {
         &self.property

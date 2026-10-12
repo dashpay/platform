@@ -207,7 +207,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
         ]),
         minimum_age_blocks: None,
         consume: false,
-        first_among: None,
+        choose_first: None,
     };
     let agreement = BTreeMap::from([("$ownerId".to_string(), "memberId".to_string())]);
 
@@ -587,7 +587,7 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
         ]),
         minimum_age_blocks: None,
         consume: false,
-        first_among: None,
+        choose_first: None,
     };
     for keyword in [("transferable", 1), ("tradeMode", 1)] {
         for (creator_refers_to, expected) in [

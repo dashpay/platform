@@ -61,7 +61,9 @@ pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
 };
-pub use reference_lookup::{DocumentReferenceLookup, LookupFirstAmong, LookupKeySource};
+pub use reference_lookup::{
+    ChooseFirstOrder, DocumentReferenceLookup, LookupChooseFirst, LookupKeySource,
+};
 pub use reference_where::{
     WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
     WhereOrdering, WhereOrderingBound,
@@ -10517,7 +10519,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
-                    first_among: None,
+                    choose_first: None,
                 },
             }
             .to_string(),
@@ -10573,7 +10575,7 @@ mod tests {
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
             minimum_age_blocks: None,
             consume: false,
-            first_among: None,
+            choose_first: None,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -10913,7 +10915,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
-                    first_among: None,
+                    choose_first: None,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -10950,7 +10952,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
-                    first_among: None,
+                    choose_first: None,
                 },
             },
             DocumentPropertyReferenceTarget::ModeratedDocument {

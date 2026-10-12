@@ -182,7 +182,7 @@ pub(crate) mod property_names {
     /// property every commitment to those values holds, so a create is refused
     /// while another identity holds a valid older one. Meta-schema v3+
     /// (protocol version 14).
-    pub const FIRST_AMONG: &str = "firstAmong";
+    pub const CHOOSE_FIRST: &str = "chooseFirst";
     /// `refersTo: permanentDocument` found by its `$id` from a property: the
     /// typed array of identifiers, on the referenced document, the value must
     /// be an element of. Meta-schema v3+ (protocol version 14).

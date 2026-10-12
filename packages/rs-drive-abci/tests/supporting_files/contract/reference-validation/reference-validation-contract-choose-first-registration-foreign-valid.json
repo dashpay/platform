@@ -45,8 +45,9 @@
             ]
           }
         },
-        "firstAmong": {
-          "nameHash": {
+        "chooseFirst": {
+          "property": "nameHash",
+          "value": {
             "function": "sys.hash.sha256d",
             "params": [
               "normalizedLabel",
@@ -55,7 +56,10 @@
               },
               "normalizedParentDomainName"
             ]
-          }
+          },
+          "by": [
+            "$createdAtBlockHeight"
+          ]
         },
         "minimumAgeBlocks": 1
       },

@@ -56,7 +56,7 @@ mod commit_reveal_lookup_tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::fee::Credits;
     use dpp::data_contract::document_type::HashFunction;
-    use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::first_among_scan_budget;
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::choose_first_scan_budget;
     use crate::platform_types::platform::PlatformRef;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::util::hash::hash_double;
@@ -2009,7 +2009,7 @@ mod commit_reveal_lookup_tests {
     /// (`ttl`). A transferable `name`, unique by its label and parent when `unique_names`,
     /// reveals through `creatorRefersTo` the writer's own preorder from an earlier block,
     /// consumes it, and must be the first valid one among the preorders of the name
-    /// (`firstAmong`).
+    /// (`chooseFirst`).
     fn add_name_registration(contract: &mut serde_json::Value, unique_names: bool) {
         let hash = |position: u32| {
             serde_json::json!({
@@ -2049,7 +2049,7 @@ mod commit_reveal_lookup_tests {
                 "documentType": "namePreorder",
                 "findBy": name_find_by(),
                 "where": { "$ownerId": "$ownerId" },
-                "firstAmong": name_first_among(),
+                "chooseFirst": name_choose_first(),
                 "minimumAgeBlocks": 1,
                 "consume": true
             }),
@@ -2069,13 +2069,20 @@ mod commit_reveal_lookup_tests {
         })
     }
 
-    /// The `firstAmong` of a name's reveal: the hash of the name alone.
-    fn name_first_among() -> serde_json::Value {
+    /// The `chooseFirst` of a name's reveal: the hash of the name alone.
+    fn name_choose_first() -> serde_json::Value {
+        name_choose_first_by(serde_json::json!(["$createdAtBlockHeight"]))
+    }
+
+    /// The `chooseFirst` of a name's reveal, ordering its preorders by `by`.
+    fn name_choose_first_by(by: serde_json::Value) -> serde_json::Value {
         serde_json::json!({
-            "nameHash": {
+            "property": "nameHash",
+            "value": {
                 "function": "sys.hash.sha256d",
                 "params": ["normalizedLabel", { "const": "." }, "normalizedParentDomainName"]
-            }
+            },
+            "by": by
         })
     }
 
@@ -2105,11 +2112,11 @@ mod commit_reveal_lookup_tests {
     }
 
     /// The fixture with the name registration of [`add_name_registration`].
-    fn first_among_fixture(unique_names: bool) -> CommitRevealFixture {
+    fn choose_first_fixture(unique_names: bool) -> CommitRevealFixture {
         CommitRevealFixture::new_with(|contract| add_name_registration(contract, unique_names))
     }
 
-    /// The name the first-among tests register.
+    /// The name the choose-first tests register.
     const NAME_LABEL: &str = "al1ce";
     const NAME_PARENT: &str = "dash";
 
@@ -2220,10 +2227,10 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// The type in the fixture parses `firstAmong` beside the writer's `findBy` function.
+    /// The type in the fixture parses `chooseFirst` beside the writer's `findBy` function.
     #[test]
-    fn should_parse_the_fixture_name_as_first_among_its_preorders() {
-        let fixture = first_among_fixture(true);
+    fn should_parse_the_fixture_name_as_choose_first_its_preorders() {
+        let fixture = choose_first_fixture(true);
         let name: DocumentTypeRef = fixture
             .contract
             .document_type_for_name("name")
@@ -2240,9 +2247,9 @@ mod commit_reveal_lookup_tests {
             .expect("expected the creator's lookup");
         assert_eq!(
             lookup
-                .first_among
+                .choose_first
                 .as_ref()
-                .map(|first_among| first_among.property.as_str()),
+                .map(|choose_first| choose_first.property.as_str()),
             Some("nameHash")
         );
     }
@@ -2252,7 +2259,7 @@ mod commit_reveal_lookup_tests {
     /// consumes nothing, and Alice's own reveal, the first committer's, goes through.
     #[tokio::test]
     async fn should_refuse_a_reveal_an_older_valid_commitment_of_another_identity_precedes() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
 
@@ -2269,7 +2276,7 @@ mod commit_reveal_lookup_tests {
     /// same name waits.
     #[tokio::test]
     async fn should_create_the_first_committers_reveal_beside_a_younger_competitor() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
 
@@ -2285,7 +2292,7 @@ mod commit_reveal_lookup_tests {
     /// nothing.
     #[tokio::test]
     async fn should_not_count_a_copied_name_hash() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice_id = fixture.id(Who::Alice);
         preorder_name(
             &mut fixture,
@@ -2309,10 +2316,10 @@ mod commit_reveal_lookup_tests {
     }
 
     /// Two valid preorders from one block: neither precedes the other, so both reveals pass
-    /// `firstAmong`, and the name's unique index takes the first create.
+    /// `chooseFirst`, and the name's unique index takes the first create.
     #[tokio::test]
     async fn should_not_count_a_competitor_from_the_same_block() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
 
@@ -2332,12 +2339,58 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.document_exists("namePreorder", alice.id()));
     }
 
+    /// The fixture with a name registration whose `chooseFirst` orders preorders by `by`.
+    fn choose_first_fixture_by(by: serde_json::Value) -> CommitRevealFixture {
+        CommitRevealFixture::new_with(move |contract| {
+            add_name_registration(contract, true);
+            contract["documentSchemas"]["name"]["creatorRefersTo"]["chooseFirst"] =
+                name_choose_first_by(by);
+        })
+    }
+
+    /// Ordered by `$createdAtBlockHeight` and then `$id`, two valid preorders from one block
+    /// are not tied: the one with the lower id comes first, so the other's reveal is refused
+    /// and its own stands.
+    #[tokio::test]
+    async fn should_choose_the_lower_id_from_one_block_when_ordered_by_id_last() {
+        let mut fixture =
+            choose_first_fixture_by(serde_json::json!(["$createdAtBlockHeight", "$id"]));
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let ((first_who, first), (second_who, second)) = if alice.id() < mallory.id() {
+            ((Who::Alice, alice), (Who::Mallory, mallory))
+        } else {
+            ((Who::Mallory, mallory), (Who::Alice, alice))
+        };
+
+        let result = reveal_name(&mut fixture, second_who, REVEAL_HEIGHT).await;
+        assert_preceded(result, &second, &first);
+        let result = reveal_name(&mut fixture, first_who, REVEAL_HEIGHT).await;
+        assert_written(result);
+        assert!(!fixture.document_exists("namePreorder", first.id()));
+    }
+
+    /// Ordered by `$createdAtBlockHeight` descending, the newest valid preorder comes first:
+    /// Alice's older one is preceded by Mallory's, whose reveal stands.
+    #[tokio::test]
+    async fn should_choose_the_newest_when_ordered_descending() {
+        let mut fixture =
+            choose_first_fixture_by(serde_json::json!([{ "$createdAtBlockHeight": "desc" }]));
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+
+        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+        assert_preceded(result, &alice, &mallory);
+        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
+        assert_written(result);
+    }
+
     /// A competitor past its `ttl` refuses nothing, though the block-end cleanup has not
     /// deleted it yet. Blocks are a second apart, so Alice's preorder, made in block
     /// `COMMIT_HEIGHT`, expires 3,600 blocks later.
     #[tokio::test]
     async fn should_not_count_an_expired_competitor() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 3_000).await;
 
@@ -2356,7 +2409,7 @@ mod commit_reveal_lookup_tests {
     /// reached it: its reveal finds no document, as a competitor past it precedes nobody.
     #[tokio::test]
     async fn should_refuse_revealing_a_commitment_past_its_ttl() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
 
         let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_600).await;
@@ -2368,11 +2421,11 @@ mod commit_reveal_lookup_tests {
         assert_written(result);
     }
 
-    /// The found preorder must hold the `firstAmong` value of the create: one holding another
+    /// The found preorder must hold the `chooseFirst` value of the create: one holding another
     /// name hash is no commitment to the name.
     #[tokio::test]
     async fn should_refuse_a_reveal_whose_commitment_holds_another_name_hash() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice_id = fixture.id(Who::Alice);
         preorder_name_holding(
             &mut fixture,
@@ -2392,7 +2445,7 @@ mod commit_reveal_lookup_tests {
     /// through.
     #[tokio::test]
     async fn should_not_count_a_consumed_competitor() {
-        let mut fixture = first_among_fixture(false);
+        let mut fixture = choose_first_fixture(false);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
 
@@ -2412,7 +2465,7 @@ mod commit_reveal_lookup_tests {
     /// the writer's own documents is ever among the competitors.
     #[tokio::test]
     async fn should_hold_one_commitment_of_a_writer_to_a_name() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         preorder_name(
             &mut fixture,
             Who::Alice,
@@ -2443,14 +2496,14 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// The competitors are read oldest first, at most `max_first_among_candidates`. When none
+    /// The competitors are read oldest first, at most `max_choose_first_candidates`. When none
     /// of those read is a valid competitor the create stands: here, with a limit of 1, Carol's
     /// copy is the one document read and Alice's valid commitment behind it, in the first
     /// position left out, is not; with a limit of 2 Alice's is the last one read, and refuses,
     /// as at the protocol version 14 limit.
     #[tokio::test]
     async fn should_read_at_most_the_candidate_limit_and_stand_when_none_read_refuses() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         preorder_name(
             &mut fixture,
             Who::Carol,
@@ -2467,7 +2520,7 @@ mod commit_reveal_lookup_tests {
             .collect();
 
         let mut one_candidate = PlatformVersion::latest().clone();
-        one_candidate.system_limits.max_first_among_candidates = 1;
+        one_candidate.system_limits.max_choose_first_candidates = 1;
         let (result, execution_context, _) = fixture.validate_references(
             "name",
             &data,
@@ -2488,7 +2541,7 @@ mod commit_reveal_lookup_tests {
         );
 
         let mut two_candidates = PlatformVersion::latest().clone();
-        two_candidates.system_limits.max_first_among_candidates = 2;
+        two_candidates.system_limits.max_choose_first_candidates = 2;
         for platform_version in [&two_candidates, PlatformVersion::latest()] {
             let (result, execution_context, _) = fixture.validate_references(
                 "name",
@@ -2521,7 +2574,7 @@ mod commit_reveal_lookup_tests {
     /// of Carol's later copy, and refuses Mallory's reveal.
     #[tokio::test]
     async fn should_read_an_older_valid_commitment_before_a_later_copy() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT - 2).await;
         preorder_name(
             &mut fixture,
@@ -2537,7 +2590,7 @@ mod commit_reveal_lookup_tests {
             .collect();
 
         let mut one_candidate = PlatformVersion::latest().clone();
-        one_candidate.system_limits.max_first_among_candidates = 1;
+        one_candidate.system_limits.max_choose_first_candidates = 1;
         let (result, _, _) = fixture.validate_references(
             "name",
             &data,
@@ -2553,12 +2606,12 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// The `findBy` and `firstAmong` hashes are billed as the double SHA-256s they are, the
+    /// The `findBy` and `chooseFirst` hashes are billed as the double SHA-256s they are, the
     /// lookup and the competitors as the queries they are, and each competitor's `findBy`
     /// value once: Carol's copy, then Mallory's valid preorder, which refuses.
     #[tokio::test]
     async fn should_bill_the_competitors_query_and_one_hash_per_competitor() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let platform_version = PlatformVersion::latest();
         let alice = fixture.id(Who::Alice);
         preorder_name(
@@ -2611,12 +2664,12 @@ mod commit_reveal_lookup_tests {
         assert!(consumed.is_empty(), "a refused reveal consumes nothing");
     }
 
-    /// The fees of a reveal judged first among the preorders of its name, refused and
-    /// accepted: the `firstAmong` hash, the competitors query and a competitor's `findBy`
-    /// hash are processing, on top of what a reveal without `firstAmong` costs.
+    /// The fees of a reveal choosing the first of the preorders of its name, refused and
+    /// accepted: the `chooseFirst` hash, the competitors query and a competitor's `findBy`
+    /// hash are processing, on top of what a reveal without `chooseFirst` costs.
     #[tokio::test]
-    async fn should_pin_the_fees_of_a_reveal_judged_first_among_its_preorders() {
-        let mut fixture = first_among_fixture(true);
+    async fn should_pin_the_fees_of_a_reveal_judged_choose_first_its_preorders() {
+        let mut fixture = choose_first_fixture(true);
         commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
 
@@ -2644,7 +2697,7 @@ mod commit_reveal_lookup_tests {
     /// A signer who cannot pay the fee floor gets past the minimum balance pre-check only by
     /// asking the contract owner to pay their gas, and check tx then validates such a batch
     /// against the state in full, since nobody else could be charged for its failure. The
-    /// `name` type offers no sponsorship (registration refuses `firstAmong` beside an offer), so
+    /// `name` type offers no sponsorship (registration refuses `chooseFirst` beside an offer), so
     /// the request resolves to the signer, and check tx refuses the reveal for the signer's
     /// balance before any of its state is validated: the competitors are never read for free.
     #[tokio::test]
@@ -2695,7 +2748,7 @@ mod commit_reveal_lookup_tests {
     }
 
     /// The token payment info of a create asking the contract owner to pay its gas, which the
-    /// `name` type does not offer (registration refuses `firstAmong` beside an offer).
+    /// `name` type does not offer (registration refuses `chooseFirst` beside an offer).
     fn prefer_contract_owner() -> Option<TokenPaymentInfo> {
         Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
             payment_token_contract_id: None,
@@ -2710,7 +2763,7 @@ mod commit_reveal_lookup_tests {
     /// so check tx judges a reveal where Mallory's preorder is old enough and Alice's precedes
     /// it. Returns Alice's preorder.
     async fn preceded_reveal_fixture() -> (CommitRevealFixture, Document) {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
         let last = block(COMMIT_HEIGHT + 1);
@@ -2736,7 +2789,7 @@ mod commit_reveal_lookup_tests {
         let (errors, estimated) = fixture.check_tx_at(&reveal, FirstTimeCheck);
         assert_eq!(errors, Vec::<u32>::new());
         let estimated = estimated.expect("expected an estimated fee");
-        let budget = first_among_scan_budget(platform_version);
+        let budget = choose_first_scan_budget(platform_version);
         assert_eq!(budget, 100_000_000);
         assert!(
             estimated.processing_fee > budget,
@@ -2781,7 +2834,7 @@ mod commit_reveal_lookup_tests {
         let required = estimated
             .expect("expected the recheck to estimate the fee")
             .total_base_fee();
-        let budget = first_among_scan_budget(PlatformVersion::latest());
+        let budget = choose_first_scan_budget(PlatformVersion::latest());
         assert!(required > budget, "the recheck estimate holds the budget");
 
         fixture.set_balance(Who::Mallory, required - 1);
@@ -2793,7 +2846,7 @@ mod commit_reveal_lookup_tests {
         assert_eq!(fixture.check_tx_at(&reveal, Recheck).0, Vec::<u32>::new());
     }
 
-    /// A `paddedName`: a `name` whose `findBy` and `firstAmong` functions both read a
+    /// A `paddedName`: a `name` whose `findBy` and `chooseFirst` functions both read a
     /// transient `pad` of up to 5,120 bytes, which no stored document keeps.
     fn padded_name_schema() -> serde_json::Value {
         let name_params = serde_json::json!([
@@ -2816,8 +2869,10 @@ mod commit_reveal_lookup_tests {
                     "$ownerId": "$ownerId",
                     "ownerNameHash": { "function": "sys.hash.sha256d", "params": find_by_params }
                 },
-                "firstAmong": {
-                    "nameHash": { "function": "sys.hash.sha256d", "params": name_params }
+                "chooseFirst": {
+                    "property": "nameHash",
+                    "value": { "function": "sys.hash.sha256d", "params": name_params },
+                    "by": ["$createdAtBlockHeight"]
                 },
                 "minimumAgeBlocks": 1
             }),
@@ -2830,7 +2885,7 @@ mod commit_reveal_lookup_tests {
         schema
     }
 
-    /// Check tx reserves the two hashes a reveal's `firstAmong` check computes as their own
+    /// Check tx reserves the two hashes a reveal's `chooseFirst` check computes as their own
     /// values make them: a transient param, which no stored document keeps and so no write
     /// estimate prices, makes the reservation grow by the double SHA-256 blocks it adds to
     /// both preimages, and by nothing else.
@@ -2867,12 +2922,12 @@ mod commit_reveal_lookup_tests {
         };
         let (small, large) = (fee(&small), fee(&large));
 
-        // The findBy preimage is the writer's id and the firstAmong one, `pad | label . parent`
-        let first_among_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
+        // The findBy preimage is the writer's id and the chooseFirst one, `pad | label . parent`
+        let choose_first_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
         let function = HashFunction::Sha256d;
         let blocks = |pad: usize| {
-            u64::from(function.block_count(32 + first_among_len(pad)))
-                + u64::from(function.block_count(first_among_len(pad)))
+            u64::from(function.block_count(32 + choose_first_len(pad)))
+                + u64::from(function.block_count(choose_first_len(pad)))
         };
         assert_eq!(
             large.processing_fee - small.processing_fee,
@@ -2889,7 +2944,7 @@ mod commit_reveal_lookup_tests {
     /// is 1,000 credits, less than the competitors query alone.
     #[tokio::test]
     async fn should_bill_the_competitor_scan_up_to_its_budget() {
-        let mut fixture = first_among_fixture(true);
+        let mut fixture = choose_first_fixture(true);
         preorder_name(
             &mut fixture,
             Who::Carol,
@@ -2909,7 +2964,7 @@ mod commit_reveal_lookup_tests {
         tight_budget
             .fee_version
             .document_reference
-            .first_among_credits_per_candidate = 1;
+            .choose_first_credits_per_candidate = 1;
         let (result, execution_context, _) =
             fixture.validate_references("name", &data, alice, None, REVEAL_HEIGHT, &tight_budget);
 
@@ -2959,12 +3014,12 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// A `firstAmong` into a preorder type of another contract reads that contract's
+    /// A `chooseFirst` into a preorder type of another contract reads that contract's
     /// competitors at write time, as one into its own contract does (it can not consume
     /// there, so the preorders stay).
     #[tokio::test]
-    async fn should_judge_first_among_into_another_contracts_preorders() {
-        let mut fixture = first_among_fixture(true);
+    async fn should_judge_choose_first_into_another_contracts_preorders() {
+        let mut fixture = choose_first_fixture(true);
         let platform_version = PlatformVersion::latest();
         let mut names = serde_json::json!({
             "$formatVersion": "1",
@@ -2979,7 +3034,7 @@ mod commit_reveal_lookup_tests {
                 "contractId": fixture.contract.id().to_string(Encoding::Base58),
                 "documentType": "namePreorder",
                 "findBy": name_find_by(),
-                "firstAmong": name_first_among(),
+                "chooseFirst": name_choose_first(),
                 "minimumAgeBlocks": 1
             }),
             true,
@@ -3028,12 +3083,12 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.document_exists("namePreorder", alice.id()));
     }
 
-    /// At protocol version 13 the contract parses without its references, `firstAmong`
+    /// At protocol version 13 the contract parses without its references, `chooseFirst`
     /// included, and document reference validation (generation 0, which that version also
     /// selects) reads and bills nothing for the name: the in-place changes to that generation
     /// are unreachable there.
     #[test]
-    fn should_judge_no_first_among_at_protocol_version_13() {
+    fn should_judge_no_choose_first_at_protocol_version_13() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)

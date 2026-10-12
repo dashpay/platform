@@ -16,8 +16,8 @@ use crate::data_contract::document_type::property_constraints::{
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, owner_can_change,
-    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS,
-    MAX_LOOKUP_PATH_LENGTH,
+    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_CHOOSE_FIRST_ORDER,
+    MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -25,15 +25,16 @@ use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_path_listed, is_referenced_system_agreement_property,
     is_referring_system_agreement_property, is_transient, property_at_path, property_names,
-    ContractReferenceModeration, ContractReferenceOwner, ContractReferenceRequirements,
-    DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration, DocumentReferenceKind,
-    DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient,
-    EncryptionScheme, GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements,
-    KeyIdReference, KeyReferenceIdentityProperty, ListElementReference, LookupFirstAmong,
-    LookupHashKey, LookupKeySource, PropertyReference, ReferenceCombinator, ReferenceOperands,
-    SystemFunction, WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind,
-    WhereNotEqualBound, WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
+    ChooseFirstOrder, ContractReferenceModeration, ContractReferenceOwner,
+    ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration,
+    DocumentReferenceKind, DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor,
+    EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
+    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
+    ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
+    ReferenceCombinator, ReferenceOperands, SystemFunction, WhereBoundRead, WhereCondition,
+    WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1201,7 +1202,7 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks`, `consume` and `firstAmong` describe the document
+    // `minimumAgeBlocks`, `consume` and `chooseFirst` describe the document
     // `findBy` finds when the referring document is created: they sit beside
     // `findBy` and need it. That the reference is judged on the create alone (a
     // function in `findBy`, or a declaring type whose documents are never
@@ -1211,7 +1212,7 @@ fn validate_reference_target_keys(
     if let Some(keyword) = [
         property_names::MINIMUM_AGE_BLOCKS,
         property_names::CONSUME,
-        property_names::FIRST_AMONG,
+        property_names::CHOOSE_FIRST,
     ]
     .into_iter()
     .find(|keyword| refers_to_map.contains_key(*keyword))
@@ -1388,13 +1389,13 @@ fn parse_reference_target(
                                 .to_string(),
                         ));
                     }
-                    // `firstAmong` reads commitments that expire (`ttl`), which a permanent
+                    // `chooseFirst` reads commitments that expire (`ttl`), which a permanent
                     // document never does
-                    if lookup.first_among.is_some() {
+                    if lookup.choose_first.is_some() {
                         return Err(DataContractError::InvalidContractStructure(
-                            "permanentDocument refersTo does not take firstAmong: the \
+                            "permanentDocument refersTo does not take chooseFirst: the \
                              commitments it reads must expire, and a permanent document never \
-                             leaves state: firstAmong needs a deletableDocument reference"
+                             leaves state: chooseFirst needs a deletableDocument reference"
                                 .to_string(),
                         ));
                     }
@@ -1721,7 +1722,7 @@ fn parse_where_condition(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
-/// `minimumAgeBlocks`, `consume` and `firstAmong` are refused on every parse:
+/// `minimumAgeBlocks`, `consume` and `chooseFirst` are refused on every parse:
 /// they describe a document `findBy` finds by a key, which a list element
 /// reference has no field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
@@ -1734,11 +1735,11 @@ fn parse_list_element_reference(
 ) -> Result<ListElementReference, DataContractError> {
     if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
         || refers_to_map.contains_key(property_names::CONSUME)
-        || refers_to_map.contains_key(property_names::FIRST_AMONG)
+        || refers_to_map.contains_key(property_names::CHOOSE_FIRST)
     {
         return Err(DataContractError::InvalidContractStructure(
             "permanentDocument refersTo inList does not take minimumAgeBlocks, consume or \
-             firstAmong: they describe a document findBy finds by a key, and inList checks that a \
+             chooseFirst: they describe a document findBy finds by a key, and inList checks that a \
              list holds the value"
                 .to_string(),
         ));
@@ -2123,7 +2124,7 @@ pub(super) fn parse_doctype_reference(
 /// referring-side rules). `$id` finds a document by id only for a list
 /// ([`parse_list_element_reference`]): without `findBy` the value is the id.
 /// Beside a function the `refersTo`, `refers_to_map`, may declare
-/// `minimumAgeBlocks`, `consume` and `firstAmong`, what the commitment the key
+/// `minimumAgeBlocks`, `consume` and `chooseFirst`, what the commitment the key
 /// finds must be, whether the create deletes it and which commitments to the
 /// same values it must precede, held on the parsed lookup. What the
 /// names resolve to is checked once the document types are parsed: the
@@ -2233,51 +2234,113 @@ fn parse_find_by(
             ))
         }
     };
-    let first_among = refers_to_map
-        .get(property_names::FIRST_AMONG)
-        .map(|value| parse_first_among(value))
+    let choose_first = refers_to_map
+        .get(property_names::CHOOSE_FIRST)
+        .map(|value| parse_choose_first(value))
         .transpose()?;
     Ok(DocumentReferenceLookup {
         minimum_age_blocks,
         consume,
-        first_among,
+        choose_first,
         ..lookup
     })
 }
 
-/// The `firstAmong` of a document reference, `first_among_value`: exactly one
-/// entry, a schema property of the referenced document type mapped to the
-/// function that fills it, `{ "<property>": { "function", "params" } }`, the
-/// shape of a `findBy` function. What it may read and what it names are
-/// checked once the document types are parsed: the params against the
-/// declaring type, beside the `findBy` function it complements
-/// ([`DocumentReferenceLookup::referring_side_error`], on every parse), the
-/// property and its index against the referenced type
+/// The `chooseFirst` of a document reference, `choose_first_value`:
+/// `{ "property", "value", "by" }`. `property` is a schema property of the referenced document
+/// type that `value`, a function of the shape of a `findBy` function, fills; `by` lists the
+/// properties the commitments to the same values are ordered by, each a name (ascending) or
+/// `{ "<name>": "asc" | "desc" }`, at most [`MAX_CHOOSE_FIRST_ORDER`], each once, `$id` only
+/// last and never `property` itself. What the function may read is checked once the document
+/// types are parsed, beside the `findBy` function it complements
+/// ([`DocumentReferenceLookup::referring_side_error`], on every parse); the property, the
+/// order and their index against the referenced type
 /// ([`DocumentReferenceLookup::referenced_side_error`]).
-fn parse_first_among(first_among_value: &Value) -> Result<LookupFirstAmong, DataContractError> {
-    let first_among_map = first_among_value.to_btree_ref_string_map()?;
-    let mut entries = first_among_map.into_iter();
-    let (Some((property, function)), None) = (entries.next(), entries.next()) else {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo firstAmong holds exactly one entry, the referenced property its function \
-             fills"
-                .to_string(),
-        ));
+fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, DataContractError> {
+    let refused = |reason: String| {
+        DataContractError::InvalidContractStructure(format!("refersTo chooseFirst {reason}"))
     };
-    if property.is_empty() || property.len() > MAX_LOOKUP_PATH_LENGTH || property.starts_with('$') {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "refersTo firstAmong names a schema property of the referenced document type of 1 to \
-             {MAX_LOOKUP_PATH_LENGTH} characters, which its function fills, not {property:?}"
+    let choose_first_map = choose_first_value.to_btree_ref_string_map()?;
+    if let Some(unknown) = choose_first_map
+        .keys()
+        .find(|key| !matches!(key.as_str(), "property" | "value" | "by"))
+    {
+        return Err(refused(format!(
+            "holds \"property\", \"value\" and \"by\" only, not {unknown:?}"
         )));
     }
-    if !matches!(function, Value::Map(_)) {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "refersTo firstAmong \"{property}\" maps to a function, {{ \"function\", \"params\" }}"
+    let property = match choose_first_map.get("property") {
+        Some(Value::Text(property))
+            if !property.is_empty()
+                && property.len() <= MAX_LOOKUP_PATH_LENGTH
+                && !property.starts_with('$') =>
+        {
+            property.clone()
+        }
+        _ => {
+            return Err(refused(format!(
+                "names in \"property\" a schema property of the referenced document type of 1 \
+                 to {MAX_LOOKUP_PATH_LENGTH} characters, which its function fills"
+            )))
+        }
+    };
+    let Some(function @ Value::Map(_)) = choose_first_map.get("value") else {
+        return Err(refused(format!(
+            "\"{property}\" takes in \"value\" a function, {{ \"function\", \"params\" }}"
+        )));
+    };
+    let Some(Value::Array(entries)) = choose_first_map.get("by") else {
+        return Err(refused(format!(
+            "\"{property}\" lists in \"by\" the properties commitments are ordered by"
+        )));
+    };
+    if entries.is_empty() || entries.len() > MAX_CHOOSE_FIRST_ORDER {
+        return Err(refused(format!(
+            "\"{property}\" orders by 1 to {MAX_CHOOSE_FIRST_ORDER} properties"
         )));
     }
-    Ok(LookupFirstAmong {
+    let mut by: Vec<ChooseFirstOrder> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let order = match entry {
+            Value::Text(name) => Some((name.clone(), true)),
+            Value::Map(map) => match map.as_slice() {
+                [(Value::Text(name), Value::Text(direction))] => match direction.as_str() {
+                    "asc" => Some((name.clone(), true)),
+                    "desc" => Some((name.clone(), false)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some((name, ascending)) =
+            order.filter(|(name, _)| !name.is_empty() && name.len() <= MAX_LOOKUP_PATH_LENGTH)
+        else {
+            return Err(refused(format!(
+                "\"{property}\" orders by a property name, ascending, or by {{ \"<name>\": \"asc\" \
+                 }} or {{ \"<name>\": \"desc\" }}"
+            )));
+        };
+        if name == property || by.iter().any(|order| order.property == name) {
+            return Err(refused(format!(
+                "\"{property}\" orders by \"{name}\" twice, or by the property it fills"
+            )));
+        }
+        if by.last().is_some_and(|order| order.property == ID) {
+            return Err(refused(format!(
+                "\"{property}\" orders by {ID} last only: the entries of an index are kept by it \
+                 after every one of its properties"
+            )));
+        }
+        by.push(ChooseFirstOrder {
+            property: name,
+            ascending,
+        });
+    }
+    Ok(LookupChooseFirst {
         property,
-        key: LookupHashKey::from_value_of(function, property_names::FIRST_AMONG)?,
+        key: LookupHashKey::from_value_of(function, property_names::CHOOSE_FIRST)?,
+        by,
     })
 }
 
@@ -2304,8 +2367,8 @@ pub(super) fn validate_reference_lookup_sources(
     // element, and the owner or creator reference's `"."` is that identity,
     // named by the path `$ownerId` or `$creatorId`, which no property source
     // can be
-    // At most one `firstAmong` on the type, so a create reads one set of competitors
-    let mut first_among_declared = false;
+    // At most one `chooseFirst` on the type, so a create reads one set of competitors
+    let mut choose_first_declared = false;
     for (holder, reference) in document_type.reference_declarations() {
         let Some(target) = reference.target() else {
             continue;
@@ -2320,19 +2383,19 @@ pub(super) fn validate_reference_lookup_sources(
             let Some(lookup) = declaration.lookup else {
                 continue;
             };
-            let first_among_error = lookup.first_among.as_ref().and_then(|_| {
-                let error = first_among_declaration_error(
+            let choose_first_error = lookup.choose_first.as_ref().and_then(|_| {
+                let error = choose_first_declaration_error(
                     on_elements,
                     &leaf_path,
                     &declaration,
-                    first_among_declared,
+                    choose_first_declared,
                 );
-                first_among_declared = true;
+                choose_first_declared = true;
                 error
             });
-            // Where a `firstAmong` sits is judged first: on the elements of a typed array its
+            // Where a `chooseFirst` sits is judged first: on the elements of a typed array its
             // findBy, which may read the element in no function, would be refused for that
-            if let Some(reason) = first_among_error
+            if let Some(reason) = choose_first_error
                 .or_else(|| lookup.referring_side_error(document_type, holder.path()))
                 .or_else(|| create_only_leaf_error(document_type, &leaf_path, lookup, &declaration))
                 .or_else(|| age_or_consume_error(document_type, lookup))
@@ -2352,9 +2415,9 @@ pub(super) fn validate_reference_lookup_sources(
     Ok(())
 }
 
-/// Why a `firstAmong` cannot sit where it is declared; `None` when it can. A create reads
-/// the commitments a `firstAmong` precedes once per value it judges, up to
-/// `SystemLimits::max_first_among_candidates` documents, so a document type declares at most
+/// Why a `chooseFirst` cannot sit where it is declared; `None` when it can. A create reads
+/// the commitments a `chooseFirst` precedes once per value it judges, up to
+/// `SystemLimits::max_choose_first_candidates` documents, so a document type declares at most
 /// one (`already_declared` is whether an earlier declaration of the type held one), on a
 /// single reference: not on the elements of a typed array (`on_elements`), each element of
 /// which would read them again, nor on an operand of a reference expression (`leaf_path`
@@ -2363,7 +2426,7 @@ pub(super) fn validate_reference_lookup_sources(
 /// (`where_conditions`): a competitor is judged on its key alone, so a commitment differing
 /// from the create's in a `where` value, or failing a condition the found one meets, could
 /// precede it.
-fn first_among_declaration_error(
+fn choose_first_declaration_error(
     on_elements: bool,
     leaf_path: &str,
     declaration: &DocumentReferenceDeclaration,
@@ -2371,28 +2434,28 @@ fn first_among_declaration_error(
 ) -> Option<String> {
     if already_declared {
         return Some(
-            "a document type declares at most one firstAmong: a create reads the competitors \
+            "a document type declares at most one chooseFirst: a create reads the competitors \
              of each"
                 .to_string(),
         );
     }
     if on_elements {
         return Some(
-            "firstAmong may not sit on the elements of a typed array: every element would read \
+            "chooseFirst may not sit on the elements of a typed array: every element would read \
              the competitors of its commitment again"
                 .to_string(),
         );
     }
     if !leaf_path.is_empty() {
         return Some(
-            "firstAmong may not sit on an operand of a reference expression: it describes the \
+            "chooseFirst may not sit on an operand of a reference expression: it describes the \
              one commitment a reference reveals"
                 .to_string(),
         );
     }
     if let Some(referenced) = declaration.where_conditions.keys().next() {
         return Some(format!(
-            "where \"{referenced}\" holds a condition beside firstAmong: a competitor is judged \
+            "where \"{referenced}\" holds a condition beside chooseFirst: a competitor is judged \
              on its key alone, so where may compare nothing but \"{OWNER_ID}\" with the writer"
         ));
     }
@@ -2404,7 +2467,7 @@ fn first_among_declaration_error(
         })
         .map(|(referring, referenced)| {
             format!(
-                "where \"{referenced}\": \"{referring}\" beside firstAmong: a competitor is \
+                "where \"{referenced}\": \"{referring}\" beside chooseFirst: a competitor is \
                  judged on its key alone, so where may compare nothing but \"{OWNER_ID}\" with \
                  the writer"
             )

@@ -111,9 +111,9 @@ use crate::version::system_limits::SystemLimits;
 ///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
 ///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
 ///   configuration able to carry it.
-/// * First among commitments (protocol version 14): a create whose `refersTo` declares
-///   `firstAmong` reads at most 1,000 competitors of the commitment it found
-///   (`max_first_among_candidates`, backfilled into the earlier tables, whose validation never
+/// * Choosing the first commitment (protocol version 14): a create whose `refersTo` declares
+///   `chooseFirst` reads at most 1,000 competitors of the commitment it found
+///   (`max_choose_first_candidates`, backfilled into the earlier tables, whose validation never
 ///   reads it).
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // The page matches one notes-tree chunk (2^11). A batch holds at most that
@@ -185,5 +185,5 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
-    max_first_among_candidates: 1_000, // refersTo firstAmong (new in v14): competitors a create reads, oldest first
+    max_choose_first_candidates: 1_000, // refersTo chooseFirst (new in v14): competitors a create reads, oldest first
 };

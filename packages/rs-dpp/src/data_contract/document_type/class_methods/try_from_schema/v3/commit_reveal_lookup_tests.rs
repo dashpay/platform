@@ -226,7 +226,7 @@ fn dpns_lookup(minimum_age_blocks: Option<u32>, consume: bool) -> DocumentRefere
         )]),
         minimum_age_blocks,
         consume,
-        first_among: None,
+        choose_first: None,
     }
 }
 

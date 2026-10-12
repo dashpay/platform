@@ -1,6 +1,6 @@
 use crate::version::fee::document_reference::FeeDocumentReferenceVersion;
 
-/// Introduced with protocol version 14 (4.2), the first version that parses `firstAmong`;
+/// Introduced with protocol version 14 (4.2), the first version that parses `chooseFirst`;
 /// every fee schedule references it, and none before 14 reads it.
 ///
 /// A competitor costs about 50,000 credits to read and hash for a commitment of a few
@@ -10,5 +10,5 @@ use crate::version::fee::document_reference::FeeDocumentReferenceVersion;
 /// admitted, and which a reveal is charged only as far as its scan actually costs.
 pub const FEE_DOCUMENT_REFERENCE_VERSION1: FeeDocumentReferenceVersion =
     FeeDocumentReferenceVersion {
-        first_among_credits_per_candidate: 100_000,
+        choose_first_credits_per_candidate: 100_000,
     };

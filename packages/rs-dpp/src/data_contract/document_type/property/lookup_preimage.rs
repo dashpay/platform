@@ -159,7 +159,7 @@ impl LookupHashKey {
     }
 
     /// [`Self::from_value`] for a function declared under the `refersTo` keyword `keyword`
-    /// (`findBy` or `firstAmong`), which its errors name.
+    /// (`findBy` or `chooseFirst`), which its errors name.
     pub fn from_value_of(value: &Value, keyword: &str) -> Result<Self, DataContractError> {
         let map = value.to_btree_ref_string_map()?;
         if let Some(unknown) = map
@@ -590,7 +590,7 @@ fn value_bytes<'a>(param: &str, value: &'a Value) -> Result<Cow<'a, [u8]>, Looku
 }
 
 /// The first reference of `document_type` whose computed lookup key, or the
-/// function of its `firstAmong`, a create by `owner_id` carrying
+/// function of its `chooseFirst`, a create by `owner_id` carrying
 /// `document_data` cannot reveal, with the path the reference is declared at
 /// (a property path, `$ownerId` or `$creatorId`): a param it reads is absent,
 /// of the wrong kind or behind a repeated key, or a variable-length value holds
@@ -665,12 +665,12 @@ pub fn first_unrevealable_lookup_key(
         {
             return Some((holder.path().to_string(), error));
         }
-        // The `firstAmong` function reads neither `"."` nor the writer (registration
+        // The `chooseFirst` function reads neither `"."` nor the writer (registration
         // refuses both) and the properties the `findBy` function reads, which are there by
         // now, but its separators may differ, so a value may hold one of them only
-        if let Some(first_among) = &lookup.first_among {
+        if let Some(choose_first) = &lookup.choose_first {
             if let Err(error) =
-                first_among
+                choose_first
                     .key
                     .check_preimage(document_type, None, owner_id, document_data)
             {
@@ -678,7 +678,7 @@ pub fn first_unrevealable_lookup_key(
                     holder.path().to_string(),
                     LookupPreimageError {
                         reason: format!(
-                            "{}, in the preimage of the firstAmong function",
+                            "{}, in the preimage of the chooseFirst function",
                             error.reason
                         ),
                         ..error

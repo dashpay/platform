@@ -742,7 +742,7 @@ pub enum StateError {
     ReferencedDocumentRuleReadInvalidError(ReferencedDocumentRuleReadInvalidError),
     // The commitment a create's `refersTo` found is preceded by a valid one of another
     // identity, from an earlier block, holding the same value at the property the reference's
-    // `firstAmong` names (protocol version 14).
+    // `chooseFirst` names (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
 }
@@ -850,7 +850,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
-                    first_among: None,
+                    choose_first: None,
                 },
             }),
             6
@@ -881,7 +881,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
-                    first_among: None,
+                    choose_first: None,
                 },
             }),
             10
@@ -1662,7 +1662,7 @@ mod tests {
             174
         );
         // A create's commitment preceded by an older valid one of another identity
-        // (`firstAmong`, protocol version 14).
+        // (`chooseFirst`, protocol version 14).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentPrecededError(
                 ReferencedDocumentPrecededError::new(

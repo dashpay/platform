@@ -119,7 +119,7 @@ pub enum DocumentReferenceErrorCodeWasm {
     ReferencedDocumentRuleReadInvalid = 40148,
     /// The commitment a create's `refersTo` found, its writer's own, is
     /// preceded by another identity's: a commitment to the same values (the
-    /// same value at the property the reference's `firstAmong` names) from an
+    /// same value at the property the reference's `chooseFirst` names) from an
     /// earlier block, not expired, and valid, made by an identity that knew
     /// the values and not copied. The commitment from the earliest block wins.
     ReferencedDocumentPreceded = 40149,

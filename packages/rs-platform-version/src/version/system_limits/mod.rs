@@ -405,19 +405,18 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
-    /// The most documents a create reads for a `refersTo` `firstAmong`, the competitors of
+    /// The most documents a create reads for a `refersTo` `chooseFirst`, the competitors of
     /// the commitment its `findBy` found: the documents of the referenced type holding the same
-    /// `firstAmong` value from earlier blocks, read oldest first (by `$createdAtBlockHeight`,
-    /// then by id) through the type's index over exactly that property and
-    /// `$createdAtBlockHeight`, in one query. The create is refused at the first valid
-    /// competitor among them, and stands when none of the first this many is one, so documents
-    /// that are no valid competitor can make a create cost more, never refuse it. Registration
-    /// demands a unique index over the referenced type's `$ownerId` and that property, so each
-    /// of them is another identity's, and ordering this many before a valid commitment takes
-    /// this many identities holding the value from before it landed. Read by document reference
-    /// validation 0 (protocol version 14); the earlier tables carry the same number, which
-    /// nothing reads there.
-    pub max_first_among_candidates: u16,
+    /// `chooseFirst` value, read in the order its `by` lists through the type's index over that
+    /// property and the ordered properties, in one query, as far as the found commitment. The
+    /// create is refused at the first valid one before the found commitment, and stands when
+    /// none of the first this many is one, so documents that are no valid competitor can make
+    /// a create cost more, never refuse it. Registration demands a unique index over the
+    /// referenced type's `$ownerId` and that property, so each of them is another identity's,
+    /// and ordering this many before a valid commitment takes this many identities. Read by
+    /// document reference validation 0 (protocol version 14); the earlier tables carry the
+    /// same number, which nothing reads there.
+    pub max_choose_first_candidates: u16,
 }
 
 #[cfg(test)]

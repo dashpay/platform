@@ -162,7 +162,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             vote_resolution_fund_fees: value.vote_resolution_fund_fees.into(),
             // Pre-4.2 tables predate the document `ttl` keyword; the group is unread there.
             document_ttl: FEE_DOCUMENT_TTL_VERSION1,
-            // Nor do they parse `firstAmong`; the group is unread there too.
+            // Nor do they parse `chooseFirst`; the group is unread there too.
             document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
         }
     }

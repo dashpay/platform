@@ -16,7 +16,7 @@ pub const FEE_VERSION3: FeeVersion = FeeVersion {
     // tiered lifetime price and prepay their deletion; FEE_VERSION2 carries the same
     // group, unread before 14, so the table is spelled out here where it takes effect.
     document_ttl: FEE_DOCUMENT_TTL_VERSION1,
-    // The budget of a `firstAmong` competitor scan (new in protocol version 14), which check
+    // The budget of a `chooseFirst` competitor scan (new in protocol version 14), which check
     // tx reserves; FEE_VERSION2 carries the same group, unread before 14.
     document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
     ..FEE_VERSION2

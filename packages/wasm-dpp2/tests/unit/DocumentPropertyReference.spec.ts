@@ -160,10 +160,11 @@ type Reference = {
   where?: Record<string, string | Record<string, unknown>>;
   minimumAgeBlocks?: number;
   consume?: boolean;
-  firstAmong?: Record<
-    string,
-    { function: string; params: Array<string | { const: string }> }
-  >;
+  chooseFirst?: {
+    property: string;
+    value: { function: string; params: Array<string | { const: string }> };
+    by: Array<Record<string, 'asc' | 'desc'>>;
+  };
   inList?: string;
 };
 
@@ -521,14 +522,16 @@ describe('DataContract — refersTo declarations (v14)', () => {
     const nameParams = ['normalizedLabel', { const: '.' }, 'normalizedParentDomainName'];
 
     // A name registration whose preorders hold the hash of the writer and the
-    // name, and that of the name alone at `nameProperty`
-    const firstAmongSchemas = (nameProperty: string) => {
+    // name, and that of the name alone, ordered by `orderProperty`: their
+    // creation height, or a required integer property of that name
+    const chooseFirstSchemas = (orderProperty = '$createdAtBlockHeight') => {
       const hash = {
         type: 'array',
         byteArray: true,
         minItems: 32,
         maxItems: 32,
       };
+      const ordersBySchemaProperty = !orderProperty.startsWith('$');
       return {
         namePreorder: {
           type: 'object',
@@ -537,7 +540,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
           ttl: 3600,
           properties: {
             ownerNameHash: { ...hash, position: 0 },
-            [nameProperty]: { ...hash, position: 1 },
+            nameHash: { ...hash, position: 1 },
+            ...(ordersBySchemaProperty
+              ? { [orderProperty]: { type: 'integer', minimum: 0, position: 2 } }
+              : {}),
           },
           indices: [
             {
@@ -547,15 +553,21 @@ describe('DataContract — refersTo declarations (v14)', () => {
             },
             {
               name: 'ownerAndName',
-              properties: [{ $ownerId: 'asc' }, { [nameProperty]: 'asc' }],
+              properties: [{ $ownerId: 'asc' }, { nameHash: 'asc' }],
               unique: true,
             },
             {
-              name: 'nameHashByHeight',
-              properties: [{ [nameProperty]: 'asc' }, { $createdAtBlockHeight: 'asc' }],
+              name: 'nameHashInOrder',
+              properties: [{ nameHash: 'asc' }, { [orderProperty]: 'asc' }],
             },
           ],
-          required: ['$createdAt', '$createdAtBlockHeight', 'ownerNameHash', nameProperty],
+          required: [
+            '$createdAt',
+            '$createdAtBlockHeight',
+            'ownerNameHash',
+            'nameHash',
+            ...(ordersBySchemaProperty ? [orderProperty] : []),
+          ],
           additionalProperties: false,
         },
         name: {
@@ -577,8 +589,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
                 params: ['$ownerId', ...nameParams],
               },
             },
-            firstAmong: {
-              [nameProperty]: { function: 'sys.hash.sha256d', params: nameParams },
+            chooseFirst: {
+              property: 'nameHash',
+              value: { function: 'sys.hash.sha256d', params: nameParams },
+              by: [{ [orderProperty]: 'asc' }],
             },
             minimumAgeBlocks: 1,
           },
@@ -587,21 +601,21 @@ describe('DataContract — refersTo declarations (v14)', () => {
       };
     };
 
-    const firstAmongContract = (documentSchemas: Record<string, unknown>) => new wasm.DataContract({
+    const chooseFirstContract = (typeSchemas: Record<string, unknown>) => new wasm.DataContract({
       ownerId,
       identityNonce: BigInt(2),
-      schemas: documentSchemas,
+      schemas: typeSchemas,
       definitions: null,
       fullValidation: true,
       platformVersion: new PlatformVersion(14),
     });
 
-    it('should report firstAmong beside a findBy function reading the writer', () => {
-      const contract = firstAmongContract(firstAmongSchemas('nameHash'));
+    it('should report chooseFirst beside a findBy function reading the writer', () => {
+      const contract = chooseFirstContract(chooseFirstSchemas());
       const [creator] = contract.documentTypeReferences('name') as Reference[];
 
       // The writer is the "$ownerId" param of the findBy function, and
-      // firstAmong is reported as the schema spells it
+      // chooseFirst is reported as the schema spells it
       expect(creator.path).to.equal('$creatorId');
       expect(creator.findBy).to.deep.equal({
         $ownerId: '$ownerId',
@@ -610,23 +624,22 @@ describe('DataContract — refersTo declarations (v14)', () => {
           params: ['$ownerId', ...nameParams],
         },
       });
-      expect(creator.firstAmong).to.deep.equal({
-        nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+      expect(creator.chooseFirst).to.deep.equal({
+        property: 'nameHash',
+        value: { function: 'sys.hash.sha256d', params: nameParams },
+        by: [{ $createdAtBlockHeight: 'asc' }],
       });
       expect(creator.minimumAgeBlocks).to.equal(1);
     });
 
-    it('should report a firstAmong property named __proto__ as an own entry', () => {
+    it('should report a chooseFirst order by a property named __proto__ as an own entry', () => {
       // A computed key, unlike a literal `__proto__:`, makes an own property
-      const contract = firstAmongContract(firstAmongSchemas('__proto__'));
+      const contract = chooseFirstContract(chooseFirstSchemas('__proto__'));
       const [creator] = contract.documentTypeReferences('name') as Reference[];
+      const [order] = creator.chooseFirst!.by;
 
-      expect(Object.keys(creator.firstAmong as object)).to.deep.equal(['__proto__']);
-      expect(JSON.stringify(creator.firstAmong)).to.equal(
-        JSON.stringify({
-          ['__proto__']: { function: 'sys.hash.sha256d', params: nameParams },
-        }),
-      );
+      expect(Object.keys(order)).to.deep.equal(['__proto__']);
+      expect(JSON.stringify(creator.chooseFirst!.by)).to.equal('[{"__proto__":"asc"}]');
     });
 
     it('should refuse findBy naming exactly the properties of an index that is not unique', () => {

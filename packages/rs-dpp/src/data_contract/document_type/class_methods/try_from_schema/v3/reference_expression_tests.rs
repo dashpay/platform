@@ -205,7 +205,7 @@ fn expected_join_request_lookup() -> DocumentPropertyReferenceTarget {
             .into(),
             minimum_age_blocks: None,
             consume: false,
-            first_among: None,
+            choose_first: None,
         },
     }
 }
@@ -227,7 +227,7 @@ fn expected_added_moderator_lookup() -> DocumentPropertyReferenceTarget {
             .into(),
             minimum_age_blocks: None,
             consume: false,
-            first_among: None,
+            choose_first: None,
         },
     }
 }

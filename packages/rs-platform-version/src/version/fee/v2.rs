@@ -24,6 +24,6 @@ pub const FEE_VERSION2: FeeVersion = FeeVersion {
     vote_resolution_fund_fees: VOTE_RESOLUTION_FUND_FEES_VERSION1,
     // Unread before protocol version 14: the document `ttl` keyword does not parse there.
     document_ttl: FEE_DOCUMENT_TTL_VERSION1,
-    // Unread before protocol version 14: `firstAmong` does not parse there.
+    // Unread before protocol version 14: `chooseFirst` does not parse there.
     document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
 };

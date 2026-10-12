@@ -240,11 +240,11 @@ export type DocumentPropertyReferenceTarget =
       consume?: true;
       /**
        * Beside a `findBy` function reading `'$ownerId'` and the `findBy`
-       * entry `$ownerId: '$ownerId'`: the create is refused while another
-       * identity holds a valid commitment to the same values from an earlier
-       * block (code 40149). See {@link DocumentReferenceFirstAmong}.
+       * entry `$ownerId: '$ownerId'`: the create is refused while a valid
+       * commitment to the same values comes before the found one in the
+       * order `by` lists (code 40149). See {@link DocumentReferenceChooseFirst}.
        */
-      firstAmong?: DocumentReferenceFirstAmong;
+      chooseFirst?: DocumentReferenceChooseFirst;
     }
   | {
       /**
@@ -402,20 +402,25 @@ export type DocumentReferenceFindByFunction = {
 };
 
 /**
- * A `deletableDocument` reference's `firstAmong`: `{ <referenced property>:
- * <function> }`, one entry, a {@link DocumentReferenceFindByFunction} over
- * exactly the properties the `findBy` function reads, never `'$ownerId'` or
- * `'.'`, beside a `findBy` holding that function (reading `'$ownerId'`) and
- * `$ownerId: '$ownerId'` alone. Every commitment to the same values holds its
- * hash at that property, whoever made it. A create is refused when another
- * identity's commitment from an earlier block holds the same value, is not
- * past its `ttl`, and is valid: the property the `findBy` function fills holds
- * that function computed with the commitment's owner as `'$ownerId'`, which
- * takes knowing the values, so a copied hash does not count (code 40149). A
- * commitment past its own `ttl` reveals nothing (code 40120). The commitment
- * that lands first wins; a commitment from the same block does not precede.
+ * A `deletableDocument` reference's `chooseFirst`, beside a `findBy` holding a
+ * function reading `'$ownerId'` and `$ownerId: '$ownerId'` alone. `value`, a
+ * {@link DocumentReferenceFindByFunction} over exactly the properties the
+ * `findBy` function reads, never `'$ownerId'` or `'.'`, fills `property`:
+ * every commitment to the same values holds that hash, whoever made it. The
+ * commitments to the same values are ordered by `by`, each entry one property
+ * and its direction, a last `$id` breaking ties. A create is refused when a
+ * commitment before the found one in that order is not past its `ttl` and is
+ * valid: the property the `findBy` function fills holds that function computed
+ * with the commitment's owner as `'$ownerId'`, which takes knowing the values,
+ * so a copied hash does not count (code 40149). Two commitments equal on every
+ * `by` property precede neither other. A commitment past its own `ttl` reveals
+ * nothing (code 40120).
  */
-export type DocumentReferenceFirstAmong = Record<string, DocumentReferenceFindByFunction>;
+export type DocumentReferenceChooseFirst = {
+  property: string;
+  value: DocumentReferenceFindByFunction;
+  by: Array<Record<string, 'asc' | 'desc'>>;
+};
 
 /**
  * A single `refersTo` declaration on a document type.
@@ -673,7 +678,7 @@ fn where_condition_to_js(condition: &WhereCondition, path: &str) -> WasmDppResul
 /// The `findBy` field of a document reference found by it: every property it
 /// names mapped to its source as the schema spells it, `'.'`, `'$ownerId'`, a
 /// property path, or a function as `{ function, params }`, and, beside a
-/// function, `minimumAgeBlocks`, `consume` and `firstAmong` where declared.
+/// function, `minimumAgeBlocks`, `consume` and `chooseFirst` where declared.
 fn set_find_by_fields(
     object: &Object,
     lookup: &DocumentReferenceLookup,
@@ -694,15 +699,33 @@ fn set_find_by_fields(
     if lookup.consume {
         set_field(object, "consume", &JsValue::TRUE, path)?;
     }
-    if let Some(first_among) = &lookup.first_among {
-        let first_among_object = Object::new();
-        set_schema_field(
-            &first_among_object,
-            &first_among.property,
-            find_by_function_to_js(&first_among.key, path)?,
+    if let Some(choose_first) = &lookup.choose_first {
+        let choose_first_object = Object::new();
+        set_field(
+            &choose_first_object,
+            "property",
+            &JsValue::from_str(&choose_first.property),
             path,
         )?;
-        set_field(object, "firstAmong", &first_among_object, path)?;
+        set_field(
+            &choose_first_object,
+            "value",
+            &find_by_function_to_js(&choose_first.key, path)?,
+            path,
+        )?;
+        let by = Array::new();
+        for order in &choose_first.by {
+            let entry = Object::new();
+            set_schema_field(
+                &entry,
+                &order.property,
+                JsValue::from_str(if order.ascending { "asc" } else { "desc" }),
+                path,
+            )?;
+            by.push(&entry);
+        }
+        set_field(&choose_first_object, "by", &by, path)?;
+        set_field(object, "chooseFirst", &choose_first_object, path)?;
     }
     Ok(())
 }

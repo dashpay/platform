@@ -17,7 +17,7 @@ use dpp::data_contract::document_type::{
     DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceKind,
     DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
-    LookupFirstAmong, PropertyReference,
+    ChooseFirstOrder, LookupChooseFirst, PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
@@ -27,6 +27,7 @@ use dpp::data_contract::document_type::property_constraints::{
 use dpp::data_contract::document_type::{WhereBoundRead, WhereCondition, WhereLiteralKind};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{ID, OWNER_ID};
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
@@ -47,12 +48,13 @@ use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::sync::Arc;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
-use drive::query::TransactionArg;
+use drive::query::{TransactionArg, WhereClause, WhereOperator};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
@@ -75,7 +77,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    fetch_document_through_lookup, fetch_document_with_id, fetch_documents_holding_before,
+    fetch_document_through_lookup, fetch_document_with_id, fetch_documents_holding_in_order,
     hash_lookup_key, holds_key_part, BilledLookupKey,
 };
 use crate::execution::validation::state_transition::common::validate_document_not_expired::document_is_expired;
@@ -1569,7 +1571,7 @@ fn validate_reference_target_v0(
             }
 
             // The commitment a computed key found: it must be old enough, the first valid one
-            // among those to the same values when the reference declares `firstAmong`, and
+            // among those to the same values when the reference declares `chooseFirst`, and
             // the create deletes it when the reference consumes it. Its age is judged in
             // blocks, from its `$createdAtBlockHeight` (registration demands the type record
             // one) to the block of the create, so 1 means an earlier block; a document
@@ -1594,10 +1596,10 @@ fn validate_reference_target_v0(
                     }
                 }
                 // Judged on the create alone, so here a create: registration admits
-                // `firstAmong` only beside a `findBy` function
-                if let Some(first_among) = &lookup.first_among {
-                    let result = validate_first_among_v0(
-                        first_among,
+                // `chooseFirst` only beside a `findBy` function
+                if let Some(choose_first) = &lookup.choose_first {
+                    let result = validate_choose_first_v0(
+                        choose_first,
                         lookup,
                         found,
                         referenced_contract,
@@ -1731,31 +1733,31 @@ fn validate_reference_target_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
-/// The most a create's `firstAmong` competitor scan bills: the credits per competitor of the
-/// fee schedule (`FeeDocumentReferenceVersion::first_among_credits_per_candidate`) times the
-/// competitors it may read (`SystemLimits::max_first_among_candidates`). Check tx reserves it
-/// for every such create whose state it does not validate ([`first_among_reservation`]), so
+/// The most a create's `chooseFirst` competitor scan bills: the credits per competitor of the
+/// fee schedule (`FeeDocumentReferenceVersion::choose_first_credits_per_candidate`) times the
+/// competitors it may read (`SystemLimits::max_choose_first_candidates`). Check tx reserves it
+/// for every such create whose state it does not validate ([`choose_first_reservation`]), so
 /// the scan never costs more in a block than the signer was admitted with.
-pub(crate) fn first_among_scan_budget(platform_version: &PlatformVersion) -> Credits {
+pub(crate) fn choose_first_scan_budget(platform_version: &PlatformVersion) -> Credits {
     platform_version
         .fee_version
         .document_reference
-        .first_among_credits_per_candidate
+        .choose_first_credits_per_candidate
         .saturating_mul(u64::from(
-            platform_version.system_limits.max_first_among_candidates,
+            platform_version.system_limits.max_choose_first_candidates,
         ))
 }
 
-/// What check tx reserves, on top of the estimated fee of `action`, for the `firstAmong`
+/// What check tx reserves, on top of the estimated fee of `action`, for the `chooseFirst`
 /// checks of its creates when it does not validate their state: for every create of a
-/// document type declaring `firstAmong` (registration admits at most one per type), the
-/// double SHA-256s of its `findBy` and `firstAmong` preimages, priced by the blocks the
+/// document type declaring `chooseFirst` (registration admits at most one per type), the
+/// double SHA-256s of its `findBy` and `chooseFirst` preimages, priced by the blocks the
 /// create's own values make them (a transient param counts, though no stored document keeps
-/// it), and [`first_among_scan_budget`] for the competitor scan. Nothing for anything else,
+/// it), and [`choose_first_scan_budget`] for the competitor scan. Nothing for anything else,
 /// nor for a create whose preimage cannot be assembled, which structure validation refuses
 /// before any read. Without it, a signer covering the create's estimated fee but not these
 /// would be admitted, then refused unpaid in a block, its nonce left to replay the work.
-pub(crate) fn first_among_reservation(
+pub(crate) fn choose_first_reservation(
     action: &StateTransitionAction,
     platform_version: &PlatformVersion,
 ) -> Vec<ValidationOperation> {
@@ -1778,15 +1780,15 @@ pub(crate) fn first_among_reservation(
         else {
             continue;
         };
-        let Some(lookup) = first_among_lookup(document_type) else {
+        let Some(lookup) = choose_first_lookup(document_type) else {
             continue;
         };
-        // Neither function reads `"."` beside `firstAmong`, which registration refuses
+        // Neither function reads `"."` beside `chooseFirst`, which registration refuses
         for key in lookup.hash_key().map(|(_, key)| key).into_iter().chain(
             lookup
-                .first_among
+                .choose_first
                 .as_ref()
-                .map(|first_among| &first_among.key),
+                .map(|choose_first| &choose_first.key),
         ) {
             if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
                 reservation.push(ValidationOperation::DoubleSha256(
@@ -1795,15 +1797,15 @@ pub(crate) fn first_among_reservation(
             }
         }
         reservation.push(ValidationOperation::PrecalculatedOperation(
-            FeeResult::new_from_processing_fee(first_among_scan_budget(platform_version)),
+            FeeResult::new_from_processing_fee(choose_first_scan_budget(platform_version)),
         ));
     }
     reservation
 }
 
-/// The lookup through which `document_type` judges a create first among the commitments it
-/// found (`firstAmong`), if it declares one.
-fn first_among_lookup(document_type: DocumentTypeRef<'_>) -> Option<&DocumentReferenceLookup> {
+/// The lookup through which `document_type` chooses the first of the commitments to a
+/// create's values (`chooseFirst`), if it declares one.
+fn choose_first_lookup(document_type: DocumentTypeRef<'_>) -> Option<&DocumentReferenceLookup> {
     document_type
         .reference_declarations()
         .filter_map(|(_, reference)| reference.target())
@@ -1812,21 +1814,21 @@ fn first_among_lookup(document_type: DocumentTypeRef<'_>) -> Option<&DocumentRef
         .find_map(|declaration| {
             declaration
                 .lookup
-                .filter(|lookup| lookup.first_among.is_some())
+                .filter(|lookup| lookup.choose_first.is_some())
         })
 }
 
-/// What a `firstAmong` competitor scan has billed, against its budget: each operation is
+/// What a `chooseFirst` competitor scan has billed, against its budget: each operation is
 /// added as it is until the next would pass the budget, which then bills what is left of it,
 /// and the rest of the scan bills nothing.
-struct FirstAmongScanBill {
+struct ChooseFirstScanBill {
     remaining: Credits,
 }
 
-impl FirstAmongScanBill {
+impl ChooseFirstScanBill {
     fn new(platform_version: &PlatformVersion) -> Self {
         Self {
-            remaining: first_among_scan_budget(platform_version),
+            remaining: choose_first_scan_budget(platform_version),
         }
     }
 
@@ -1856,38 +1858,103 @@ impl FirstAmongScanBill {
     }
 }
 
-/// Checks a create's `firstAmong` (see `LookupFirstAmong`): the commitment `found`, which
+/// The keys `document` is held under by each property of `by`, as its index holds them
+/// (its id for `$id`), so comparing them byte by byte orders documents as the index does.
+/// Registration demands every such property be recorded on every document, so one missing is
+/// an internal error.
+fn choose_first_order_keys(
+    by: &[ChooseFirstOrder],
+    document: &Document,
+    document_type: DocumentTypeRef<'_>,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<Vec<u8>>, Error> {
+    by.iter()
+        .map(|order| {
+            document
+                .get_raw_for_document_type(&order.property, document_type, None, platform_version)?
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "registration requires every property chooseFirst orders by on every \
+                     commitment",
+                )))
+        })
+        .collect()
+}
+
+/// How a commitment held under `keys` compares with one held under `other`, in the order of
+/// `by`: the first property they differ on decides, as it ascends or descends.
+fn compare_choose_first_order(
+    by: &[ChooseFirstOrder],
+    keys: &[Vec<u8>],
+    other: &[Vec<u8>],
+) -> Ordering {
+    by.iter()
+        .zip(keys.iter().zip(other))
+        .map(|(order, (key, other))| {
+            let ordering = key.cmp(other);
+            if order.ascending {
+                ordering
+            } else {
+                ordering.reverse()
+            }
+        })
+        .find(|ordering| *ordering != Ordering::Equal)
+        .unwrap_or(Ordering::Equal)
+}
+
+/// `found`'s value of `property`, the first one its index orders, as a query bounds it: a
+/// recorded time or height as the unsigned integer it is stored as.
+fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
+    let value = referenced_document_value(found, property)
+        .ok()
+        .flatten()
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "registration requires every property chooseFirst orders by on every commitment",
+        )))?;
+    Ok(match value.into_owned() {
+        Value::I128(system) => Value::U64(u64::try_from(system).map_err(|_| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a recorded time or height is never negative",
+            ))
+        })?),
+        value => value,
+    })
+}
+
+/// Checks a create's `chooseFirst` (see `LookupChooseFirst`): the commitment `found`, which
 /// `lookup` found for the reference declared by `reference_target` at `path`, must be the first
 /// valid commitment to the values the create reveals.
 ///
 /// * A commitment past its type's `ttl` at the block time is gone, whether or not the cleanup
 ///   has reached it: `found` past it finds no document (`ReferencedEntityNotFoundError`,
 ///   40120, naming `referenced_id`), as a competitor past it precedes nobody.
-/// * The `firstAmong` function is hashed and billed once, and `found` must hold the hash at
-///   the property `firstAmong` names (40120 otherwise).
-/// * The documents of `referenced_document_type` holding the same hash from a block before
-///   `found`'s are read in one query, oldest first, at most
-///   `SystemLimits::max_first_among_candidates`. Each not past its `ttl` is a competitor,
-///   valid when it holds, at the property the `findBy` function fills, that function computed
-///   from the create's values with the competitor's owner as `"$ownerId"` (billed as the double
-///   SHA-256 it is): a copy of another identity's hash is owned by an identity the hash does
-///   not name. The first valid competitor refuses the create
-///   (`ReferencedDocumentPrecededError`, 40149).
+/// * The `chooseFirst` function is hashed and billed once, and `found` must hold the hash at
+///   the property `chooseFirst` names (40120 otherwise).
+/// * The documents of `referenced_document_type` holding the same hash are read in one query
+///   in the order `chooseFirst` lists (`by`), through its index, at most
+///   `SystemLimits::max_choose_first_candidates`, bounded by `found`'s value of the first
+///   property that index orders: one after it there precedes it on no ordering. Each one
+///   before `found` in that order, compared by the keys the index holds them under (and by id
+///   for a last `$id`), and not past its `ttl`, is a competitor, valid when it holds, at the
+///   property the `findBy` function fills, that function computed from the create's values
+///   with the competitor's owner as `"$ownerId"` (billed as the double SHA-256 it is): a copy
+///   of another identity's hash is owned by an identity the hash does not name. The first
+///   valid competitor refuses the create (`ReferencedDocumentPrecededError`, 40149).
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
-///   ([`first_among_scan_budget`]), which check tx reserves ([`first_among_reservation`]).
+///   ([`choose_first_scan_budget`]), which check tx reserves ([`choose_first_reservation`]).
 ///
 /// Registration demands a unique index over the referenced type's `$ownerId` and the
-/// `firstAmong` property, so each competitor is another identity's: the writer's only document
-/// holding the value is `found`. A tie in the block of `found` is no competitor; the unique index
-/// the create writes decides it. When none of the documents read is a valid competitor the
-/// create stands, so documents that are none can make a create cost more but never refuse it.
-/// A `found` recording no `$createdAtBlockHeight`, or a lookup holding no `findBy` function,
-/// are what registration rules out, so either is an internal error.
+/// `chooseFirst` property, so each competitor is another identity's: the writer's only document
+/// holding the value is `found`. A document equal to `found` on every ordered property is no
+/// competitor (with a last `$id` there is none); the unique index the create writes decides
+/// between them. When none of the documents read is a valid competitor the create stands, so
+/// documents that are none can make a create cost more but never refuse it. A `found` or a
+/// candidate missing an ordered property, or a lookup holding no `findBy` function, are what
+/// registration rules out, so each is an internal error.
 ///
-/// In place in generation 0: only the protocol version 14 parser produces a `firstAmong`.
+/// In place in generation 0: only the protocol version 14 parser produces a `chooseFirst`.
 #[allow(clippy::too_many_arguments)]
-fn validate_first_among_v0(
-    first_among: &LookupFirstAmong,
+fn validate_choose_first_v0(
+    choose_first: &LookupChooseFirst,
     lookup: &DocumentReferenceLookup,
     found: &Document,
     referenced_contract: &DataContract,
@@ -1917,11 +1984,11 @@ fn validate_first_among_v0(
     if document_is_expired(referenced_document_type, found.created_at(), block_info)? {
         return Ok(not_found());
     }
-    let property = first_among.property.as_str();
-    // The `firstAmong` function reads neither `"."` nor the writer, which registration
+    let property = choose_first.property.as_str();
+    // The `chooseFirst` function reads neither `"."` nor the writer, which registration
     // refuses, only values of the create
-    let Some(first_among_key) = hash_lookup_key(
-        &first_among.key,
+    let Some(choose_first_key) = hash_lookup_key(
+        &choose_first.key,
         declaring_document_type,
         None,
         owner_id,
@@ -1938,17 +2005,14 @@ fn validate_first_among_v0(
     }) else {
         return Ok(not_found());
     };
-    let (Some(found_height), Some((find_by_property, find_by_key))) =
-        (found.created_at_block_height(), lookup.hash_key())
-    else {
+    let Some((find_by_property, find_by_key)) = lookup.hash_key() else {
         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-            "registration requires a findBy function beside firstAmong, and the commitments it \
-             reads to record their creation height",
+            "registration requires a findBy function beside chooseFirst",
         )));
     };
     // The findBy function's preimage for the writer, which found `found`: a competitor's key
     // is the same bytes with its owner in the `"$ownerId"` slots. The function reads no `"."`,
-    // which registration refuses beside `firstAmong`
+    // which registration refuses beside `chooseFirst`
     let mut find_by_preimage = find_by_key
         .writer_preimage(declaring_document_type, None, owner_id, document_data)
         .map_err(|_| {
@@ -1956,14 +2020,48 @@ fn validate_first_among_v0(
                 "the findBy preimage assembled for the lookup that found the commitment",
             ))
         })?;
-    let (competitors, query_cost) = fetch_documents_holding_before(
+    // Where `found` stands in the order, by the keys its index holds it under
+    let found_keys = choose_first_order_keys(
+        &choose_first.by,
+        found,
+        referenced_document_type,
+        platform_version,
+    )?;
+    // The commitments read stop at `found`'s value of the first ordered property the index
+    // holds: a later one precedes it on no ordering, and with no further property to order
+    // by, an equal one does not either
+    let index_order: Vec<(String, bool)> = choose_first
+        .index_order()
+        .iter()
+        .map(|order| (order.property.clone(), order.ascending))
+        .collect();
+    let range = match choose_first.index_order().first() {
+        Some(first) => {
+            let bound = found_order_bound(found, &first.property)?;
+            let only_key = choose_first.by.len() == 1;
+            let operator = match (first.ascending, only_key) {
+                (true, true) => WhereOperator::LessThan,
+                (true, false) => WhereOperator::LessThanOrEquals,
+                (false, true) => WhereOperator::GreaterThan,
+                (false, false) => WhereOperator::GreaterThanOrEquals,
+            };
+            Some(WhereClause {
+                field: first.property.clone(),
+                operator,
+                value: bound,
+            })
+        }
+        None => None,
+    };
+    let (candidates, query_cost) = fetch_documents_holding_in_order(
         platform.drive,
         referenced_contract,
         referenced_document_type,
         property,
-        Value::Bytes32(first_among_key.digest()),
-        found_height,
-        platform_version.system_limits.max_first_among_candidates,
+        Value::Bytes32(choose_first_key.digest()),
+        &index_order,
+        range,
+        platform_version.system_limits.max_choose_first_candidates,
         &block_info.epoch,
         transaction,
         platform_version,
@@ -1971,21 +2069,33 @@ fn validate_first_among_v0(
     // The scan bills as it runs, up to its budget, which check tx reserves for a create whose
     // state it does not validate: a block never charges the scan more than the signer was
     // admitted with
-    let mut scan_bill = FirstAmongScanBill::new(platform_version);
+    let mut scan_bill = ChooseFirstScanBill::new(platform_version);
     scan_bill.add(
         ValidationOperation::PrecalculatedOperation(query_cost),
         execution_context,
         platform_version,
     )?;
-    for competitor in &competitors {
-        if document_is_expired(
-            referenced_document_type,
-            competitor.created_at(),
-            block_info,
-        )? {
+    for candidate in &candidates {
+        if candidate.id() == found.id() {
             continue;
         }
-        let (digest, blocks) = find_by_preimage.key_value_for(competitor.owner_id());
+        let candidate_keys = choose_first_order_keys(
+            &choose_first.by,
+            candidate,
+            referenced_document_type,
+            platform_version,
+        )?;
+        // Only a commitment strictly before `found` in the order competes; one equal on every
+        // ordered property precedes it no more than it precedes that one
+        if compare_choose_first_order(&choose_first.by, &candidate_keys, &found_keys)
+            != Ordering::Less
+        {
+            continue;
+        }
+        if document_is_expired(referenced_document_type, candidate.created_at(), block_info)? {
+            continue;
+        }
+        let (digest, blocks) = find_by_preimage.key_value_for(candidate.owner_id());
         scan_bill.add(
             ValidationOperation::DoubleSha256(blocks),
             execution_context,
@@ -1993,14 +2103,14 @@ fn validate_first_among_v0(
         )?;
         if holds_key_part(
             referenced_document_type,
-            competitor,
+            candidate,
             find_by_property,
             &Value::Bytes32(digest),
         ) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ReferencedDocumentPrecededError::new(
                     found.id(),
-                    competitor.id(),
+                    candidate.id(),
                     property.to_string(),
                     path.to_string(),
                 )
