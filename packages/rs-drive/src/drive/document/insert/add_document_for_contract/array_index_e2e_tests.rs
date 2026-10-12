@@ -667,30 +667,39 @@ fn should_replace_beside_a_unique_index_sharing_a_level_with_the_array() {
 /// post price its elements, a delete prices the stored post as the worst case
 /// (`maxItems` estimated elements per array, each a key of its own). Each
 /// estimate covers what the write then costs from the same state, including
-/// a replace moving to a disjoint element set and an array under overlapping
-/// windows, whose entries multiply.
+/// replaces that move to a disjoint element set, shrink it to one element and
+/// empty it (removing more entries than they insert), and an array under
+/// overlapping windows, whose entries multiply.
 #[test]
 fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
     let created_at = 20_000 * DAY_MS + 1_000;
-    for (contract, document, replaced_elements) in [
-        (
-            post_contract(),
-            post(1, Some(&["dash", "news"]), Some(&[[7; 32]])),
-            vec!["crypto", "defi", "web3"],
-        ),
+    let elements = ["dash", "news", "web3", "defi"];
+    for (contract, document) in [
+        (post_contract(), post(1, Some(&elements), Some(&[[7; 32]]))),
         (
             trending_three_days_contract(),
-            bare_post(1, created_at, &["dash", "news"]),
-            vec!["crypto", "defi", "web3", "nft"],
+            bare_post(1, created_at, &elements),
+        ),
+        (
+            widest_windows_contract(),
+            post_created(1, created_at, &elements),
         ),
     ] {
         let (drive, contract) = setup_with(contract);
+        // The processing too: a replace removing entries pays processing for
+        // them and writes few bytes, so a storage surplus is no cover.
         let covers = |write: &str, estimated: FeeResult, actual: FeeResult| {
             assert!(
                 estimated.total_base_fee() >= actual.total_base_fee(),
                 "{write}: estimated {} below actual {}",
                 estimated.total_base_fee(),
                 actual.total_base_fee()
+            );
+            assert!(
+                estimated.processing_fee >= actual.processing_fee,
+                "{write}: estimated processing {} below actual {}",
+                estimated.processing_fee,
+                actual.processing_fee
             );
         };
 
@@ -704,16 +713,22 @@ fn should_estimate_at_least_what_writes_of_an_indexed_array_cost() {
         );
 
         let mut replaced = document.clone();
-        replaced.set("hashtags", platform_value!(replaced_elements));
-        replaced.set_revision(Some(2));
-        let stored = live_root_hash(&drive);
-        let estimated = replace_fee(&drive, &contract, &replaced, false);
-        assert_eq!(live_root_hash(&drive), stored, "pricing writes nothing");
-        covers(
-            "replace",
-            estimated,
-            replace_fee(&drive, &contract, &replaced, true),
-        );
+        for (revision, replaced_elements) in [
+            (2, vec!["crypto", "nft", "dao", "art"]),
+            (3, vec!["crypto"]),
+            (4, vec![]),
+        ] {
+            replaced.set("hashtags", platform_value!(replaced_elements.clone()));
+            replaced.set_revision(Some(revision));
+            let stored = live_root_hash(&drive);
+            let estimated = replace_fee(&drive, &contract, &replaced, false);
+            assert_eq!(live_root_hash(&drive), stored, "pricing writes nothing");
+            covers(
+                &format!("replace to {replaced_elements:?}"),
+                estimated,
+                replace_fee(&drive, &contract, &replaced, true),
+            );
+        }
 
         let replaced_root = live_root_hash(&drive);
         let estimated = delete_fee(&drive, &contract, 1, false);
@@ -1343,7 +1358,7 @@ fn should_rank_elements_by_the_posts_holding_them() {
         DocumentRankedResponse::Proof(proof) => proof,
         DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
     };
-    let (_, page) = DriveDocumentRankedQuery {
+    let (root_hash, page) = DriveDocumentRankedQuery {
         document_type,
         contract_id: contract.id().to_buffer(),
         document_type_name: "post".to_string(),
@@ -1364,6 +1379,11 @@ fn should_rank_elements_by_the_posts_holding_them() {
     }
     .verify_ranked_top_k_proof(&proof, platform_version)
     .expect("the ranking proof verifies");
+    assert_eq!(
+        root_hash,
+        live_root_hash(&drive),
+        "the ranking proof reaches the live root hash"
+    );
     assert_eq!(counts(page.entries), unproved);
 }
 
@@ -1798,6 +1818,32 @@ fn should_sum_and_average_each_element_through_updates() {
         format!("{error:?}").contains("only answered grouped by"),
         "{error:?}"
     );
+}
+
+/// A `post` whose `hashtags` are indexed under the widest overlap a window
+/// allows, 24 one-day windows, with a property below the array: a post is
+/// entered 24 x 4 times.
+fn widest_windows_contract() -> DataContract {
+    post_contract_with(platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "string", "minLength": 1, "maxLength": 59},
+                "position": 0
+            },
+            "language": {"type": "string", "maxLength": 2, "position": 1}
+        },
+        "required": ["$createdAt", "language"],
+        "indices": [{
+            "name": "trendingTwentyFourDays",
+            "properties": [{"$createdAt": "asc"}, {"hashtags": "asc"}, {"language": "asc"}],
+            "timeRange": {"on": "$createdAt", "range": 2073600, "step": 86400}
+        }],
+        "additionalProperties": false
+    }))
 }
 
 /// A `post` whose `hashtags` are indexed under three-day windows stepping

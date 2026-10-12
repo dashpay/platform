@@ -20,11 +20,14 @@ use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
-use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+use crate::util::object_size_info::DocumentInfo::{
+    DocumentEstimatedAverageSize, DocumentOwnedInfo,
+};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
+    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, OwnedDocumentInfo,
+    PathKeyInfo,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
@@ -41,7 +44,7 @@ use crate::drive::document::paths::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::{
     DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
 };
@@ -197,14 +200,50 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.estimate_document_change_as_insert_operations_v1(
+            let contract = document_and_contract_info.contract;
+            let document_type = document_and_contract_info.document_type;
+            let mut operations = self.estimate_document_change_as_insert_operations_v1(
                 document_and_contract_info,
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
-            );
+            )?;
+            // A change of a document whose type indexes the elements of a typed array
+            // (protocol version 14) can remove far more index entries than it writes:
+            // emptying the list, or moving the entries to a new owner, removes one per
+            // element in every window. The insert above prices the new version only,
+            // so the removal of the stored version's entries is priced too, at its
+            // worst case (`maxItems` estimated elements per array), as a delete prices
+            // it. No other type can hold a typed array index.
+            if estimated_costs_only_with_layer_info.is_some()
+                && document_type
+                    .indexes()
+                    .values()
+                    .any(|index| index.indexed_array.is_some())
+            {
+                let stored = DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentEstimatedAverageSize(
+                            document_type.estimated_size(platform_version)? as u32,
+                        ),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                };
+                self.remove_indices_for_top_index_level_for_contract_operations(
+                    &stored,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    &mut operations,
+                    platform_version,
+                )?;
+            }
+            return Ok(operations);
         }
 
         // A type with derived index properties (protocol version 14) keys its documents by
