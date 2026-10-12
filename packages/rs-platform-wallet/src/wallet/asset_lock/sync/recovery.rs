@@ -22,6 +22,7 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::RecordedHistory;
 use crate::error::PlatformWalletError;
+use crate::manager::history_replay::lock_matches_record;
 use crate::wallet::platform_wallet::{ObservedInputConflict, PlatformWalletInfo};
 
 use super::super::manager::AssetLockManager;
@@ -559,7 +560,8 @@ pub(crate) fn add_tracked_instant_locks<'a>(
 }
 
 /// Take out of `history` the unconfirmed record of every funding a tracked
-/// asset lock holds as chain-final and no lock in `history` settles.
+/// asset lock holds as chain-final and no lock in `history` settles; a lock
+/// settles it only if the replay accepts it for that record.
 ///
 /// What a tracked asset lock proves about its funding outranks the funding's
 /// stored context, and the replay's verdict outranks the lock's status. A lock
@@ -587,8 +589,10 @@ pub(crate) fn withhold_chain_final_fundings<'a>(
     let locked = &history.instant_locks;
     history.transactions.retain(|stored| {
         !matches!(stored.context, TransactionContext::Mempool)
-            || locked.contains_key(&stored.txid)
             || !chain_final.contains(&stored.txid)
+            || locked
+                .get(&stored.txid)
+                .is_some_and(|lock| lock_matches_record(lock, stored))
     });
 }
 
@@ -4063,8 +4067,9 @@ mod tests {
 
     /// Only the unconfirmed record of a funding that a tracked lock holds as
     /// chain-final leaves the history, and only when no lock in the history
-    /// settles it. A pending or InstantSend-locked lock, a record already in
-    /// a block and a record no lock tracks all stay.
+    /// settles it; a lock filed under it that names another transaction
+    /// settles nothing. A pending or InstantSend-locked lock, a record already
+    /// in a block and a record no lock tracks all stay.
     #[test]
     fn should_withhold_only_unsettled_chain_final_fundings() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -4088,8 +4093,8 @@ mod tests {
             stored_direction: None,
             owned_inputs: Vec::new(),
         };
-        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked] =
-            [1, 2, 3, 4, 5, 6, 7, 8, 9].map(|byte| transaction_spending(outpoint(byte)));
+        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked, foreign] =
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(|byte| transaction_spending(outpoint(byte)));
         let locks = [
             tracked(&chain_locked, AssetLockStatus::ChainLocked),
             tracked(&consumed, AssetLockStatus::Consumed),
@@ -4099,6 +4104,7 @@ mod tests {
             tracked(&instant, AssetLockStatus::InstantSendLocked),
             tracked(&in_block, AssetLockStatus::ChainLocked),
             tracked(&settled, AssetLockStatus::Consumed),
+            tracked(&foreign, AssetLockStatus::ChainLocked),
         ];
         let unconfirmed = [
             &chain_locked,
@@ -4109,6 +4115,7 @@ mod tests {
             &instant,
             &settled,
             &untracked,
+            &foreign,
         ];
         let mut history = RecordedHistory {
             transactions: unconfirmed
@@ -4116,13 +4123,15 @@ mod tests {
                 .into_iter()
                 .chain([stored(&in_block, confirmed_at(101))])
                 .collect(),
-            instant_locks: BTreeMap::from([(
-                settled.txid(),
-                InstantLock {
-                    txid: settled.txid(),
-                    ..Default::default()
-                },
-            )]),
+            instant_locks: [&settled, &foreign]
+                .map(|filed_under| {
+                    let lock = InstantLock {
+                        txid: settled.txid(),
+                        ..Default::default()
+                    };
+                    (filed_under.txid(), lock)
+                })
+                .into(),
         };
 
         super::withhold_chain_final_fundings(&mut history, &locks);

@@ -818,7 +818,7 @@ fn stage_recorded_spent_inputs(
 /// beside its transaction, so neither is proof on its own. A mismatch keeps
 /// the stored context: the lock's conflict sweep must not drop history on the
 /// strength of a lock that belongs to another transaction.
-fn lock_matches_record(lock: &InstantLock, stored: &StoredTransaction) -> bool {
+pub(crate) fn lock_matches_record(lock: &InstantLock, stored: &StoredTransaction) -> bool {
     let transaction_txid = stored.transaction.txid();
     let matches = lock.txid == stored.txid && transaction_txid == stored.txid;
     if !matches {

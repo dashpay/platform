@@ -1592,7 +1592,9 @@ mod idempotent_load_tests {
     ///   kept out of the replay: its coins stay as stored whatever the
     ///   competitor, and its inputs stay claimed;
     /// - a chain-final lock whose funding a lock in the history settles
-    ///   replays like any locked funding;
+    ///   replays like any locked funding, while a lock filed under the
+    ///   funding that names another transaction settles nothing and leaves
+    ///   it out of the replay;
     /// - a lock that names another transaction settles nothing, and the
     ///   record replays as stored.
     #[tokio::test]
@@ -1613,6 +1615,7 @@ mod idempotent_load_tests {
             Instant,
             ChainFinal,
             ChainFinalWithInstant,
+            ChainFinalWithForeignHistoryLock,
             InstantOfAnotherTransaction,
         }
         #[derive(Debug, Clone, Copy)]
@@ -1628,6 +1631,7 @@ mod idempotent_load_tests {
                 height,
             ))
         };
+        let mut failures = Vec::new();
         // (the funding's change stands, the competitor's change stands, the
         // funding's other input stays guarded)
         for (evidence, competing, expected) in [
@@ -1665,6 +1669,11 @@ mod idempotent_load_tests {
                 Evidence::ChainFinalWithInstant,
                 Competitor::Unconfirmed,
                 (true, false, true),
+            ),
+            (
+                Evidence::ChainFinalWithForeignHistoryLock,
+                Competitor::PlainBlock,
+                (true, true, true),
             ),
             (
                 Evidence::InstantOfAnotherTransaction,
@@ -1756,6 +1765,17 @@ mod idempotent_load_tests {
                 txid: asset_lock.txid(),
                 vout: 0,
             };
+            // A lock filed under the funding that names another transaction.
+            let history_locks = match evidence {
+                Evidence::ChainFinalWithForeignHistoryLock => BTreeMap::from([(
+                    asset_lock.txid(),
+                    InstantLock {
+                        txid: competitor.txid(),
+                        ..Default::default()
+                    },
+                )]),
+                _ => BTreeMap::new(),
+            };
             let instant = |txid| {
                 let lock = InstantLock {
                     txid,
@@ -1769,7 +1789,7 @@ mod idempotent_load_tests {
                     AssetLockStatus::InstantSendLocked,
                     instant(asset_lock.txid()),
                 ),
-                Evidence::ChainFinal => (
+                Evidence::ChainFinal | Evidence::ChainFinalWithForeignHistoryLock => (
                     AssetLockStatus::ChainLocked,
                     AssetLockProof::Chain(ChainAssetLockProof {
                         core_chain_locked_height: 105,
@@ -1798,7 +1818,7 @@ mod idempotent_load_tests {
                         stored(&asset_lock, TransactionContext::Mempool),
                         stored(&competitor, competitor_context),
                     ],
-                    instant_locks: BTreeMap::new(),
+                    instant_locks: history_locks,
                 },
                 asset_locks: [(
                     out_point,
@@ -1838,12 +1858,14 @@ mod idempotent_load_tests {
             );
             core.check_core_transaction(&other_funding, in_block(91), &mut wallet, true, true)
                 .await;
-            assert_eq!(
-                (changes.0, changes.1, !holds(&core, other)),
-                expected,
-                "{evidence:?} against {competing:?}"
-            );
+            let outcome = (changes.0, changes.1, !holds(&core, other));
+            if outcome != expected {
+                failures.push(format!(
+                    "{evidence:?} against {competing:?}: {outcome:?}, expected {expected:?}"
+                ));
+            }
         }
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     /// Only a ChainLock overrules an InstantSend lock. When a stored
