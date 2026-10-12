@@ -1183,7 +1183,7 @@ mod idempotent_load_tests {
 
     /// Persister that hands back a projection holding only the persisted
     /// UTXO set (no in-memory transactions) plus the stored history — the
-    /// shape every persister produces once history replay is shared.
+    /// shape of a persister that leaves the replay to the shared load.
     struct RecordedHistoryPersister {
         wallet: Wallet,
         managed: ManagedWalletInfo,

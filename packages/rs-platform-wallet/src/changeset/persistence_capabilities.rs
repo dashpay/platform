@@ -105,13 +105,15 @@ impl PersistenceCapabilities {
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
-    /// Load hands back the wallet's complete stored transaction history
-    /// ([`ClientWalletStartState::recorded_history`](super::ClientWalletStartState::recorded_history)),
-    /// so the shared load replay rebuilds the in-memory spend guards for
-    /// confirmed AND unconfirmed spends. Without it a funding transaction
-    /// redelivered after restart (rescan, gap-limit rediscovery) re-credits an
-    /// output a confirmed spend already consumed until the spend is observed
-    /// again. Diagnostic only: load warns when it is absent and gates nothing.
+    /// Load restores the in-memory spend guards for confirmed AND unconfirmed
+    /// spends from the wallet's complete stored transaction history: either it
+    /// hands the history back
+    /// ([`ClientWalletStartState::recorded_history`](super::ClientWalletStartState::recorded_history))
+    /// for the shared load replay, or it replays the history itself before
+    /// returning. Without it a funding transaction redelivered after restart
+    /// (rescan, gap-limit rediscovery) re-credits an output a confirmed spend
+    /// already consumed until the spend is observed again. Diagnostic only:
+    /// load warns when it is absent and gates nothing.
     pub const CORE_HISTORY_RESTORE: Self = Self(1 << 13);
 
     /// Index of the highest bit declared above. It lives here, beside the
