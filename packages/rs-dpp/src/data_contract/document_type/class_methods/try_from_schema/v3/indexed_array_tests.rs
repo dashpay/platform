@@ -153,15 +153,15 @@ fn should_resolve_the_same_indexes_without_full_validation() {
 }
 
 #[test]
-fn should_hold_an_indexed_array_to_32_elements_and_8_under_a_window() {
+fn should_hold_an_indexed_array_to_16_elements_and_4_under_a_window() {
     let plain = |max_items: u16| {
         parse(post_schema(
             hashtags(max_items),
             platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]),
         ))
     };
-    plain(32).expect("32 elements may be indexed");
-    assert_eq!(expect_constraint_error(plain(33)), "hashtags.maxItems");
+    plain(16).expect("16 elements may be indexed");
+    assert_eq!(expect_constraint_error(plain(17)), "hashtags.maxItems");
 
     let windowed = |max_items: u16| {
         parse(post_schema(
@@ -175,21 +175,52 @@ fn should_hold_an_indexed_array_to_32_elements_and_8_under_a_window() {
             }]),
         ))
     };
-    windowed(8).expect("8 elements may be indexed under a window");
-    assert_eq!(expect_constraint_error(windowed(9)), "hashtags.maxItems");
+    windowed(4).expect("4 elements may be indexed under a window");
+    assert_eq!(expect_constraint_error(windowed(5)), "hashtags.maxItems");
 }
 
+/// At 16 elements, and 10 indexes to a type, plain indexes of arrays stay
+/// under the budget (160 entries); windows reach it. Two indexes of a
+/// 4-element array under 24 overlapping hour windows of a day write 96 entries
+/// each, and `count` indexes of a 16-element array, each after a property of
+/// its own, 16 each.
 #[test]
 fn should_hold_a_document_to_256_entries_across_the_indexes_of_its_type() {
-    // `count` indexes of a 32-element array, each after a property of its own.
     let schema = |count: usize| {
-        let mut properties = vec![(Value::Text("hashtags".to_string()), hashtags(32))];
-        let mut indices = Vec::new();
+        let mut properties = vec![
+            (Value::Text("hashtags".to_string()), hashtags(16)),
+            (
+                Value::Text("topics".to_string()),
+                platform_value!({
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string", "minLength": 1, "maxLength": 61 },
+                    "position": 1
+                }),
+            ),
+            (
+                Value::Text("region".to_string()),
+                platform_value!({ "type": "string", "maxLength": 8, "position": 2 }),
+            ),
+        ];
+        let hourly = || platform_value!({ "on": "$createdAt", "range": 86400, "step": 3600 });
+        let mut indices = vec![
+            platform_value!({
+                "name": "trending",
+                "properties": [{ "$createdAt": "asc" }, { "topics": "asc" }],
+                "timeRange": hourly()
+            }),
+            platform_value!({
+                "name": "trendingByRegion",
+                "properties": [{ "$createdAt": "asc" }, { "topics": "asc" }, { "region": "asc" }],
+                "timeRange": hourly()
+            }),
+        ];
         for n in 0..count {
             let name = format!("p{n}");
             properties.push((
                 Value::Text(name.clone()),
-                platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "position": n + 1 }),
+                platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "position": n + 3 }),
             ));
             indices.push(platform_value!({
                 "name": format!("byHashtag{n}"),
@@ -202,12 +233,13 @@ fn should_hold_a_document_to_256_entries_across_the_indexes_of_its_type() {
         platform_value!({
             "type": "object",
             "properties": Value::Map(properties),
+            "required": ["$createdAt"],
             "indices": Value::Array(indices),
             "additionalProperties": false
         })
     };
-    parse(schema(8)).expect("8 indexes of 32 elements write 256 entries");
-    expect_structure_error(parse(schema(9)), "can write 288 index entries");
+    parse(schema(4)).expect("2 windowed indexes and 4 plain ones write 256 entries");
+    expect_structure_error(parse(schema(5)), "can write 272 index entries");
 }
 
 #[test]
@@ -390,7 +422,7 @@ fn should_let_an_update_raise_an_indexed_array_within_the_limits() {
     let indices =
         || platform_value!([{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }]);
     let old = parse(post_schema(hashtags(10), indices())).expect("the registered type");
-    let raised = parse(post_schema(hashtags(32), indices())).expect("32 elements may be indexed");
+    let raised = parse(post_schema(hashtags(16), indices())).expect("16 elements may be indexed");
     let result = old
         .as_ref()
         .validate_update(raised.as_ref(), 2, PlatformVersion::latest())
@@ -398,7 +430,7 @@ fn should_let_an_update_raise_an_indexed_array_within_the_limits() {
     assert!(result.is_valid(), "{:?}", result.errors);
 
     assert_eq!(
-        expect_constraint_error(parse(post_schema(hashtags(33), indices()))),
+        expect_constraint_error(parse(post_schema(hashtags(17), indices()))),
         "hashtags.maxItems"
     );
 }

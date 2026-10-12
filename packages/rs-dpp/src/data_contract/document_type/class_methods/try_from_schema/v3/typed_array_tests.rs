@@ -245,10 +245,10 @@ fn should_refuse_arrays_of_arrays() {
 }
 
 /// An index keys a typed array by its elements (see `indexed_array_tests`),
-/// and holds the array to at most 32 of them: the 64 reasons of a charter are
+/// and holds the array to at most 16 of them: the 64 reasons of a charter are
 /// too many to index.
 #[test]
-fn should_refuse_an_index_on_a_typed_array_of_more_than_32_elements() {
+fn should_refuse_an_index_on_a_typed_array_of_more_than_16_elements() {
     let mut schema = schema_with_list(reasons_list());
     schema
         .set_value(

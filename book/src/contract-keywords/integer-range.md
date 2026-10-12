@@ -82,7 +82,7 @@ In the JavaScript SDK the selection is an `integerRange` entry of the query: `{ 
 - A `refersTo` `findBy` cannot resolve through an integer-range index, and a [`propertyConstraints`](property-constraints.md) count or sum does not read one. See [findBy](refers-to-lookup.md).
 - An [index-only type](index-only.md) cannot declare `integerRange`: its entries are keyed by the index's values and terminal, so two rows that differ only in the bucketed integer would claim the same entry in every window they share.
 
-- The index may name a [typed array](indexes.md#typed-arrays) after the bucketed property, which enters the document once per window and element: the array's `maxItems` is then at most 8 (`InvalidIndexedPropertyConstraintError`, 10205).
+- The index may name a [typed array](indexes.md#typed-arrays) after the bucketed property, which enters the document once per window and element: the array's `maxItems` is then at most 4 (`InvalidIndexedPropertyConstraintError`, 10205).
 
 A broken rule is refused as `InvalidContractStructure` (10231), or by the meta-schema as `JsonSchemaError` (10101). Before protocol version 14 the keyword is unknown and refused.
 

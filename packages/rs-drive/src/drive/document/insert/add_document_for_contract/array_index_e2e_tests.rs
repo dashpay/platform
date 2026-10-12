@@ -1216,7 +1216,7 @@ fn should_rank_elements_by_the_posts_holding_them() {
 const DAY_MS: u64 = 86_400_000;
 
 /// A `post` type ranking each day's hashtags: `[$createdAt day window,
-/// hashtags]`, the array held to 8 elements under the window.
+/// hashtags]`, the array held to 4 elements under the window.
 fn trending_contract() -> DataContract {
     DataContractFactory::new(PlatformVersion::latest().protocol_version)
         .expect("factory")
@@ -1229,7 +1229,7 @@ fn trending_contract() -> DataContract {
                 "properties": {
                     "hashtags": {
                         "type": "array",
-                        "maxItems": 8,
+                        "maxItems": 4,
                         "items": {"type": "string", "minLength": 1, "maxLength": 59},
                         "position": 0
                     }

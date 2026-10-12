@@ -60,8 +60,8 @@ use crate::version::system_limits::SystemLimits;
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
 /// * Typed array element indexes (protocol version 14): an index keying documents by the
-///   elements of a typed array holds the array to at most 32 elements
-///   (`max_indexed_array_items`), or 8 when the index also has a `timeRange` or `integerRange`
+///   elements of a typed array holds the array to at most 16 elements
+///   (`max_indexed_array_items`), or 4 when the index also has a `timeRange` or `integerRange`
 ///   window (`max_windowed_indexed_array_items`), and one document of such a type writes at
 ///   most 256 index entries across its indexes (`max_index_entries_per_document`). They joined
 ///   this table in place while protocol version 14 was unreleased. `None` in the earlier
@@ -188,7 +188,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
-    max_indexed_array_items: Some(32), // typed array element indexes (new in v14): an indexed typed array holds at most 32 elements
-    max_windowed_indexed_array_items: Some(8), // typed array element indexes (new in v14): at most 8 when the index also has a timeRange or integerRange window
+    max_indexed_array_items: Some(16), // typed array element indexes (new in v14): an indexed typed array holds at most 16 elements
+    max_windowed_indexed_array_items: Some(4), // typed array element indexes (new in v14): at most 4 when the index also has a timeRange or integerRange window
     max_index_entries_per_document: Some(256), // typed array element indexes (new in v14): one document of a type with an indexed array writes at most 256 index entries
 };

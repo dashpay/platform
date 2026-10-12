@@ -2331,8 +2331,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     it and refuses, under full validation: an indexOnly type (10231), a
 ///     unique or contested index, `nullSearchable: false`, a ranking above the
 ///     array, a second array (10231); a `maxItems` above
-///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (32), or
-///     `max_windowed_indexed_array_items` (8) on an index with a `timeRange`
+///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (16), or
+///     `max_windowed_indexed_array_items` (4) on an index with a `timeRange`
 ///     or `integerRange`, and elements past the key limits of their type or
 ///     byte array elements that may be empty (10205); and a type whose
 ///     document can write more than `max_index_entries_per_document` (256)

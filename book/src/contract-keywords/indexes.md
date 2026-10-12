@@ -221,7 +221,7 @@ Rules at registration:
 
 - The array is a top-level property, and an index names at most one (10231).
 - Its elements are held to the key limits of their type, on the `items` schema: a string `maxLength` of at most 63 (61, or 59, on a ranked level), a byte array `maxItems` of at most 255 (247 or 239 ranked), and a byte array element declares `minItems` of at least 1, since an empty byte array is keyed like a missing value (`InvalidIndexedPropertyConstraintError`, 10205).
-- The array's `maxItems` is at most 32, or 8 when the index also has a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window, which enters the document once per window and element (10205).
+- The array's `maxItems` is at most 16, or 4 when the index also has a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window, which enters the document once per window and element (10205).
 - One document of a type with an indexed array writes at most 256 index entries across its indexes: each index counts 1, times its windows, times its array's `maxItems` (10231).
 - The index is not `unique` or contested, keeps `nullSearchable` at `true`, ranks no level above the array (a document would count there once per element), and is not on an [index-only type](index-only.md) (10231).
 - `skipIfAbsent` whose only skip property would be the array is refused, since the index skips a document without elements already (10231). Beside another optional property of the index it skips on that property as usual.
@@ -257,7 +257,7 @@ A document type that the update adds may declare any indexes, as a new contract 
 | Characters in an index property path | 256 |
 | `maxLength` of an indexed string | 63 (lower on a ranked index) |
 | `maxItems` of an indexed byte array | 255 (lower on a ranked index) |
-| `maxItems` of an indexed typed array | 32 (8 under a `timeRange` or `integerRange` window) |
+| `maxItems` of an indexed typed array | 16 (4 under a `timeRange` or `integerRange` window) |
 | Index entries one document writes, on a type with an indexed typed array | 256 |
 | Contested indexes per document type | 1 |
 

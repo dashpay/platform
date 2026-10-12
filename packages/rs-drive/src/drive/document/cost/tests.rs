@@ -1072,7 +1072,7 @@ fn should_size_an_indexed_typed_array_with_distinct_elements() {
                 "properties": {
                     "letters": {
                         "type": "array",
-                        "maxItems": 32,
+                        "maxItems": 16,
                         "items": {"type": "string", "minLength": 1, "maxLength": 1},
                         "position": 0
                     }
@@ -1090,7 +1090,7 @@ fn should_size_an_indexed_typed_array_with_distinct_elements() {
         "letters".to_string(),
         FieldChoice {
             present: Some(true),
-            length: Some(32),
+            length: Some(16),
         },
     )]);
     let (document, _) = sized_document(&contract, document_type, &choices, platform_version)
@@ -1100,6 +1100,6 @@ fn should_size_an_indexed_typed_array_with_distinct_elements() {
             .get_raw_array_elements_for_document_type("letters", document_type, platform_version)
             .expect("element keys")
             .len(),
-        32
+        16
     );
 }
