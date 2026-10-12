@@ -845,3 +845,84 @@ fn should_reject_a_pool_row_beyond_the_derived_window_that_its_account_cannot_de
         "core pool row conflicts with its derived address or key",
     );
 }
+
+/// Pool snapshots are not rewritten when an address is funded, so a row can
+/// say "available" while `core_utxos` holds a coin on it. Past the freshly
+/// derived window nothing anchors that address until the persisted pool is
+/// restored, and the reuse guard has to reach it there.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_not_hand_out_a_funded_address_restored_beyond_the_derived_window() {
+    use key_wallet::account::StandardAccountType;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let account_type = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let source = account_key_source(&wallet, account_type);
+    let (funded, funded_index) =
+        with_pool(&mut info, account_type, AddressPoolType::External, |pool| {
+            // Hand out, without funding, more addresses than one gap window.
+            for _ in 0..pool.gap_limit + 10 {
+                pool.next_unused_and_reserve(&source, 12345).unwrap();
+            }
+            let funded = pool.next_unused(&source, true).unwrap();
+            let index = pool.address_index[&funded];
+            assert_eq!(index, pool.gap_limit + 10);
+            (funded, index)
+        });
+    let (persister, _tmp, path) = common::fresh_persister();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    // A coin with no transaction record: history replay cannot mark it.
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![key_wallet::Utxo::new(
+                        OutPoint::new(Txid::from_byte_array([9; 32]), 0),
+                        TxOut {
+                            value: 50_000,
+                            script_pubkey: funded.script_pubkey(),
+                        },
+                        funded.clone(),
+                        100,
+                        false,
+                    )],
+                    synced_height: Some(100),
+                    last_processed_height: Some(100),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let manager = manager(SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap()).await;
+    let wm = manager.wallet_manager_arc();
+    let mut wm = wm.write().await;
+    let restored = &mut wm
+        .get_wallet_info_mut(&wallet.wallet_id)
+        .unwrap()
+        .core_wallet;
+    with_pool(restored, account_type, AddressPoolType::External, |pool| {
+        assert_eq!(
+            pool.addresses[&funded_index].state,
+            AddressState::Used,
+            "a funded address must come back used"
+        );
+        assert_ne!(
+            pool.next_unused(&source, true).unwrap(),
+            funded,
+            "a funded address must not be handed out again"
+        );
+    });
+    drop(wm);
+    assert!(manager.shutdown().await.all_clean());
+}

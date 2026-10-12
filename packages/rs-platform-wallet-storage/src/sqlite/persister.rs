@@ -1858,18 +1858,11 @@ fn load_wallet_snapshot(
         &wallet,
         birth_height,
     );
-    // Provider key-material accounts hold no funds, so only the ECDSA
-    // half feeds the UTXO/balance projection here. The platform-node
-    // pre-derived-key pool is restored separately below.
-    apply_persisted_core_state(
-        &mut wallet_info,
-        &account_manifest.ecdsa,
-        &core_state,
-        &utxo_accounts,
-        &used_core_addresses,
-        ctx,
-    )
-    .map_err(PersistenceError::from)?;
+    // Pools come back first, so the used-address projection below marks the
+    // restored entries too: a stored row can still say "available" for an
+    // address that has since been funded. The platform-node reader stays
+    // ahead of `restore_pools` because it rewrites its entries' state from
+    // `used` alone, and `restore_pools` overlays their reservations.
     if account_manifest
         .provider
         .iter()
@@ -1880,6 +1873,17 @@ fn load_wallet_snapshot(
     }
     schema::core_pool::restore_pools(conn, &wallet_id, &wallet, &mut wallet_info, ctx)
         .map_err(PersistenceError::from)?;
+    // Provider key-material accounts hold no funds, so only the ECDSA
+    // half feeds the UTXO/balance projection here.
+    apply_persisted_core_state(
+        &mut wallet_info,
+        &account_manifest.ecdsa,
+        &core_state,
+        &utxo_accounts,
+        &used_core_addresses,
+        ctx,
+    )
+    .map_err(PersistenceError::from)?;
     let mut wallet = wallet;
     let sweeps = restore_recorded_transactions(
         &mut wallet_info,
