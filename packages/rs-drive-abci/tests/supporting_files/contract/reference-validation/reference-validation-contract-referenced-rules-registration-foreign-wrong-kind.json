@@ -1,0 +1,52 @@
+{
+  "$formatVersion": "1",
+  "id": "FmNtTTiJ9X8sJdKvkpK58yzUAx78PW61bCpwW8dZnpMC",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "foreignBid": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "auctionId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "31TfU1koATcamnBrNiRbturPP5kLaE8VzJcojeTxedxR",
+            "documentType": "auction"
+          },
+          "position": 0
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000,
+          "position": 1
+        }
+      },
+      "required": [
+        "auctionId",
+        "amount"
+      ],
+      "propertyConstraints": {
+        "statusAsNumber": {
+          "greaterThan": [
+            {
+              "referenced": [
+                "auctionId",
+                "status"
+              ]
+            },
+            0
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

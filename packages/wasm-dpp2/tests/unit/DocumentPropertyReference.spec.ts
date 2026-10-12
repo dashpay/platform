@@ -59,11 +59,16 @@ const schemas = {
       paidWith: identifierProperty(2, { type: 'token' }),
       // `contractId` omitted: targets the declaring contract itself.
       // `where` binds the referenced document's property to the
-      // referring document's (write-time equality, PV14 #4505).
+      // referring document's (write-time equality, PV14 #4505), and holds
+      // the parent's recipient key id to at most this note's signer key id
+      // (a condition, an ordering by a referring property)
       parentNoteId: identifierProperty(3, {
         type: 'permanentDocument',
         documentType: 'note',
-        where: { signerKeyId: 'signerKeyId' },
+        where: {
+          signerKeyId: 'signerKeyId',
+          recipientKeyId: { lessThanOrEqual: 'signerKeyId' },
+        },
       }),
       otherDoc: identifierProperty(4, {
         type: 'permanentDocument',
@@ -152,9 +157,16 @@ type Reference = {
     string,
     string | { function: string; params: Array<string | { const: string }> }
   >;
-  where?: Record<string, string>;
-  minimumAgeBlocks?: number;
+  where?: Record<string, string | Record<string, unknown>>;
   consume?: boolean;
+  constraints?: {
+    minimumAgeBlocks?: number;
+    chooseFirst?: {
+      among: string;
+      validWhen: Record<string, { function: string; params: Array<string | { const: string }> }>;
+      by: Array<Record<string, 'asc' | 'desc'>>;
+    };
+  };
   inList?: string;
 };
 
@@ -280,7 +292,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const references = contract.documentTypeReferences('note') as Reference[];
       const parent = references.find((reference) => reference.path === 'parentNoteId')!;
 
-      expect(parent.where).to.deep.equal({ signerKeyId: 'signerKeyId' });
+      expect(parent.where).to.deep.equal({
+        signerKeyId: 'signerKeyId',
+        recipientKeyId: { lessThanOrEqual: 'signerKeyId' },
+      });
     });
 
     /**
@@ -475,7 +490,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
                     },
                   },
                   where: { $ownerId: '$ownerId' },
-                  minimumAgeBlocks: 1,
+                  constraints: { minimumAgeBlocks: 1 },
                   consume: true,
                 },
               },
@@ -502,8 +517,136 @@ describe('DataContract — refersTo declarations (v14)', () => {
         },
       });
       expect(salted.where).to.deep.equal({ $ownerId: '$ownerId' });
-      expect(salted.minimumAgeBlocks).to.equal(1);
+      expect(salted.constraints).to.deep.equal({ minimumAgeBlocks: 1 });
       expect(salted.consume).to.equal(true);
+    });
+
+    const nameParams = ['normalizedLabel', { const: '.' }, 'normalizedParentDomainName'];
+
+    // A name registration whose preorders hold the hash of the writer and the
+    // name, and that of the name alone, ordered by `orderProperty`: their
+    // creation height, or a required integer property of that name
+    const chooseFirstSchemas = (orderProperty = '$createdAtBlockHeight') => {
+      const hash = {
+        type: 'array',
+        byteArray: true,
+        minItems: 32,
+        maxItems: 32,
+      };
+      const ordersBySchemaProperty = !orderProperty.startsWith('$');
+      return {
+        namePreorder: {
+          type: 'object',
+          documentsMutable: false,
+          canBeDeleted: true,
+          ttl: 3600,
+          properties: {
+            ownerNameHash: { ...hash, position: 0 },
+            nameHash: { ...hash, position: 1 },
+            ...(ordersBySchemaProperty
+              ? { [orderProperty]: { type: 'integer', minimum: 0, position: 2 } }
+              : {}),
+          },
+          indices: [
+            {
+              name: 'ownerAndNameHash',
+              properties: [{ $ownerId: 'asc' }, { ownerNameHash: 'asc' }],
+              unique: true,
+            },
+            {
+              name: 'ownerAndName',
+              properties: [{ $ownerId: 'asc' }, { nameHash: 'asc' }],
+              unique: true,
+            },
+            {
+              name: 'nameHashInOrder',
+              properties: [{ nameHash: 'asc' }, { [orderProperty]: 'asc' }],
+            },
+          ],
+          required: [
+            '$createdAt',
+            '$createdAtBlockHeight',
+            'ownerNameHash',
+            'nameHash',
+            ...(ordersBySchemaProperty ? [orderProperty] : []),
+          ],
+          additionalProperties: false,
+        },
+        name: {
+          type: 'object',
+          documentsMutable: false,
+          transferable: 1,
+          properties: {
+            normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+            normalizedParentDomainName: { type: 'string', maxLength: 63, position: 1 },
+          },
+          required: ['normalizedLabel', 'normalizedParentDomainName'],
+          creatorRefersTo: {
+            type: 'deletableDocument',
+            documentType: 'namePreorder',
+            findBy: {
+              $ownerId: '$ownerId',
+              nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+            },
+            constraints: {
+              minimumAgeBlocks: 1,
+              chooseFirst: {
+                among: 'nameHash',
+                validWhen: {
+                  ownerNameHash: {
+                    function: 'sys.hash.sha256d',
+                    params: ['$ownerId', ...nameParams],
+                  },
+                },
+                by: [{ [orderProperty]: 'asc' }],
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      };
+    };
+
+    const chooseFirstContract = (typeSchemas: Record<string, unknown>) => new wasm.DataContract({
+      ownerId,
+      identityNonce: BigInt(2),
+      schemas: typeSchemas,
+      definitions: null,
+      fullValidation: true,
+      platformVersion: new PlatformVersion(14),
+    });
+
+    it('should report chooseFirst in the constraints beside findBy', () => {
+      const contract = chooseFirstContract(chooseFirstSchemas());
+      const [creator] = contract.documentTypeReferences('name') as Reference[];
+
+      // The constraints are reported as the schema spells them, the writer
+      // being the "$ownerId" param of validWhen
+      expect(creator.path).to.equal('$creatorId');
+      expect(creator.findBy).to.deep.equal({
+        $ownerId: '$ownerId',
+        nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+      });
+      expect(creator.constraints).to.deep.equal({
+        minimumAgeBlocks: 1,
+        chooseFirst: {
+          among: 'nameHash',
+          validWhen: {
+            ownerNameHash: { function: 'sys.hash.sha256d', params: ['$ownerId', ...nameParams] },
+          },
+          by: [{ $createdAtBlockHeight: 'asc' }],
+        },
+      });
+    });
+
+    it('should report a chooseFirst order by a property named __proto__ as an own entry', () => {
+      // A computed key, unlike a literal `__proto__:`, makes an own property
+      const contract = chooseFirstContract(chooseFirstSchemas('__proto__'));
+      const [creator] = contract.documentTypeReferences('name') as Reference[];
+      const { by } = creator.constraints!.chooseFirst!;
+
+      expect(Object.keys(by[0])).to.deep.equal(['__proto__']);
+      expect(JSON.stringify(by)).to.equal('[{"__proto__":"asc"}]');
     });
 
     it('should refuse findBy naming exactly the properties of an index that is not unique', () => {
@@ -847,6 +990,51 @@ describe('DataContract — refersTo declarations (v14)', () => {
       }
     });
 
+    /**
+     * A property of the referenced type may be named `__proto__`: the `where`
+     * entry naming it is an own key of the listing, not its prototype. The
+     * schemas come from JSON, where `__proto__` is an ordinary key.
+     */
+    it('should keep a where entry named __proto__ as an own key', () => {
+      const protoSchemas = JSON.parse(`{
+        "post": {
+          "type": "object",
+          "canBeDeleted": false,
+          "properties": {
+            "__proto__": { "type": "string", "maxLength": 10, "position": 0 }
+          },
+          "additionalProperties": false
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "postId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "position": 0,
+              "refersTo": {
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "where": { "__proto__": { "const": "open" } }
+              }
+            }
+          },
+          "required": ["postId"],
+          "additionalProperties": false
+        }
+      }`);
+      const [postId] = buildModeratedContract(protoSchemas).documentTypeReferences(
+        'reply',
+      ) as Reference[];
+
+      expect(Object.keys(postId.where!)).to.deep.equal(['__proto__']);
+      expect(Object.getPrototypeOf(postId.where)).to.equal(Object.prototype);
+      expect(JSON.stringify(postId.where)).to.equal('{"__proto__":{"const":"open"}}');
+    });
+
     it('should refuse a writer gate a removal record can not answer', () => {
       const refersTo = {
         type: 'moderatedDocument',
@@ -1027,10 +1215,13 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRequirementNotMet).to.equal(40142);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotModerated).to.equal(40143);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeIndexOnly).to.equal(40146);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRuleReadInvalid).to.equal(40148);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentPreceded).to.equal(40149);
     });
 
     it('should resolve a code back to its name', () => {

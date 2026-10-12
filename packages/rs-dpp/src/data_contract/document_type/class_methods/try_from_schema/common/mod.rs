@@ -34,7 +34,7 @@ use crate::data_contract::document_type::property::{
     KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraint_condition, PropertyConstraint, SystemProperty, STORED_DOCUMENT_PREFIX,
+    parse_property_constraint_condition, PropertyConstraint, SystemProperty,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
     delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD,
@@ -83,7 +83,8 @@ use super::{insert_values, insert_values_nested};
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
-    InvalidDocumentTypeNameError, RedundantDocumentPaidForByTokenWithContractId,
+    InvalidDocumentTypeNameError, NonTransferableTokenPaymentMustBurnError,
+    RedundantDocumentPaidForByTokenWithContractId,
     TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
 };
 #[cfg(feature = "validation")]
@@ -101,6 +102,8 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
+#[cfg(feature = "validation")]
+use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
@@ -1685,6 +1688,31 @@ fn parse_token_costs(
                             ));
                         }
 
+                        // A non-transferable token pays only by burning: paying the contract
+                        // owner would move it to another identity. Only a format 1 token
+                        // configuration can be non-transferable, and the pre-activation gate
+                        // refuses that format before protocol version 14, so no earlier version
+                        // reaches this refusal.
+                        if target_contract_id.is_none()
+                            && effect == DocumentActionTokenEffect::TransferTokenToContractOwner
+                            && ctx
+                                .token_configurations
+                                .get(&token_contract_position)
+                                .is_some_and(|configuration| !configuration.is_transferable())
+                        {
+                            return Err(ProtocolError::ConsensusError(
+                                ConsensusError::BasicError(
+                                    BasicError::NonTransferableTokenPaymentMustBurnError(
+                                        NonTransferableTokenPaymentMustBurnError::new(
+                                            token_contract_position,
+                                            key.to_string(),
+                                        ),
+                                    ),
+                                )
+                                    .into(),
+                            ));
+                        }
+
                         // If contractId is present and user tries to burn, bail out:
                         if let Some(target_contract_id) = target_contract_id {
                             if target_contract_id == ctx.data_contract_id {
@@ -2910,7 +2938,7 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included) and key id property, for every leaf of every reference expression, the
+/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2932,57 +2960,40 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             continue;
         };
         for leaf in target.leaves() {
-            let agreement = match leaf {
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    property_agreement, ..
-                }
-                | DocumentPropertyReferenceTarget::DeletableDocument {
-                    property_agreement, ..
-                }
-                | DocumentPropertyReferenceTarget::ModeratedDocument {
-                    property_agreement, ..
-                } => Some(property_agreement),
-                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                }
-                | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
-                    property_agreement,
-                    lookup,
-                    ..
-                } => {
-                    read.extend(lookup.referring_properties().map(top_level_property));
-                    // A computed key's params: the key is judged on the create only, so a
-                    // change would leave the document no longer hashing to what it revealed
-                    if let Some((_, key)) = lookup.hash_key() {
-                        read.extend(key.properties_read().map(top_level_property));
-                    }
-                    Some(property_agreement)
-                }
-                DocumentPropertyReferenceTarget::ListElement(list_element) => {
-                    Some(&list_element.property_agreement)
-                }
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property, ..
-                } => {
-                    read.insert(top_level_property(key_id_property));
-                    None
-                }
-                DocumentPropertyReferenceTarget::Identity
-                | DocumentPropertyReferenceTarget::Contract { .. }
-                | DocumentPropertyReferenceTarget::Token
-                | DocumentPropertyReferenceTarget::AnyOf(_)
-                | DocumentPropertyReferenceTarget::AllOf(_) => None,
-            };
-            if let Some(agreement) = agreement {
-                read.extend(
-                    agreement
-                        .keys()
-                        .filter(|property| !property.starts_with('$'))
-                        .map(|property| top_level_property(property)),
-                );
+            if let DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property, ..
+            } = leaf
+            {
+                read.insert(top_level_property(key_id_property));
             }
+            let Some(declaration) = leaf.as_any_document_reference() else {
+                continue;
+            };
+            if let Some(lookup) = declaration.lookup {
+                read.extend(lookup.referring_properties().map(top_level_property));
+                // A computed key's params: the key is judged on the create only, so a
+                // change would leave the document no longer hashing to what it revealed
+                if let Some((_, key)) = lookup.hash_key() {
+                    read.extend(key.properties_read().map(top_level_property));
+                }
+                // The `chooseFirst` `validWhen` function's params, for the same reason
+                if let Some(choose_first) = &lookup.choose_first {
+                    read.extend(
+                        choose_first
+                            .valid_when
+                            .properties_read()
+                            .map(top_level_property),
+                    );
+                }
+            }
+            // The `where` of a list element names the property holding its
+            // document's `$id` too
+            read.extend(
+                declaration
+                    .where_referring_properties()
+                    .filter(|property| !property.starts_with('$'))
+                    .map(top_level_property),
+            );
         }
     }
     read
@@ -3520,10 +3531,10 @@ fn summable_off_count_index_error(
 /// Parses a condition a replace is judged by, the `when` of an `immutable`
 /// entry or a type's `retractedWhen`. It takes the grammar of a
 /// `propertyConstraints` rule, and what it reads is checked as a rule's reads
-/// are ([`super::validate_property_constraint_reads`]), on every parse. Beyond
-/// a rule, it may read the stored document through `$old.`, as a replace
-/// judges it on the document it writes, and may read no `countOf` or `sumOf`:
-/// it reads the document alone, so a replace judges it without reading state.
+/// are ([`super::validate_property_constraint_reads`]), on every parse: the
+/// stored document through `$old.` included, as a replace judges it on the
+/// document it writes. Unlike a rule, it may read no `countOf` or `sumOf`: it
+/// reads the document alone, so a replace judges it without reading state.
 /// Under full validation it stays within the node limit of a rule and lists no
 /// condition twice. Every message reads `document type "{name}" {keyword}
 /// {subject} ...`.
@@ -3548,12 +3559,9 @@ fn parse_replace_condition(
             "document type \"{name}\" {keyword} {message}"
         ))
     };
-    let property_kind = |path: &str| {
-        super::property_equality_kind(
-            &document_type.flattened_properties,
-            path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
-        )
-    };
+    // The parse reads a path through `$old.` as the path after it
+    let property_kind =
+        |path: &str| super::property_equality_kind(&document_type.flattened_properties, path);
     let condition =
         parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
             consensus_or_protocol_data_contract_error(condition_error(format!(
@@ -3566,6 +3574,7 @@ fn parse_replace_condition(
         subject,
         &condition,
         true,
+        false,
         &condition_error,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -4293,7 +4302,7 @@ pub(super) fn apply_index_only(
         // key through the same tree-key encoding the prefix levels use (the
         // walkers and probes via `get_raw_for_document_type`, queries and
         // executed proofs via `serialize_value_for_key`, synthesis via
-        // `decode_value_for_tree_keys`), so a component needs no particular
+        // `deserialize_value_for_key`), so a component needs no particular
         // width or meaning — only the shape limits every indexed value
         // carries. Structural uniqueness spans the whole key: one entry per
         // (prefix values, terminal values).

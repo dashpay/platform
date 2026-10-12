@@ -209,27 +209,30 @@ fn should_hold_a_byte_read_to_a_stored_byte_array_within_its_max_items() {
         }
     }
 
-    // Only a condition judging a replace reads the stored document; the
-    // meta-schema refuses the path when registering, so the parser alone is
-    // left to refuse it in a stored contract
-    expect_structure_error(
-        parse_rule(
-            json!({ "equal": [{ "byteAt": ["$old.payload", 0] }, 0] }),
-            false,
-        ),
-        "rule \"rule\" reads \"$old.payload\", but only a condition judging a replace",
-    );
-    expect_structure_error(
-        parse_payment(
-            json!({
-                "deleteConstraints": {
-                    "rule": { "startsWith": ["$old.payload", { "const": "ff" }] }
-                }
-            }),
-            false,
-        ),
-        "rule \"rule\" reads \"$old.payload\", but only a condition judging a replace",
-    );
+    // A rule reads the stored version's bytes through `$old.`, but a delete rule,
+    // judged on the stored document itself, reads them by the plain path
+    for full_validation in [true, false] {
+        assert!(
+            parse_rule(
+                json!({ "equal": [{ "byteAt": ["$old.payload", 0] }, 0] }),
+                full_validation,
+            )
+            .is_ok(),
+            "full_validation: {full_validation}"
+        );
+        expect_structure_error(
+            parse_payment(
+                json!({
+                    "deleteConstraints": {
+                        "rule": { "startsWith": ["$old.payload", { "const": "ff" }] }
+                    }
+                }),
+                full_validation,
+            ),
+            "rule \"rule\" reads \"$old.payload\", but a deleteConstraints rule is judged on the \
+             stored document itself",
+        );
+    }
 
     // A transient byte array is never stored, so no rule may read one
     for rule in [

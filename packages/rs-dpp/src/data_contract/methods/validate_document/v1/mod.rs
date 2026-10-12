@@ -118,6 +118,16 @@ impl DataContract {
                 self.schema_defs().map(|defs| Value::from(defs.clone())),
                 platform_version,
             )?;
+            // The schema is held as the contract was sent; JSON Schema knows no
+            // `identifier` or `bytes` type, so the validator compiles the long
+            // form a shorthand stands for, as the parse compiled it. The
+            // contract passed the expansion when it was registered.
+            let root_schema = DocumentType::expand_property_type_shorthands(
+                &root_schema,
+                false,
+                platform_version,
+            )?
+            .unwrap_or(root_schema);
 
             let root_json_schema = root_schema
                 .try_to_validating_json()

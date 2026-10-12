@@ -16,6 +16,12 @@ use dpp::ProtocolError;
 /// Mempool only: block execution runs the same check first under full validation, so this
 /// refuses nothing a block accepts. Generation 0 of the check is itself exponential on such a
 /// graph, so it runs from generation 1 only.
+///
+/// The block checks the schema with its property type shorthands rewritten into the long form
+/// they stand for (`DocumentType::expand_property_type_shorthands`, protocol version 14), and the
+/// check resolves every `$ref`, so a reference to a keyword only the long form writes resolves
+/// there. This checks the same rewritten schema and definitions. Without full validation the
+/// rewrite refuses nothing: a shorthand the block refuses is left as sent here.
 pub(in crate::execution) fn validate_document_schemas_depth_for_check_tx(
     contract: &DataContractInSerializationFormat,
     validation_mode: ValidationMode,
@@ -37,13 +43,23 @@ pub(in crate::execution) fn validate_document_schemas_depth_for_check_tx(
         return Ok(());
     }
 
-    let schema_defs = contract.schema_defs().map(|defs| Value::from(defs.clone()));
+    let expanded_schema_defs = contract
+        .schema_defs()
+        .map(|defs| {
+            DocumentType::expand_schema_defs_property_type_shorthands(defs, false, platform_version)
+        })
+        .transpose()?
+        .flatten();
+    let schema_defs = match expanded_schema_defs {
+        Some(defs) => Some(Value::from(defs)),
+        None => contract.schema_defs().map(|defs| Value::from(defs.clone())),
+    };
     for schema in contract.document_schemas().values() {
-        let root_schema = DocumentType::enrich_with_base_schema(
-            schema.clone(),
-            schema_defs.clone(),
-            platform_version,
-        )?;
+        let schema =
+            DocumentType::expand_property_type_shorthands(schema, false, platform_version)?
+                .unwrap_or_else(|| schema.clone());
+        let root_schema =
+            DocumentType::enrich_with_base_schema(schema, schema_defs.clone(), platform_version)?;
         let result = validate_max_depth(&root_schema, platform_version)?;
         if let Some(error) = result.errors.into_iter().next() {
             return Err(ProtocolError::ConsensusError(Box::new(error)));

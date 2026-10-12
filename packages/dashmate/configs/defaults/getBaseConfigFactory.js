@@ -190,6 +190,10 @@ export default function getBaseConfigFactory() {
             port: 2444,
           },
           previousBlocksOffset: 8,
+          // How often the service reloads the quorum lists from Core. It answers
+          // requests from that copy only, so a quorum formed since the last reload
+          // is missing from its answers until the next one.
+          cacheTtlSeconds: 60,
           versionCheckHost: '',
           addressHostOverride: '',
         },

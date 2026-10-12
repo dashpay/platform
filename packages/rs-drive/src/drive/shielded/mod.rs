@@ -18,6 +18,10 @@ mod insert_shielded_pool_structure;
 #[cfg(feature = "server")]
 mod insert_note;
 
+/// One-time shielded pool migrations at protocol activation.
+#[cfg(feature = "server")]
+mod migration;
+
 /// Insert nullifiers into the permanent tree and per-block sync storage
 #[cfg(feature = "server")]
 mod insert_nullifiers;

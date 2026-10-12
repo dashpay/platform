@@ -77,11 +77,7 @@ A malformed declaration is refused by the meta-schema (`JsonSchemaError`, 10101)
     "inList": "members"
   },
   "properties": {
-    "electedCharterId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    }
+    "electedCharterId": { "type": "identifier", "position": 0 }
   },
   "required": ["electedCharterId"],
   "additionalProperties": false

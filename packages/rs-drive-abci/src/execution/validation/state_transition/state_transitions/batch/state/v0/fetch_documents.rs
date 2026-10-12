@@ -4,9 +4,13 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef, LookupHashKey};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::{
+    DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef, LookupHashKey,
+};
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
@@ -21,7 +25,7 @@ use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 
 // ============================================================================
@@ -425,21 +429,28 @@ impl BilledLookupKey {
     }
 }
 
-/// Hashes `key` for a create of a document of `declaring_document_type`
-/// carrying `document_data`, `"."` reading `reference_id` (an element's, the
-/// writer's or the creator's id; `None` for a property carrying the reference,
-/// which the key names by its path), and bills it as the double SHA-256 it is
+/// Hashes `key` for a create by `writer_id` of a document of
+/// `declaring_document_type` carrying `document_data`, `"."` reading
+/// `reference_id` (an element's, the writer's or the creator's id; `None` for a
+/// property carrying the reference, which the key names by its path) and
+/// `"$ownerId"` the writer, and bills it as the double SHA-256 it is
 /// (`ValidationOperation::DoubleSha256`, by the blocks it hashes). `None`, with
 /// nothing hashed or billed, when the preimage cannot be assembled.
 pub(crate) fn hash_lookup_key(
     key: &LookupHashKey,
     declaring_document_type: DocumentTypeRef,
     reference_id: Option<Identifier>,
+    writer_id: Identifier,
     document_data: &BTreeMap<String, Value>,
     execution_context: &mut StateTransitionExecutionContext,
 ) -> Option<BilledLookupKey> {
     let (digest, blocks) = key
-        .key_value(declaring_document_type, reference_id, document_data)
+        .key_value(
+            declaring_document_type,
+            reference_id,
+            writer_id,
+            document_data,
+        )
         .ok()?;
     execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
     Some(BilledLookupKey(digest))
@@ -448,10 +459,16 @@ pub(crate) fn hash_lookup_key(
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
 /// `reference_value` (the identifier property's value, one array element, the
-/// writer or the creator), the writer `owner_id` and the sources in
+/// writer or the creator, or the value of a string or byte array property
+/// carrying the reference), the writer `owner_id` and the sources in
 /// `document_data`, a document of `declaring_document_type`. `None` when no
-/// document matches, and when the key cannot be assembled or the index is
-/// missing or not unique. Contract registration and update refuse the last
+/// document matches (the document the index finds must hold each string or
+/// byte array part of the key exactly, see [`holds_key_part`]), when a key part
+/// is one no index entry can hold, found without a read (a string or byte
+/// array read as is, longer than an index key may be: the referring property
+/// need not share the referenced one's bounds), and when the key cannot be
+/// assembled or the index is missing or not unique. Contract registration and
+/// update refuse the last
 /// three (an optional source, a missing or non-unique index), and a referenced
 /// type's indexes cannot change on update, so for a validated contract they
 /// cannot happen; if one did, the write is refused rather than judged against
@@ -471,7 +488,7 @@ pub(crate) fn fetch_document_through_lookup(
     document_type: DocumentTypeRef,
     declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
-    reference_value: Identifier,
+    reference_value: &Value,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     billed_key: Option<BilledLookupKey>,
@@ -486,12 +503,22 @@ pub(crate) fn fetch_document_through_lookup(
     if lookup.resolve_index(document_type).is_err() {
         return Ok(None);
     }
+    // A function's `"."` param reads an identifier (an element, the writer or
+    // the creator); a property carrying the reference is named by its path.
+    // The writer is passed in place, inert before protocol version 14: only
+    // meta-schema v3 admits a computed key, and the `"$ownerId"` param that
+    // reads the writer
+    let reference_id = match reference_value {
+        Value::Identifier(id) => Some(Identifier::from(*id)),
+        _ => None,
+    };
     let billed_key = billed_key.or_else(|| {
         lookup.hash_key().and_then(|(_, key)| {
             hash_lookup_key(
                 key,
                 declaring_document_type,
-                Some(reference_value),
+                reference_id,
+                owner_id,
                 document_data,
                 execution_context,
             )
@@ -506,15 +533,24 @@ pub(crate) fn fetch_document_through_lookup(
     ) else {
         return Ok(None);
     };
+    // A key part no index entry can hold finds no document. Serializing it is
+    // what the query does first, and its failure is the value's, not the state's
+    if key_values.iter().any(|(index_property, value)| {
+        document_type
+            .serialize_value_for_key(index_property, value, platform_version)
+            .is_err()
+    }) {
+        return Ok(None);
+    }
     let equal_clauses = key_values
-        .into_iter()
+        .iter()
         .map(|(field, value)| {
             (
                 field.clone(),
                 WhereClause {
-                    field,
+                    field: field.clone(),
                     operator: WhereOperator::Equal,
-                    value,
+                    value: value.clone(),
                 },
             )
         })
@@ -557,7 +593,125 @@ pub(crate) fn fetch_document_through_lookup(
         lifetime_storage_fees: Default::default(),
     }));
 
-    Ok(documents_outcome.documents_owned().into_iter().next())
+    Ok(documents_outcome
+        .documents_owned()
+        .into_iter()
+        .next()
+        .filter(|document| {
+            key_values.iter().all(|(index_property, value)| {
+                holds_key_part(document_type, document, index_property, value)
+            })
+        }))
+}
+
+/// Whether `document`, found through an index of `document_type` under a key
+/// whose part for `index_property` is `value`, holds that value. The index
+/// finds a document by the key's encoding, which reads two values one way for
+/// a string and a byte array: the empty string as `"\0"`, and an empty byte
+/// array as no value at all. So for those the document must hold exactly the
+/// same text or bytes, whichever binary form either side carries; every other
+/// kind encodes one value one way only, and holds by being found. A `chooseFirst`
+/// reads it for the 32-byte hashes it compares, which it judges byte for byte.
+pub(crate) fn holds_key_part(
+    document_type: DocumentTypeRef,
+    document: &Document,
+    index_property: &str,
+    value: &Value,
+) -> bool {
+    let held = document.get(index_property);
+    match document_type
+        .flattened_properties()
+        .get(index_property)
+        .map(|property| &property.property_type)
+    {
+        Some(DocumentPropertyType::String(_)) => matches!(
+            (held.and_then(Value::as_text), value.as_text()),
+            (Some(held), Some(value)) if held == value
+        ),
+        Some(DocumentPropertyType::ByteArray(_)) => matches!(
+            (held.map(Value::as_bytes_slice), value.as_bytes_slice()),
+            (Some(Ok(held)), Ok(value)) if held == value
+        ),
+        _ => true,
+    }
+}
+
+// ============================================================================
+// fetch_documents_holding_in_order
+// ============================================================================
+
+/// The documents of `document_type` holding `value` at `property`, read in `order` (each
+/// entry a property and whether it ascends; within equal values the index keeps them by id,
+/// in the direction of the last) through the type's index over exactly `property` and the
+/// ordered properties, which registration demands, bounded by `range` on the first ordered
+/// property, at most `limit`: the commitments a `refersTo` `chooseFirst` reads. Expired
+/// documents the cleanup has not reached yet are among them, as the index still holds them.
+///
+/// Returns the documents and the query's processing cost, which the caller bills within the
+/// scan's budget. Only reached from the document reference validation, which exists from
+/// protocol version 14, so it carries no version of its own.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_documents_holding_in_order(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    property: &str,
+    value: Value,
+    order: &[(String, bool)],
+    range: Option<WhereClause>,
+    limit: u16,
+    epoch: &Epoch,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(Vec<Document>, FeeResult), Error> {
+    let drive_query = DriveDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clauses: Vec::new(),
+            range_clause: range,
+            equal_clauses: BTreeMap::from([(
+                property.to_string(),
+                WhereClause {
+                    field: property.to_string(),
+                    operator: WhereOperator::Equal,
+                    value,
+                },
+            )]),
+        },
+        offset: None,
+        limit: Some(limit),
+        order_by: order
+            .iter()
+            .map(|(field, ascending)| {
+                (
+                    field.clone(),
+                    OrderClause {
+                        field: field.clone(),
+                        ascending: *ascending,
+                    },
+                )
+            })
+            .collect(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        Some(epoch),
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    let cost = FeeResult::new_from_processing_fee(documents_outcome.cost());
+
+    Ok((documents_outcome.documents_owned(), cost))
 }
 
 // ============================================================================

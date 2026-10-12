@@ -40,6 +40,10 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use dpp::consensus::state::token::TokenNotTransferableError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -446,7 +450,8 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                     }
                 },
                 BatchedTransitionAction::TokenAction(token_transition_action) => {
-                    // token actions only need to do advanced structure validation on the base action
+                    // token actions do advanced structure validation on the base action, and a
+                    // transfer is refused for a token that is not transferable
                     let result = token_transition_action
                         .base()
                         .validate_structure(platform_version)?;
@@ -458,6 +463,30 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         return Ok(ConsensusValidationResult::new_with_data_and_errors(
                             bump_action,
                             result.errors,
+                        ));
+                    }
+                    // The token's configuration comes with the contract the action already
+                    // carries, so the check needs no read and the mempool refuses the transfer
+                    // as well. The base validation above established the token exists.
+                    if matches!(
+                        token_transition_action,
+                        TokenTransitionAction::TransferAction(_)
+                    ) && !token_transition_action
+                        .base()
+                        .token_configuration()?
+                        .is_transferable()
+                    {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(token_transition_action.base(), self.owner_id(), self.user_fee_increase()),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            vec![TokenNotTransferableError::new(
+                                token_transition_action.base().token_id(),
+                                "a token transfer".to_string(),
+                            )
+                            .into()],
                         ));
                     }
                 }

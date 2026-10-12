@@ -32,13 +32,11 @@ The `grade` document type carries one grade for one student in one class during 
   "documentsCountable": true,
   "documentsSummable": "score",
   "properties": {
-    "student":    { "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-                    "position": 0, "contentMediaType": "application/x.dash.dpp.identifier" },
+    "student":    { "type": "identifier", "position": 0 },
     "class":      { "type": "string", "minLength": 1, "maxLength": 32, "position": 1 },
     "semester":   { "type": "integer", "minimum": 20000, "maximum": 99999, "position": 2 },
     "score":      { "type": "integer", "minimum": 0, "maximum": 100, "position": 3 },
-    "instructor": { "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-                    "position": 4, "contentMediaType": "application/x.dash.dpp.identifier" }
+    "instructor": { "type": "identifier", "position": 4 }
   },
   "required": ["student", "class", "semester", "score", "instructor"],
   "indices": [
