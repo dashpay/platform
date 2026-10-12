@@ -8,7 +8,8 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY,
+    read_pool_total_balance, reconstruct_and_verify_bundle, validate_nullifiers,
+    FLAGS_OUTPUTS_ONLY,
 };
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -54,6 +55,18 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
 impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
     for ShieldFromAssetLockTransition
 {
+    /// Version 0's checks plus two additions. The bundle's sighash binds its kind tag and the
+    /// asset lock it is funded from, so proved bytes cannot be re-wrapped around an asset lock of
+    /// someone else's (Step 9). And every nullifier the bundle reveals is checked and recorded
+    /// (Step 8b): each action of an outputs-only bundle still reveals a nullifier, that of a dummy
+    /// spend, which becomes the new note's `rho`, and the action's operations record it, so a
+    /// nullifier repeated inside the bundle or already recorded by an earlier spend or shield is
+    /// refused with `NullifierAlreadySpentError`.
+    ///
+    /// The nullifier check runs after the asset lock, its signature, the funding floor and the fee
+    /// cap have passed, so a re-broadcast of an executed transition still reports its consumed
+    /// asset lock, and before the Orchard proof, so the refusal costs no proof verification. Like
+    /// the fee cap refusal it is unpaid: the asset lock stays unconsumed.
     fn transform_into_action_v1<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -293,8 +306,29 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
         let current_total_balance =
             read_pool_total_balance(platform.drive, tx, &mut drive_operations, platform_version)?;
 
+        // Step 8b: Validate nullifiers: intra-bundle duplicates + already recorded in state.
+        // The flat `pool_fee` subsumes these reads too, as it does the pool read above.
+        let nullifiers: Vec<[u8; 32]> = match self {
+            ShieldFromAssetLockTransition::V0(v0) => {
+                v0.actions.iter().map(|action| action.nullifier).collect()
+            }
+            ShieldFromAssetLockTransition::V1(v1) => {
+                v1.actions.iter().map(|action| action.nullifier).collect()
+            }
+        };
+        if let Some(consensus_error) = validate_nullifiers(
+            platform.drive,
+            &nullifiers,
+            tx,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(consensus_error);
+        }
+
         // CheckTx admits the expensive proof only after the asset lock, its
-        // signature, funding, fee cap, and current pool state have all passed.
+        // signature, funding, fee cap, current pool state and nullifiers have
+        // all passed.
         // Proposal and block processing pass `None` and retain the existing
         // penalty action when proof verification fails.
         let _check_tx_permit = match check_tx_proof_verifier {

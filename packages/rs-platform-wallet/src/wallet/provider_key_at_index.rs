@@ -74,7 +74,7 @@
 //! are scrubbed when dropped.
 
 use dashcore::bls_sig_utils::BlsScheme;
-use dashcore::eddsa::EddsaPkBytes;
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
 use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
@@ -156,13 +156,12 @@ pub fn derive_platform_node_public_keys(
                     "failed to derive Ed25519 platform-node key at index {index}: {e}"
                 ))
             })?;
-        let public_key: [u8; 32] = signing_key.public_key().to_bytes();
+        let public_key: [u8; 32] = EddsaSecretKey::from(&signing_key).public_key().to_bytes();
         // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20] — the
         // Tenderdash/CometBFT convention (rust-dashcore #884) that a ProRegTx
         // `platform_node_id` field carries, NOT a hash160.
-        let node_id: [u8; 20] = EddsaPkBytes::from_bytes(public_key)
-            .hash()
-            .to_canonical_bytes();
+        let node_id: [u8; 20] =
+            EddsaPkHash::from(EddsaPkBytes::from_bytes(public_key)).to_canonical_bytes();
         out.push(ProviderPlatformNodePubKey {
             index,
             public_key,
@@ -568,15 +567,16 @@ impl PlatformWallet {
                             "failed to derive Ed25519 platform-node key at index {index}: {e}"
                         ))
                     })?;
-                let verifying_bytes: [u8; 32] = signing_key.public_key().to_bytes();
+                let verifying_bytes: [u8; 32] =
+                    EddsaSecretKey::from(&signing_key).public_key().to_bytes();
                 let public_key_bytes = verifying_bytes.to_vec();
 
                 // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20]
                 // — the Tenderdash/CometBFT convention (rust-dashcore #884)
                 // the ProRegTx `platform_node_id` field carries, NOT a hash160.
-                let node_id: [u8; 20] = EddsaPkBytes::from_bytes(verifying_bytes)
-                    .hash()
-                    .to_canonical_bytes();
+                let node_id: [u8; 20] =
+                    EddsaPkHash::from(EddsaPkBytes::from_bytes(verifying_bytes))
+                        .to_canonical_bytes();
 
                 let private_key =
                     include_private.then(|| Zeroizing::new(signing_key.to_bytes().to_vec()));
@@ -773,9 +773,8 @@ mod tests {
         assert_eq!(keys.len(), 20, "requested 20 keys");
         for (i, k) in keys.iter().enumerate() {
             assert_eq!(k.index, i as u32, "index ordering");
-            let expected_node_id: [u8; 20] = EddsaPkBytes::from_bytes(k.public_key)
-                .hash()
-                .to_canonical_bytes();
+            let expected_node_id: [u8; 20] =
+                EddsaPkHash::from(EddsaPkBytes::from_bytes(k.public_key)).to_canonical_bytes();
             assert_eq!(
                 k.node_id, expected_node_id,
                 "node_id must be SHA256(ed25519 pubkey)[..20] at index {i}"
@@ -789,7 +788,7 @@ mod tests {
                 .expect("platform_node_key_at");
             assert_eq!(
                 k.public_key,
-                via_api.public_key().to_bytes(),
+                EddsaSecretKey::from(&via_api).public_key().to_bytes(),
                 "snapshot pubkey must equal platform_node_key_at at {i}"
             );
         }
@@ -814,7 +813,7 @@ mod tests {
         // The snapshot's index-0 public key corresponds to that golden secret.
         assert_eq!(
             keys[0].public_key,
-            sk0.public_key().to_bytes(),
+            EddsaSecretKey::from(&sk0).public_key().to_bytes(),
             "snapshot index-0 pubkey must match the golden secret's public key"
         );
         // Golden pubkey + Tenderdash node-id (SHA256[..20]) for mainnet
@@ -1049,9 +1048,8 @@ mod tests {
             // The row address is the P2PKH payload of the node id, so a
             // scan recomputing SHA256[..20] from the pubkey maps back to
             // this index.
-            let expected_node_id = EddsaPkBytes::from_bytes(k.public_key)
-                .hash()
-                .to_canonical_bytes();
+            let expected_node_id =
+                EddsaPkHash::from(EddsaPkBytes::from_bytes(k.public_key)).to_canonical_bytes();
             assert_eq!(
                 k.node_id, expected_node_id,
                 "node id must be the Tenderdash SHA256[..20]"

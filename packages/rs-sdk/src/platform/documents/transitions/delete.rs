@@ -91,7 +91,10 @@ impl DocumentDeleteTransitionBuilder {
             document.id(),
             document.owner_id(),
         );
-        // Keep the full document: an indexOnly delete carries its values.
+        // Keep the full document: an indexOnly delete carries its values. A
+        // property only a `summableOffCountIndex` index's source fixes sits in
+        // no entry-keeping index, so a document read back lacks it: set it
+        // from the referenced document before passing the document here.
         builder.document = Some(document.clone());
         builder
     }

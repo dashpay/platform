@@ -17,7 +17,7 @@
 //! same on its per-In fan-out branch.
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
-use super::super::super::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
+use super::super::super::drive_document_sum_query::index_picker::find_summable_index_with_counts_for_where_clauses;
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -80,17 +80,18 @@ impl Drive {
             .cloned()
             .collect();
 
-        // Open a short-lived shared read transaction if the caller
-        // didn't provide one. Multiple per-In branches read grovedb
-        // separately; without a shared snapshot a concurrent block
-        // commit could slip between branches and produce a
-        // `(count, sum)` pair from inconsistent state. Read-only; the
-        // local transaction is dropped without commit at the end.
+        // Open a short-lived shared snapshot read transaction if the
+        // caller didn't provide one (a plain transaction reads the latest
+        // committed state on every read). Multiple per-In branches read
+        // grovedb separately; without a shared snapshot a concurrent block
+        // commit could slip between branches and produce a `(count, sum)`
+        // pair from inconsistent state. Read-only; the local transaction
+        // is dropped without commit at the end.
         let local_tx;
         let effective_transaction: TransactionArg = if transaction.is_some() {
             transaction
         } else {
-            local_tx = self.grove.start_transaction();
+            local_tx = self.grove.start_snapshot_read_transaction();
             Some(&local_tx)
         };
 
@@ -120,13 +121,12 @@ impl Drive {
                 value: value.clone(),
             });
 
-            let index = find_summable_index_for_where_clauses(
+            let index = find_summable_index_with_counts_for_where_clauses(
                 document_type.indexes(),
                 &clauses_for_value,
                 &sum_property,
                 resolved_time_ranges,
             )
-            .filter(|idx| idx.countable.is_countable())
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                     "average query requires an index that declares BOTH \

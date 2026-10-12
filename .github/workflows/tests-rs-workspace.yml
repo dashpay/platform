@@ -450,6 +450,7 @@ jobs:
             --package dash-sdk \
             --package dash-async \
             --package platform-value \
+            --package platform-encryption \
             --package rs-dapi \
             --package platform-wallet \
             --package platform-wallet-storage \

@@ -66,8 +66,11 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4: DriveStateTransitionMethodV
                 address_funds_transfer_transition: 0,
                 address_credit_withdrawal_transition: 0,
                 address_funding_from_asset_lock_transition: 0,
-                shield_transition: 0,
-                shield_from_asset_lock_transition: 0,
+                // PROTOCOL_VERSION_14: v1 also records the nullifiers the
+                // shield's actions reveal, as the spends do. v0 stays for
+                // PROTOCOL_VERSION_12 and 13 chain replay.
+                shield_transition: 1,                 // changed
+                shield_from_asset_lock_transition: 1, // changed
                 shielded_transfer_transition: 0,
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,

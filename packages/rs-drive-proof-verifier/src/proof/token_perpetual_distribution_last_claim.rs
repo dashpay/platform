@@ -96,7 +96,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest> for RewardDistribu
                     Some(distribution_type) => {
                         let (root_hash, moment_opt) =
                             Drive::verify_token_perpetual_distribution_last_paid_time(
-                                supported_grovedb_proof_bytes(&proof_msg, platform_version)?,
+                                supported_grovedb_proof_bytes(&proof_msg)?,
                                 token_id,
                                 identity_id,
                                 &distribution_type,
@@ -104,13 +104,7 @@ impl FromProof<GetTokenPerpetualDistributionLastClaimRequest> for RewardDistribu
                                 platform_version,
                             )?;
 
-                        verify_tenderdash_proof(
-                            &proof_msg,
-                            &metadata,
-                            &root_hash,
-                            provider,
-                            platform_version,
-                        )?;
+                        verify_tenderdash_proof(&proof_msg, &metadata, &root_hash, provider)?;
 
                         // May be None if identity has not yet claimed
                         Ok((moment_opt, metadata, proof_msg))

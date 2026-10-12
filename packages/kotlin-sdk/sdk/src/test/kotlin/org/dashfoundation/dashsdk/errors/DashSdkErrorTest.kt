@@ -228,6 +228,28 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun spvTeardownCodes27And59MapTypedWithOppositeRetryability() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+
+        val incomplete =
+            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out"))
+        assertTrue(incomplete is DashSdkError.PlatformWallet.ShutdownIncomplete)
+        assertEquals("SPV teardown timed out", incomplete.message)
+        assertTrue("a tracked teardown completes on a repeated stop", incomplete.isRetryable)
+
+        val panicDetail = "teardown task 12 panicked with message \"boom\""
+        val restart = DashSdkError.fromNative(DashSDKException(offset + 59, panicDetail))
+        assertTrue(restart is DashSdkError.PlatformWallet.SpvProcessRestartRequired)
+        assertEquals(panicDetail, restart.message)
+        assertFalse("no retry recovers a panicked teardown", restart.isRetryable)
+        assertEquals(
+            "the panic detail is diagnostic and must not be the displayed text",
+            "Sync could not be stopped cleanly. Restart the app to use it again.",
+            restart.userMessage,
+        )
+    }
+
+    @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
             "Platform shield capacity exceeded: available 3623849220, required 3623849221"

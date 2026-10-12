@@ -29,7 +29,7 @@
 //!
 //! Executors that issue multiple grovedb reads (`PerInValue`, the
 //! aggregate `RangeNoProof` branch, and its compound `In + range`
-//! per-In fan-out) open a short-lived shared read transaction
+//! per-In fan-out) open a short-lived snapshot read transaction
 //! internally when `transaction.is_none()` so the sub-reads see a
 //! consistent grovedb snapshot. Executors that issue exactly one
 //! read get atomicity for free.

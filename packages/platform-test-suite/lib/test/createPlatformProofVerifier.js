@@ -1,4 +1,8 @@
 const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress');
+const wait = require('../wait');
+
+// Allow the sidecar's 60-second refresh and the SDK's initial 60-second node bans to expire.
+const QUORUM_PUBLICATION_WAIT_MS = 65000;
 
 /**
  * `WasmSdkError.name` for a transition family whose proof cannot bind the
@@ -52,6 +56,30 @@ function toReportableError(error) {
   reportable.name = name;
 
   return reportable;
+}
+
+/**
+ * Re-query and fully verify a proof once the sidecar publishes its quorum key.
+ * The WASM wait APIs refresh quorum caches on every call; no transition is broadcast here.
+ *
+ * @param {Function} readProof
+ * @returns {Promise<*>}
+ */
+async function waitForPublishedQuorum(readProof) {
+  try {
+    return await readProof();
+  } catch (error) {
+    const reportable = toReportableError(error);
+    if (reportable.name !== 'DapiClientError'
+      || !reportable.message.includes(
+        'context provider error: invalid quorum: Quorum not found in cache for hash:',
+      )) {
+      throw reportable;
+    }
+
+    await wait(QUORUM_PUBLICATION_WAIT_MS);
+    return readProof();
+  }
 }
 
 /**
@@ -222,7 +250,7 @@ function createPlatformProofVerifier({
       );
 
       try {
-        await sdk.stateTransitions.waitForResponse(stateTransition);
+        await waitForPublishedQuorum(() => sdk.stateTransitions.waitForResponse(stateTransition));
       } catch (error) {
         // Balance top-ups, credit transfers and withdrawals, address funds
         // movements, shields and no-history token operations have no proof
@@ -235,7 +263,9 @@ function createPlatformProofVerifier({
         }
 
         try {
-          await sdk.stateTransitions.waitForAffectedState(stateTransition);
+          await waitForPublishedQuorum(
+            () => sdk.stateTransitions.waitForAffectedState(stateTransition),
+          );
         } catch (affectedStateError) {
           throw toReportableError(affectedStateError);
         }

@@ -11,6 +11,10 @@ pub struct DPPMethodVersions {
     pub deduct_fee_from_outputs_or_remaining_balance_of_inputs: FeatureVersion,
     pub compute_minimum_shielded_fee: FeatureVersion,
     pub shielded_extra_sighash_data: FeatureVersion,
+    /// The Core-anchored withdrawal limit: how much Core's credit pool may still drop given its
+    /// balance now and at the window start (`SystemLimits::core_credit_pool_unlock_limit_percent`
+    /// and `core_credit_pool_unlock_limit_floor`). Exists from protocol version 14.
+    pub core_credit_pool_unlock_limit: OptionalFeatureVersion,
     /// The preimage the outputs-only bundles of the credit pool (`Shield`, `ShieldFromIdentity`,
     /// `ShieldFromAssetLock`) bind into their Orchard sighash. `None` on versions that predate the
     /// binding: they bind nothing, which is what every shipped verifier expects. `Some(0)`: they
