@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
@@ -127,7 +128,10 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         }
 
         // The creator of a document being created is its writer; the commitments the create
-        // reveals and consumes are collected for the batch to delete with it
+        // reveals and consumes are collected for the batch to delete with it, and the values
+        // of the type's derived index properties, from the documents the references fetched,
+        // for Drive to key the document by without reading those documents again
+        let mut derived_index_values = BTreeMap::new();
         let reference_result = self.base().validate_document_references(
             self.data(),
             owner_id,
@@ -137,6 +141,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             platform,
             block_info,
             consumed_documents,
+            Some(&mut derived_index_values),
             transaction,
             execution_context,
             platform_version,
@@ -144,6 +149,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         if !reference_result.is_valid() {
             return Ok(reference_result);
         }
+        self.set_derived_index_values(derived_index_values);
 
         // A non-contested create must not take the id of a live contested
         // document. Both derive the id from the same owner, document type and

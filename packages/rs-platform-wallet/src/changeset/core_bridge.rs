@@ -3702,6 +3702,564 @@ mod contact_watch_only_projection_tests {
         );
     }
 
+    /// Platform credits an asset lock moves into the wallet's own
+    /// keys account (`AssetLockPayload.credit_outputs`, mirrored by the
+    /// OP_RETURN output's value).
+    const LOCK_CREDIT: u64 = 60_000_000;
+    const LOCK_FEE: u64 = 1_000;
+
+    /// The credit an asset lock spending [`our_input`] burns: everything
+    /// but the fee when there is no change, else [`LOCK_CREDIT`].
+    fn lock_credit(change: bool) -> u64 {
+        if change {
+            LOCK_CREDIT
+        } else {
+            FUNDING - LOCK_FEE
+        }
+    }
+
+    /// An asset lock spending [`our_input`]: output 0 burns
+    /// [`lock_credit`] into the OP_RETURN, output 1 (when `change`) is
+    /// our change, and the rest is the fee.
+    fn asset_lock_tx(change: bool) -> Transaction {
+        let mut tx = tx_with(&[]);
+        tx.version = 3;
+        tx.output.push(TxOut {
+            value: lock_credit(change),
+            script_pubkey: ScriptBuf::new_op_return(&[]),
+        });
+        if change {
+            tx.output.push(TxOut {
+                value: FUNDING - LOCK_CREDIT - LOCK_FEE,
+                script_pubkey: our_change_address().script_pubkey(),
+            });
+        }
+        tx
+    }
+
+    /// The two per-account records upstream emits for an asset lock:
+    /// the funding account's slice (classified by upstream
+    /// `record_transaction`: `Unspendable` OP_RETURN, `Change` output,
+    /// `Outgoing` when nothing of ours comes back) and the keys
+    /// account's thin marker (`Internal`, no details, `+credit` net).
+    fn asset_lock_slices(change: bool) -> (TransactionRecord, TransactionRecord) {
+        let tx = asset_lock_tx(change);
+        let mut outputs = vec![OutputDetail {
+            index: 0,
+            role: OutputRole::Unspendable,
+            address: None,
+            value: lock_credit(change),
+        }];
+        let (direction, change_value) = if change {
+            let value = FUNDING - LOCK_CREDIT - LOCK_FEE;
+            outputs.push(output(1, OutputRole::Change, &our_change_address(), value));
+            (TransactionDirection::Internal, value)
+        } else {
+            (TransactionDirection::Outgoing, 0)
+        };
+        let funding = record_with(
+            &tx,
+            bip44_account_0(),
+            in_block(1_000),
+            TransactionType::AssetLock,
+            direction,
+            vec![our_input()],
+            outputs,
+            change_value as i64 - FUNDING as i64,
+        );
+        let keys = record_with(
+            &tx,
+            AccountType::AssetLockAddressTopUp,
+            in_block(1_000),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            Vec::new(),
+            Vec::new(),
+            lock_credit(change) as i64,
+        );
+        (funding, keys)
+    }
+
+    /// The wallet's Core balance drops by the locked credit plus the fee
+    /// — the credit leaves Core for the wallet's own Platform keys, so
+    /// the move is `Internal` and the net is `-(credit + fee)`, with or
+    /// without change. The keys account's `+credit` marker net counts
+    /// Platform credits, not Core funds, and must not be summed in (it
+    /// made the live row read `-fee` while every repair path wrote
+    /// `-(credit + fee)`).
+    #[tokio::test]
+    async fn should_project_asset_lock_as_internal_net_of_credit_and_fee() {
+        for change in [false, true] {
+            let (funding, keys) = asset_lock_slices(change);
+            let cs =
+                build_core_changeset(&test_manager(), &block_processed(vec![funding, keys])).await;
+
+            assert_eq!(cs.records.len(), 1, "change={change}");
+            let row = &cs.records[0];
+            assert_eq!(
+                row.direction,
+                TransactionDirection::Internal,
+                "change={change}"
+            );
+            assert_eq!(
+                row.net_amount,
+                -((lock_credit(change) + LOCK_FEE) as i64),
+                "change={change}"
+            );
+            assert_eq!(row.account_type, bip44_account_0(), "change={change}");
+        }
+    }
+
+    /// A funding slice that never meets the keys marker (the keys
+    /// account did not match, or its slice lands in another round) is
+    /// projected with the same wallet rule — not left on upstream's
+    /// account-local `Outgoing`.
+    #[tokio::test]
+    async fn should_project_a_lone_asset_lock_funding_slice_as_internal() {
+        for change in [false, true] {
+            let (funding, _) = asset_lock_slices(change);
+            let cs = build_core_changeset(&test_manager(), &block_processed(vec![funding])).await;
+
+            assert_eq!(cs.records.len(), 1, "change={change}");
+            assert_eq!(
+                cs.records[0].direction,
+                TransactionDirection::Internal,
+                "change={change}"
+            );
+            assert_eq!(
+                cs.records[0].net_amount,
+                -((lock_credit(change) + LOCK_FEE) as i64),
+                "change={change}"
+            );
+        }
+    }
+
+    /// The keys account's marker alone carries no Core accounting
+    /// evidence, so the projection leaves upstream's verdict alone.
+    #[tokio::test]
+    async fn should_keep_a_lone_keys_marker_as_upstream_emitted_it() {
+        let (_, keys) = asset_lock_slices(false);
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![keys])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Internal);
+        assert_eq!(cs.records[0].net_amount, lock_credit(false) as i64);
+    }
+
+    /// An asset lock that also pays someone else is a real outgoing
+    /// payment; the asset-lock exception covers only the burn.
+    #[tokio::test]
+    async fn should_project_asset_lock_paying_an_external_output_as_outgoing() {
+        let (mut funding, keys) = asset_lock_slices(true);
+        let paid = 5_000_000;
+        let mut tx = funding.transaction.clone();
+        tx.output[1].value -= paid;
+        tx.output.push(TxOut {
+            value: paid,
+            script_pubkey: contact_address().script_pubkey(),
+        });
+        funding.transaction = tx.clone();
+        funding.txid = tx.txid();
+        funding.output_details[1].value -= paid;
+        funding.net_amount -= paid as i64;
+        funding
+            .output_details
+            .push(output(2, OutputRole::Sent, &contact_address(), paid));
+        let mut keys = keys;
+        keys.transaction = tx.clone();
+        keys.txid = tx.txid();
+
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![funding, keys])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+        assert_eq!(
+            cs.records[0].net_amount,
+            -((LOCK_CREDIT + LOCK_FEE + paid) as i64)
+        );
+    }
+
+    /// The wallet-level accounting pass runs on every projected record,
+    /// singles included. Outside asset locks it must reproduce what the
+    /// projection emitted before the pass existed: a single record kept
+    /// upstream's own `net_amount`/`direction`, and a group summed its
+    /// slices' nets and re-derived direction over the merged details.
+    /// Each case feeds upstream-shaped records (upstream's own net and
+    /// direction for its account slice) through the live projection and
+    /// pins that prior output (verified against the pre-pass fold).
+    ///
+    /// One intentional difference: a group made only of keys-account
+    /// markers (no details) used to re-derive `Incoming` from its empty
+    /// details. It now keeps upstream's `Internal`, like a single marker
+    /// always did and like the SQLite repair, which ignores detail-less
+    /// records.
+    #[tokio::test]
+    async fn should_keep_live_fold_accounting_for_non_asset_lock_transactions() {
+        const PAID: u64 = 60_000_000;
+        const FEE: u64 = 1_000;
+        let external = contact_address;
+        let second_account = || AccountType::Standard {
+            index: 1,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let slice = |tx: &Transaction,
+                     account: AccountType,
+                     kind: TransactionType,
+                     direction: TransactionDirection,
+                     inputs: Vec<InputDetail>,
+                     outputs: Vec<OutputDetail>,
+                     net: i64| {
+            record_with(
+                tx,
+                account,
+                in_block(1_000),
+                kind,
+                direction,
+                inputs,
+                outputs,
+                net,
+            )
+        };
+        use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
+        use TransactionType::{
+            AssetUnlock, CoinJoin as CoinJoinTx, Coinbase, ProviderRegistration, Standard,
+        };
+
+        let receive = tx_with(&[(&our_receive_address(), PAID)]);
+        let send_change = tx_with(&[(&external(), PAID), (&our_change_address(), CHANGE)]);
+        let send_all = tx_with(&[(&external(), FUNDING - FEE)]);
+        let self_send = tx_with(&[(&our_receive_address(), FUNDING - FEE)]);
+        let cross = tx_with(&[
+            (&our_receive_address(), PAID),
+            (&our_change_address(), CHANGE),
+        ]);
+        let mix = tx_with(&[(&our_receive_address(), FUNDING - FEE)]);
+        let provider = tx_with(&[
+            (&our_receive_address(), PAID),
+            (&our_change_address(), FUNDING - PAID - FEE),
+        ]);
+        let provider_ext = tx_with(&[
+            (&external(), PAID),
+            (&our_change_address(), FUNDING - PAID - FEE),
+        ]);
+        let unlock = tx_with(&[(&our_receive_address(), PAID)]);
+        let mut coinbase = tx_with(&[(&our_receive_address(), PAID)]);
+        coinbase.lock_time = 9;
+        let keys_only = tx_with(&[]);
+        let (_, contact_funding, contact_watch_only) = contact_payment_records();
+        let from_contact = tx_with(&[(&our_receive_address(), PAID)]);
+
+        let cases: Vec<(&str, Vec<TransactionRecord>, TransactionDirection, i64)> = vec![
+            (
+                "plain receive",
+                vec![slice(
+                    &receive,
+                    bip44_account_0(),
+                    Standard,
+                    Incoming,
+                    vec![],
+                    vec![output(
+                        0,
+                        OutputRole::Received,
+                        &our_receive_address(),
+                        PAID,
+                    )],
+                    PAID as i64,
+                )],
+                Incoming,
+                PAID as i64,
+            ),
+            (
+                "send with change",
+                vec![slice(
+                    &send_change,
+                    bip44_account_0(),
+                    Standard,
+                    Outgoing,
+                    vec![our_input()],
+                    vec![
+                        output(0, OutputRole::Sent, &external(), PAID),
+                        output(1, OutputRole::Change, &our_change_address(), CHANGE),
+                    ],
+                    CHANGE as i64 - FUNDING as i64,
+                )],
+                Outgoing,
+                CHANGE as i64 - FUNDING as i64,
+            ),
+            (
+                "send without change",
+                vec![slice(
+                    &send_all,
+                    bip44_account_0(),
+                    Standard,
+                    Outgoing,
+                    vec![our_input()],
+                    vec![output(0, OutputRole::Sent, &external(), FUNDING - FEE)],
+                    -(FUNDING as i64),
+                )],
+                Outgoing,
+                -(FUNDING as i64),
+            ),
+            (
+                "self-transfer within one account",
+                vec![slice(
+                    &self_send,
+                    bip44_account_0(),
+                    Standard,
+                    Internal,
+                    vec![our_input()],
+                    vec![output(
+                        0,
+                        OutputRole::Received,
+                        &our_receive_address(),
+                        FUNDING - FEE,
+                    )],
+                    -(FEE as i64),
+                )],
+                Internal,
+                -(FEE as i64),
+            ),
+            (
+                "self-transfer between own accounts",
+                vec![
+                    slice(
+                        &cross,
+                        bip44_account_0(),
+                        Standard,
+                        Outgoing,
+                        vec![our_input()],
+                        vec![
+                            output(0, OutputRole::Sent, &our_receive_address(), PAID),
+                            output(1, OutputRole::Change, &our_change_address(), CHANGE),
+                        ],
+                        CHANGE as i64 - FUNDING as i64,
+                    ),
+                    slice(
+                        &cross,
+                        second_account(),
+                        Standard,
+                        Incoming,
+                        vec![],
+                        vec![output(
+                            0,
+                            OutputRole::Received,
+                            &our_receive_address(),
+                            PAID,
+                        )],
+                        PAID as i64,
+                    ),
+                ],
+                Internal,
+                (PAID + CHANGE) as i64 - FUNDING as i64,
+            ),
+            (
+                "coinjoin",
+                vec![slice(
+                    &mix,
+                    AccountType::CoinJoin { index: 0 },
+                    CoinJoinTx,
+                    CoinJoin,
+                    vec![our_input()],
+                    vec![output(
+                        0,
+                        OutputRole::Received,
+                        &our_receive_address(),
+                        FUNDING - FEE,
+                    )],
+                    -(FEE as i64),
+                )],
+                CoinJoin,
+                -(FEE as i64),
+            ),
+            (
+                "provider registration with owner-key marker",
+                vec![
+                    slice(
+                        &provider,
+                        bip44_account_0(),
+                        ProviderRegistration,
+                        Internal,
+                        vec![our_input()],
+                        vec![
+                            output(0, OutputRole::Received, &our_receive_address(), PAID),
+                            output(
+                                1,
+                                OutputRole::Change,
+                                &our_change_address(),
+                                FUNDING - PAID - FEE,
+                            ),
+                        ],
+                        -(FEE as i64),
+                    ),
+                    slice(
+                        &provider,
+                        AccountType::ProviderOwnerKeys,
+                        ProviderRegistration,
+                        Internal,
+                        vec![],
+                        vec![],
+                        0,
+                    ),
+                ],
+                Internal,
+                -(FEE as i64),
+            ),
+            (
+                "provider registration paying external collateral",
+                vec![
+                    slice(
+                        &provider_ext,
+                        bip44_account_0(),
+                        ProviderRegistration,
+                        Outgoing,
+                        vec![our_input()],
+                        vec![
+                            output(0, OutputRole::Sent, &external(), PAID),
+                            output(
+                                1,
+                                OutputRole::Change,
+                                &our_change_address(),
+                                FUNDING - PAID - FEE,
+                            ),
+                        ],
+                        -((PAID + FEE) as i64),
+                    ),
+                    slice(
+                        &provider_ext,
+                        AccountType::ProviderOwnerKeys,
+                        ProviderRegistration,
+                        Internal,
+                        vec![],
+                        vec![],
+                        0,
+                    ),
+                ],
+                Outgoing,
+                -((PAID + FEE) as i64),
+            ),
+            (
+                "asset unlock",
+                vec![slice(
+                    &unlock,
+                    bip44_account_0(),
+                    AssetUnlock,
+                    Incoming,
+                    vec![],
+                    vec![output(
+                        0,
+                        OutputRole::Received,
+                        &our_receive_address(),
+                        PAID,
+                    )],
+                    PAID as i64,
+                )],
+                Incoming,
+                PAID as i64,
+            ),
+            (
+                "coinbase",
+                vec![slice(
+                    &coinbase,
+                    bip44_account_0(),
+                    Coinbase,
+                    Incoming,
+                    vec![],
+                    vec![output(
+                        0,
+                        OutputRole::Received,
+                        &our_receive_address(),
+                        PAID,
+                    )],
+                    PAID as i64,
+                )],
+                Incoming,
+                PAID as i64,
+            ),
+            (
+                "keys-only single marker",
+                vec![slice(
+                    &keys_only,
+                    AccountType::IdentityRegistration,
+                    TransactionType::AssetLock,
+                    Internal,
+                    vec![],
+                    vec![],
+                    PAID as i64,
+                )],
+                Internal,
+                PAID as i64,
+            ),
+            (
+                "payment to a contact (watch-only slice present)",
+                vec![contact_funding, contact_watch_only],
+                Outgoing,
+                CHANGE as i64 - FUNDING as i64,
+            ),
+            (
+                "payment from a contact into DashPay receiving funds",
+                vec![slice(
+                    &from_contact,
+                    AccountType::DashpayReceivingFunds {
+                        index: 0,
+                        user_identity_id: [2u8; 32],
+                        friend_identity_id: [1u8; 32],
+                    },
+                    Standard,
+                    Incoming,
+                    vec![],
+                    vec![output(
+                        0,
+                        OutputRole::Received,
+                        &our_receive_address(),
+                        PAID,
+                    )],
+                    PAID as i64,
+                )],
+                Incoming,
+                PAID as i64,
+            ),
+            (
+                "keys-only group",
+                vec![
+                    slice(
+                        &keys_only,
+                        AccountType::IdentityRegistration,
+                        TransactionType::AssetLock,
+                        Internal,
+                        vec![],
+                        vec![],
+                        PAID as i64,
+                    ),
+                    slice(
+                        &keys_only,
+                        AccountType::AssetLockAddressTopUp,
+                        TransactionType::AssetLock,
+                        Internal,
+                        vec![],
+                        vec![],
+                        CHANGE as i64,
+                    ),
+                ],
+                // Intentional change (see the doc comment): was `Incoming`.
+                Internal,
+                (PAID + CHANGE) as i64,
+            ),
+        ];
+        let mut failures = Vec::new();
+        for (name, records, direction, net) in cases {
+            let cs = build_core_changeset(&test_manager(), &block_processed(records)).await;
+            assert_eq!(cs.records.len(), 1, "{name}");
+            let got = (cs.records[0].direction, cs.records[0].net_amount);
+            if got != (direction, net) {
+                failures.push(format!(
+                    "{name}: expected {:?}, got {got:?}",
+                    (direction, net)
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+
     /// A fold lands at the group's FIRST position even when the funding
     /// record (the metadata source) appears later — unrelated records
     /// between the slices must not move ahead of the folded transaction.

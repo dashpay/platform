@@ -96,6 +96,13 @@ pub struct DriveAbciQueryContractModerationVersions {
     pub contract_moderation_status: FeatureVersionBounds,
     pub contract_moderation_entries: FeatureVersionBounds,
     pub contract_document_removals: FeatureVersionBounds,
+    /// A contract's seated moderation team's actions, active or closed, and each one's
+    /// approvals
+    pub contract_team_actions: FeatureVersionBounds,
+    pub contract_team_action_signers: FeatureVersionBounds,
+    /// How many moderation actions each member of a contract's seated team signed since the
+    /// moderators pot was last paid out
+    pub contract_moderation_action_counts: FeatureVersionBounds,
     /// The two fee pots a contract's document action fees collect in
     pub contract_fee_pots: FeatureVersionBounds,
 }

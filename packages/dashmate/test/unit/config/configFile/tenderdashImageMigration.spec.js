@@ -38,7 +38,7 @@ describe('Tenderdash image migration', () => {
       expect(migrated.configs.withoutDocker).to.deep.equal({
         platform: { drive: { tenderdash: {} } },
       });
-      expect(migrated.configFormatVersion).to.equal('4.2.0');
+      expect(migrated.configFormatVersion).to.equal(version);
       expect(migrateConfigFile(migrated, migrated.configFormatVersion, version)).to.equal(migrated);
     });
   }

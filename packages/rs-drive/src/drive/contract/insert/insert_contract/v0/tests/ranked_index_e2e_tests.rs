@@ -806,6 +806,7 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
         skip_if_absent_properties: Vec::new(),
     };
@@ -1028,6 +1029,7 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
         skip_if_absent_properties: Vec::new(),
     };

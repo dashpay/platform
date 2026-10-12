@@ -71,6 +71,12 @@ elif operation == "find-generic-password":
     output = "wrong value" if state.get("bad_smoke") else state["smoke"]
 elif operation == "delete-generic-password":
     state["smoke"] = None
+elif operation == "xcrun":
+    assert args == ["simctl", "list", "devices", "available", "--json"]
+    output = json.dumps({"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-18-6": [
+        {"name": "iPhone Test", "udid": "CDD3885F-8364-4DFB-AF77-AC5426856EFC",
+         "isAvailable": True},
+    ]}})
 elif operation in ("build-step", "swift", "xcodebuild"):
     state["build_commands"].append([command, *args])
     if os.environ.get("CI"):
@@ -104,8 +110,11 @@ class KeychainLifecycleTests(unittest.TestCase):
             runner_temp = root / "runner temp"
             runner_temp.mkdir()
             shutil.copyfile(SCRIPT, root / "run_tests.sh")
+            (root / "scripts").mkdir()
+            shutil.copyfile(SCRIPT.parent / "scripts/select_simulator.py",
+                            root / "scripts/select_simulator.py")
             (root / "build_ios.sh").write_text('exec build-step "$@"\n')
-            for name in ("security", "build-step", "swift", "xcodebuild"):
+            for name in ("security", "build-step", "swift", "xcodebuild", "xcrun"):
                 command = bin_dir / name
                 command.write_text(FAKE_COMMAND)
                 command.chmod(0o755)
@@ -117,6 +126,7 @@ class KeychainLifecycleTests(unittest.TestCase):
             env = dict(os.environ)
             env.pop("CI", None)
             env.pop("GITHUB_ACTIONS", None)
+            env.pop("SIM_UDID", None)
             if ci:
                 env["CI"] = "true"
             env.update({
@@ -152,7 +162,7 @@ class KeychainLifecycleTests(unittest.TestCase):
                     ["xcodebuild", "test", "-project",
                      "SwiftExampleApp/SwiftExampleApp.xcodeproj", "-scheme",
                      "SwiftExampleApp", "-skip-testing:SwiftExampleAppUITests",
-                     "-destination", "platform=iOS Simulator,name=iPhone Test"],
+                     "-destination", "platform=iOS Simulator,id=CDD3885F-8364-4DFB-AF77-AC5426856EFC"],
                 ])
 
     def test_should_abort_on_inspection_errors_without_mutating_preferences(self):
@@ -205,7 +215,7 @@ class KeychainLifecycleTests(unittest.TestCase):
     def test_should_leave_developer_keychains_untouched_outside_ci(self):
         result, state = self.run_entrypoint(ci=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(state["calls"], ["build-step", "swift", "xcodebuild"])
+        self.assertEqual(state["calls"], ["xcrun", "build-step", "swift", "xcodebuild"])
         self.assert_restored(state)
 
 

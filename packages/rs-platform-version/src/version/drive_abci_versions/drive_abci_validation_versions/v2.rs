@@ -192,6 +192,20 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
                 token_direct_purchase_transition_state_validation: 0,
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
+                token_shield_transition_structure_validation: 0,
+                token_shield_transition_state_validation: 0,
+                token_mint_to_pool_transition_structure_validation: 0,
+                token_mint_to_pool_transition_state_validation: 0,
+                token_burn_from_pool_transition_structure_validation: 0,
+                token_burn_from_pool_transition_state_validation: 0,
+                token_claim_to_pool_transition_structure_validation: 0,
+                token_claim_to_pool_transition_state_validation: 0,
+                token_direct_purchase_to_pool_transition_structure_validation: 0,
+                token_direct_purchase_to_pool_transition_state_validation: 0,
+                token_unshield_transition_structure_validation: 0,
+                token_unshield_transition_state_validation: 0,
+                token_shielded_transfer_transition_structure_validation: 0,
+                token_shielded_transfer_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
@@ -293,6 +307,33 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             identity_top_up_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_shielded_transfer_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_unshield_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_purchase_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
                     advanced_structure: None,

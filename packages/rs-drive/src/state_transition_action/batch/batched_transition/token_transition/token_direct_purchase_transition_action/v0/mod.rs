@@ -1,4 +1,10 @@
 mod transformer;
+// The price resolution body is shared with the purchase-into-pool transition rather than
+// copied. Re-exporting it changes no behaviour for a plain direct purchase: the extracted
+// functions keep the original order of the price fetch, the fee accumulation and the two
+// rejections, and return the same values.
+pub use transformer::required_direct_purchase_price;
+pub(crate) use transformer::resolve_direct_purchase_price;
 
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;

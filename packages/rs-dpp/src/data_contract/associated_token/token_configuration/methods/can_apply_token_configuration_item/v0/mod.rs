@@ -317,6 +317,18 @@ impl TokenConfigurationV0 {
                     action_taker,
                     goal,
                 ),
+            // A V0 configuration has no shielded pool and so no threshold for anyone to change.
+            // This arm is reached at protocol version 14 for such a token and refuses the item,
+            // which is what turns the change into a paid `UnauthorizedTokenActionError`.
+            // Released protocol versions cannot reach these items at all: they are appended at
+            // the tail of `TokenConfigurationChangeItem`, so no existing item's encoding or group action key
+            // moves, and this match has no catch-all, so nothing previously handled is rerouted.
+            // A batch carrying one is refused unpaid by the batch's `is_allowed` gate below the
+            // version that admits token pools, so no transition and no stored group action can
+            // present one here.
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => false,
         }
     }
 }

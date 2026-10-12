@@ -274,8 +274,8 @@ impl ValidatorV0Setters for ValidatorV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls_signatures::SecretKey;
     use bincode::config;
-    use dashcore::blsful::SecretKey;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
 

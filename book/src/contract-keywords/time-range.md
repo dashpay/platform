@@ -74,6 +74,8 @@ Everything written under an index with a `ttl` is billed as processing, at an ep
 
 A `ttl` removes entries from this index only. The documents stay, and so do their entries in the type's other indexes. To delete the documents themselves after a time, use the document type's [`ttl`](ttl.md).
 
+On an index-only type, a window with a `ttl` may also declare [`outlivesDelete`](index-only.md#outlivesdelete): a delete of a document then leaves its entries in the window to expire, so the delete needs no `$createdAt`, and the document keeps counting there until the window moves past it.
+
 ## Rules at registration
 
 - `on` names `$createdAt`, `$updatedAt` or `$transferredAt`, which is the index's first property and is listed in `required`. A user property cannot be bucketed by time; an integer one can be bucketed by value with [`integerRange`](integer-range.md).

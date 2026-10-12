@@ -62,6 +62,7 @@
 - [Contested Documents](data-model/contested-documents.md)
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)
+- [Token Shielded Pools](data-model/token-shielded-pools.md)
 
 # Contract Keywords
 
@@ -98,6 +99,7 @@
   - [Time-Range Indexes](contract-keywords/time-range.md)
   - [Integer-Range Indexes](contract-keywords/integer-range.md)
   - [Index-Only Types](contract-keywords/index-only.md)
+  - [Values of Referenced Documents](contract-keywords/derived-index-properties.md)
 - [Contract-Level Keys and config](contract-keywords/contract-config.md)
 
 # Drive

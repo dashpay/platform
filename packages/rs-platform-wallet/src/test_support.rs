@@ -11,13 +11,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
+use dashcore::secp256k1::{ecdsa, Message, PublicKey};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
 use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 // Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
 // `next_address_with_info` on a non-standard account); gate it to match so a
 // `test-utils`-only build does not flag it unused.
@@ -32,6 +33,7 @@ use tokio::sync::RwLock;
 
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::changeset::changeset::fold_same_txid_records;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -135,25 +137,20 @@ impl Signer for WalletSigner {
         path: &DerivationPath,
         sighash: [u8; 32],
     ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
         let message = Message::from_digest(sighash);
-        Ok((
-            secp.sign_ecdsa(&message, &key),
-            PublicKey::from_secret_key(&secp, &key),
-        ))
+        Ok((key.sign_ecdsa(message), PublicKey::from_secret_key(&key)))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&secp, &key))
+        Ok(PublicKey::from_secret_key(&key))
     }
 }
 
@@ -171,6 +168,13 @@ impl ExtendedPubKeySigner for WalletSigner {
             .derive_extended_public_key(path)
             .map_err(|e| e.to_string())
     }
+}
+
+/// Runs the live projection's per-txid fold and wallet-level accounting
+/// over upstream per-account records, so downstream crates can pin their
+/// own accounting (the SQLite repair) against the live path.
+pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
+    fold_same_txid_records(records);
 }
 
 /// Builds a testnet wallet manager whose `account_type`/index-0 account
@@ -283,9 +287,7 @@ pub(crate) fn observed_spend_event(
     tx: &Transaction,
 ) -> key_wallet_manager::WalletEvent {
     use dashcore::Address as DashAddress;
-    use key_wallet::managed_account::transaction_record::{
-        InputDetail, TransactionDirection, TransactionRecord,
-    };
+    use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};
     use key_wallet::transaction_checking::transaction_router::TransactionType;
 
     let record = TransactionRecord::new(

@@ -22,7 +22,7 @@ mod tests {
     use dpp::identity::signer::Signer;
     use dpp::prelude::AddressNonce;
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::shielded::SerializedAction;
+    use dpp::shielded::{shield_extra_sighash_data, SerializedAction};
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
@@ -130,6 +130,20 @@ mod tests {
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
         )
         .await
+    }
+
+    /// The Orchard sighash consensus checks a `Shield` funded from `funding` against. Only the
+    /// funding addresses are bound, not their nonces or contributions, so a fixture can prove its
+    /// bundle before it settles what each address contributes.
+    fn shield_sighash(
+        bundle_commitment: &[u8; 32],
+        funding: &[PlatformAddress],
+        platform_version: &PlatformVersion,
+    ) -> [u8; 32] {
+        let inputs = funding.iter().map(|address| (*address, (0, 0))).collect();
+        let extra_sighash_data =
+            shield_extra_sighash_data(&inputs, platform_version).expect("shield sighash data");
+        compute_platform_sighash(bundle_commitment, &extra_sighash_data)
     }
 
     // (Orchard ProvingKey and serialize_authorized_bundle are now shared
@@ -810,7 +824,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1007,7 +1021,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1123,7 +1137,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1229,10 +1243,13 @@ mod tests {
                 )
                 .unwrap();
 
+            // --- The address that funds the shield, which the bundle's sighash binds ---
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            // Shield sighash extra_data is empty (no transparent output fields)
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1245,8 +1262,6 @@ mod tests {
             let shield_amount = (-value_balance) as u64;
 
             // --- Set up input address with enough balance ---
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
             let input_amount = shield_amount + dash_to_credits!(0.01);
             setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
@@ -1483,7 +1498,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1666,7 +1681,7 @@ mod tests {
                 .unwrap();
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[addr_a, addr_b], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
             let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
@@ -1782,7 +1797,13 @@ mod tests {
             binding_sig: [u8; 64],
         }
 
-        fn build_bundle() -> Bundle {
+        /// The address every run in this module funds its shield from, derived from the seed the
+        /// runs use.
+        fn funding_address() -> PlatformAddress {
+            TestAddressSigner::new().add_p2pkh([1u8; 32])
+        }
+
+        fn build_bundle(pv: &PlatformVersion) -> Bundle {
             let mut rng = OsRng;
             let pk = get_proving_key();
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -1801,7 +1822,7 @@ mod tests {
                 .unwrap();
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&commitment, &[]);
+            let sighash = shield_sighash(&commitment, &[funding_address()], pv);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1867,6 +1888,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
@@ -1914,7 +1936,7 @@ mod tests {
         #[tokio::test]
         async fn shield_fee_estimate_and_actual_must_not_leave_a_halting_band() {
             let pv = PlatformVersion::latest();
-            let b = build_bundle();
+            let b = build_bundle(pv);
             const CEILING: u64 = 5_000_000_000; // 0.05 DASH, far above any plausible shield fee
 
             let (top, top_msg) = run_at(CEILING, &b, pv).await;
@@ -1989,7 +2011,10 @@ mod tests {
         #[tokio::test]
         async fn dropped_shield_must_not_mutate_state() {
             let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
-            let b = build_bundle();
+            // `setup_platform` starts at the latest protocol version, and
+            // `process_state_transition` validates at the platform state's version, not at `pv`,
+            // so the bundle is bound the way the latest version's proof check rebuilds it.
+            let b = build_bundle(PlatformVersion::latest());
 
             // Least headroom validation lets through to execution.
             const CEILING: u64 = 5_000_000_000;
@@ -2042,6 +2067,7 @@ mod tests {
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
             let mut signer = TestAddressSigner::new();
             let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
@@ -2141,7 +2167,7 @@ mod tests {
         #[tokio::test]
         async fn savepoint_rollback_must_undo_an_applied_shield() {
             let pv = PlatformVersion::latest();
-            let b = build_bundle();
+            let b = build_bundle(pv);
             // Generous headroom: this shield must SUCCEED so its writes all land.
             let headroom = 5_000_000_000u64;
 
@@ -2149,6 +2175,7 @@ mod tests {
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
             let mut signer = TestAddressSigner::new();
             let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
@@ -2315,7 +2342,7 @@ mod tests {
             use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
 
             let pv = PlatformVersion::latest();
-            let b = build_bundle();
+            let b = build_bundle(pv);
             // Fully funded: without the injected failure this shield would execute and land.
             let headroom = 5_000_000_000u64;
 
@@ -2323,6 +2350,7 @@ mod tests {
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
             let mut signer = TestAddressSigner::new();
             let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
             let declared_input = b.shield_amount + headroom;
             setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
 
@@ -2453,6 +2481,267 @@ mod tests {
                 outcome.hash_changed,
                 "the validating path must keep prior behavior bit-for-bit (leak preserved)"
             );
+        }
+    }
+
+    // ==========================================
+    // Bundle binding
+    // ==========================================
+
+    /// The bundle's sighash binds its kind and the addresses that fund it. Every negative test here
+    /// starts from a transition the public builder made and shows it admitted by CheckTx and
+    /// executed first, so a refusal that follows is about where the bundle was moved, not about
+    /// the bundle.
+    mod bundle_binding {
+        use super::*;
+        use crate::config::{PlatformConfig, PlatformTestConfig};
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            check_tx_errors, test_orchard_recipient, TestOrchardProver,
+        };
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+        use dpp::dashcore::{Network, PrivateKey};
+        use dpp::identity::KeyType;
+        use dpp::shielded::builder::{
+            build_shield_from_asset_lock_transition, build_shield_transition,
+        };
+        use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+        use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        const SHIELD_AMOUNT: u64 = 5_000;
+
+        /// A funded address and the inputs that spend from it.
+        fn funding(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            signer: &mut TestAddressSigner,
+            seed: u8,
+        ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+            let address = signer.add_p2pkh([seed; 32]);
+            setup_address_with_balance(platform, address, 0, dash_to_credits!(1.0));
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1, SHIELD_AMOUNT + dash_to_credits!(0.01)));
+            inputs
+        }
+
+        async fn builder_made_shield(
+            inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+            signer: &TestAddressSigner,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            build_shield_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                inputs,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                signer,
+                0,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                platform_version,
+            )
+            .await
+            .expect("client-built shield")
+        }
+
+        /// Wraps `bundle` pieces in a `Shield` funded and signed from `inputs`.
+        async fn wrap(
+            inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+            signer: &TestAddressSigner,
+            actions: Vec<SerializedAction>,
+            amount: u64,
+            anchor: [u8; 32],
+            proof: Vec<u8>,
+            binding_signature: [u8; 64],
+        ) -> StateTransition {
+            let mut transition =
+                StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                    inputs: inputs.clone(),
+                    actions,
+                    amount,
+                    anchor,
+                    proof,
+                    binding_signature,
+                    fee_strategy: AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    ]),
+                    user_fee_increase: 0,
+                    input_witnesses: vec![],
+                }));
+            let signable_bytes = transition.signable_bytes().expect("signable bytes");
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .await
+                        .expect("should sign"),
+                );
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
+                v0.input_witnesses = witnesses;
+            }
+            transition
+        }
+
+        fn assert_admitted_and_executed(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let admission = check_tx_errors(platform, transition);
+            assert!(admission.is_empty(), "CheckTx must admit it: {admission:?}");
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        fn assert_refused_for_its_proof(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let admission = check_tx_errors(platform, transition);
+            assert_matches!(
+                admission.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )],
+                "CheckTx must refuse it for its proof"
+            );
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
+        /// Somebody funds a `Shield` from their own addresses and wraps it around a bundle proved
+        /// for somebody else's. Without the funding in the sighash its proof verifies and a second
+        /// note with the same nullifier lands in the pool.
+        #[tokio::test]
+        async fn should_refuse_a_bundle_resubmitted_by_another_funder() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut victim_signer = TestAddressSigner::new();
+            let victim_inputs = funding(&mut platform, &mut victim_signer, 50);
+            let mut copier_signer = TestAddressSigner::new();
+            let copier_inputs = funding(&mut platform, &mut copier_signer, 51);
+
+            let shield = builder_made_shield(victim_inputs, &victim_signer, platform_version).await;
+            // Positive control: the builder's bundle is what both CheckTx and the block accept.
+            assert_admitted_and_executed(&platform, &shield, platform_version);
+
+            let StateTransition::Shield(ShieldTransition::V0(proven)) = &shield else {
+                panic!("expected a shield transition");
+            };
+            let copy = wrap(
+                copier_inputs,
+                &copier_signer,
+                proven.actions.clone(),
+                proven.amount,
+                proven.anchor,
+                proven.proof.clone(),
+                proven.binding_signature,
+            )
+            .await;
+
+            assert_refused_for_its_proof(&platform, &copy, platform_version);
+        }
+
+        /// A `ShieldFromAssetLock` bundle and a `Shield` bundle are indistinguishable to the proof:
+        /// same flags, same empty-tree anchor, same value balance. Moving one into the other kind
+        /// must fail on the kind and the owner it binds.
+        #[tokio::test]
+        async fn should_refuse_a_shield_from_asset_lock_bundle_resubmitted_as_a_shield() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(52);
+            let (_, lock_key) = KeyType::ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .expect("asset lock key");
+            let from_lock = build_shield_from_asset_lock_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                instant_asset_lock_proof_fixture(
+                    Some(PrivateKey::from_byte_array(&lock_key, Network::Testnet).expect("key")),
+                    None,
+                ),
+                &lock_key,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                Some(PlatformAddress::P2pkh([0x33; 20])),
+                0,
+                platform_version,
+            )
+            .expect("client-built shield from asset lock");
+            // Positive control: the bundle is valid for the kind it was proved for.
+            assert_admitted_and_executed(&platform, &from_lock, platform_version);
+
+            let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(proven)) =
+                &from_lock
+            else {
+                panic!("expected a shield from asset lock transition");
+            };
+            let mut copier_signer = TestAddressSigner::new();
+            let copier_inputs = funding(&mut platform, &mut copier_signer, 53);
+            let copy = wrap(
+                copier_inputs,
+                &copier_signer,
+                proven.actions.clone(),
+                proven.value_balance,
+                proven.anchor,
+                proven.proof.clone(),
+                proven.binding_signature,
+            )
+            .await;
+
+            assert_refused_for_its_proof(&platform, &copy, platform_version);
+        }
+
+        /// Protocol versions 12 and 13 shipped `Shield` verified by `validate_shielded_proof` v0,
+        /// which binds nothing, and they still select it through validation versions V8 and V9:
+        /// the binding lives in v1, which only V10, protocol version 14, selects. A client
+        /// building for 12 or 13 reads the same `credit_pool_bundle_binding` field consensus
+        /// does, so what it builds is accepted there, while a bundle bound the way 14 binds it is
+        /// refused, exactly as those versions always have.
+        #[tokio::test]
+        async fn should_keep_the_unbound_bundle_at_protocol_versions_12_and_13() {
+            for protocol_version in [12u32, 13] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("known protocol version");
+                let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig {
+                        testing_configs: PlatformTestConfig {
+                            disable_instant_lock_signature_verification: true,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .with_initial_protocol_version(protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut signer = TestAddressSigner::new();
+                let inputs = funding(&mut platform, &mut signer, 54);
+                let shield = builder_made_shield(inputs.clone(), &signer, platform_version).await;
+                assert_admitted_and_executed(&platform, &shield, platform_version);
+
+                let bound = builder_made_shield(inputs, &signer, PlatformVersion::latest()).await;
+                assert_refused_for_its_proof(&platform, &bound, platform_version);
+            }
         }
     }
 }

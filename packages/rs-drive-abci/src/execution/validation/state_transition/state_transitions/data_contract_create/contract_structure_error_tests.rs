@@ -3,7 +3,8 @@
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
     assert_paid_contract_structure_error, assert_unpaid_internal_error, check_and_process,
-    resign_with_schemas, summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    contested_unbounded_sum_schema, resign_with_schemas, summed_u64_schema,
+    terminal_without_index_only_schema, Outcome, CONTESTED_UNBOUNDED_SUM_MESSAGE,
     SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
@@ -14,6 +15,7 @@ use assert_matches::assert_matches;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
+use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
@@ -46,6 +48,15 @@ async fn register_contract_with_schema(
     schema: Value,
     protocol_version: ProtocolVersion,
 ) -> Registration {
+    register_contract_with_schema_and_balance(schema, protocol_version, dash_to_credits!(1.0)).await
+}
+
+/// [`register_contract_with_schema`] by an owner holding `balance`.
+async fn register_contract_with_schema_and_balance(
+    schema: Value,
+    protocol_version: ProtocolVersion,
+    balance: u64,
+) -> Registration {
     let platform_version =
         PlatformVersion::get(protocol_version).expect("expected the protocol version");
     let mut platform = TestPlatformBuilder::new()
@@ -53,7 +64,7 @@ async fn register_contract_with_schema(
         .build_with_mock_rpc()
         .set_genesis_state();
 
-    let (identity, signer, key) = setup_identity(&mut platform, 5077, dash_to_credits!(1.0));
+    let (identity, signer, key) = setup_identity(&mut platform, 5077, balance);
 
     let data_contract =
         get_data_contract_fixture(Some(identity.id()), 1, platform_version.protocol_version)
@@ -136,6 +147,81 @@ async fn should_keep_refusing_a_summed_u64_property_unpaid_at_protocol_version_1
         .outcome;
 
     assert_unpaid_internal_error(&outcome, SUMMED_U64_MESSAGE);
+}
+
+/// The bound is a registration rule, checked under full validation only, so `check_tx`, which
+/// parses a contract without it, admits the transition, and the block refuses it, charging
+/// the owner and bumping its nonce.
+#[tokio::test]
+async fn should_refuse_a_contested_type_summing_an_unbounded_property_with_a_paid_consensus_error()
+{
+    let outcome = register_contract_with_schema_and_balance(
+        contested_unbounded_sum_schema(),
+        PlatformVersion::latest().protocol_version,
+        // A contested index costs a registration fee the default balance does not cover
+        dash_to_credits!(2.0),
+    )
+    .await
+    .outcome;
+
+    assert_eq!(outcome.nonce_before, Some(0));
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(message)
+            )),
+            ..
+        } if message.contains(CONTESTED_UNBOUNDED_SUM_MESSAGE),
+        "block: {:?}",
+        outcome.block
+    );
+    // The stored nonce keeps the nonces skipped below it in its high bits.
+    assert_eq!(
+        outcome
+            .nonce_after
+            .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+        Some(1),
+        "the rejection bumps the nonce"
+    );
+    assert!(
+        outcome.balance_after < outcome.balance_before,
+        "the rejection is charged: {:?} -> {:?}",
+        outcome.balance_before,
+        outcome.balance_after
+    );
+}
+
+#[tokio::test]
+async fn should_keep_registering_a_contested_type_summing_an_unbounded_property_at_protocol_version_13(
+) {
+    let outcome = register_contract_with_schema_and_balance(
+        contested_unbounded_sum_schema(),
+        13,
+        // A contested index costs a registration fee the default balance does not cover
+        dash_to_credits!(2.0),
+    )
+    .await
+    .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
 }
 
 /// A document type summing `payment.amount` in an index: the dotted path of `amount`, an integer

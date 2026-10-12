@@ -13,18 +13,19 @@ use dpp::data_contract::document_type::accessors::{
 };
 use dpp::data_contract::document_type::reference_lookup::owner_can_change;
 use dpp::data_contract::document_type::{
-    is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceLookup, DocumentTypeRef,
+    is_path_listed, is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentReferenceDeclaration, DocumentReferenceKind,
+    DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyReferenceIdentityProperty, ListElementReference,
     PropertyReference,
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
+use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
-use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
-use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
+use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
@@ -53,6 +54,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::validation::state_transition::common::document_reference_kind::document_reference_kind_mismatch;
 use dpp::data_contract::document_type::methods::{read_data_at_path, RepeatedKey};
 use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{
@@ -95,6 +97,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -189,6 +192,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -215,6 +219,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             platform,
             block_info,
             consumed_documents,
+            derived_index_values,
             transaction,
             execution_context,
             platform_version,
@@ -234,6 +239,7 @@ fn validate_document_type_references_v0(
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
+    derived_index_values: Option<&mut BTreeMap<String, Value>>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
@@ -375,6 +381,7 @@ fn validate_document_type_references_v0(
                     billed_key.digest(),
                     Some(billed_key),
                     path,
+                    None,
                     &mut BTreeMap::new(),
                     &mut fetched_documents,
                     platform,
@@ -473,6 +480,8 @@ fn validate_document_type_references_v0(
                     }
                 }
             };
+            let kept_value_changed_fields =
+                kept_value_changed_fields(changed_fields, stored_values, path, &referenced_id);
             let result = validate_reference_v0(
                 contract,
                 document_type,
@@ -482,6 +491,7 @@ fn validate_document_type_references_v0(
                 referenced_id,
                 None,
                 path,
+                kept_value_changed_fields,
                 &mut referenced_contracts,
                 &mut fetched_documents,
                 platform,
@@ -556,6 +566,8 @@ fn validate_document_type_references_v0(
                 if !checked.insert(referenced_id) {
                     continue;
                 }
+                let kept_value_changed_fields =
+                    kept_value_changed_fields(changed_fields, stored_values, path, &referenced_id);
                 let result = validate_reference_v0(
                     contract,
                     document_type,
@@ -565,6 +577,7 @@ fn validate_document_type_references_v0(
                     referenced_id,
                     None,
                     &element_path,
+                    kept_value_changed_fields,
                     &mut referenced_contracts,
                     &mut fetched_documents,
                     platform,
@@ -582,6 +595,31 @@ fn validate_document_type_references_v0(
         }
     }
 
+    // The values of the type's derived index properties (protocol version 14), from the
+    // documents this write's references fetched by id, for Drive to key a create by. A
+    // reference left out holds none; a document not fetched is left for Drive to read.
+    if let Some(derived_index_values) = derived_index_values {
+        for (name, derived) in document_type.derived_index_properties() {
+            let value = match document_data.get(&derived.reference_property) {
+                None | Some(Value::Null) => Value::Null,
+                Some(reference) => {
+                    let Ok(referenced_id) = reference.to_identifier() else {
+                        continue;
+                    };
+                    let Some(Some(referenced)) = fetched_documents
+                        .documents
+                        .get(&(contract.id(), referenced_id))
+                        .and_then(|by_type| by_type.get(&derived.referenced_document_type_name))
+                        .map(|fetched| fetched.document.as_ref())
+                    else {
+                        continue;
+                    };
+                    derived.field.value_in(referenced)?
+                }
+            };
+            derived_index_values.insert(name.clone(), value);
+        }
+    }
     Ok(SimpleConsensusValidationResult::new())
 }
 
@@ -706,7 +744,13 @@ fn binds_a_changed_property(
         return false;
     }
     match reference_target {
+        // A moderated reference is kept as a permanent one is: its document
+        // leaves state only on a moderator's record, which the reference then
+        // resolves to, so nothing but its own pairs asks a replace about it
         DocumentPropertyReferenceTarget::PermanentDocument {
+            property_agreement, ..
+        }
+        | DocumentPropertyReferenceTarget::ModeratedDocument {
             property_agreement, ..
         } => property_agreement.keys().any(|referring_property| {
             is_referring_system_agreement_property(referring_property)
@@ -819,6 +863,7 @@ fn validate_reference_v0(
     referenced_id: [u8; 32],
     billed_key: Option<BilledLookupKey>,
     path: &str,
+    kept_value_changed_fields: Option<&BTreeSet<String>>,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
     fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
@@ -839,6 +884,7 @@ fn validate_reference_v0(
             referenced_id,
             billed_key,
             path,
+            kept_value_changed_fields,
             referenced_contracts,
             fetched_documents,
             platform,
@@ -873,6 +919,7 @@ fn validate_reference_v0(
             referenced_id,
             billed_key,
             path,
+            kept_value_changed_fields,
             referenced_contracts,
             fetched_documents,
             platform,
@@ -924,6 +971,13 @@ fn validate_reference_v0(
 /// the document it finds must also meet the reference's `minimumAgeBlocks`,
 /// and when the reference declares `consume` the document is pushed onto
 /// `consumed_documents` once the leaf holds.
+///
+/// `kept_value_changed_fields` is `Some` with the fields a replace changed
+/// when the value is one the stored document already held, which the replace
+/// re-validates for a bound property or a writer gate, and `None` on a create
+/// and for a value the write sets. A `moderatedDocument` whose document a
+/// moderator removed resolves to its removal record for such a kept value
+/// alone.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_target_v0(
     contract: &DataContract,
@@ -934,6 +988,7 @@ fn validate_reference_target_v0(
     referenced_id: [u8; 32],
     billed_key: Option<BilledLookupKey>,
     path: &str,
+    kept_value_changed_fields: Option<&BTreeSet<String>>,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
     fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
@@ -1023,12 +1078,13 @@ fn validate_reference_target_v0(
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
         | DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+        | DocumentPropertyReferenceTarget::ModeratedDocument { .. }
         | DocumentPropertyReferenceTarget::ListElement(_) => {
             let Some(DocumentReferenceDeclaration {
                 contract_id: referenced_contract_id,
                 document_type_name,
                 property_agreement,
-                permanent,
+                kind,
                 lookup,
                 in_list: _,
             }) = reference_target.as_any_document_reference()
@@ -1114,35 +1170,37 @@ fn validate_reference_target_v0(
             };
 
             // A `permanentDocument` reference admits only document types
-            // whose documents can never be deleted: `canBeDeleted` is
-            // immutable on contract updates and document types can not be
-            // removed, so a reference validated here can never dangle. A
-            // `deletableDocument` reference makes no such promise, and
-            // admits only document types whose documents CAN be deleted:
-            // the referenced document must exist now, and may be deleted
-            // later. Deletable means by anyone, the contract's moderators
-            // included (`moderatorAbilities.delete`), and the platform
-            // for a type declaring a `ttl`, as at contract registration
-            let target_is_deletable = referenced_document_type.documents_can_disappear();
-            if permanent && target_is_deletable {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ReferencedDocumentTypeDeletableError::new(
-                        effective_contract_id,
-                        document_type_name.to_string(),
-                        path.to_string(),
-                    )
-                    .into(),
-                ));
-            }
-            if !permanent && !target_is_deletable {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ReferencedDocumentTypeNotDeletableError::new(
-                        effective_contract_id,
-                        document_type_name.to_string(),
-                        path.to_string(),
-                    )
-                    .into(),
-                ));
+            // whose documents never leave state: what could make them leave
+            // it is immutable on contract updates and document types can not
+            // be removed, so a reference validated here can never dangle. A
+            // `moderatedDocument` reference admits only document types whose
+            // documents leave state through a moderator's recorded removal
+            // alone, so it resolves to the document or to its removal record.
+            // A `deletableDocument` reference makes no promise, and admits
+            // every other document type: the referenced document must exist
+            // now, and may be deleted later, by its owner, by a moderator
+            // leaving no record, or by the platform for a type declaring a
+            // `ttl`. As at contract registration
+            //
+            // A `deletableDocument` reference to a moderated type is the one
+            // pairing registration refuses that a write lets through: it
+            // promises less than the type keeps, and a contract registered
+            // on a protocol version 14 network before the moderated kind
+            // existed may hold one, which stays writable
+            let admitted_kind = match (kind, referenced_document_type.document_reference_kind()) {
+                (DocumentReferenceKind::Deletable, DocumentReferenceKind::Moderated) => {
+                    DocumentReferenceKind::Deletable
+                }
+                (_, admitted_kind) => admitted_kind,
+            };
+            if let Some(error) = document_reference_kind_mismatch(
+                kind,
+                admitted_kind,
+                effective_contract_id,
+                document_type_name,
+                path,
+            ) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(error));
             }
 
             // The document: the one whose id the value is, or the one the
@@ -1216,6 +1274,43 @@ fn validate_reference_target_v0(
                     },
                 )?,
             };
+
+            // A moderated document a moderator removed, named by a value the
+            // stored document already held: the reference resolves to the
+            // document's removal record, read and billed here, and holds (see
+            // `validate_pairs_against_removal`). A value the write sets must
+            // name a document in state, as for the other kinds: a removed
+            // document can not be newly referred to. A record marked restored
+            // describes a document that is live again, so beside a missing
+            // document it is no resolution, and the reference fails below as
+            // a missing one
+            if let (DocumentReferenceKind::Moderated, None, Some(changed_fields)) =
+                (kind, referenced_document, kept_value_changed_fields)
+            {
+                let (removal_fee, removal) =
+                    platform.drive.fetch_contract_document_removal_with_fee(
+                        effective_contract_id,
+                        document_type_name,
+                        Identifier::from(referenced_id),
+                        &block_info.epoch,
+                        transaction,
+                        platform_version,
+                    )?;
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
+                if let Some(removal) = removal.filter(|removal| !removal.is_restored()) {
+                    return validate_pairs_against_removal(
+                        property_agreement,
+                        &removal,
+                        referenced_document_type,
+                        Identifier::from(referenced_id),
+                        changed_fields,
+                        document_data,
+                        owner_id,
+                        path,
+                    );
+                }
+            }
 
             // Property agreement: the referenced document is already in
             // hand for the existence check, so comparing the declared
@@ -1456,6 +1551,107 @@ fn validate_reference_target_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
+/// A `moderatedDocument` reference a replace keeps, whose document a moderator
+/// removed: it holds through `removal`, the document's removal record. The
+/// record keeps the document's id and its owner at the removal, which no
+/// transfer can move since (a removed document can not be transferred, and a
+/// restore brings it back as it was), and the values of the paths its type
+/// lists under `moderatorAbilities.deleteKeepsFields`, as the document held
+/// them and read under `referenced_document_type` as the document would be, a
+/// path it held no value at left out. So a `where` pair
+/// the replace asks about again, its referring property changed or the pair a
+/// writer gate (`$ownerId` on the referring side), is checked against the
+/// record when it compares the referenced `$ownerId`, `$id` or a property the
+/// type keeps (a kept path, or a path inside a kept object), with the absence
+/// rule of a document in state: both sides absent agree, one absent is a
+/// mismatch. It refuses the replace with [`ReferencedDocumentRemovedError`]
+/// when it compares anything else: the replace has to repoint the reference at
+/// a document in state, or leave the pair's referring property unchanged until
+/// the document is restored. The record's kept values are decoded only when
+/// a pair asks about one; a record whose values do not read under the type is
+/// a corrupted state, an error rather than a refusal. A writer gate never meets that refusal: the parser admits one
+/// on a `moderatedDocument` reference against the referenced `$ownerId` or
+/// `$id` alone, since a writer gate is asked about on every replace. A pair the replace does not ask about held when it was last
+/// checked, against a document whose values the removal froze, and is left as
+/// it is. No read: the record was read and billed by the caller.
+///
+/// In place in generation 0: reached from protocol version 14 only, the only
+/// version whose parser produces a `moderatedDocument` reference.
+#[allow(clippy::too_many_arguments)]
+fn validate_pairs_against_removal(
+    property_agreement: &BTreeMap<String, String>,
+    removal: &ContractDocumentRemoval,
+    referenced_document_type: DocumentTypeRef,
+    document_id: Identifier,
+    changed_fields: &BTreeSet<String>,
+    document_data: &BTreeMap<String, Value>,
+    owner_id: Identifier,
+    path: &str,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let kept_paths = referenced_document_type.moderator_deletion_kept_fields();
+    let mut kept_values = None;
+    for (referring_property, referenced_property) in property_agreement {
+        let rechecked = is_referring_system_agreement_property(referring_property)
+            || is_changed_field(changed_fields, referring_property);
+        if !rechecked {
+            continue;
+        }
+        let referenced_value = match referenced_property.as_str() {
+            OWNER_ID => Some(Cow::Owned(Value::Identifier(
+                removal.document_owner_id.to_buffer(),
+            ))),
+            ID => Some(Cow::Owned(Value::Identifier(document_id.to_buffer()))),
+            property if !is_path_listed(kept_paths, property) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedDocumentRemovedError::new(
+                        document_id,
+                        path.to_string(),
+                        referenced_property.clone(),
+                    )
+                    .into(),
+                ))
+            }
+            property => {
+                let kept_values = match &mut kept_values {
+                    Some(kept_values) => kept_values,
+                    None => kept_values.insert(removal.kept_values(referenced_document_type)?),
+                };
+                kept_value_at(kept_paths, kept_values, property)
+                    .flatten()
+                    .map(Cow::Owned)
+            }
+        };
+        // As against a document in state: the writer for `$ownerId`, a
+        // property of the document otherwise, one unreadable a mismatch
+        let referring_value = if referring_property == OWNER_ID {
+            Some(Cow::Owned(Value::Identifier(owner_id.to_buffer())))
+        } else {
+            match document_data.get_optional_at_path(referring_property) {
+                Ok(referring_value) => referring_value.map(Cow::Borrowed),
+                Err(_) => None,
+            }
+        };
+        let holds = match (referring_value, referenced_value) {
+            (Some(referring_value), Some(referenced_value)) => {
+                referring_value.same_scalar_data(&referenced_value)
+            }
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        if !holds {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ReferencedDocumentPropertyMismatchError::new(
+                    path.to_string(),
+                    referring_property.clone(),
+                    referenced_property.clone(),
+                )
+                .into(),
+            ));
+        }
+    }
+    Ok(SimpleConsensusValidationResult::new())
+}
+
 /// A key reference declared on the key id property at `path`
 /// (`DocumentPropertyType::KeyIdWithReference`): the value is the key id, and
 /// `identity_property` names whose key it is. For `$ownerId` that is the
@@ -1644,11 +1840,35 @@ fn lookup_key_may_have_changed(
 /// the path itself or any of its ancestors: `changed_data_fields` holds top-level
 /// document keys, so a changed object key replaces its entire subtree, including
 /// any nested reference properties under it.
+/// The fields a replace changed, when the value `referenced_id` it re-validates
+/// at `path` (a reference, or the typed array holding it as an element) is one
+/// the stored document already held; `None` on a create and for a value the
+/// write sets. A value under a top-level property the replace did not change is
+/// the stored one; under a changed one, the replace carries the stored value of
+/// that property (`stored_values`), and the value is kept when the stored value
+/// at the same path is it, or, for a typed array, holds it. A
+/// `moderatedDocument` whose document a moderator removed resolves to its
+/// removal record for a kept value alone (see `validate_pairs_against_removal`).
+fn kept_value_changed_fields<'a>(
+    changed_fields: Option<&'a BTreeSet<String>>,
+    stored_values: Option<&BTreeMap<String, Value>>,
+    path: &str,
+    referenced_id: &[u8; 32],
+) -> Option<&'a BTreeSet<String>> {
+    let changed = changed_fields?;
+    if !is_changed_field(changed, path) {
+        return Some(changed);
+    }
+    let is_referenced_id = |value: &Value| value.to_hash256().is_ok_and(|id| &id == referenced_id);
+    let held = match stored_values?.get_optional_at_path(path) {
+        Ok(Some(Value::Array(elements))) => elements.iter().any(is_referenced_id),
+        Ok(Some(value)) => is_referenced_id(value),
+        _ => false,
+    };
+    held.then_some(changed)
+}
+
+/// Whether the write changed the property at `path`, or an object around it.
 fn is_changed_field(changed_fields: &BTreeSet<String>, path: &str) -> bool {
-    changed_fields.iter().any(|field| {
-        path == field
-            || path
-                .strip_prefix(field.as_str())
-                .is_some_and(|rest| rest.starts_with('.'))
-    })
+    is_path_listed(changed_fields, path)
 }

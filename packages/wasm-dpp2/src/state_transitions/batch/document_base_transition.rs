@@ -115,9 +115,14 @@ impl DocumentBaseTransitionWasm {
         self.0.document_type_name().to_string()
     }
 
+    /// The token payment info, cloned: the wrapper handed to JavaScript owns its copy, and the
+    /// payment info is no longer `Copy` now that a variant of it carries a shielded spend bundle.
     #[wasm_bindgen(getter = "tokenPaymentInfo")]
     pub fn token_payment_info(&self) -> Option<TokenPaymentInfoWasm> {
-        self.0.token_payment_info().map(|info| info.into())
+        self.0
+            .token_payment_info_ref()
+            .clone()
+            .map(|info| info.into())
     }
 
     /// The action fees this transition agrees to pay. A base older than version 2, which a
@@ -190,7 +195,7 @@ impl DocumentBaseTransitionWasm {
                     self.0.identity_contract_nonce(),
                     self.0.document_type_name().clone(),
                     self.0.data_contract_id(),
-                    self.0.token_payment_info(),
+                    self.0.token_payment_info_ref().clone(),
                     Some(agreement.into()),
                 )
             }

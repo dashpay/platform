@@ -721,8 +721,18 @@ mod tests {
                 );
             }
             if round == 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(2100)).await;
-                assert_eq!(addresses.get_live_addresses().len(), addresses.len());
+                // Bans expire by the wall clock, which a CI runner can step
+                // back against the monotonic clock behind tokio's sleep, so
+                // a fixed sleep races the expiry. Poll instead: the deadline
+                // is far above the 2-second exclusion and far below the 60s
+                // first rung of the health ladder.
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while addresses.get_live_addresses().len() < addresses.len() {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .expect("every short exclusion expires");
             }
         }
     }

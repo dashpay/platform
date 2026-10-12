@@ -4,7 +4,7 @@ use super::readers::{elected_charter_of, member_ids};
 use crate::platform::Document;
 use crate::Error;
 use dpp::document::DocumentV0Getters;
-use dpp::moderation_charter::property_names;
+use dpp::moderation_charter::{property_names, ElectedCharter};
 use dpp::platform_value::Identifier;
 use std::collections::BTreeSet;
 
@@ -20,6 +20,9 @@ pub struct ModerationTeam {
     /// The members besides the leader: the elected members and those the leader added, less
     /// those the leader removed.
     pub members: BTreeSet<Identifier>,
+    /// The members the charter's election seated, in declared order, removed since or not: each
+    /// holds a seat.
+    pub elected_members: Vec<Identifier>,
 }
 
 impl ModerationTeam {
@@ -55,7 +58,20 @@ impl ModerationTeam {
             submitted_charter_id: charter.submitted_charter_id,
             leader_id,
             members: charter.active_members(leader_id, &added, &removed),
+            elected_members: charter.members,
         })
+    }
+
+    /// The most members the team can hold, given the target contract's elected declaration's
+    /// `maxAddedModerators`: the leader, the members the charter elected (a removed one keeps
+    /// its seat) and the additions allowed, filled or not
+    /// ([`ElectedCharter::seats`](dpp::moderation_charter::ElectedCharter::seats), what
+    /// consensus counts). A `moderatorAbilities.deleteSettled` rule asking for more approvals
+    /// needs every seat's, so a settled deletion needs `min(approvals, seats)`. An active team
+    /// action's approval count is an upper bound: its signers that [`contains`](Self::contains)
+    /// accepts are the approvals that count.
+    pub fn seats(&self, max_added_moderators: u16) -> u16 {
+        ElectedCharter::seats_for(self.elected_members.len(), max_added_moderators)
     }
 
     /// Whether `identity_id` is on the team: the leader or an active member.
@@ -68,7 +84,6 @@ impl ModerationTeam {
 mod tests {
     use super::*;
     use dpp::document::DocumentV0;
-    use dpp::moderation_charter::ElectedCharter;
     use dpp::platform_value::Value;
     use std::collections::BTreeMap;
 
@@ -133,6 +148,12 @@ mod tests {
         assert!(team.contains(&id(LEADER)));
         assert!(team.contains(&id(5)));
         assert!(!team.contains(&id(3)));
+        // The leader, the three elected (3 removed still holds its seat) and the additions the
+        // declaration allows, filled or not
+        assert_eq!(team.elected_members, charter.members);
+        assert_eq!(team.seats(2), charter.seats(2));
+        assert_eq!(team.seats(2), 6);
+        assert_eq!(team.seats(15), 19);
     }
 
     #[test]

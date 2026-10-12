@@ -1,7 +1,8 @@
+use crate::drive::document::derived_index_values::set_derived_index_values;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::util::batch::DriveOperation::{
-    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation, TokenOperation,
+    DocumentOperation, IdentityOperation, PrefundedSpecializedBalanceOperation,
 };
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
@@ -12,12 +13,10 @@ use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
 use dpp::version::PlatformVersion;
-use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationType, TokenOperationType};
+use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationType};
 use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 use crate::error::drive::DriveError;
 
@@ -48,7 +47,8 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
 
                 let also_insert_vote_poll_stored_info = self.take_should_store_contest_info();
 
-                let document_creation_token_cost = self.base().token_cost();
+                let document_creation_token_cost_operations =
+                    self.base().token_cost_operations(owner_id);
 
                 // In place in generation 0, which every table selects: only the protocol
                 // version 14 batch state validation sets consumed documents, and only for a
@@ -57,11 +57,20 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                 // create has none and converts to exactly the operations it always did
                 let consumed_documents = self.consumed_documents().to_vec();
 
-                let document = Document::try_from_owned_create_transition_action(
+                // The values of the type's derived index properties (protocol version 14), which
+                // the reference validation took from the documents it fetched: Drive keys the
+                // document by them instead of reading those documents again. None on every
+                // create of an earlier version.
+                let derived_index_values = self.derived_index_values().cloned();
+
+                let mut document = Document::try_from_owned_create_transition_action(
                     self,
                     owner_id,
                     platform_version,
                 )?;
+                if let Some(values) = derived_index_values {
+                    set_derived_index_values(&mut document, values);
+                }
 
                 let storage_flags =
                     StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
@@ -74,28 +83,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                     },
                 )];
 
-                if let Some((token_id, effect, cost)) = document_creation_token_cost {
-                    match effect {
-                        DocumentActionTokenEffect::TransferTokenToContractOwner => {
-                            // If we are the owner, no need to send anything
-                            if owner_id != contract_fetch_info.contract.owner_id() {
-                                ops.push(TokenOperation(TokenOperationType::TokenTransfer {
-                                    token_id,
-                                    sender_id: owner_id,
-                                    recipient_id: contract_fetch_info.contract.owner_id(),
-                                    amount: cost,
-                                }));
-                            }
-                        }
-                        DocumentActionTokenEffect::BurnToken => {
-                            ops.push(TokenOperation(TokenOperationType::TokenBurn {
-                                token_id,
-                                identity_balance_holder_id: owner_id,
-                                burn_amount: cost,
-                            }));
-                        }
-                    }
-                }
+                ops.extend(document_creation_token_cost_operations);
 
                 if let Some((contested_document_resource_vote_poll, credits)) =
                     maybe_prefunded_voting_balance

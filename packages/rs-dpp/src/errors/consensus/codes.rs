@@ -122,6 +122,7 @@ impl ErrorWithCode for BasicError {
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
             Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
             Self::PreProgrammedDistributionAmountOverLimitError(_) => 10277,
+            Self::TokenShieldedPoolIncompatibleRulesError(_) => 10278,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -377,6 +378,10 @@ impl ErrorWithCode for StateError {
             Self::DocumentExpiredError(_) => 40140,
             Self::DocumentContestMaximumContendersReachedError(_) => 40141,
             Self::ReferencedDocumentRequirementNotMetError(_) => 40142,
+            Self::ReferencedDocumentTypeNotModeratedError(_) => 40143,
+            Self::ReferencedDocumentTypeModeratedError(_) => 40144,
+            Self::ReferencedDocumentRemovedError(_) => 40145,
+            Self::ReferencedDocumentTypeIndexOnlyError(_) => 40146,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -449,6 +454,9 @@ impl ErrorWithCode for StateError {
             Self::TokenAmountUnderMinimumSaleAmount(_) => 40720,
             Self::TokenNotForDirectSale(_) => 40721,
             Self::TokenOncePerIdentityDistributionAlreadyClaimedError(_) => 40722,
+            Self::TokenShieldedPoolNotEnabledError(_) => 40723,
+            Self::TokenShieldedPaymentAmountMismatchError(_) => 40724,
+            Self::TokenShieldedPaymentNotRequiredError(_) => 40725,
 
             // Group errors: 40800-40899
             Self::IdentityNotMemberOfGroupError(_) => 40800,
@@ -502,6 +510,15 @@ impl ErrorWithCode for StateError {
             Self::ContractModerationAbilityNotGrantedError(_) => 41201,
             Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
             Self::ModerationReasonNotListedError(_) => 41203,
+            Self::DocumentTypeNotDeletableOnceSettledError(_) => 41204,
+            Self::ContractModerationTeamNotSeatedError(_) => 41205,
+            Self::DocumentNotSettledError(_) => 41206,
+            Self::ContractTeamActionDoesNotExistError(_) => 41207,
+            Self::ContractTeamActionAlreadySignedError(_) => 41208,
+            Self::SettledDeletionNotRestorableError(_) => 41209,
+            Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
+            Self::ContractTeamActionDocumentChangedError(_) => 41211,
+            Self::ContractTeamMemberAddedAfterDocumentError(_) => 41212,
         }
     }
 }

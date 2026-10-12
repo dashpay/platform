@@ -61,6 +61,12 @@ pub struct DocumentCreateTransitionActionV0 {
     /// when the action is built; the batch state validation (protocol version 14) sets it once
     /// the create is accepted.
     pub consumed_documents: Vec<ConsumedDocument>,
+    /// The values of the document type's derived index properties (protocol version 14), by
+    /// their names: the fields of the documents the create's references point at, taken from
+    /// the documents the reference validation fetched, so Drive keys the new document without
+    /// reading them again. `None` when the action is built and on a type declaring none, and
+    /// boxed, since only such a create holds any and the action is one variant of a large enum.
+    pub derived_index_values: Option<Box<BTreeMap<String, Value>>>,
 }
 
 /// A document of the create's own contract that the create deletes because it revealed it:
@@ -139,6 +145,14 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
 
     /// Sets the documents this create consumes.
     fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>);
+
+    /// The values of the document type's derived index properties the reference validation
+    /// took from the documents it fetched, by name; `None` when it recorded none.
+    fn derived_index_values(&self) -> Option<&BTreeMap<String, Value>>;
+
+    /// Records the values of the document type's derived index properties, once the
+    /// reference validation has fetched the documents they are read from
+    fn set_derived_index_values(&mut self, values: BTreeMap<String, Value>);
 }
 
 /// documents from create transition v0

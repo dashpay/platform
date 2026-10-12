@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     bucket_index_keys, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_reaches_entry,
+    index_only_level_skips_when_absent, level_removes_entry,
 };
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
@@ -178,10 +178,11 @@ impl Drive {
 
             // Mirror of the insert walker: a branch under which the document
             // wrote no entry (every index through it skipped the document)
-            // holds nothing of it to remove. The delete's worst-case
-            // estimation document carries every property, so it sweeps every
-            // branch, an over-estimate like the one below.
-            if !level_reaches_entry(
+            // holds nothing of it to remove, and one whose entries all
+            // outlive the delete holds nothing it removes. The delete's
+            // worst-case estimation document carries every property, so it
+            // sweeps every other branch, an over-estimate like the one below.
+            if !level_removes_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
             )? {

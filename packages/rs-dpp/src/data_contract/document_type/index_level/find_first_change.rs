@@ -241,6 +241,36 @@ impl IndexLevel {
         None
     }
 
+    /// `outlivesDelete` counterpart of [`Self::find_first_preallocated_change`]:
+    /// the first index path where the flag differs between two `IndexLevel`
+    /// trees. The flag decides what a delete carries and what an indexOnly
+    /// row commits to, so it is immutable.
+    ///
+    /// Returns `None` if the flag is the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_outlives_delete_change(&self, new: &IndexLevel) -> Option<String> {
+        if let (Some(old_info), Some(new_info)) =
+            (&self.has_index_with_type, &new.has_index_with_type)
+        {
+            if old_info.outlives_delete != new_info.outlives_delete {
+                return Some(format!(
+                    "(outlivesDelete: {} -> {})",
+                    old_info.outlives_delete, new_info.outlives_delete,
+                ));
+            }
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_outlives_delete_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
+
     /// Preallocation counterpart of [`Self::find_first_countability_change`].
     /// Recursively finds the first index path where the `preallocated` flag
     /// differs between two `IndexLevel` trees. The flag decides who creates

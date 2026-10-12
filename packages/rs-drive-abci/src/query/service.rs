@@ -25,20 +25,22 @@ use dapi_grpc::platform::v0::{
     GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
     GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
+    GetContractModerationActionCountsRequest, GetContractModerationActionCountsResponse,
     GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
     GetContractModerationStatusRequest, GetContractModerationStatusResponse,
-    GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
-    GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
-    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
-    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
-    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
-    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetContractTeamActionSignersRequest, GetContractTeamActionSignersResponse,
+    GetContractTeamActionsRequest, GetContractTeamActionsResponse, GetCurrentQuorumsInfoRequest,
+    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
+    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
+    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -469,6 +471,42 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_contract_document_removals,
             "get_contract_document_removals",
+        )
+        .await
+    }
+
+    async fn get_contract_team_actions(
+        &self,
+        request: Request<GetContractTeamActionsRequest>,
+    ) -> Result<Response<GetContractTeamActionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_team_actions,
+            "get_contract_team_actions",
+        )
+        .await
+    }
+
+    async fn get_contract_team_action_signers(
+        &self,
+        request: Request<GetContractTeamActionSignersRequest>,
+    ) -> Result<Response<GetContractTeamActionSignersResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_team_action_signers,
+            "get_contract_team_action_signers",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_action_counts(
+        &self,
+        request: Request<GetContractModerationActionCountsRequest>,
+    ) -> Result<Response<GetContractModerationActionCountsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_action_counts,
+            "get_contract_moderation_action_counts",
         )
         .await
     }
