@@ -43,11 +43,18 @@ const MAX_ENTRIES: usize = 100;
 
 #[derive(Serialize, Deserialize)]
 struct StoredContract {
-    /// The contract's own `version`, kept alongside so a stale entry can be
-    /// recognised without deserializing it.
+    /// The contract's own version, mirrored for storage inspection. Freshness
+    /// comparisons use the decoded body because this field can differ from it.
     version: u32,
     /// Platform-serialized contract bytes, base64.
     bytes: String,
+}
+
+impl StoredContract {
+    fn decode(&self, platform_version: &PlatformVersion) -> Option<DataContract> {
+        let bytes = BASE64.decode(&self.bytes).ok()?;
+        DataContract::versioned_deserialize_trusted(&bytes, true, platform_version).ok()
+    }
 }
 
 type StoredContracts = BTreeMap<String, StoredContract>;
@@ -81,10 +88,7 @@ pub(crate) fn load_all(network: Network, platform_version: &PlatformVersion) -> 
     };
     read(&key)
         .into_values()
-        .filter_map(|stored| {
-            let bytes = BASE64.decode(stored.bytes).ok()?;
-            DataContract::versioned_deserialize_trusted(&bytes, true, platform_version).ok()
-        })
+        .filter_map(|stored| stored.decode(platform_version))
         .collect()
 }
 
@@ -92,6 +96,24 @@ pub(crate) fn load_all(network: Network, platform_version: &PlatformVersion) -> 
 /// Silent when the network is not persisted, the contract does not
 /// serialize, or the map is full.
 pub(crate) fn store(network: Network, contract: &DataContract, platform_version: &PlatformVersion) {
+    store_internal(network, contract, false, platform_version);
+}
+
+/// Persist only a strictly newer version; equal versions keep the stored body.
+pub(crate) fn store_if_newer(
+    network: Network,
+    contract: &DataContract,
+    platform_version: &PlatformVersion,
+) {
+    store_internal(network, contract, true, platform_version);
+}
+
+fn store_internal(
+    network: Network,
+    contract: &DataContract,
+    only_if_newer: bool,
+    platform_version: &PlatformVersion,
+) {
     let Some(key) = storage_key(network) else {
         return;
     };
@@ -100,6 +122,16 @@ pub(crate) fn store(network: Network, contract: &DataContract, platform_version:
     };
     let id = contract.id().to_string(Encoding::Base58);
     let mut contracts = read(&key);
+    if only_if_newer
+        && contracts
+            .get(&id)
+            .and_then(|stored| stored.decode(platform_version))
+            .is_some_and(|stored| {
+                stored.id() == contract.id() && stored.version() >= contract.version()
+            })
+    {
+        return;
+    }
     if !contracts.contains_key(&id) && contracts.len() >= MAX_ENTRIES {
         return;
     }
@@ -225,5 +257,72 @@ mod tests {
                 .any(|c| c.id() == Identifier::new([0; 32]) && c.version() == 7),
             "a known id must still be replaced"
         );
+    }
+
+    fn stored_body_with_metadata(id_byte: u8, body: &DataContract, version: u32) {
+        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        let bytes = body
+            .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+            .expect("fixture body");
+        write(
+            &key,
+            &BTreeMap::from([(
+                Identifier::new([id_byte; 32]).to_string(Encoding::Base58),
+                StoredContract {
+                    version,
+                    bytes: BASE64.encode(bytes),
+                },
+            )]),
+        );
+    }
+
+    #[test]
+    fn should_replace_older_body_despite_inflated_auxiliary_version() {
+        let pv = PlatformVersion::latest();
+        stored_body_with_metadata(0x51, &contract(0x51, 1), 99);
+        store_if_newer(Network::Testnet, &contract(0x51, 2), pv);
+        assert_eq!(load_all(Network::Testnet, pv)[0].version(), 2);
+    }
+
+    #[test]
+    fn should_keep_newer_body_despite_deflated_auxiliary_version() {
+        let pv = PlatformVersion::latest();
+        stored_body_with_metadata(0x52, &contract(0x52, 3), 1);
+        store_if_newer(Network::Testnet, &contract(0x52, 2), pv);
+        assert_eq!(load_all(Network::Testnet, pv)[0].version(), 3);
+    }
+
+    #[test]
+    fn should_replace_undecodable_body_despite_inflated_auxiliary_version() {
+        let pv = PlatformVersion::latest();
+        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        write(
+            &key,
+            &BTreeMap::from([(
+                Identifier::new([0x53; 32]).to_string(Encoding::Base58),
+                StoredContract {
+                    version: 99,
+                    bytes: BASE64.encode(b"not a contract"),
+                },
+            )]),
+        );
+        store_if_newer(Network::Testnet, &contract(0x53, 2), pv);
+        let loaded = load_all(Network::Testnet, pv);
+        assert_eq!(
+            loaded.len(),
+            1,
+            "invalid stored bytes cannot suppress a valid insertion"
+        );
+        assert_eq!(loaded[0].version(), 2);
+    }
+
+    #[test]
+    fn should_replace_body_for_different_id_despite_newer_version() {
+        let pv = PlatformVersion::latest();
+        stored_body_with_metadata(0x54, &contract(0x55, 99), 99);
+        store_if_newer(Network::Testnet, &contract(0x54, 2), pv);
+        let loaded = load_all(Network::Testnet, pv);
+        assert_eq!(loaded[0].id(), Identifier::new([0x54; 32]));
+        assert_eq!(loaded[0].version(), 2);
     }
 }

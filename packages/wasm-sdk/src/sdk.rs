@@ -134,8 +134,7 @@ impl WasmSdk {
     /// page load (see [`contract_store`]).
     pub(crate) fn cache_contract(&self, contract: dash_sdk::platform::DataContract) {
         if let Some(ref context) = self.trusted_context {
-            contract_store::store(self.sdk.network, &contract, self.sdk.version());
-            context.add_known_contract(contract);
+            cache_contract_in_context(&self.sdk, context, contract);
         }
     }
 
@@ -161,7 +160,7 @@ impl WasmSdk {
         stale
     }
 
-    /// Fetch a proved contract and replace its trusted-context cache entry.
+    /// Fetch a proved contract and cache it when its version is newer.
     pub(crate) async fn refresh_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
@@ -256,7 +255,11 @@ impl WasmSdk {
         if self.trusted_context.is_none() {
             return false;
         }
-        self.cache_contract(contract.clone().into());
+        let contract: DataContract = contract.clone().into();
+        contract_store::store(self.sdk.network, &contract, self.sdk.version());
+        if let Some(context) = &self.trusted_context {
+            context.add_known_contract(contract);
+        }
         true
     }
 
@@ -500,7 +503,7 @@ impl WasmSdkBuilder {
         // trip. Persisted for mainnet and testnet only; see `contract_store`.
         if let Some(context) = &self.trusted_context {
             for contract in contract_store::load_all(self.network, sdk.version()) {
-                context.add_known_contract(contract);
+                cache_contract_in_context(&sdk, context, contract);
             }
         }
         Ok(WasmSdk::new(sdk, self.trusted_context))
@@ -661,11 +664,17 @@ async fn fetch_contract_into_cache(
         .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
     if let Some(context) = trusted_context {
-        contract_store::store(sdk.network, &contract, sdk.version());
-        context.add_known_contract(contract.clone());
+        cache_contract_in_context(&sdk, &context, contract.clone());
     }
 
     Ok(contract)
+}
+
+/// Persist the retained memory entry so an older completion cannot write its
+/// candidate back over a newer contract already shared by this context.
+fn cache_contract_in_context(sdk: &Sdk, context: &WasmTrustedContext, contract: DataContract) {
+    let retained = context.add_known_contract_if_newer(contract);
+    contract_store::store_if_newer(sdk.network, &retained, sdk.version());
 }
 
 /// Whether any document version stamp exceeds the contract version it was

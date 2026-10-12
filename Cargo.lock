@@ -8920,6 +8920,7 @@ dependencies = [
 name = "wasm-sdk"
 version = "5.0.0-beta.4"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bip39",
  "console_error_panic_hook",
@@ -8942,6 +8943,8 @@ dependencies = [
  "serde-wasm-bindgen 0.5.0",
  "serde_json",
  "sha2",
+ "tempfile",
+ "tenderdash-abci",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
