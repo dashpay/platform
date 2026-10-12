@@ -570,6 +570,9 @@ pub(crate) fn add_tracked_instant_locks<'a>(
 /// the replay, with its coins as stored and its inputs under
 /// [`final_lock_input_claims`]. A funding the replay still defeats gets no
 /// claim.
+///
+/// Only the history is covered: a raw unconfirmed record a persister attached
+/// for such a funding still enters the replay, see [`RecordedHistory`].
 pub(crate) fn withhold_chain_final_fundings<'a>(
     history: &mut RecordedHistory,
     locks: impl IntoIterator<Item = &'a TrackedAssetLock>,

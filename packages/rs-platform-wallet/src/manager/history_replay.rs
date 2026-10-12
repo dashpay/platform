@@ -1505,6 +1505,40 @@ mod tests {
         }
     }
 
+    /// The replay takes an unconfirmed record already attached to the wallet
+    /// as unconfirmed, whether the history holds it or not: a stored spend in
+    /// a block retires it. A persister must therefore not attach one for a
+    /// transaction it knows to be final.
+    #[tokio::test]
+    async fn should_settle_an_attached_unconfirmed_record_the_history_does_not_hold() {
+        let (mut wallet, mut restored, _, records, _) = confirmed_spend_fixture().await;
+        let mut attached = records[1].clone();
+        attached.context = TransactionContext::Mempool;
+        let mut winner = attached.clone();
+        winner.transaction.output[0].value -= 1;
+        winner.txid = winner.transaction.txid();
+        winner.context = records[1].context.clone();
+        restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .transactions_mut()
+            .insert(attached.txid, attached.clone());
+
+        let outcome = replay_recorded_history(
+            &mut restored,
+            &mut wallet,
+            history(vec![winner], BTreeMap::new()),
+        )
+        .await;
+
+        assert!(!restored.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&attached.txid));
+        assert!(outcome.defeated.contains(&attached.txid));
+    }
+
     /// A held, unattributable child of a conflict loser must go with its
     /// parent even when the loser was attributable (its spent input staged
     /// from the stored owned inputs) and a sweep already removed it before
