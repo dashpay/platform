@@ -3883,6 +3883,9 @@ impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
     }
 }
 
+#[cfg(all(test, feature = "server"))]
+pub(crate) mod unsigned_index_key_order_tests;
+
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {

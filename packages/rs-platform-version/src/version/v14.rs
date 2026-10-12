@@ -2357,6 +2357,36 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Inert before this version: only format 1 can be non-transferable, and
 ///     the pre-activation gate refuses that format on every earlier version.
 ///
+/// 90. **Unsigned integers are keyed in value order**: `serialize_value_for_key`
+///     and `deserialize_value_for_key` 1 (`CONTRACT_VERSIONS_V6`) key a property,
+///     or derived index property, of an unsigned integer type by its plain
+///     big-endian bytes (`DocumentPropertyType::encode_value_for_tree_keys_v1`).
+///     Generation 0 flipped the top bit as for a signed value, so the values from
+///     the middle of the type's range up (128 and above for a `u8`) sorted below
+///     the others in every index: range queries, ordering, range counts and sums
+///     across that point came out wrong, and a count or sum over a range whose
+///     bounds straddled it was refused. A key keeps its width. The `$` system
+///     fields keep their keys, and so do the paths of a contest's vote poll
+///     (`serialize_value_for_vote_poll_key`), which the masternodes' vote records
+///     address, and so does a property that ends a `rangeSummable` index, in
+///     every index of its type: the tree of its values keeps a sum in every
+///     node, and values of both signs that fit the old order can leave the
+///     signed 64-bit range in every balanced tree of the new one (an update
+///     before this version can make a summed property unsigned while it holds
+///     negative values).
+///     `transition_to_version_14` first moves every other key generation 0 wrote
+///     (`Drive::rekey_unsigned_integer_index_values`) with GroveDB's `move_op`
+///     (`GROVE_V4`, from the GroveDB bump to `b50a583377`), in batches of
+///     `max_rekey_batch_moves` moves (`SYSTEM_LIMITS_V4`), twins that trade
+///     keys in one batch. A moved subtree keeps its stored bytes, so its hashes,
+///     aggregates and Merk shapes are unchanged; only the tree holding the moved
+///     keys takes another shape. Contract validation refuses an `integerRange`
+///     on a property that keeps the earlier keys, whose grid reads value order.
+///     The features of this version that key
+///     integers themselves (an `integerRange` window start, an indexOnly member
+///     key, its row commitment and synthesized id) use the new keys from the
+///     start. Earlier versions replay through generation 0.
+///
 /// 91. **Property type shorthands, `identifier` and `bytes`**: a property
 ///     schema may write `"type": "identifier"` for `"type": "array",
 ///     "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType":
@@ -2487,7 +2517,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index)
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -2501,7 +2531,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
