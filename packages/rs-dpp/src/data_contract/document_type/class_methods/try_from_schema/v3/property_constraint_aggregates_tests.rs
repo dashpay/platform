@@ -864,7 +864,9 @@ fn should_refuse_to_skip_a_rule_whose_total_consensus_did_not_read() {
     ]));
     let owner = Identifier::from([3; 32]);
     let read = listing.property_constraints()["atMostTenPerOwner"].aggregate_reads()[0].clone();
-    let with = |aggregates| DocumentSystemValues {
+    // Consensus reads the totals; a client, giving none, judges as a client
+    let with = |aggregates: Option<_>| DocumentSystemValues {
+        consensus: aggregates.is_some(),
         aggregates,
         ..DocumentSystemValues::owned_by(owner)
     };
@@ -974,6 +976,7 @@ fn should_refuse_to_skip_a_rule_a_system_change_judges_without_its_total() {
     let judge = |change: SystemChange, aggregates: Option<Vec<(AggregateRead, i128)>>| {
         let system = DocumentSystemValues {
             updated_at: Some(500),
+            consensus: aggregates.is_some(),
             aggregates: aggregates.map(|aggregates| aggregates.into_iter().collect()),
             ..DocumentSystemValues::owned_by(Identifier::from([3; 32]))
         };

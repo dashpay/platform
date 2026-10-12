@@ -1138,4 +1138,150 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
             XCTAssertTrue(matches(error), "unexpected error: \(error)", file: file, line: line)
         }
     }
+
+    /// Rules reading the stored version of the document through `$old.`, as
+    /// the FFI reports them: a stored property, the stored update time beside
+    /// `$revision`, and the stored owner, in name order beside a rule reading
+    /// none of it.
+    private let storedRulesJSON = """
+        [
+          {
+            "name": "closedOnlyFromOpen",
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsStored": true,
+            "readsTotals": [],
+            "reads": [
+              { "kind": "text", "path": "status" },
+              { "kind": "text", "path": "$old.status" }
+            ],
+            "rule": {
+              "ifThen": [
+                { "equal": ["status", { "const": "closed" }] },
+                { "equal": ["$old.status", { "const": "open" }] }
+              ]
+            }
+          },
+          {
+            "name": "priceCap",
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsStored": false,
+            "readsTotals": [],
+            "reads": [{ "kind": "value", "path": "price" }],
+            "rule": { "lessThanOrEqual": ["price", 1000] }
+          },
+          {
+            "name": "revisedAfterUpdate",
+            "readsOwner": false,
+            "readsSystem": ["$revision", "$updatedAt", "$old.$updatedAt"],
+            "readsStored": true,
+            "readsTotals": [],
+            "reads": [],
+            "rule": {
+              "allOf": [
+                { "lessThanOrEqual": ["$revision", 100] },
+                { "greaterThanOrEqual": ["$updatedAt", "$old.$updatedAt"] }
+              ]
+            }
+          },
+          {
+            "name": "sellerUnchanged",
+            "readsOwner": true,
+            "readsSystem": [],
+            "readsStored": true,
+            "readsTotals": [],
+            "reads": [{ "kind": "identifier", "path": "sellerId" }],
+            "rule": { "equal": ["sellerId", "$old.$ownerId"] }
+          }
+        ]
+        """
+
+    // MARK: - Stored version reads
+
+    /// A stored property is listed under its `$old.` path, a stored system
+    /// value under its `$old.` name beside `$revision`, and the stored owner
+    /// only as an owner read, never as a property.
+    func testStoredVersionReadsDecode() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: storedRulesJSON)
+
+        XCTAssertEqual(
+            rules.map(\.name),
+            ["closedOnlyFromOpen", "priceCap", "revisedAfterUpdate", "sellerUnchanged"]
+        )
+        XCTAssertEqual(rules.map(\.readsStored), [true, false, true, true])
+        XCTAssertEqual(
+            rules[0].reads,
+            [
+                PropertyConstraintRead(path: "status", kind: .text),
+                PropertyConstraintRead(path: "$old.status", kind: .text)
+            ]
+        )
+        XCTAssertEqual(rules[2].readsSystem, ["$revision", "$updatedAt", "$old.$updatedAt"])
+        XCTAssertEqual(rules[2].reads, [])
+        // `$old.$ownerId` is an owner read, not a property
+        XCTAssertEqual(rules[3].reads, [PropertyConstraintRead(path: "sellerId", kind: .identifier)])
+        XCTAssertEqual(rules.map(\.readsOwner), [false, false, false, true])
+        XCTAssertEqual(rules[3].ruleJSON, #"{"equal":["sellerId","$old.$ownerId"]}"#)
+    }
+
+    /// A library built before `readsStored` leaves the key out.
+    func testMissingStoredReadDecodesAsFalse() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [{ "name": "r", "rule": { "present": "a" }, "readsOwner": false,
+               "readsSystem": [], "readsTotals": [],
+               "reads": [{ "path": "a", "kind": "presence" }] }]
+            """)
+
+        XCTAssertEqual(rules.first?.readsStored, false)
+    }
+
+    func testMalformedStoredReadsAreRefused() {
+        let rule = #""name": "r", "rule": {"present": "a"}, "reads": [], "readsOwner": false"#
+        let malformed = [
+            // A number is not a boolean, although NSNumber would cast it
+            #"[{\#(rule), "readsStored": 1}]"#,
+            #"[{\#(rule), "readsStored": 0}]"#,
+            // Nor is a string
+            #"[{\#(rule), "readsStored": "true"}]"#,
+            // A null is no missing key
+            #"[{\#(rule), "readsStored": null}]"#,
+            #"[{\#(rule), "readsStored": []}]"#,
+            #"[{\#(rule), "readsStored": {}}]"#
+        ]
+        // The same rule with a boolean decodes
+        XCTAssertNoThrow(try DocumentPropertyConstraint.list(fromJSON: #"[{\#(rule), "readsStored": true}]"#))
+        for json in malformed {
+            XCTAssertThrowsError(try DocumentPropertyConstraint.list(fromJSON: json), json) { error in
+                guard case SDKError.serializationError = error else {
+                    return XCTFail("\(json): expected a serialization error, got \(error)")
+                }
+            }
+        }
+    }
+
+    /// The initializer still builds a rule without naming `readsStored`, as it
+    /// did before the field existed.
+    func testInitializerDefaultsToNotReadingTheStoredVersion() {
+        let rule = DocumentPropertyConstraint(
+            name: "r",
+            ruleJSON: #"{"present":"a"}"#,
+            reads: [PropertyConstraintRead(path: "a", kind: .presence)],
+            readsOwner: false,
+            readsSystem: []
+        )
+
+        XCTAssertFalse(rule.readsStored)
+        XCTAssertNotEqual(
+            rule,
+            DocumentPropertyConstraint(
+                name: "r",
+                ruleJSON: #"{"present":"a"}"#,
+                reads: [PropertyConstraintRead(path: "a", kind: .presence)],
+                readsOwner: false,
+                readsSystem: [],
+                readsStored: true
+            )
+        )
+    }
 }

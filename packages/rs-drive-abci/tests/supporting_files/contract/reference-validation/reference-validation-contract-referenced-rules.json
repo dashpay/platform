@@ -125,6 +125,38 @@
       },
       "additionalProperties": false
     },
+    "raise": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "auctionId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": { "type": "permanentDocument", "documentType": "auction" },
+          "position": 0
+        },
+        "amount": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 1 }
+      },
+      "required": ["auctionId", "amount"],
+      "propertyConstraints": {
+        "raisesByTheReserve": {
+          "greaterThanOrEqual": [
+            "amount",
+            {
+              "add": [
+                { "ifAbsent": ["$old.amount", 0] },
+                { "referenced": ["auctionId", "reservePrice"] }
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "order": {
       "type": "object",
       "documentsMutable": true,

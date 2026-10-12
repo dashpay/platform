@@ -1164,6 +1164,38 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
 ///     charter-specific check, whose error 11001 keeps its place in
 ///     `BasicError` but is never produced.
+///     A rule reads `$revision`, an integer operand (`SystemValue::Revision`),
+///     1 on a create and one more for each later write, on a type keeping a
+///     revision (`requires_revision`); a transfer, a purchase and a price
+///     update, which move it, are judged against the rules reading it. A rule
+///     reads the stored version of the document a write replaces through
+///     `$old.` (`STORED_DOCUMENT_PREFIX`), as the condition of item 66 does: a
+///     property (`$old.status`, in any read a bare path takes, checked as the
+///     path after it), `$old.$ownerId`, and a time, a height or `$revision`
+///     (`SystemRead::stored`); only on a type keeping a revision and not
+///     indexOnly, never in a `countOf` or `sumOf` filter, and never in a rule
+///     of `deleteConstraints`, which reads the stored document by its plain
+///     paths (parser generation 3; `validate_stored_version_reads` once the
+///     moderator abilities are parsed). `DocumentSystemValues::stored` gives
+///     it: `StoredVersion::Absent` on a create, where a property under it is
+///     absent, `$old.$ownerId` equals no identifier and a stored time, height
+///     or revision reads 0; on a replace the document replaced, its properties
+///     rebuilt from the written ones and `stored_changed_values`, its owner,
+///     times, heights and revision taken from the fetched document by the batch
+///     transformer and kept on the action beside the totals
+///     (`PropertyConstraintReads`, which replaces the boxed totals) when a
+///     rule or a condition reads them; on a transfer, a purchase or a price
+///     update the document before it, the write judged only against the rules
+///     reading what it changes, of either version. A moderator's change of a
+///     document's fields (`DocumentSystemValues::changed_fields`) is judged
+///     against the rules reading a field it writes, of either version,
+///     `$revision` or a total, and a moderator's restore (`SystemChange::Restore`,
+///     through `validate_property_constraints_for_system_change`) against the
+///     rules reading a total, with `$old.` reading the restored document: rules
+///     never change once registered, so no other rule could give another
+///     verdict than at the document's last write. A rule reading a stored
+///     version a client does not give is not judged, and one consensus does
+///     not give is an error, as for a total.
 ///     A rule may also read a value of the document a reference of the type
 ///     points at, `{ "referenced": [reference, field] }`, wherever a path
 ///     stands: `field` is a property path of the referenced type, its `$id`,
@@ -1180,9 +1212,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through anything but a stored property holding one reference
 ///     to one document by id or by a `findBy` without a function, beside what
 ///     a transfer, a purchase or a price update of a type that has them
-///     changes, beside a field moderators change, read or deciding a total
-///     over the type's own documents, and beside any total over the type's
-///     own documents where a moderator's restore can bring one back (10231);
+///     changes (`$revision` and `$old.` reads included), beside what a
+///     moderator's change of the fields a type keeps for them is judged
+///     against (such a field, of either version, `$revision`, or any total),
+///     and beside any total where a moderator's restore, judged against every
+///     rule reading one, can bring a document back (10231);
 ///     and
 ///     `create_document_types_from_document_schemas` 1, in place, checks what
 ///     it reads of a type of the same contract (10231: the field exists, is
@@ -1429,7 +1463,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     given as a `$ref` to the contract's `$defs` from the definition, as the
 ///     core parse does, when it checks a rule's string constants and defaults
 ///     against the property's `enum` and an `encryptedFor` key id's bounds; it
-///     refused every such contract with a decoding error before.
+///     refused every such contract with a decoding error before. The stored
+///     version a rule reads through `$old.` (item 39) is judged as stored too,
+///     and a `$old` key the written data carries itself, which no property can
+///     name, is dropped before a rule reads it
+///     (`DocumentSystemValues::judged_data`).
 ///
 /// 53. **Properties the platform generates (`generatedFrom`)**: the property
 ///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
@@ -1550,7 +1588,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ability, appended to `ModerationAbility`, on the type, and citing a
 ///     listed reason) sets or removes those fields on any document of the type,
 ///     whoever owns it. The changed document is judged as a replace judges one
-///     (schema, `propertyConstraints` with their totals, `distinctFrom`,
+///     (schema, the `propertyConstraints` reading a field it changes, `$revision`
+///     or a total, with the stored document under `$old.` (item 39), `distinctFrom`,
 ///     `encryptedFor` shapes, unique indexes through
 ///     `validate_moderated_document_uniqueness`, the restore's check
 ///     generalized and renamed), its references are not checked again, and it
@@ -1906,8 +1945,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `sumOf`, and is judged on the document the replace writes (its
 ///     `$updatedAt` the replace's block time, so `$updatedAt - $createdAt`
 ///     is the document's age), with the stored document's properties read
-///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), which only such a
-///     condition may read. Document replace state validation 1, extended in
+///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), and its owner, times,
+///     heights and revision through `$old.$ownerId`, `$old.$updatedAt` and the
+///     rest, which a `propertyConstraints` rule reads too (item 39), as it
+///     reads `$revision`. Document replace state validation 1, extended in
 ///     place, refuses a replace changing, adding or removing a property whose
 ///     condition holds, or faults, with `DocumentImmutablePropertyChangedError`
 ///     (40128); the stored properties are rebuilt from the written ones and
@@ -2361,9 +2402,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through generation 0.
 ///
 /// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
-///     validation 0, in place, judges every rule of the restored type after uniqueness
-///     and before constructing restoration operations. The retained document supplies
-///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     validation 0, in place, judges the rules of the restored type that read a
+///     `countOf` or `sumOf` total (`SystemChange::Restore`, item 39), the only values
+///     that can have moved while the document was gone, after uniqueness and before
+///     constructing restoration operations. The retained document supplies its original
+///     id, owner, properties, times, heights and revision, and is the stored version a
+///     rule reads through `$old.`. The shared aggregate reader
 ///     adds it to the live totals as an insertion, with no contribution from its removal
 ///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
 ///     (10422) in a block, charging the moderator and consuming its nonce while leaving
@@ -2516,20 +2560,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 93. **Fee estimates size sum and count trees, and sum items, as they are
 ///     stored**: grovedb's `GROVE_V4`
 ///     (`average_case_propagated_aggregate_kind` 1) estimates a sum, big sum,
-///     count or count-sum tree that a batch
-///     creates together with its contents as that tree rather than as a plain
-///     tree. The `apply: false` estimate of a document insert under a
-///     countable or summable index (which creates the value tree and its `0`
-///     bucket with the document's reference) no longer comes in below the
-///     applied storage fee: by 9 bytes per aggregate of each tree created, 18
-///     bytes for a summable index. A replaced root key of such a tree is sized
-///     the same way in the estimate's replaced bytes, so an estimate that
-///     rewrites a sum tree's root (an identity or token balance change among
-///     them) charges 9 more replaced bytes per tree. `GROVE_V4` also sizes an
-///     inserted `SumItem` or `ItemWithSumItem`, and a replaced
+///     count or count-sum tree that a batch creates together with its contents
+///     as that tree rather than as a plain tree. The `apply: false` estimate of
+///     a document insert under a countable or summable index (which creates the
+///     value tree and its `0` bucket with the document's reference) no longer
+///     comes in below the applied storage fee: by 9 bytes per aggregate of each
+///     tree created, 18 bytes for a summable index. A replaced root key of such
+///     a tree is sized the same way in the estimate's replaced bytes, so an
+///     estimate that rewrites a sum tree's root (an identity or token balance
+///     change among them) charges 9 more replaced bytes per tree. `GROVE_V4`
+///     also sizes an inserted `SumItem` or `ItemWithSumItem`, and a replaced
 ///     `ItemWithSumItem`, with its sum at the fixed 9-byte width the apply
 ///     charges, up to 8 bytes more per item, in both estimators
-///     (`average_case_sum_item_cost_size` 1,
+///     (`average_case_sum_item_cost_size` 1 and
 ///     `worst_case_sum_item_cost_size` 1). Applied fees are unchanged. Inert
 ///     before this version: `GROVE_V1` to `GROVE_V3` keep the old sizing.
 ///

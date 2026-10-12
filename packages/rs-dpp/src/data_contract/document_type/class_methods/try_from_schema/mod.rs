@@ -5,14 +5,16 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property::reference_where::{
     WHERE_CONST, WHERE_IN, WHERE_NOT_EQUAL,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_delete_constraints, parse_property_constraints, referenced_path, referenced_read,
-    whole_integer, AffixPosition, AggregateBinding, AggregateKind, AggregateRead, ElementKind,
-    EqualityKind, PropertyConstraint, PropertyRead, SystemChange, SystemProperty,
-    REFERENCED_DOCUMENT_PREFIX, STORED_DOCUMENT_PREFIX,
+    either_version_path, parse_delete_constraints, parse_property_constraints, referenced_path,
+    referenced_read, stored_version_path, whole_integer, AffixPosition, AggregateBinding,
+    AggregateKind, AggregateRead, ElementKind, EqualityKind, PropertyConstraint, PropertyRead,
+    SystemChange, SystemProperty, SystemRead, SystemValue, REFERENCED_DOCUMENT_PREFIX,
+    STORED_DOCUMENT_PREFIX, STORED_OWNER_ID,
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, owner_can_change,
@@ -3221,7 +3223,7 @@ fn apply_property_constraints_v0(
             schema_defs,
             &format!("rule \"{name}\""),
             constraint,
-            false,
+            true,
             true,
             &structure_error,
         )?;
@@ -3294,7 +3296,10 @@ fn validate_rule_limits(
 /// stored document must meet for its owner to delete it
 /// ([`parse_delete_constraints`]). A rule reads what a `propertyConstraints`
 /// rule may read, checked the same way ([`validate_property_constraint_reads`]),
-/// and under full validation the keyword is held to the same limits, counted
+/// except two refused there: `$old.`, since a delete rule is judged on the
+/// stored document itself and its plain paths already read it ([`stored_path`]),
+/// and a document a reference points at, which a delete does not check; under
+/// full validation the keyword is held to the same limits, counted
 /// apart from `propertyConstraints`. Which type a `countOf` or `sumOf` totals,
 /// and by which keys, is checked with the contract's other types
 /// ([`validate_property_constraint_aggregates`]).
@@ -3397,26 +3402,92 @@ pub(super) fn property_equality_kind(
     }
 }
 
+/// Checks the reads of the type's `propertyConstraints` and `deleteConstraints`
+/// rules that depend on which writes the type has, once its moderator abilities
+/// are parsed: a rule reading `$revision`, of either version, needs a type that
+/// keeps a revision, and a `propertyConstraints` rule reading the stored
+/// version through `$old.` needs a write that replaces one (a
+/// `deleteConstraints` rule reads none: [`stored_path`] refused it). Both are
+/// the types whose documents are mutable, transferable, sold at a price their
+/// owner sets, or keep fields for their moderators (`requires_revision`): on
+/// any other a create is the only write a rule judges, and it has no stored
+/// version and the first revision. On every parse; the keywords arrive with
+/// protocol version 14, so no stored contract breaks it.
+pub(super) fn validate_stored_version_reads(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    if document_type.requires_revision() {
+        return Ok(());
+    }
+    let has_no_later_write = "its documents are immutable, not transferable, not sold at a \
+                              price their owner sets, and keep no fields for their moderators";
+    for (keyword, rules) in [
+        (
+            property_names::PROPERTY_CONSTRAINTS,
+            &document_type.property_constraints,
+        ),
+        (
+            property_names::DELETE_CONSTRAINTS,
+            &document_type.delete_constraints,
+        ),
+    ] {
+        for (name, rule) in rules {
+            if let Some(read) = rule
+                .system_reads()
+                .into_iter()
+                .find(|read| read.value == SystemValue::Revision)
+            {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "document type \"{document_type_name}\" {keyword} rule \"{name}\" reads {}, \
+                     but the type keeps no revision: {has_no_later_write}",
+                    read.name()
+                )));
+            }
+        }
+    }
+    if let Some(name) = document_type
+        .property_constraints
+        .iter()
+        .find_map(|(name, rule)| rule.reads_stored().then_some(name))
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "document type \"{document_type_name}\" {} rule \"{name}\" reads the stored \
+             version through {STORED_DOCUMENT_PREFIX}, but no write of the type replaces one: \
+             {has_no_later_write}, so a create, which has none, is the only write a rule judges",
+            property_names::PROPERTY_CONSTRAINTS
+        )));
+    }
+    Ok(())
+}
+
 /// A path a condition reads, as the document type names it: `path` itself,
-/// or, with `allow_stored_reads`, what follows the `$old.` a condition judging
-/// a replace (an `immutable` entry's, or `retractedWhen`) reads the stored
-/// document through ([`STORED_DOCUMENT_PREFIX`]). A rule of
-/// `propertyConstraints` judges the document written, so there is no stored
-/// document for it to read.
+/// or, with `allow_stored_reads`, what follows the `$old.` a rule of
+/// `propertyConstraints`, an `immutable` entry's condition or `retractedWhen`
+/// reads the stored version through ([`STORED_DOCUMENT_PREFIX`]): a property,
+/// since `$old.$ownerId` and the stored system values are no property paths.
+/// A rule of `deleteConstraints` is judged on the stored document itself, so
+/// its plain paths read it and `$old.` is refused there.
 fn stored_path<'a>(
     path: &'a str,
     subject: &str,
     allow_stored_reads: bool,
 ) -> Result<&'a str, String> {
-    match path.strip_prefix(STORED_DOCUMENT_PREFIX) {
-        Some(stored) if allow_stored_reads => Ok(stored),
-        Some(_) => Err(format!(
-            "{subject} reads \"{path}\", but only a condition judging a replace (an \
-             `immutable` entry's, or `retractedWhen`) reads the stored document through \
-             `{STORED_DOCUMENT_PREFIX}`"
-        )),
+    match stored_version_path(path) {
+        Some(_) if !allow_stored_reads => Err(stored_read_in_delete_rule(subject, path)),
+        Some(stored) => Ok(stored),
         None => Ok(path),
     }
+}
+
+/// The refusal of a `deleteConstraints` rule, `subject`, reading `path` through
+/// `$old.`: such a rule is judged on the stored document itself.
+fn stored_read_in_delete_rule(subject: &str, path: &str) -> String {
+    format!(
+        "{subject} reads \"{path}\", but a deleteConstraints rule is judged on the stored \
+         document itself, so its plain paths read it: name it without \
+         `{STORED_DOCUMENT_PREFIX}`"
+    )
 }
 
 /// Why `document_type` has no property at `lookup` a rule `subject` can read
@@ -3702,8 +3773,13 @@ pub(super) fn property_read_error(
 /// object, a system time or height the type records, and a constant or a
 /// default its string property's `enum` admits. `subject` names the condition
 /// in the errors (`rule "fee"`), and `structure_error` wraps them. With
-/// `allow_stored_reads` (the condition of an `immutable` entry) a path may read
-/// the stored document through `$old.` and is judged as the path after it.
+/// `allow_stored_reads` (a rule of `propertyConstraints`, the condition of an
+/// `immutable` entry or `retractedWhen`) a path may read the stored version
+/// through `$old.` and is judged as the path after it, and a stored system
+/// value as the value after it; without it (a rule of `deleteConstraints`)
+/// neither is admitted. Whether the type keeps the revision `$revision` reads,
+/// and has a write replacing a stored version at all, is checked once its
+/// moderator abilities are parsed ([`validate_stored_version_reads`]).
 /// With `allow_referenced_reads` (a `propertyConstraints` rule) a
 /// `referenced` operand may read a document one of the type's references
 /// points at: what it reads is checked against the referenced type once it is
@@ -3737,29 +3813,50 @@ pub(super) fn validate_property_constraint_reads(
             return Err(structure_error(error));
         }
     }
-    // An indexOnly type's delete carries its row's values but not its owner, so
-    // a rule reading the owner could not be judged there
+    // `$old.$ownerId` is no property path, so its refusal in a delete rule is here
+    if !allow_stored_reads && constraint.reads_stored() {
+        let path = constraint
+            .system_reads()
+            .into_iter()
+            .find(|read| read.stored)
+            .map_or_else(|| STORED_OWNER_ID.to_string(), SystemRead::name);
+        return Err(structure_error(stored_read_in_delete_rule(subject, &path)));
+    }
+    // An indexOnly type keeps no stored version: its documents are never
+    // replaced. Checked first, so that a rule reading `$old.$ownerId` is told so
+    if document_type.index_only && constraint.reads_stored() {
+        return Err(structure_error(format!(
+            "{subject} reads the stored version through {STORED_DOCUMENT_PREFIX}, which an \
+             indexOnly type does not keep: its documents are never replaced"
+        )));
+    }
+    // Its delete carries its row's values but not its owner, so a rule reading
+    // the owner could not be judged there
     if document_type.index_only && constraint.reads_owner() {
         return Err(structure_error(format!(
             "{subject} compares $ownerId, which a delete of an indexOnly document \
              does not carry"
         )));
     }
-    for system_property in constraint.system_reads() {
-        let system_name = system_property.name();
-        // Nor its times and heights
+    for read in constraint.system_reads() {
+        let system_name = read.name();
+        // Nor its times, heights and revision
         if document_type.index_only {
             return Err(structure_error(format!(
                 "{subject} reads {system_name}, which a delete of an indexOnly \
                  document does not carry"
             )));
         }
-        // A stored document holds only the times and heights its type requires
-        if !document_type.required_fields.contains(system_name) {
-            return Err(structure_error(format!(
-                "{subject} reads {system_name}, which the document type does not \
-                 record: list it in required"
-            )));
+        // A stored document holds only the times and heights its type requires;
+        // whether it keeps a revision is known once its moderator abilities are
+        if let SystemValue::Property(property) = read.value {
+            if !document_type.required_fields.contains(property.name()) {
+                let listed = if read.stored { property.name() } else { "it" };
+                return Err(structure_error(format!(
+                    "{subject} reads {system_name}, which the document type does not \
+                     record: list {listed} in required"
+                )));
+            }
         }
     }
     // Which type an aggregate totals, and by which of its keys, is checked once
@@ -3837,14 +3934,16 @@ pub(super) fn validate_property_constraint_reads(
 ///   read what a transfer or a purchase changes, nor, on a type whose prices
 ///   can be set, what a price update changes: those writes check no reference,
 ///   so they could not judge it;
-/// * it depends on no field the type keeps for its moderators to change,
-///   neither reading it nor totalling the type's own documents by it (a key
-///   of a `countOf` or `sumOf`), which their change judges without the
-///   references either;
-/// * on a type whose moderators' deletions keep records, it reads no total
-///   over the type's own documents: a moderator's restore brings a document
-///   back into those totals and checks no reference, so it could not judge
-///   the rule.
+/// * on a type keeping fields for its moderators to change, it reads nothing
+///   their change can break, which their change is judged against
+///   ([`PropertyConstraint::reads_changed_fields`]): such a field, of either
+///   version, `$revision`, or any total, which may have moved since the
+///   document was last written; their change checks no reference either;
+/// * on a type whose moderators' deletions keep records, it reads no total: a
+///   moderator's restore is judged against every rule reading one
+///   ([`PropertyConstraint::reads_change`]), the totals having perhaps moved
+///   while the document was gone, and checks no reference, so it could not
+///   judge the rule.
 ///
 /// What it reads of the referenced type is checked once that type is in hand
 /// ([`referenced_reads_error`]). Registration only, like the rest of a rule's
@@ -3883,52 +3982,67 @@ pub(super) fn validate_referencing_rules(
         if can_change_owner && constraint.reads_change(SystemChange::Transfer) {
             return Err(error(
                 "reads a document a reference points at and what a transfer or a purchase \
-                 changes ($ownerId, $transferredAt and its heights, or a total depending on the \
-                 owner): a transfer or a purchase checks no reference, so it could not judge \
-                 the rule"
+                 changes ($ownerId, $transferredAt and its heights or $revision, of either \
+                 version, or a total depending on the owner): a transfer or a purchase checks \
+                 no reference, so it could not judge the rule"
                     .to_string(),
             ));
         }
         if can_change_price && constraint.reads_change(SystemChange::PriceUpdate) {
             return Err(error(
                 "reads a document a reference points at and what a price update changes \
-                 ($updatedAt and its heights): a price update checks no reference, so it could \
-                 not judge the rule"
+                 ($updatedAt and its heights or $revision, of either version): a price update \
+                 checks no reference, so it could not judge the rule"
                     .to_string(),
             ));
         }
-        // A moderator's change of a key of a total over the type's own
-        // documents moves the total, the rule reading the key itself or not
-        let moderated_field = constraint
-            .own_property_reads()
-            .into_iter()
-            .map(|(path, _)| path)
-            .chain(
-                constraint
-                    .aggregate_reads()
-                    .into_iter()
-                    .flat_map(AggregateRead::own_type_keys),
-            )
-            .find(|path| is_path_listed(document_type.moderator_changeable_fields(), path));
-        if let Some(field) = moderated_field {
+        // What a moderator's change of the fields the type keeps for them is
+        // judged against, the reason named as precisely as the rule allows: a
+        // field it reads, of either version, or keys a total over the type's
+        // own documents by, `$revision`, or a total
+        let moderator_fields = document_type.moderator_changeable_fields();
+        if !moderator_fields.is_empty() && constraint.reads_changed_fields(moderator_fields) {
+            let moderated_field = constraint
+                .own_property_reads()
+                .into_iter()
+                .map(|(path, _)| either_version_path(path))
+                .chain(
+                    constraint
+                        .aggregate_reads()
+                        .into_iter()
+                        .flat_map(AggregateRead::own_type_keys),
+                )
+                .find(|path| is_path_listed(moderator_fields, path));
+            let reads_revision = constraint
+                .system_reads()
+                .into_iter()
+                .any(|read| read.value == SystemValue::Revision);
+            let reason = match (moderated_field, reads_revision) {
+                (Some(field), _) => format!(
+                    "depends on \"{field}\" (a property it reads, of either version, or a key \
+                     of a total over the type's own documents), which the type keeps for its \
+                     moderators to change"
+                ),
+                (None, true) => "$revision, which a moderator's change of the fields the type \
+                                 keeps for them moves"
+                    .to_string(),
+                (None, false) => "a total, which a moderator's change of the fields the type \
+                                  keeps for them is judged against, since it may have moved \
+                                  since the document was last written"
+                    .to_string(),
+            };
             return Err(error(format!(
-                "reads a document a reference points at and depends on \"{field}\" (a property \
-                 it reads, or a key of a total over the type's own documents), which the type \
-                 keeps for its moderators to change: their change checks no reference, so it \
-                 could not judge the rule"
+                "reads a document a reference points at and {reason}: their change checks no \
+                 reference, so it could not judge the rule"
             )));
         }
-        if let Some(total) = constraint
-            .aggregate_reads()
-            .into_iter()
-            .find(|read| can_restore && read.of_own_type)
-        {
-            return Err(error(format!(
-                "reads a document a reference points at and a {} of the type's own documents, \
-                 which a moderator's restore brings a document back into: a restore checks no \
-                 reference, so it could not judge the rule",
-                total.wire_name()
-            )));
+        if can_restore && constraint.reads_change(SystemChange::Restore) {
+            return Err(error(
+                "reads a document a reference points at and a total, which a moderator's \
+                 restore is judged against, since it may have moved while the document was \
+                 gone: a restore checks no reference, so it could not judge the rule"
+                    .to_string(),
+            ));
         }
     }
     Ok(())

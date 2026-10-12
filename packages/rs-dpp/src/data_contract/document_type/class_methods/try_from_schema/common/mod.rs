@@ -36,7 +36,7 @@ use crate::data_contract::document_type::property::{
     KeyIdReference, KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
 };
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraint_condition, PropertyConstraint, SystemProperty, STORED_DOCUMENT_PREFIX,
+    parse_property_constraint_condition, PropertyConstraint, SystemProperty,
 };
 use crate::data_contract::document_type::property_names::moderator_abilities::{
     delete_settled, CHANGE_FIELDS, DELETE, DELETE_KEEPS_FIELDS, DELETE_KEEPS_RECORD,
@@ -3838,10 +3838,10 @@ fn summable_off_count_index_error(
 /// Parses a condition a replace is judged by, the `when` of an `immutable`
 /// entry or a type's `retractedWhen`. It takes the grammar of a
 /// `propertyConstraints` rule, and what it reads is checked as a rule's reads
-/// are ([`super::validate_property_constraint_reads`]), on every parse. Beyond
-/// a rule, it may read the stored document through `$old.`, as a replace
-/// judges it on the document it writes, and may read no `countOf` or `sumOf`:
-/// it reads the document alone, so a replace judges it without reading state.
+/// are ([`super::validate_property_constraint_reads`]), on every parse: the
+/// stored document through `$old.` included, as a replace judges it on the
+/// document it writes. Unlike a rule, it may read no `countOf` or `sumOf`: it
+/// reads the document alone, so a replace judges it without reading state.
 /// Under full validation it stays within the node limit of a rule and lists no
 /// condition twice. Every message reads `document type "{name}" {keyword}
 /// {subject} ...`.
@@ -3866,12 +3866,9 @@ fn parse_replace_condition(
             "document type \"{name}\" {keyword} {message}"
         ))
     };
-    let property_kind = |path: &str| {
-        super::property_equality_kind(
-            &document_type.flattened_properties,
-            path.strip_prefix(STORED_DOCUMENT_PREFIX).unwrap_or(path),
-        )
-    };
+    // The parse reads a path through `$old.` as the path after it
+    let property_kind =
+        |path: &str| super::property_equality_kind(&document_type.flattened_properties, path);
     let condition =
         parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
             consensus_or_protocol_data_contract_error(condition_error(format!(

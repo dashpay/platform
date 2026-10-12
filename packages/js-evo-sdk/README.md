@@ -480,15 +480,17 @@ try {
 }
 ```
 
-To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys), nor one reading a value of the document a reference points at, `{ referenced: [reference, field] }`, which the platform reads when it checks the reference (`readsReferenced` lists them, each with its `reference`, `path` and `kind`):
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height the write records (every height on a create, the update's on a replace) is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys), nor one reading a value of the document a reference points at, `{ referenced: [reference, field] }`, which the platform reads when it checks the reference (`readsReferenced` lists them, each with its `reference`, `path` and `kind`). The second argument says which write is checked. Given the stored document, a replace, `$ownerId`, `$revision` and the creation and transfer are what consensus judges, whatever the document holds: the stored document's owner, creation and transfer times and heights, and the revision after the stored one; a rule reading the stored version through `$old.` (`readsStored`) reads that document, its heights included. Given `null`, a create, `$ownerId` is the document's owner, `$revision` 1 and every time the device clock, and every `$old.` read is absent (a stored time, height or revision reads 0). Given `undefined`, the document's own owner, creation and transfer are read (the device clock for a time it lacks), and neither a rule reading `$old.` nor one reading `$revision`, which depends on the write, is judged:
 
 ```ts
 contract.documentTypePropertyConstraints('offer');
 // [{ name: 'discountBelowPrice', rule: { lessThan: ['discount', 'price'] },
 //    reads: [{ path: 'discount', kind: 'value' }, { path: 'price', kind: 'value' }],
-//    readsOwner: false, readsSystem: [], readsTotals: [], readsReferenced: [] }, ...]
+//    readsOwner: false, readsSystem: [], readsStored: false, readsTotals: [],
+//    readsReferenced: [] }, ...]
 
-const broken = contract.checkDocumentPropertyConstraints(document);
+// `null`: a create; pass the stored document to check a replace
+const broken = contract.checkDocumentPropertyConstraints(document, null);
 if (broken) {
   // { rule: 'discountBelowPrice', violation: 'NotMet', message: 'it does not hold' }
 }
