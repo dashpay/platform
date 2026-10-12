@@ -2176,7 +2176,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let response: ResourceVotesByIdentity = voters
             .into_iter()
-            .map(|(id, vote)| (id, Some(vote)))
+            .map(|(id, (vote, _vote_count))| (id, Some(vote)))
             .collect();
 
         Ok((response.into_option(), mtd.clone(), proof.clone()))
@@ -2211,7 +2211,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest>
 
         let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
         let (root_hash, votes) = drive_query
-            .verify_identity_votes_given_with_counts_proof::<Vec<_>>(
+            .verify_identity_votes_given_proof::<Vec<_>>(
                 supported_grovedb_proof_bytes(proof)?,
                 &contract_provider_fn,
                 platform_version,

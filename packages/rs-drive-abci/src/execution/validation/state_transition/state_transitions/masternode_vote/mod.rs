@@ -3632,6 +3632,8 @@ mod tests {
                     .expect("expected all voters to be identifiers")
             }
 
+            /// Reads the votes an identity has given from a proof of them, each with the
+            /// number of times the identity has voted on its vote poll, by vote poll id.
             fn get_proved_identity_given_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
                 platform_state: &PlatformState,
@@ -3643,7 +3645,7 @@ mod tests {
                     get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo,
                 >,
                 platform_version: &PlatformVersion,
-            ) -> Vec<ResourceVote> {
+            ) -> BTreeMap<Identifier, (ResourceVote, u16)> {
                 let query_validation_result = platform
                     .query_contested_resource_identity_votes(
                         GetContestedResourceIdentityVotesRequest {
@@ -3706,8 +3708,6 @@ mod tests {
                     )
                     .expect("expected to verify proof")
                     .1
-                    .into_values()
-                    .collect()
             }
 
             #[tokio::test]
@@ -3975,7 +3975,7 @@ mod tests {
                 )
                 .await;
 
-                let mut votes = get_proved_identity_given_votes(
+                let mut votes: Vec<ResourceVote> = get_proved_identity_given_votes(
                     &platform,
                     &platform_state,
                     &dpns_contract,
@@ -3984,7 +3984,10 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                );
+                )
+                .into_values()
+                .map(|(vote, _vote_count)| vote)
+                .collect();
 
                 assert_eq!(votes.len(), 3);
 
@@ -4045,70 +4048,6 @@ mod tests {
                         resource_vote_choice: TowardsIdentity(contender_1_quantum.id())
                     })
                 );
-            }
-
-            /// Reads the votes an identity has given from a proof of them, each with the
-            /// number of times the identity has voted on its vote poll, by vote poll id.
-            fn get_proved_identity_given_votes_with_counts(
-                platform: &TempPlatform<MockCoreRPCLike>,
-                platform_state: &PlatformState,
-                contract: &DataContract,
-                identity_id: Identifier,
-                limit: u16,
-                platform_version: &PlatformVersion,
-            ) -> BTreeMap<Identifier, (ResourceVote, u16)> {
-                let query_validation_result = platform
-                    .query_contested_resource_identity_votes(
-                        GetContestedResourceIdentityVotesRequest {
-                            version: Some(
-                                get_contested_resource_identity_votes_request::Version::V0(
-                                    GetContestedResourceIdentityVotesRequestV0 {
-                                        identity_id: identity_id.to_vec(),
-                                        limit: Some(limit as u32),
-                                        offset: None,
-                                        order_ascending: true,
-                                        start_at_vote_poll_id_info: None,
-                                        prove: true,
-                                    },
-                                ),
-                            ),
-                        },
-                        platform_state,
-                        platform_version,
-                    )
-                    .expect("expected to execute query")
-                    .into_data()
-                    .expect("expected query to be valid");
-
-                let get_contested_resource_identity_votes_response::Version::V0(
-                    GetContestedResourceIdentityVotesResponseV0 {
-                        metadata: _,
-                        result,
-                    },
-                ) = query_validation_result.version.expect("expected a version");
-
-                let Some(get_contested_resource_identity_votes_response_v0::Result::Proof(proof)) =
-                    result
-                else {
-                    panic!("expected a proof")
-                };
-
-                let query = ContestedResourceVotesGivenByIdentityQuery {
-                    identity_id,
-                    offset: None,
-                    limit: Some(limit),
-                    start_at: None,
-                    order_ascending: true,
-                };
-
-                query
-                    .verify_identity_votes_given_with_counts_proof::<BTreeMap<_, _>>(
-                        proof.grovedb_proof.as_slice(),
-                        &contract_lookup_fn_for_contract(Arc::new(contract.to_owned())),
-                        platform_version,
-                    )
-                    .expect("expected to verify proof")
-                    .1
             }
 
             /// A first vote is proved with a count of 1 and a changed vote with one more,
@@ -4184,12 +4123,14 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 assert_eq!(
-                    get_proved_identity_given_votes_with_counts(
+                    get_proved_identity_given_votes(
                         &platform,
                         &platform_state,
                         &dpns_contract,
                         pro_tx_hash,
-                        10,
+                        Some(10),
+                        true,
+                        None,
                         platform_version,
                     ),
                     BTreeMap::new()
@@ -4230,12 +4171,14 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 assert_eq!(
-                    get_proved_identity_given_votes_with_counts(
+                    get_proved_identity_given_votes(
                         &platform,
                         &platform_state,
                         &dpns_contract,
                         pro_tx_hash,
-                        10,
+                        Some(10),
+                        true,
+                        None,
                         platform_version,
                     ),
                     BTreeMap::from([
@@ -4262,12 +4205,14 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 assert_eq!(
-                    get_proved_identity_given_votes_with_counts(
+                    get_proved_identity_given_votes(
                         &platform,
                         &platform_state,
                         &dpns_contract,
                         pro_tx_hash,
-                        10,
+                        Some(10),
+                        true,
+                        None,
                         platform_version,
                     ),
                     BTreeMap::from([
