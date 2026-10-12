@@ -5154,21 +5154,29 @@ pub(super) fn apply_index_only(
                     property_name, name, property_name,
                 )));
             }
-        } else if !document_type
-            .indices
-            .values()
-            .any(|index| !index.skip_if_absent && !index.outlives_delete && holds_property(index))
-        {
+        } else if !document_type.indices.values().any(|index| {
+            !index.skip_if_absent
+                && !index.outlives_delete
+                && holds_property(index)
+                // An index of a typed array (protocol version 14) has no entry
+                // for a list without elements, so it keeps no other property of
+                // such a document: it holds only the array itself for sure
+                && index
+                    .indexed_array
+                    .as_deref()
+                    .is_none_or(|array| array == property_name)
+        }) {
             // Nor may an outlivesDelete index be the only one holding it: a
             // delete carries every schema property, and could not be checked
             // against entries it leaves
             return Err(structure_error(format!(
                 "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
-                 index that neither sets skipIfAbsent nor outlivesDelete (as a property or \
-                 terminal): on an indexOnly type only indexed values exist and are \
-                 recoverable, a skipIfAbsent index holds no value at all for documents it \
-                 skips, and an outlivesDelete index is not checked by a delete, so the \
-                 property would be silently dropped",
+                 index that neither sets skipIfAbsent nor outlivesDelete, nor names a typed \
+                 array other than the property (as a property or terminal): on an indexOnly \
+                 type only indexed values exist and are recoverable, a skipIfAbsent index \
+                 holds no value at all for documents it skips, an index of a typed array none \
+                 for a document whose list is empty, and an outlivesDelete index is not \
+                 checked by a delete, so the property would be silently dropped",
                 property_name, name,
             )));
         }

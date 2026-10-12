@@ -14,10 +14,14 @@ use super::index_only_e2e_tests::{
     assert_grovedb_is_consistent, assert_live_root_hash, platform_version, read_grove_element,
 };
 use crate::config::DriveConfig;
-use crate::drive::document::index_only_row_commitment;
+use crate::drive::document::{
+    index_only_row_commitment, index_only_row_commitment_max_preimage_size,
+    index_only_row_commitment_with_preimage_size,
+};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use crate::query::index_only_synthesis::{
     index_only_proof_index, index_only_transition_entry_path_query,
 };
@@ -41,7 +45,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use grovedb::{Element, GroveDb, TransactionArg};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 const POST_A: [u8; 32] = [0xA1; 32];
 const POST_B: [u8; 32] = [0xB2; 32];
@@ -941,6 +945,97 @@ fn should_estimate_at_least_what_a_like_costs_for_one_and_four_tags() {
             assert_grovedb_is_consistent(&drive);
         }
     }
+}
+
+/// Every entry's row commitment is a double-SHA256 over the like's values, its
+/// whole tag list included, and the insert bills each one: by its preimage
+/// when applied, by the widest preimage the type allows in the dry run.
+#[test]
+fn should_bill_the_commitment_hash_of_every_entry() {
+    let (drive, contract) = setup(Trend::Outliving);
+    let liked = like(
+        POST_A,
+        OWNER_1,
+        Some(&["dash", "evo", "news", "solo"]),
+        T_MS,
+    );
+    let entries: usize = like_type(&contract)
+        .indexes()
+        .values()
+        .map(|index| {
+            Drive::index_only_entry_paths_and_key(
+                contract.id(),
+                like_type(&contract),
+                index,
+                &liked,
+                platform_version(),
+            )
+            .expect("the entry paths")
+            .0
+            .len()
+        })
+        .sum();
+    assert_eq!(
+        entries,
+        1 + 4 + 16 + 1,
+        "byPost, byTagPost, byTrendTagPost, byAuthorPostTime"
+    );
+    let (_, preimage_size) = index_only_row_commitment_with_preimage_size(
+        &liked,
+        like_type(&contract),
+        platform_version(),
+    )
+    .expect("the row commitment computes");
+    let max_preimage_size =
+        index_only_row_commitment_max_preimage_size(like_type(&contract), platform_version());
+    assert!(max_preimage_size >= preimage_size);
+
+    let transaction = drive.grove.start_transaction();
+    let hashes = |estimate: bool| -> Vec<FunctionOp> {
+        let mut estimated_costs_only_with_layer_info = estimate.then(HashMap::new);
+        drive
+            .add_document_for_contract_operations(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &liked,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: like_type(&contract),
+                },
+                false,
+                &block_at(T_MS),
+                &mut None,
+                &mut estimated_costs_only_with_layer_info,
+                Some(&transaction),
+                platform_version(),
+            )
+            .expect("the insert operations")
+            .into_iter()
+            .filter_map(|operation| match operation {
+                LowLevelDriveOperation::FunctionOperation(hash) => Some(hash),
+                _ => None,
+            })
+            .collect()
+    };
+    let applied = hashes(false);
+    assert_eq!(applied.len(), entries);
+    assert!(applied.iter().all(
+        |hash| *hash == FunctionOp::new_with_byte_count(HashFunction::Sha256_2, preimage_size)
+    ));
+    let estimated = hashes(true);
+    assert_eq!(estimated.len(), entries);
+    assert!(estimated
+        .iter()
+        .all(|hash| *hash
+            == FunctionOp::new_with_byte_count(HashFunction::Sha256_2, max_preimage_size)));
+    drive
+        .grove
+        .rollback_transaction(&transaction)
+        .expect("the transaction rolls back");
 }
 
 /// Four tags cost more than one: the fan-out is priced, not just allowed.

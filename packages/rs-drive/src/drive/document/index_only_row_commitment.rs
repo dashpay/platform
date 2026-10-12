@@ -8,10 +8,14 @@ use crate::drive::document::encode_index_only_entry_payload_value;
 use crate::error::drive::DriveError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
+#[cfg(feature = "server")]
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::MAX_INDEX_SIZE;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{
     index_only_row_commits_created_at, DocumentPropertyType, DocumentTypeRef,
@@ -235,4 +239,56 @@ fn typed_array_commitment_bytes(
         list.extend_from_slice(&key);
     }
     Ok(Some(list))
+}
+
+/// The widest preimage [`index_only_row_commitment`] can hash for a document
+/// of `document_type`, saturating at `u16::MAX` as the measured size does:
+/// the owner, every property framed by its name and a `u32` length (a key of
+/// at most 255 bytes, a typed array's `maxItems` framed element keys, an
+/// entry payload value its declared bound), and the `$createdAt` tail. An
+/// insert's dry run bills each entry's commitment hash by it, so the estimate
+/// upper-bounds the hash the apply bills by the real preimage, whatever
+/// values the dry run's document holds.
+#[cfg(feature = "server")]
+pub fn index_only_row_commitment_max_preimage_size(
+    document_type: DocumentTypeRef,
+    platform_version: &PlatformVersion,
+) -> u16 {
+    // `serialize_value_for_key` refuses a key over 255 bytes
+    let key_bound = |property_type: &DocumentPropertyType| -> u32 {
+        property_type
+            .max_byte_size(platform_version)
+            .ok()
+            .flatten()
+            .map_or(MAX_INDEX_SIZE as u32, |width| {
+                u32::from(width).min(MAX_INDEX_SIZE as u32)
+            })
+    };
+    let mut total: u32 = DEFAULT_HASH_SIZE_U8 as u32;
+    for (property_name, property) in document_type.flattened_properties() {
+        let raw = match &property.property_type {
+            DocumentPropertyType::Object(_) => continue,
+            DocumentPropertyType::TypedArray(typed_array) => u32::from(typed_array.max_items)
+                .saturating_mul(4 + key_bound(&typed_array.item_type)),
+            property_type
+                if document_type
+                    .entry_payload()
+                    .contains(property_name.as_str()) =>
+            {
+                property_type
+                    .max_byte_size(platform_version)
+                    .ok()
+                    .flatten()
+                    .map_or(u32::from(u16::MAX), u32::from)
+            }
+            property_type => key_bound(property_type),
+        };
+        total = total
+            .saturating_add(property_name.len() as u32)
+            .saturating_add(4)
+            .saturating_add(raw);
+    }
+    // `$createdAt` and its 8 bytes
+    total = total.saturating_add(18);
+    u16::try_from(total).unwrap_or(u16::MAX)
 }
