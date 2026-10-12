@@ -716,9 +716,11 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * revision reads 0), and `$revision` reads 1, the revision a created
      * document starts at. The device clock stands in for the block time the
      * create records (`$createdAt`, `$updatedAt`, `$transferredAt`), so a
-     * rule comparing one is judged as of now; a rule
-     * reading a block height (`$createdAtBlockHeight`, ...) is not judged,
-     * since the height is unknown until the block, nor is a rule reading a
+     * rule comparing one is judged as of now; a rule reading a block height
+     * the create records (`$createdAtBlockHeight`, ..., without `$old.`) is
+     * not judged, since the height is unknown until the block (a stored
+     * height, `$old.$createdAtBlockHeight`, ..., reads 0 and is judged), nor
+     * is a rule reading a
      * `countOf` or `sumOf` total ([DocumentPropertyConstraint.readsTotals]),
      * which the platform reads from state when the document is sent, nor one
      * reading a value of a referenced document

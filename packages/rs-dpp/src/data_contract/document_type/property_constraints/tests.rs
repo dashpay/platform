@@ -2604,6 +2604,7 @@ fn should_read_the_system_values_the_rule_is_judged_with() {
         transferred_at_core_block_height: Some(9),
         revision: None,
         aggregates: None,
+        consensus: false,
         stored: None,
         changed_fields: None,
         referenced_documents: false,
@@ -4303,6 +4304,7 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     // missing total is reported, which `validate_property_constraints` turns
     // into an error; a client's, which reads none, only skips the rule
     let other = DocumentSystemValues {
+        consensus: true,
         aggregates: Some(BTreeMap::from([(
             AggregateRead {
                 document_type: "listing".to_string(),
@@ -4319,6 +4321,12 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
         rule.unread_aggregate(&DocumentSystemValues::default()),
         None
     );
+    // Consensus giving no totals at all lacks this one too
+    let none_read = DocumentSystemValues {
+        consensus: true,
+        ..DocumentSystemValues::default()
+    };
+    assert_eq!(rule.unread_aggregate(&none_read), Some(&read));
 }
 
 // ── the stored version ($old.) and $revision ────────────────────────────
@@ -4332,12 +4340,14 @@ fn stored_version(
     revision: u64,
 ) -> StoredVersion {
     StoredVersion::Present(Box::new(StoredDocument {
-        properties: properties
-            .iter()
-            .map(|(key, value)| (key.to_string(), value.clone()))
-            .collect(),
-        system: DocumentSystemValues {
-            owner_id: Some(owner),
+        properties: Some(
+            properties
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.clone()))
+                .collect(),
+        ),
+        system: StoredSystemValues {
+            owner_id: owner,
             updated_at: Some(updated_at),
             revision: Some(revision),
             ..Default::default()
@@ -4526,9 +4536,10 @@ fn should_judge_a_stored_read_on_a_create_on_a_replace_and_not_without_it() {
         judge(&rule, &forged, &create),
         Some(PropertyConstraintViolation::NotMet)
     );
+    // Stored at 0, the price may not fall to -1, though the forged -5 would allow it
     assert_eq!(
-        judge(&rule, &forged, &replacing(-1)),
-        None,
+        judge(&rule, &forged, &replacing(0)),
+        Some(PropertyConstraintViolation::NotMet),
         "the stored version replaces it"
     );
 }
@@ -4711,7 +4722,7 @@ fn should_tell_which_writes_a_stored_read_answers_to() {
 fn should_report_a_stored_version_consensus_did_not_give() {
     let rule = parse_rule_value(platform_value!({ "greaterThan": ["price", "$old.price"] }));
     let consensus = |stored: Option<StoredVersion>| DocumentSystemValues {
-        aggregates: Some(BTreeMap::new()),
+        consensus: true,
         stored,
         ..Default::default()
     };
@@ -4720,10 +4731,23 @@ fn should_report_a_stored_version_consensus_did_not_give() {
     assert!(!rule.unread_stored_version(&DocumentSystemValues::default()));
     let unread = parse_rule_value(platform_value!({ "greaterThan": ["price", 0] }));
     assert!(!unread.unread_stored_version(&consensus(None)));
+
+    // Given without its properties, the stored version is given: whether a
+    // rule reading one of them may be judged is the judging's to tell
+    let without_properties = consensus(Some(StoredVersion::without_properties(
+        StoredSystemValues::default(),
+    )));
+    assert!(!rule.unread_stored_version(&without_properties));
+    assert!(!without_properties.stored_properties_given());
+    assert!(consensus(None).stored_properties_given());
+    let revised =
+        parse_rule_value(platform_value!({ "greaterThan": ["$revision", "$old.$revision"] }));
+    assert!(revised.unread_stored_version(&consensus(None)));
 }
 
 /// A create records the first revision and no stored version; a document's
-/// values carry its revision and no stored version either.
+/// values carry its revision and no stored version either, and as the version
+/// a write replaces, its properties, owner and revision are what `$old.` reads.
 #[test]
 fn should_take_the_revision_and_stored_version_of_a_create_and_of_a_document() {
     let owner = Identifier::new([3; 32]);
@@ -4737,5 +4761,43 @@ fn should_take_the_revision_and_stored_version_of_a_create_and_of_a_document() {
             stored: true
         }),
         Some(0)
+    );
+
+    let document: Document = crate::document::DocumentV0 {
+        owner_id: owner,
+        properties: BTreeMap::from([("price".to_string(), Value::U64(7))]),
+        revision: Some(3),
+        updated_at: Some(20),
+        ..Default::default()
+    }
+    .into();
+    let values = DocumentSystemValues::of_document(&document);
+    assert_eq!(values.revision, Some(3));
+    assert_eq!(values.stored, None);
+
+    let replacing = DocumentSystemValues {
+        stored: Some(StoredVersion::of_document(&document)),
+        ..DocumentSystemValues::default()
+    };
+    assert_eq!(replacing.stored_owner_id(), Some(owner));
+    for (value, expected) in [
+        (SystemValue::Revision, 3),
+        (SystemValue::Property(SystemProperty::UpdatedAt), 20),
+    ] {
+        assert_eq!(
+            replacing.read(SystemRead {
+                value,
+                stored: true
+            }),
+            Some(expected)
+        );
+    }
+    assert_eq!(
+        replacing
+            .judged_data(&data(&[]))
+            .get_optional_value_at_path("$old.price")
+            .ok()
+            .flatten(),
+        Some(&Value::U64(7))
     );
 }

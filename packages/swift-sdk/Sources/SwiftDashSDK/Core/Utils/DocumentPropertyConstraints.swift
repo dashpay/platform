@@ -582,16 +582,18 @@ extension SDK {
     /// The block the create lands in is not known yet, so Rust estimates its
     /// system values: the device clock stands in for the block time the create
     /// records as `$createdAt`, `$updatedAt` and `$transferredAt`, and a rule
-    /// reading a block height (a `readsSystem` name ending in `BlockHeight`
-    /// or `CoreBlockHeight`) is not judged at all. Nor is a rule reading a
-    /// `countOf` or `sumOf` total (its `readsTotals` not empty), or a value of
-    /// a document a reference points at (its `readsReferenced` not empty): the
-    /// platform reads the total from state when the document is sent, and the
+    /// reading a block height the create records (a `readsSystem` name ending
+    /// in `BlockHeight` or `CoreBlockHeight` without `$old.`) is not judged
+    /// at all; a stored height (`$old.$createdAtBlockHeight`, ...) reads 0,
+    /// as above, and is judged. Nor is a rule reading a `countOf` or `sumOf`
+    /// total (its `readsTotals` not empty), or a value of a document a
+    /// reference points at (its `readsReferenced` not empty): the platform
+    /// reads the total from state when the document is sent, and the
     /// referenced document when it checks the reference, and this check reads
     /// no state. So `nil` does not promise consensus accepts the document: a
-    /// rule reading a block height, a total or a referenced document, or a
-    /// time rule the device clock judges differently from the block time, can
-    /// still refuse it.
+    /// rule reading a block height the create records, a total or a
+    /// referenced document, or a time rule the device clock judges differently
+    /// from the block time, can still refuse it.
     ///
     /// - Throws: `SDKError.invalidParameter` for an owner id that is not 32
     ///   bytes or properties that are not a JSON object, `SDKError.notFound` for

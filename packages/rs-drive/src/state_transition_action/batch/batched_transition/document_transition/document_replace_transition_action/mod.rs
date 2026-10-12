@@ -2,7 +2,7 @@ mod v0;
 mod v1;
 
 use dpp::data_contract::document_type::property_constraints::{
-    AggregateRead, DocumentSystemValues,
+    AggregateRead, StoredSystemValues,
 };
 use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use std::collections::{BTreeMap, BTreeSet};
@@ -181,7 +181,7 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
-    fn stored_system_values(&self) -> Option<&DocumentSystemValues> {
+    fn stored_system_values(&self) -> Option<&StoredSystemValues> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => {
                 PropertyConstraintReads::stored_system_values_of(&v0.property_constraint_reads)
@@ -189,7 +189,7 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
-    fn set_stored_system_values(&mut self, values: DocumentSystemValues) {
+    fn set_stored_system_values(&mut self, values: StoredSystemValues) {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => {
                 PropertyConstraintReads::set_stored_system_values(

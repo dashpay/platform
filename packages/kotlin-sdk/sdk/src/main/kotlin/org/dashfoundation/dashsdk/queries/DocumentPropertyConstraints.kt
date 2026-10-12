@@ -431,9 +431,10 @@ data class PropertyConstraintRead(
  *
  * Rust judges the document (`dash_sdk_data_contract_check_property_constraints`,
  * through [Contracts.checkPropertyConstraints]) with the check consensus runs,
- * the device clock standing in for the times the create records, and a rule
- * reading a block height, a `countOf` or `sumOf` total or a value of a
- * referenced document left unjudged; this type only carries the verdict.
+ * the device clock standing in for the times the create records, a stored
+ * time, height or revision read through `$old.` as 0, and a rule reading a
+ * block height the create records, a `countOf` or `sumOf` total or a value of
+ * a referenced document left unjudged; this type only carries the verdict.
  * The fields mirror wasm-dpp2's `DocumentPropertyConstraintViolation` and the
  * Swift SDK's `PropertyConstraintViolation`.
  */

@@ -893,8 +893,9 @@ impl DataContractWasm {
 
     /// The first `propertyConstraints` rule `document` breaks, in name order,
     /// evaluated with the same code consensus runs on a create or replace: its
-    /// properties, its owner for `$ownerId`, its revision for `$revision`, and
-    /// for the system times the device clock in place of the block time the
+    /// properties, its owner for `$ownerId`, the revision the write records for
+    /// `$revision` (below), and for the system times the device clock in place
+    /// of the block time the
     /// write will record (the document's stored creation and transfer times
     /// when it has them). A rule reading a block height the write records is
     /// not judged, since the height is unknown until the block, a rule reading
@@ -908,7 +909,9 @@ impl DataContractWasm {
     /// reads through `$old.` (a rule's `readsStored` says it does): the stored
     /// document for a replace, `null` for a create, which has none, so that
     /// every `$old.` read is absent. Left `undefined`, a rule reading it is not
-    /// judged. Given either, `$revision`, `$ownerId` and the creation and
+    /// judged, and neither is one reading `$revision`, which depends on the
+    /// write: 1 on a create, one more than the stored on a replace. Given
+    /// either, `$revision`, `$ownerId` and the creation and
     /// transfer times are what consensus judges, whatever `document` holds: on
     /// a replace the stored document's owner, creation and transfer and the
     /// revision after its own, the only one consensus accepts on a replace;

@@ -54,7 +54,7 @@ use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, StoredVersion, SystemChange,
+    DocumentSystemValues, StoredDocument, StoredSystemValues, StoredVersion, SystemChange,
 };
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
@@ -1365,9 +1365,10 @@ fn document_deletion_context<C: CoreRPCLike>(
 /// the contract (see [`Moderators`]: a seated team must also hold `changeDocumentFields` on the
 /// type) for a reason a seated team's proposal lists, the document exists and has not expired,
 /// and the document as changed is still one of its type: its schema, the shapes of its
-/// `encryptedFor` properties, its `distinctFrom` properties, its `propertyConstraints` with the
-/// totals they read, and its unique indexes. Every refusal is paid for by bumping the signer's
-/// contract nonce.
+/// `encryptedFor` properties, its `distinctFrom` properties, the rules of its
+/// `propertyConstraints` the change can break (those reading a field it changes, of either
+/// version, `$revision` or a total, the totals read as they will be), and its unique indexes.
+/// Every refusal is paid for by bumping the signer's contract nonce.
 ///
 /// The fields are the moderators', not the document's owner's, so whoever owns the document,
 /// the contract owner and the moderators included, is no protection. Nothing the document type
@@ -1591,9 +1592,13 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         tx,
         platform_version,
     )?;
+    // The document read is not needed again, so its properties move into the stored version
     let system = DocumentSystemValues {
         aggregates: Some(aggregates),
-        stored: Some(StoredVersion::of_document(&stored)),
+        consensus: true,
+        stored: Some(StoredVersion::Present(Box::new(
+            StoredDocument::of_owned_document(stored),
+        ))),
         changed_fields: Some(changed_fields.clone()),
         ..DocumentSystemValues::of_document(&changed)
     };
@@ -1665,8 +1670,9 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// restored, block time is within the restore window after the removal, the bytes hash to what
 /// the record holds, the removal is no deletion the seated team approved together (those
 /// stand), no other document holds a value of one of the type's unique indexes, and the
-/// restored document meets its type's `propertyConstraints` with the totals after its
-/// insertion. Every refusal in a block is paid for by bumping the signer's contract nonce.
+/// restored document meets the rules of its type's `propertyConstraints` reading a total,
+/// with the totals after its insertion: the others read only what it held when last written.
+/// Every refusal in a block is paid for by bumping the signer's contract nonce.
 ///
 /// The action carries the contract, the decoded document and the record marked restored, so
 /// Drive puts the document back and marks the record without reading again. Nothing the
@@ -1938,9 +1944,14 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
             tx,
             platform_version,
         )?;
+        // A restore writes no property: `$old.` reads the document itself, the judging
+        // reading its properties from those written, so none is copied
         let system = DocumentSystemValues {
             aggregates: Some(aggregates),
-            stored: Some(StoredVersion::of_document(&document)),
+            consensus: true,
+            stored: Some(StoredVersion::without_properties(
+                StoredSystemValues::of_document(&document),
+            )),
             ..DocumentSystemValues::of_document(&document)
         };
         let result = document_type.validate_property_constraints_for_system_change(

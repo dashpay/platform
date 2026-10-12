@@ -1,7 +1,7 @@
 pub mod transformer;
 
 use dpp::data_contract::document_type::property_constraints::{
-    AggregateRead, DocumentSystemValues,
+    AggregateRead, StoredSystemValues,
 };
 use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use dpp::document::Document;
@@ -43,8 +43,8 @@ pub trait DocumentUpdatePriceTransitionActionAccessorsV0 {
 
     /// The owner, times, heights and revision of the stored version this write replaces,
     /// which a rule reads through `$old.`, when anything the document type declares reads them
-    fn stored_system_values(&self) -> Option<&DocumentSystemValues>;
+    fn stored_system_values(&self) -> Option<&StoredSystemValues>;
 
     /// Sets the system values of the stored version this write replaces, once it is read
-    fn set_stored_system_values(&mut self, values: DocumentSystemValues);
+    fn set_stored_system_values(&mut self, values: StoredSystemValues);
 }

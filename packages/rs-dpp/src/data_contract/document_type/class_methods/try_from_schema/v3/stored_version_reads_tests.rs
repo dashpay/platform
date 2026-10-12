@@ -9,7 +9,7 @@ use super::*;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, StoredDocument, StoredVersion,
+    DocumentSystemValues, StoredDocument, StoredSystemValues, StoredVersion,
 };
 use platform_value::platform_value;
 
@@ -209,28 +209,39 @@ fn should_refuse_a_stored_time_the_type_does_not_record() {
 /// An indexOnly type keeps no stored documents to replace.
 #[test]
 fn should_refuse_a_stored_read_on_an_index_only_type() {
-    let schema = platform_value!({
-        "type": "object",
-        "indexOnly": true,
-        "documentsMutable": false,
-        "properties": {
-            "hashtag": { "type": "string", "maxLength": 63, "position": 0 }
-        },
-        "required": ["hashtag"],
-        "indices": [
-            { "name": "byHashtag", "properties": [{ "hashtag": "asc" }] }
-        ],
-        "additionalProperties": false,
-        "propertyConstraints": {
-            "rule": { "anyOf": [{ "absent": "$old.hashtag" }, { "present": "hashtag" }] }
+    // A stored property, and the stored owner, which is told it is the stored
+    // version rather than the owner the rule never names
+    let stored_reads = [
+        platform_value!({ "anyOf": [{ "absent": "$old.hashtag" }, { "present": "hashtag" }] }),
+        platform_value!({
+            "anyOf": [
+                { "notEqual": ["$old.$ownerId", { "const": "CXH2kZCATjvDTnQAPVg28EgPg9WySUvwvnR5ZkmNqY5i" }] },
+                { "present": "hashtag" }
+            ]
+        }),
+    ];
+    for rule in stored_reads {
+        let schema = platform_value!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "properties": {
+                "hashtag": { "type": "string", "maxLength": 63, "position": 0 }
+            },
+            "required": ["hashtag"],
+            "indices": [
+                { "name": "byHashtag", "properties": [{ "hashtag": "asc" }] }
+            ],
+            "additionalProperties": false,
+            "propertyConstraints": { "rule": rule }
+        });
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
+                "rule \"rule\" reads the stored version through $old., which an indexOnly type \
+                 does not keep: its documents are never replaced",
+            );
         }
-    });
-    for full_validation in [true, false] {
-        expect_structure_error(
-            parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
-            "rule \"rule\" reads the stored version through $old., which an indexOnly type does \
-             not keep: its documents are never replaced",
-        );
     }
 }
 
@@ -240,12 +251,14 @@ fn listing(price: u64, fee: u64) -> Value {
 
 fn stored_listing(price: u64, fee: u64, revision: u64) -> StoredVersion {
     StoredVersion::Present(Box::new(StoredDocument {
-        properties: [
-            ("price".to_string(), Value::U64(price)),
-            ("fee".to_string(), Value::U64(fee)),
-        ]
-        .into(),
-        system: DocumentSystemValues {
+        properties: Some(
+            [
+                ("price".to_string(), Value::U64(price)),
+                ("fee".to_string(), Value::U64(fee)),
+            ]
+            .into(),
+        ),
+        system: StoredSystemValues {
             revision: Some(revision),
             updated_at: Some(0),
             ..Default::default()
@@ -315,12 +328,26 @@ fn should_judge_stored_reads_through_the_parsed_type() {
     let consensus = DocumentSystemValues {
         revision: Some(2),
         aggregates: Some(Default::default()),
+        consensus: true,
         ..Default::default()
     };
     assert!(matches!(
         document_type.validate_property_constraints(&listing(100, 10), &consensus, platform_version),
         Err(ProtocolError::CorruptedCodeExecution(message))
             if message.contains("rule priceStrictlyDrops of document type post reads the stored version through $old., which consensus did not give")
+    ));
+    // Nor is giving the stored version without the properties a rule reads
+    let without_properties = DocumentSystemValues {
+        stored: Some(StoredVersion::without_properties(StoredSystemValues {
+            revision: Some(1),
+            ..Default::default()
+        })),
+        ..consensus.clone()
+    };
+    assert!(matches!(
+        document_type.validate_property_constraints(&listing(100, 10), &without_properties, platform_version),
+        Err(ProtocolError::CorruptedCodeExecution(message))
+            if message.contains("rule priceStrictlyDrops of document type post reads a property of the stored version through $old., which consensus did not give")
     ));
 
     // A moderator's change of `fee`: the price rule, which reads only what the

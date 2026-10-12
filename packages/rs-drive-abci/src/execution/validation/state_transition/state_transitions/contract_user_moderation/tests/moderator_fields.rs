@@ -233,14 +233,19 @@ async fn create_ticket(
         .await
 }
 
-/// A replacement of `document`, a ticket, by `actor`, its owner
-async fn replace_ticket(setup: &Setup, actor: &Actor, document: Document) -> StateTransition {
+/// A replacement of `document`, of the type `document_type_name`, by `actor`, its owner
+async fn replacement_of(
+    setup: &Setup,
+    actor: &Actor,
+    document_type_name: &str,
+    document: Document,
+) -> StateTransition {
     BatchTransition::new_document_replacement_transition_from_document(
         document,
         setup
             .contract
-            .document_type_for_name(TICKET)
-            .expect("expected the ticket type"),
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type"),
         &actor.key,
         actor.contract_nonce(),
         0,
@@ -576,7 +581,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     assert_success(&setup.process(&create_ticket, &transaction));
     ticket.set("slot", Value::U64(4));
     ticket.increment_revision().expect("expected a revision");
-    let sets_the_slot = replace_ticket(&setup, &setup.user, ticket.clone()).await;
+    let sets_the_slot = replacement_of(&setup, &setup.user, TICKET, ticket.clone()).await;
     assert_paid_with_code(
         &setup.process(&sets_the_slot, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
@@ -599,7 +604,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     let mut stale = ticket.clone();
     stale.set("title", Value::Text("scanner".to_string()));
     stale.properties_mut().remove("slot");
-    let stale_replace = replace_ticket(&setup, &setup.user, stale).await;
+    let stale_replace = replacement_of(&setup, &setup.user, TICKET, stale).await;
     assert_paid_with_code(
         &setup.process(&stale_replace, &transaction),
         INVALID_DOCUMENT_REVISION,
@@ -612,7 +617,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     changes_the_slot
         .increment_revision()
         .expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, changes_the_slot).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, changes_the_slot).await;
     assert_paid_with_code(
         &setup.process(&replace, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
@@ -622,7 +627,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     drops_the_slot
         .increment_revision()
         .expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, drops_the_slot).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, drops_the_slot).await;
     assert_paid_with_code(
         &setup.process(&replace, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
@@ -632,7 +637,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     keeps_the_slot
         .increment_revision()
         .expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, keeps_the_slot).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, keeps_the_slot).await;
     assert_success(&setup.process(&replace, &transaction));
     let replaced = setup
         .stored_document(TICKET, ticket.id(), Some(&transaction))
@@ -1031,7 +1036,7 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
         .expect("expected the ticket");
     renamed.set("title", Value::Text("scanner".to_string()));
     renamed.increment_revision().expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, renamed).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, renamed).await;
     assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 3_000, &transaction));
     let replaced = setup
         .stored_document(TICKET, ticket.id(), Some(&transaction))
@@ -1053,7 +1058,7 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
         .expect("expected the ticket");
     reslotted.set("slot", Value::U64(7));
     reslotted.increment_revision().expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.moderator, reslotted).await;
+    let replace = replacement_of(&setup, &setup.moderator, TICKET, reslotted).await;
     assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 4_000, &transaction));
     let mut retitled = setup
         .stored_document(TICKET, own.id(), Some(&transaction))
@@ -1062,7 +1067,7 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
     assert_eq!(retitled.moderated_by(), Some(setup.moderator.id()));
     retitled.set("title", Value::Text("chair".to_string()));
     retitled.increment_revision().expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.moderator, retitled).await;
+    let replace = replacement_of(&setup, &setup.moderator, TICKET, retitled).await;
     assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 6_000, &transaction));
     let kept = setup
         .stored_document(TICKET, own.id(), Some(&transaction))
@@ -1180,26 +1185,6 @@ async fn should_prove_a_whole_number_set_on_a_number_field() {
     assert_eq!(proved.get("weight"), Some(&Value::Float(2.0)));
 }
 
-/// A replacement of `document`, a badge, by `actor`, its owner
-async fn replace_badge(setup: &Setup, actor: &Actor, document: Document) -> StateTransition {
-    BatchTransition::new_document_replacement_transition_from_document(
-        document,
-        setup
-            .contract
-            .document_type_for_name(BADGE)
-            .expect("expected the badge type"),
-        &actor.key,
-        actor.contract_nonce(),
-        0,
-        None,
-        &actor.signer,
-        PlatformVersion::latest(),
-        None,
-    )
-    .await
-    .expect("expected to build the replacement")
-}
-
 /// A moderator's change of fields is judged only against the rules reading a field it changes,
 /// of the document or of the stored version under `$old.`, `$revision`, which it moves, or a
 /// total. `titleChangesOnEveryEdit` judges the owner's replaces and leaves the moderator's
@@ -1244,7 +1229,7 @@ async fn should_judge_a_field_change_by_the_rules_reading_what_it_changes() {
     assert_eq!(stored.revision(), Some(3));
     let mut kept = stored.clone();
     kept.increment_revision().unwrap();
-    let keeps_title = replace_badge(&setup, &setup.user, kept).await;
+    let keeps_title = replacement_of(&setup, &setup.user, BADGE, kept).await;
     assert_paid_with_code(
         &setup.process(&keeps_title, &transaction),
         DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED,
@@ -1252,7 +1237,7 @@ async fn should_judge_a_field_change_by_the_rules_reading_what_it_changes() {
     let mut retitled = stored;
     retitled.set("title", Value::Text("second".to_string()));
     retitled.increment_revision().unwrap();
-    let retitle = replace_badge(&setup, &setup.user, retitled).await;
+    let retitle = replacement_of(&setup, &setup.user, BADGE, retitled).await;
     assert_success(&setup.process(&retitle, &transaction));
 
     // A fifth write is refused by the rule reading `$revision`, which the change moves

@@ -2,7 +2,7 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::document_type::property_constraints::StoredSystemValues;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::platform_value::Identifier;
@@ -48,7 +48,7 @@ pub(super) fn judge_barred_replace(
         .and_then(|document_type| {
             document_type.retracted_when().map(|condition| {
                 let (data, system) = action
-                    .condition_inputs(owner_id, Some(&DocumentSystemValues::of_document(stored)));
+                    .condition_inputs(owner_id, Some(&StoredSystemValues::of_document(stored)));
                 condition.holds(&data, &system).unwrap_or(false)
             })
         })

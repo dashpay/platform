@@ -104,16 +104,17 @@ internal object QueriesNative {
      * meets every rule. [propertiesJson] is what the create would send and
      * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
      * for [dataContractGetPropertyConstraints]. A create has no stored
-     * version, so every `$old.` read is absent and `$revision` reads 1, as
-     * consensus reads them on a create. The device clock stands in for the
-     * block time the create records (`$createdAt`, `$updatedAt`,
-     * `$transferredAt`), and a rule reading a block height is not judged, the
-     * height being unknown until the block, nor is one reading a `countOf` or
-     * `sumOf` total, which only the platform reads from state, or a value of a
-     * referenced document, which the platform reads when it checks the
-     * reference. No network call. Throws on
-     * error (as above, plus an owner id that is not 32 bytes or properties
-     * that are not a JSON object).
+     * version, so every `$old.` read is absent (a stored time, height or
+     * revision reads 0) and `$revision` reads 1, as consensus reads them on a
+     * create. The device clock stands in for the block time the create
+     * records (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule
+     * reading a block height the create records (without `$old.`) is not
+     * judged, the height being unknown until the block, nor is one reading a
+     * `countOf` or `sumOf` total, which only the platform reads from state, or
+     * a value of a referenced document, which the platform reads when it
+     * checks the reference. No network call. Throws on error (as above, plus
+     * an owner id that is not 32 bytes or properties that are not a JSON
+     * object).
      */
     external fun dataContractCheckPropertyConstraints(
         sdk: Long,

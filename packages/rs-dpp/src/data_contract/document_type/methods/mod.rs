@@ -1058,9 +1058,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// [`Self::validate_property_constraints`] would. `data` holds the document's
     /// properties and `referenced`, by reference property, the values those rules read of
     /// the documents the references point at, which consensus reads with the references it
-    /// checks; `system` holds the rest, the totals included. Every other rule of the type
-    /// was judged before the references were checked, and is not judged again. A type with
-    /// no such rule costs nothing, the data not even copied.
+    /// checks; `system` holds the rest, the totals and the stored version included, taken
+    /// by value so that marking the referenced values given copies none of it. Every other
+    /// rule of the type was judged before the references were checked, and is not judged
+    /// again. A type with no such rule costs nothing, the data not even copied.
     ///
     /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
     /// version 14, where no parsed document type carries a rule.
@@ -1068,7 +1069,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         &self,
         data: &BTreeMap<String, Value>,
         referenced: BTreeMap<String, Value>,
-        system: &DocumentSystemValues,
+        system: DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where

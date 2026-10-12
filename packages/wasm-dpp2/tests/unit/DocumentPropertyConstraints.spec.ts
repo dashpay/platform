@@ -813,11 +813,12 @@ describe('DataContract: propertyConstraints (v14)', () => {
       // A create has no stored version: the default stands in for the stored price
       expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 1), null))
         .to.equal(undefined);
-      // Without the stored version the rule reading it is not judged, the rest are
+      // Not told which write it is, neither the rule reading the stored version nor
+      // the one reading the revision the write records is judged
       expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 2), undefined))
         .to.equal(undefined);
       expect(contract.checkDocumentPropertyConstraints(listing(contract, 120, 4), undefined))
-        .to.deep.include({ rule: 'atMostThreeWrites', violation: 'NotMet' });
+        .to.equal(undefined);
     });
 
     it('should judge the revision a replace writes, as the replacement built from the edit sends it', () => {

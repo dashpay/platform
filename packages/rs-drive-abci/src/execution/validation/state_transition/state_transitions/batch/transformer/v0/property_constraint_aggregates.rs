@@ -8,7 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::property_constraints::{
-    AggregateRead, DocumentSystemValues, SystemChange,
+    AggregateRead, StoredSystemValues, SystemChange,
 };
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -63,10 +63,10 @@ struct VersionData<'a> {
 /// (`None` for a create), or a transfer, a purchase or a price update of `stored`,
 /// judged by the rules the change can break. Any other action, a refused write
 /// included, reads nothing. To the action of a write replacing `stored` it also
-/// hands the owner, times, heights and revision `stored` holds, when a rule or a
-/// condition of the document type reads the stored version through `$old.`
-/// ([`reads_stored_version`]): the action keeps only some of them (a replace
-/// overwrites the update's, a transfer the owner and the transfer's). Taken from
+/// hands the owner, times, heights and revision `stored` holds, when what judges
+/// the write reads the stored version through `$old.` ([`reads_stored_version`]):
+/// the action keeps only some of them (a replace overwrites the update's, a
+/// transfer the owner and the transfer's). Taken from
 /// the document already fetched, so nothing more is read or billed. Added in place
 /// to the shipped transformer at protocol version 14 and inert before it: no rule or
 /// condition exists there (`parse_property_constraints` is `None`, and meta-schemas
@@ -88,14 +88,14 @@ pub(super) fn attach_property_constraint_reads(
         return Ok(());
     };
     let stored_document = stored;
-    let stored_system_values = |document_type_name: &str| {
+    let stored_system_values = |document_type_name: &str, change: Option<SystemChange>| {
         stored_document
             .filter(|_| {
                 contract
                     .document_type_for_name(document_type_name)
-                    .is_ok_and(reads_stored_version)
+                    .is_ok_and(|document_type| reads_stored_version(document_type, change))
             })
-            .map(DocumentSystemValues::of_document)
+            .map(StoredSystemValues::of_document)
     };
     let stored = stored.map(DocumentVersion::of);
     // A create or a replace judges the rules reading a referenced document,
@@ -134,7 +134,7 @@ pub(super) fn attach_property_constraint_reads(
             };
             let aggregates = read(action.base().document_type_name(), written, None)?;
             action.set_property_constraint_aggregates(aggregates);
-            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+            if let Some(values) = stored_system_values(action.base().document_type_name(), None) {
                 action.set_stored_system_values(values);
             }
         }
@@ -146,7 +146,10 @@ pub(super) fn attach_property_constraint_reads(
                 Some(SystemChange::Transfer),
             )?;
             action.set_property_constraint_aggregates(aggregates);
-            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+            if let Some(values) = stored_system_values(
+                action.base().document_type_name(),
+                Some(SystemChange::Transfer),
+            ) {
                 action.set_stored_system_values(values);
             }
         }
@@ -157,7 +160,10 @@ pub(super) fn attach_property_constraint_reads(
                 Some(SystemChange::Transfer),
             )?;
             action.set_property_constraint_aggregates(aggregates);
-            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+            if let Some(values) = stored_system_values(
+                action.base().document_type_name(),
+                Some(SystemChange::Transfer),
+            ) {
                 action.set_stored_system_values(values);
             }
         }
@@ -168,7 +174,10 @@ pub(super) fn attach_property_constraint_reads(
                 Some(SystemChange::PriceUpdate),
             )?;
             action.set_property_constraint_aggregates(aggregates);
-            if let Some(values) = stored_system_values(action.base().document_type_name()) {
+            if let Some(values) = stored_system_values(
+                action.base().document_type_name(),
+                Some(SystemChange::PriceUpdate),
+            ) {
                 action.set_stored_system_values(values);
             }
         }
@@ -178,16 +187,27 @@ pub(super) fn attach_property_constraint_reads(
     Ok(())
 }
 
-/// Whether a `propertyConstraints` rule or an `immutable` entry's condition of `document_type`
-/// reads the stored version of a document through `$old.`, so that a write replacing one needs
-/// its owner, times, heights and revision. A `retractedWhen` condition is judged on the stored
-/// document itself, before they are attached.
-pub(crate) fn reads_stored_version(document_type: DocumentTypeRef) -> bool {
-    document_type
-        .property_constraints()
-        .values()
-        .chain(document_type.immutable_field_conditions().values())
-        .any(|rule| rule.reads_stored())
+/// Whether what judges a write of a document of `document_type` reads the stored version through
+/// `$old.`, so that the write needs its owner, times, heights and revision: for a replace
+/// (`change` `None`), a `propertyConstraints` rule or an `immutable` entry's condition; for a
+/// transfer, a purchase or a price update, a rule `change` can break, the only ones it is
+/// judged against. A `retractedWhen` condition is judged on the stored document itself, before
+/// they are attached.
+pub(crate) fn reads_stored_version(
+    document_type: DocumentTypeRef,
+    change: Option<SystemChange>,
+) -> bool {
+    match change {
+        None => document_type
+            .property_constraints()
+            .values()
+            .chain(document_type.immutable_field_conditions().values())
+            .any(|rule| rule.reads_stored()),
+        Some(change) => document_type
+            .property_constraints()
+            .values()
+            .any(|rule| rule.reads_change(change) && rule.reads_stored()),
+    }
 }
 
 /// Reads the `countOf` and `sumOf` totals the `propertyConstraints` rules of the document type

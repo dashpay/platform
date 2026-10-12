@@ -151,10 +151,12 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// `validate_property_constraints`, the check consensus runs on a create:
 /// every rule, in name order, evaluated by `PropertyConstraint::violation`.
 /// A create has no stored version, so a path through `$old.` reads absent, as
-/// consensus reads it, and `$revision` is the document's first.
+/// consensus reads it (a stored time, height or revision reads 0), and
+/// `$revision` is the document's first.
 /// The device clock stands in for the block time the create records
 /// (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule reading a block
-/// height is not judged, since the height is unknown until the block, and
+/// height the create records (`$createdAtBlockHeight` and the rest, without
+/// `$old.`) is not judged, since the height is unknown until the block, and
 /// neither is a rule reading a `countOf` or `sumOf` total (`"readsTotals"`),
 /// which the platform reads from state when the document is sent, nor one
 /// reading a value of a document a reference points at (`"readsReferenced"`),
@@ -383,8 +385,9 @@ fn total_read_json(read: &AggregateRead) -> serde_json::Value {
 /// can tell before its block: its owner and its revision, the device clock in
 /// place of the block time it records as its creation, update and transfer,
 /// and no stored version, so a path through `$old.` reads absent, as consensus
-/// reads it on a create. The block heights are unknown until the block, so a
-/// rule reading one is not judged.
+/// reads it on a create, and a stored time, height or revision 0. The block
+/// heights the create records are unknown until the block, so a rule reading
+/// one is not judged; a stored height through `$old.` is.
 fn system_values_for_create(document: &Document) -> DocumentSystemValues {
     // A clock before the epoch reads as the epoch; milliseconds fit a `u64`
     let now = SystemTime::now()

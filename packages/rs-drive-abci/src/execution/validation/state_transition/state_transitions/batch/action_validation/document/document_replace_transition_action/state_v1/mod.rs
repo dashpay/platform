@@ -4,7 +4,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, StoredDocument, StoredVersion,
+    data_with_stored_properties, DocumentSystemValues, PropertyConstraint, StoredDocument,
+    StoredSystemValues, StoredVersion,
 };
 use std::collections::BTreeMap;
 use dpp::identifier::Identifier;
@@ -170,22 +171,21 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
         // The rules reading a document a reference points at (protocol version 14), judged
         // once the references hold, with the values their checks read, as on a create: every
         // replace judges every rule, and the structure validation judged the others. The
-        // document it replaces, which such a rule reads through `$old.`, is built only when
-        // one does
-        let reads_stored = document_type
-            .property_constraints()
-            .values()
-            .any(|rule| rule.reads_referenced() && rule.reads_stored());
+        // document it replaces, as much of it as they read through `$old.`
+        let stored = self.stored_version_read_by(
+            document_type
+                .property_constraints()
+                .values()
+                .filter(|rule| rule.reads_referenced()),
+        );
         let result = document_type
             .validate_referencing_property_constraints(
                 self.data(),
                 referenced_documents,
-                &DocumentSystemValues {
+                DocumentSystemValues {
                     aggregates: Some(self.property_constraint_aggregates().clone()),
-                    stored: self
-                        .stored_system_values()
-                        .filter(|_| reads_stored)
-                        .map(|stored| self.stored_version(owner_id, Some(stored))),
+                    consensus: true,
+                    stored,
                     ..system
                 },
                 platform_version,
@@ -210,37 +210,36 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
     /// added one, which the stored document did not hold, left out.
     fn stored_properties(&self) -> BTreeMap<String, Value>;
 
-    /// The stored version the replace replaces, as a rule reads it through
-    /// `$old.`: its properties ([`Self::stored_properties`]) and `stored_system`,
-    /// its owner, times, heights and revision. Without `stored_system`, which the
-    /// transformer attaches only when something the document type declares reads
-    /// the stored version, the values the action knows stand in: the writer (the
-    /// stored owner, as only the owner replaces), the creation and transfer the
-    /// replace keeps, and the revision before its own; the stored update time and
-    /// heights, which the replace overwrites, are then not given.
-    fn stored_version(
+    /// The stored version the replace replaces as much as `rules` read of it
+    /// through `$old.`: `None` when none reads it; its owner, times, heights and
+    /// revision, which the transformer attached when something the document
+    /// type declares reads them, alone when none reads one of its properties;
+    /// and with its properties ([`Self::stored_properties`]) otherwise.
+    fn stored_version_read_by<'r>(
         &self,
-        owner_id: Identifier,
-        stored_system: Option<&DocumentSystemValues>,
-    ) -> StoredVersion;
+        rules: impl Iterator<Item = &'r PropertyConstraint>,
+    ) -> Option<StoredVersion>;
 
     /// The system values of the document the replace writes, as a
     /// `propertyConstraints` rule judges a replace: the stored creation and
     /// transfer, this block as the update, its revision, `owner_id`, the writer,
-    /// and, with `stored_system`, the stored version ([`Self::stored_version`]).
+    /// and `stored`, the version it replaces as the rules judged read it.
     fn condition_system_values(
         &self,
         owner_id: Identifier,
-        stored_system: Option<&DocumentSystemValues>,
+        stored: Option<StoredVersion>,
     ) -> DocumentSystemValues;
 
-    /// The properties the replace writes, with the stored document's under
-    /// `$old`, and [`Self::condition_system_values`] with the stored version,
-    /// what a condition judging the replace is judged against.
+    /// The properties the replace writes, with, given `stored_system`, the
+    /// stored document's under `$old`, and [`Self::condition_system_values`]
+    /// with the stored owner, times, heights and revision, what a condition
+    /// judging the replace is judged against. Without `stored_system`, which
+    /// the transformer attaches whenever a condition reads the stored version,
+    /// there is no stored version to read.
     fn condition_inputs(
         &self,
         owner_id: Identifier,
-        stored_system: Option<&DocumentSystemValues>,
+        stored_system: Option<&StoredSystemValues>,
     ) -> (Value, DocumentSystemValues);
 }
 
@@ -261,49 +260,53 @@ impl ReplaceConditionInputs for DocumentReplaceTransitionAction {
         stored
     }
 
-    fn stored_version(
+    fn stored_version_read_by<'r>(
         &self,
-        owner_id: Identifier,
-        stored_system: Option<&DocumentSystemValues>,
-    ) -> StoredVersion {
-        let system = stored_system
-            .cloned()
-            .unwrap_or_else(|| DocumentSystemValues {
-                owner_id: Some(owner_id),
-                created_at: self.created_at(),
-                transferred_at: self.transferred_at(),
-                created_at_block_height: self.created_at_block_height(),
-                transferred_at_block_height: self.transferred_at_block_height(),
-                created_at_core_block_height: self.created_at_core_block_height(),
-                transferred_at_core_block_height: self.transferred_at_core_block_height(),
-                revision: self.revision().checked_sub(1),
-                ..Default::default()
-            });
-        StoredVersion::Present(Box::new(StoredDocument {
-            properties: self.stored_properties(),
-            system,
-        }))
+        rules: impl Iterator<Item = &'r PropertyConstraint>,
+    ) -> Option<StoredVersion> {
+        let (mut reads_stored, mut reads_properties) = (false, false);
+        for rule in rules {
+            reads_stored |= rule.reads_stored();
+            reads_properties |= rule.reads_stored_properties();
+        }
+        let system = self
+            .stored_system_values()
+            .filter(|_| reads_stored)?
+            .clone();
+        Some(if reads_properties {
+            StoredVersion::Present(Box::new(StoredDocument {
+                properties: Some(self.stored_properties()),
+                system,
+            }))
+        } else {
+            StoredVersion::without_properties(system)
+        })
     }
 
     fn condition_inputs(
         &self,
         owner_id: Identifier,
-        stored_system: Option<&DocumentSystemValues>,
+        stored_system: Option<&StoredSystemValues>,
     ) -> (Value, DocumentSystemValues) {
-        let system = DocumentSystemValues {
-            stored: Some(self.stored_version(owner_id, stored_system)),
-            ..self.condition_system_values(owner_id, None)
+        let data = Value::from(self.data().clone());
+        let Some(stored_system) = stored_system else {
+            return (data, self.condition_system_values(owner_id, None));
         };
-        let data = system
-            .judged_data(&Value::from(self.data().clone()))
-            .into_owned();
-        (data, system)
+        // The stored properties go into the data, so the system values carry
+        // the rest alone
+        (
+            data_with_stored_properties(data, Value::from(self.stored_properties())),
+            self.condition_system_values(
+                owner_id,
+                Some(StoredVersion::without_properties(stored_system.clone())),
+            ),
+        )
     }
 
     fn condition_system_values(
         &self,
         owner_id: Identifier,
-        stored_system: Option<&DocumentSystemValues>,
+        stored: Option<StoredVersion>,
     ) -> DocumentSystemValues {
         DocumentSystemValues {
             owner_id: Some(owner_id),
@@ -318,7 +321,8 @@ impl ReplaceConditionInputs for DocumentReplaceTransitionAction {
             transferred_at_core_block_height: self.transferred_at_core_block_height(),
             revision: Some(self.revision()),
             aggregates: None,
-            stored: stored_system.map(|system| self.stored_version(owner_id, Some(system))),
+            consensus: false,
+            stored,
             changed_fields: None,
             referenced_documents: false,
         }

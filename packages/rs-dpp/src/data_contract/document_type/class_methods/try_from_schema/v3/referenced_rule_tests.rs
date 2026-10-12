@@ -273,7 +273,7 @@ fn judge(
     vote.validate_referencing_property_constraints(
         &data,
         BTreeMap::from([("pollId".to_string(), poll_values)]),
-        system,
+        system.clone(),
         PlatformVersion::latest(),
     )
     .expect("the rules evaluate")
@@ -610,7 +610,7 @@ fn should_compare_two_referenced_fields_by_value() {
         vote.validate_referencing_property_constraints(
             &data,
             BTreeMap::from([("pollId".to_string(), poll), ("postId".to_string(), post)]),
-            &system,
+            system.clone(),
             PlatformVersion::latest(),
         )
         .expect("the rules evaluate")
@@ -681,7 +681,7 @@ fn should_read_through_a_reference_inside_an_object() {
                     "meta.pollId".to_string(),
                     platform_value!({ "endsAt": ends_at }),
                 )]),
-                &system,
+                system.clone(),
                 PlatformVersion::latest(),
             )
             .expect("the rules evaluate");
@@ -813,9 +813,11 @@ fn parse_entry(rules: Value) -> Result<BTreeMap<String, DocumentType>, ProtocolE
 }
 
 /// A moderator's change judges no rule reading a referenced document, so such
-/// a rule may not depend on a field moderators change: neither read it nor
-/// total the type's own documents by it. Approving an entry moves the count of
-/// the poll's approved entries, though the rule does not read `status` itself.
+/// a rule may not read what their change is judged against: a field moderators
+/// change, read or keying a total of the type's own documents (approving an
+/// entry moves the count of the poll's approved entries, though the rule does
+/// not read `status` itself), or any total, which may have moved since the
+/// document was last written.
 #[test]
 fn should_refuse_a_referenced_read_beside_a_total_moderators_move() {
     let approved_cap = platform_value!({
@@ -838,17 +840,26 @@ fn should_refuse_a_referenced_read_beside_a_total_moderators_move() {
         expect_structure_error(parse_entry(rules), "depends on \"status\"");
     }
 
-    // A moderator's approval leaves the count of all the poll's entries as it
-    // was, so a rule reading it stands
+    // The count of all the poll's entries, which no approval moves, may have
+    // moved by other writes since the entry was last written, and a moderator's
+    // change is judged against every rule reading a total
+    expect_structure_error(
+        parse_entry(platform_value!({
+            "cap": {
+                "lessThanOrEqual": [
+                    { "countOf": ["entry", { "pollId": "pollId" }] },
+                    { "referenced": ["pollId", "endsAt"] }
+                ]
+            }
+        })),
+        "and a total, which a moderator's change",
+    );
+
+    // Reading neither a moderator's field, `$revision` nor a total, a rule stands
     parse_entry(platform_value!({
-        "cap": {
-            "lessThanOrEqual": [
-                { "countOf": ["entry", { "pollId": "pollId" }] },
-                { "referenced": ["pollId", "endsAt"] }
-            ]
-        }
+        "cap": { "lessThan": ["$createdAt", { "referenced": ["pollId", "endsAt"] }] }
     }))
-    .expect("no total the rule reads moves with a moderator's change");
+    .expect("a moderator's change can break nothing the rule reads");
 }
 
 /// A moderator's change writes the fields it changes and the revision, so a
@@ -889,6 +900,27 @@ fn should_refuse_a_referenced_read_beside_a_stored_field_or_revision_moderators_
     .expect("a moderator's change leaves the stored creation as it was");
 }
 
+/// A vote on a poll, the poll's votes counted.
+fn counted_vote() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "properties": {
+            "pollId": identifier(0, Some(poll_reference())),
+        },
+        "required": ["pollId"],
+        "indices": [
+            {
+                "name": "byPoll",
+                "properties": [{ "pollId": "asc" }],
+                "countable": "countable"
+            }
+        ],
+        "additionalProperties": false,
+    })
+}
+
 /// An entry on a poll moderators take down, its removal keeping a record a
 /// restore brings it back from when `keeps_record`, the poll's entries
 /// counted, with `rules`.
@@ -914,9 +946,11 @@ fn removable_entry(keeps_record: bool, rules: Value) -> Value {
     })
 }
 
-/// A moderator's restore judges no rule reading a referenced document, yet
-/// brings the document back into every total over its type: a rule capping
-/// the poll's entries by a value of the poll would let a restore past the cap.
+/// A moderator's restore judges no rule reading a referenced document, yet is
+/// judged against every rule reading a total, which may have moved while the
+/// document was gone: a rule capping the poll's entries by a value of the poll
+/// would let a restore past the cap, and so would one capping the votes the
+/// entry received meanwhile.
 #[test]
 fn should_refuse_a_referenced_read_beside_a_total_a_restore_moves() {
     let cap = platform_value!({
@@ -935,7 +969,27 @@ fn should_refuse_a_referenced_read_beside_a_total_a_restore_moves() {
             ],
             true,
         ),
-        "a moderator's restore brings a document back into",
+        "and a total, which a moderator's restore is judged against",
+    );
+    // A total over another type: the poll's votes, cast while the entry was gone
+    let votes_cap = platform_value!({
+        "cap": {
+            "lessThanOrEqual": [
+                { "countOf": ["vote", { "pollId": "pollId" }] },
+                { "referenced": ["pollId", "endsAt"] }
+            ]
+        }
+    });
+    expect_structure_error(
+        parse_types(
+            vec![
+                ("poll", poll()),
+                ("vote", counted_vote()),
+                ("entry", removable_entry(true, votes_cap)),
+            ],
+            true,
+        ),
+        "and a total, which a moderator's restore is judged against",
     );
 
     // Deletions keeping no record are final, so no restore moves the count

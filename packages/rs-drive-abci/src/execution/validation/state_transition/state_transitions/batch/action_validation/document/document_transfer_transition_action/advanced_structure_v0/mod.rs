@@ -1,7 +1,7 @@
-use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, StoredDocument, StoredVersion, SystemChange};
+use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, StoredVersion, SystemChange};
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -72,27 +72,19 @@ impl DocumentTransferTransitionActionStructureValidationV0 for DocumentTransferT
         // `countOf` or `sumOf` that depends on the owner reads the total the action read
         // from state, as it will be once the document changes hands. A path through `$old.`
         // reads the document before the transfer: the same properties, its previous owner,
-        // transfer and revision, which the transformer attached when a rule reads them.
-        // Only a rule the change can break that reads the stored version needs its
-        // properties copied
-        let judges_stored = document_type
-            .property_constraints()
-            .values()
-            .any(|rule| rule.reads_change(SystemChange::Transfer) && rule.reads_stored());
+        // transfer and revision, which the transformer attached when a rule the change can
+        // break reads them. The properties are the written ones, which the judging reads
+        // there, so none is copied
         document_type
             .validate_property_constraints_for_system_change(
                 self.document().properties(),
                 &DocumentSystemValues {
                     aggregates: Some(self.property_constraint_aggregates().clone()),
+                    consensus: true,
                     stored: self
                         .stored_system_values()
-                        .filter(|_| judges_stored)
-                        .map(|system| {
-                            StoredVersion::Present(Box::new(StoredDocument {
-                                properties: self.document().properties().clone(),
-                                system: system.clone(),
-                            }))
-                        }),
+                        .cloned()
+                        .map(StoredVersion::without_properties),
                     ..DocumentSystemValues::of_document(self.document())
                 },
                 SystemChange::Transfer,

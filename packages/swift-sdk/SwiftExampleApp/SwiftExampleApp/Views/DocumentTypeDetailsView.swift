@@ -515,7 +515,7 @@ struct PropertyConstraintRowView: View {
 
             if rule.readsOwner {
                 Label(
-                    "Reads $ownerId, the document's owner: transfers and purchases are judged against this rule too.",
+                    "Reads the owner ($ownerId, $old.$ownerId, the owner before the write, or a total that depends on the owner): transfers and purchases are judged against this rule too.",
                     systemImage: "person.crop.circle.badge.checkmark"
                 )
                 .font(.caption2)

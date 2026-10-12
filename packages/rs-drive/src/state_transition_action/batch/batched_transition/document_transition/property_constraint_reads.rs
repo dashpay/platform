@@ -1,6 +1,4 @@
-use dpp::data_contract::document_type::property_constraints::{
-    AggregateRead, DocumentSystemValues,
-};
+use dpp::data_contract::document_type::property_constraints::{AggregateRead, StoredSystemValues};
 use std::collections::BTreeMap;
 
 /// What the `propertyConstraints` rules judging a document write read beyond the document it
@@ -14,7 +12,7 @@ pub struct PropertyConstraintReads {
     /// The owner, times, heights and revision of the stored version the write replaces, which
     /// a rule or a condition reads through `$old.`: `None` for a create, and when nothing the
     /// document type declares reads them.
-    pub stored_system_values: Option<DocumentSystemValues>,
+    pub stored_system_values: Option<StoredSystemValues>,
 }
 
 /// What [`PropertyConstraintReads::aggregates_of`] gives for an action holding none.
@@ -29,7 +27,7 @@ impl PropertyConstraintReads {
     }
 
     /// The stored system values an action holding `reads` holds.
-    pub fn stored_system_values_of(reads: &Option<Box<Self>>) -> Option<&DocumentSystemValues> {
+    pub fn stored_system_values_of(reads: &Option<Box<Self>>) -> Option<&StoredSystemValues> {
         reads
             .as_deref()
             .and_then(|reads| reads.stored_system_values.as_ref())
@@ -48,7 +46,7 @@ impl PropertyConstraintReads {
     }
 
     /// Sets the stored system values an action holding `reads` holds.
-    pub fn set_stored_system_values(reads: &mut Option<Box<Self>>, values: DocumentSystemValues) {
+    pub fn set_stored_system_values(reads: &mut Option<Box<Self>>, values: StoredSystemValues) {
         Self::update(reads, |held| held.stored_system_values = Some(values));
     }
 

@@ -14,6 +14,7 @@ use super::*;
 mod property_constraints_tests {
     use super::*;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
     use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
@@ -33,6 +34,7 @@ mod property_constraints_tests {
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionV0};
     use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
     use std::collections::{BTreeMap, BTreeSet};
@@ -369,18 +371,25 @@ mod property_constraints_tests {
         }
     }
 
-    /// The fixture over [`timed_offer_schema`] with an offer created at [`NOW`],
-    /// block 20, ending a day later.
-    async fn timed_offer() -> OfferFixture {
-        let mut fixture = OfferFixture::with_schema(timed_offer_schema());
+    /// The fixture over `schema` with an offer created at [`NOW`], block 20,
+    /// `fill` setting what the type adds to [`set_valid_offer`]'s integers.
+    async fn created_offer(schema: Value, fill: impl FnOnce(&mut Document)) -> OfferFixture {
+        let mut fixture = OfferFixture::with_schema(schema);
         fixture.block_info = at_block(NOW, 20);
         assert_matches!(
-            fixture
-                .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
-                .await,
+            fixture.create(fill).await,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         fixture
+    }
+
+    /// The fixture over [`timed_offer_schema`] with an offer created at [`NOW`],
+    /// block 20, ending a day later.
+    async fn timed_offer() -> OfferFixture {
+        created_offer(timed_offer_schema(), |document| {
+            document.set("endsAt", Value::U64(NOW + DAY_MS))
+        })
+        .await
     }
 
     /// A mutable, transferable `offer` type with the integers
@@ -1832,6 +1841,82 @@ mod property_constraints_tests {
         );
     }
 
+    /// The price update structure dispatcher on both sides of the gate:
+    /// generation 0 gained the `propertyConstraints` judgement of a price update
+    /// in place, so at protocol version 13 it must still accept the action (the
+    /// dpp gate is `None` there), and at 14 refuse one breaking a rule reading
+    /// `$revision`, which a price update moves. Built by hand the way the
+    /// transformer builds it.
+    #[test]
+    fn should_not_judge_property_constraints_on_a_price_update_before_protocol_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let fixture = OfferFixture::with_schema(stored_offer_schema(platform_value!({
+            "propertyConstraints": {
+                "neverRepriced": { "lessThanOrEqual": ["$revision", 1] }
+            }
+        })));
+
+        let (_, contract_fetch_info) = fixture
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                fixture.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract");
+        let contract_fetch_info = contract_fetch_info.expect("the contract is in state");
+        let mut document: Document = dpp::document::DocumentV0 {
+            id: Identifier::from([0xAB; 32]),
+            owner_id: fixture.identity.id(),
+            revision: Some(2),
+            created_at: Some(NOW),
+            updated_at: Some(NOW + DAY_MS),
+            transferred_at: Some(NOW),
+            ..Default::default()
+        }
+        .into();
+        set_valid_offer(&mut document);
+
+        let action =
+            DocumentUpdatePriceTransitionAction::V0(DocumentUpdatePriceTransitionActionV0 {
+                base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                    id: document.id(),
+                    identity_contract_nonce: 2,
+                    document_type_name: "offer".to_string(),
+                    data_contract: contract_fetch_info,
+                    token_cost: None,
+                    shielded_token_payment: None,
+                    gas_fees_paid_by: GasFeesPaidBy::default(),
+                    contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                    declared_action_fee: None,
+                }),
+                document,
+                property_constraint_reads: Default::default(),
+            });
+
+        let before = action
+            .validate_structure(PlatformVersion::get(13).expect("platform version 13 should exist"))
+            .expect("structure validation should run");
+        assert!(
+            before.is_valid(),
+            "structure generation 0 must not judge propertyConstraints: {:?}",
+            before.errors
+        );
+
+        let at = action
+            .validate_structure(platform_version)
+            .expect("structure validation should run");
+        assert_matches!(
+            at.errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::DocumentPropertyConstraintViolatedError(e))]
+                if e.constraint() == "neverRepriced"
+                    && e.violation() == PropertyConstraintViolation::NotMet
+        );
+    }
+
     /// Sizes read by real creates: a title too long in characters, one short
     /// enough in characters but too long in bytes, more tags than the quantity
     /// and a signature of the wrong length are each refused with the rule they
@@ -2833,7 +2918,7 @@ mod property_constraints_tests {
     /// `propertyConstraints`, which read the stored version through `$old.`,
     /// or its `immutable` entries.
     fn stored_offer_schema(doctype: Value) -> Value {
-        let mut schema = platform_value!({
+        let schema = platform_value!({
             "type": "object",
             "documentsMutable": true,
             "transferable": 1,
@@ -2858,24 +2943,15 @@ mod property_constraints_tests {
         let Value::Map(entries) = doctype else {
             panic!("the doctype keys are an object");
         };
-        for (key, value) in entries {
-            schema
-                .set_value(key.as_text().expect("a text key"), value)
-                .expect("the doctype key applies");
-        }
-        schema
+        entries.into_iter().fold(schema, |schema, (key, value)| {
+            with_keys(schema, [(key.as_text().expect("a text key"), value)])
+        })
     }
 
     /// The fixture over [`stored_offer_schema`] with an offer created at
     /// [`NOW`], block 20.
     async fn stored_offer(doctype: Value) -> OfferFixture {
-        let mut fixture = OfferFixture::with_schema(stored_offer_schema(doctype));
-        fixture.block_info = at_block(NOW, 20);
-        assert_matches!(
-            fixture.create(|_| {}).await,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        );
-        fixture
+        created_offer(stored_offer_schema(doctype), |_| {}).await
     }
 
     /// A replace is judged with the document it replaces under `$old.`: its

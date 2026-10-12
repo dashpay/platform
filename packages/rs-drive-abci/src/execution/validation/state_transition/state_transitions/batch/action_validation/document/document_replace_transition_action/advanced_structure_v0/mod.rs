@@ -55,23 +55,23 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         // through `$old.`, the document it replaces: its properties, rebuilt from the
         // written ones and the stored value of each changed one, and its owner, times,
         // heights and revision, which the transformer attached when a rule reads them.
-        // The stored version is built only when a rule judged here reads it: the rules
-        // reading a referenced document wait for replace state validation 1, once the
-        // references hold, and an `immutable` condition reading it is judged there too.
+        // The stored version is built as much as the rules judged here read it: the
+        // rules reading a referenced document wait for replace state validation 1, once
+        // the references hold, and an `immutable` condition reading it is judged there too.
         // The revision, the stored version and the referenced documents were added in
         // place at protocol version 14, inert for every earlier version this generation
         // serves: no rule parses before 14 (`parse_property_constraints` is `None`), so
         // none reads them and `validate_property_constraints` is `None` there.
-        let reads_stored = document_type
-            .property_constraints()
-            .values()
-            .any(|rule| !rule.reads_referenced() && rule.reads_stored());
+        let stored = self.stored_version_read_by(
+            document_type
+                .property_constraints()
+                .values()
+                .filter(|rule| !rule.reads_referenced()),
+        );
         let system = DocumentSystemValues {
             aggregates: Some(self.property_constraint_aggregates().clone()),
-            ..self.condition_system_values(
-                owner_id,
-                self.stored_system_values().filter(|_| reads_stored),
-            )
+            consensus: true,
+            ..self.condition_system_values(owner_id, stored)
         };
         let result = data_contract
             .validate_document_properties(
