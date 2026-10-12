@@ -1634,8 +1634,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the document is found by that property holding the SHA-256 of the
 ///     SHA-256 of the params' bytes joined in order, a property path of the
 ///     document (the property carrying the reference included),
-///     `{ "const": text }`, or `"."` for a value without a path (each element
-///     of a typed array, the writer, the creator), a string counting as its
+///     `{ "const": text }`, `"."` for a value without a path (each element
+///     of a typed array, the writer, the creator), or `"$ownerId"` for the
+///     writer's id (`LookupKeyParam::Writer`), a string counting as its
 ///     UTF-8, a byte array as its bytes, an identifier as its 32 bytes. The
 ///     parser holds the function as the lookup's computed key
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
@@ -1667,7 +1668,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     beside a `findBy` function, or any `findBy` on a document type whose
 ///     documents are never replaced, `documentsMutable: false`, since a replace
 ///     is the one write that judges a reference again), and not beside
-///     `inList`, may declare `minimumAgeBlocks`, judged by
+///     `inList`, may declare `minimumAgeBlocks` (inside its `constraints`,
+///     beside `findBy`), judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and `consume`, which deletes the found document with the create
@@ -1699,6 +1701,59 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
 ///     a parent byte for byte; the DPNS contract and its create trigger are
 ///     unchanged. See `book/src/data-model/documents.md`.
+///
+///     `chooseFirst` (`LookupChooseFirst`), the other entry of a reference's
+///     `constraints`, sits on a `deletableDocument` reference whose `findBy`
+///     holds exactly the entry `"$ownerId": "$ownerId"` and a function filling
+///     `among`, reading neither the writer nor `"."`, whose hash every
+///     commitment to the same values holds, whoever made it:
+///     `{ "among", "validWhen": { "<property>": <function> }, "by" }`,
+///     `validWhen` an owner-bound function (reading `"$ownerId"`, standing for
+///     each commitment's owner, and exactly the properties the `findBy`
+///     function reads) and `by` the order the commitments are chosen in
+///     (properties ascending or descending, `ChooseFirstOrder`, a last `$id`
+///     breaking ties). Document reference validation 0, in place, refuses a
+///     found document past its type's `ttl` (40120) or not holding `validWhen`
+///     computed with the writer (40120, `DoubleSha256`, `WriterPreimage`), and
+///     reads in one billed query the documents holding the found one's value
+///     at `among` in `by` order (`fetch_documents_holding_in_order`, through
+///     the index over `among` and the ordered properties), as far as the found
+///     one's value of the first, at most
+///     `SYSTEM_LIMITS_V4.max_choose_first_candidates` (1,000; backfilled into
+///     the earlier tables, which nothing reads there). The first that comes
+///     strictly before the found one, by the keys the index holds them under,
+///     is not past its type's `ttl` and holds `validWhen` computed with its own
+///     owner (`DoubleSha256` each) refuses the create
+///     (`ReferencedDocumentPrecededError`, 40149). A copied hash names another
+///     owner and never refuses, one equal on every `by` property is no
+///     competitor, and when none of the documents read refuses, the create
+///     stands. The query and the competitors' hashes bill at most
+///     `FEE_VERSION3.document_reference.choose_first_credits_per_candidate`
+///     (100,000; a new fee group, unread before this version) times that
+///     limit, and check tx, which validates no state of such a create,
+///     reserves that whole budget and the create's `findBy` and `validWhen`
+///     hashes on top of its estimated fee (not consensus). Registration, on
+///     the same contract and on another (`DocumentReferenceLookup`'s
+///     `referring_side_error` and `referenced_side_error`, and the parser's
+///     `validate_reference_lookup_sources`), requires the `validWhen` property
+///     to be a stored 32-byte byte array fixed once written; every `by`
+///     property to be recorded on every document, fixed once written and not
+///     transient (a last `$id` in the direction of the property before it,
+///     ascending alone: the index keeps ids that way and the capped query reads
+///     them so); the referenced type to expire (`ttl`), to hold the index over
+///     `among` and the `by` properties (not unique under a last `$id`) and no
+///     unique index holding `among`, or the `validWhen` property, without
+///     `$ownerId`; at most one `chooseFirst` per type, not on typed array
+///     elements or expression operands, a `where` holding nothing but
+///     `"$ownerId": "$ownerId"` (no condition), and no gas sponsorship of the
+///     declaring type's creates (a sponsored create is judged, state included,
+///     before anyone pays). `constraints` holds `minimumAgeBlocks`,
+///     `chooseFirst` or both and nothing else, and either one beside `findBy`
+///     is refused. Document create structure validation 1 refuses a create
+///     missing a param of `validWhen` (10423). Inert before this version: only
+///     meta-schema v3 admits `constraints` and the `"$ownerId"` param, so the
+///     writer reaching `hash_lookup_key` in place in reference validation 0
+///     and batch state 0 changes nothing earlier.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its
@@ -2531,7 +2586,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite; a refersTo chooseFirst reads at most 1,000 competitors
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

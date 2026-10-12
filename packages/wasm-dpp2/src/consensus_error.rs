@@ -117,6 +117,14 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// field its removal record does not keep. (A rule reading a type of the
     /// declaring contract is refused by the contract parse instead.)
     ReferencedDocumentRuleReadInvalid = 40148,
+    /// The commitment a create's `refersTo` found, its writer's own, is
+    /// preceded by another identity's: a commitment to the same values (the
+    /// same value at the property the reference's `chooseFirst` groups by)
+    /// ordered before it by the `chooseFirst`'s `by`, not expired, and valid,
+    /// made by an identity that knew the values and not copied. The first
+    /// valid commitment in that order wins (the earliest block's, ordered by
+    /// `$createdAtBlockHeight` ascending).
+    ReferencedDocumentPreceded = 40149,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
@@ -126,7 +134,7 @@ pub enum DocumentReferenceErrorCodeWasm {
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
     /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40146,
-    /// 40148 or 10423.
+    /// 40148, 40149 or 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -146,6 +154,7 @@ impl DocumentReferenceErrorCodeWasm {
             40145 => Some(Self::ReferencedDocumentRemoved),
             40146 => Some(Self::ReferencedDocumentTypeIndexOnly),
             40148 => Some(Self::ReferencedDocumentRuleReadInvalid),
+            40149 => Some(Self::ReferencedDocumentPreceded),
             10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
@@ -387,7 +396,8 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40148
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40148,
+    /// 40149
     /// and 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
@@ -452,6 +462,7 @@ mod tests {
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+    use dpp::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
     use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
     use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
@@ -841,6 +852,16 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedDocumentRuleReadInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentPrecededError(ReferencedDocumentPrecededError::new(
+                    id(),
+                    Identifier::from([2u8; 32]),
+                    "nameHash".to_string(),
+                    "$creatorId".to_string(),
+                ))
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentPreceded,
             ),
             (
                 BasicError::DocumentReferencePreimageInvalidError(

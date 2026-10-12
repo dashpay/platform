@@ -55,12 +55,15 @@ pub use generated_from::{
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{
     first_unrevealable_lookup_key, LookupHashKey, LookupKeyParam, LookupPreimageError,
+    WriterPreimage,
 };
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
 };
-pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
+pub use reference_lookup::{
+    ChooseFirstOrder, DocumentReferenceLookup, LookupChooseFirst, LookupKeySource,
+};
 pub use reference_where::{
     WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
     WhereOrdering, WhereOrderingBound,
@@ -10738,6 +10741,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             }
             .to_string(),
@@ -10793,6 +10797,7 @@ mod tests {
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
             minimum_age_blocks: None,
             consume: false,
+            choose_first: None,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -11132,6 +11137,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -11168,6 +11174,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
             DocumentPropertyReferenceTarget::ModeratedDocument {

@@ -405,6 +405,19 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The most documents a create reads for a `refersTo` `chooseFirst`, the competitors of
+    /// the commitment its `findBy` found: the documents of the referenced type holding the found
+    /// commitment's value at `among`, read in the order its `by` lists through the type's index
+    /// over that property and the ordered properties, in one query, as far as the found
+    /// commitment. The create is refused at the first valid one before the found commitment,
+    /// and stands when none of the first this many is one, so documents that are no valid
+    /// competitor can make a create cost more, never refuse it. `findBy` finds through a
+    /// unique index over the referenced type's `$ownerId` and `among`, so each of them is
+    /// another identity's, and ordering this many before a valid commitment takes this many
+    /// identities. Read by
+    /// document reference validation 0 (protocol version 14); the earlier tables carry the
+    /// same number, which nothing reads there.
+    pub max_choose_first_candidates: u16,
     /// How many key moves the rewrite of unsigned integer index value keys on the first block
     /// of protocol version 14 (`Drive::rekey_unsigned_integer_index_values`) gathers into one
     /// GroveDB batch, across trees and contracts, and how many keys it reads in one page: one

@@ -2938,7 +2938,7 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included) and key id property, for every leaf of every reference expression, the
+/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2975,6 +2975,15 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                 // change would leave the document no longer hashing to what it revealed
                 if let Some((_, key)) = lookup.hash_key() {
                     read.extend(key.properties_read().map(top_level_property));
+                }
+                // The `chooseFirst` `validWhen` function's params, for the same reason
+                if let Some(choose_first) = &lookup.choose_first {
+                    read.extend(
+                        choose_first
+                            .valid_when
+                            .properties_read()
+                            .map(top_level_property),
+                    );
                 }
             }
             // The `where` of a list element names the property holding its

@@ -502,6 +502,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
         );
