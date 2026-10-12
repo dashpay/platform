@@ -1,7 +1,7 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, document_takes_part_in_index,
-    index_level_tree_types_with_continuation_demotion, level_keys, level_reaches_entry, LevelKeys,
+    index_level_tree_types_with_continuation_demotion, level_keys, level_reaches_entry,
 };
 use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
@@ -10,9 +10,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
-use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
-};
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::IndexLevel;
@@ -246,7 +244,7 @@ impl Drive {
             // The sub-level is only reached for a document holding at least one element (the
             // array is in the skip set of every index naming it). Every other property keys
             // the document by its single value.
-            let document_index_fields: Vec<DriveKeyInfo> = match level_keys(
+            let document_index_fields = level_keys(
                 &document_and_contract_info.owned_document_info.document_info,
                 sub_level,
                 name,
@@ -254,11 +252,8 @@ impl Drive {
                 document_and_contract_info.owned_document_info.owner_id,
                 Some((sub_level, event_id)),
                 platform_version,
-            )? {
-                LevelKeys::Elements(element_keys) => element_keys,
-                // An absent value keeps its null-layout empty key
-                LevelKeys::Value(value) => vec![value.unwrap_or_default()],
-            };
+            )?
+            .nested_keys();
 
             let path_key_info = index_property_key
                 .clone()
