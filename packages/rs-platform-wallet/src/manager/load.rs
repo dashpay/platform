@@ -1407,6 +1407,68 @@ mod idempotent_load_tests {
         }
     }
 
+    /// A stored record whose amounts overflow the checker's signed arithmetic
+    /// must not stop the wallet from loading: it is left out, and the coin it
+    /// spends stays reserved.
+    #[tokio::test]
+    async fn should_load_wallet_whose_stored_history_holds_unsafe_amounts() {
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let funded_outpoint = dashcore::OutPoint {
+            txid: funding.txid(),
+            vout: 0,
+        };
+        let coin =
+            ctx.managed_wallet.accounts.standard_bip44_accounts[&0].utxos[&funded_outpoint].clone();
+        let mut unsafe_spend = spend_to(funded_outpoint, 1 << 63);
+        unsafe_spend.output[0].script_pubkey = coin.txout.script_pubkey.clone();
+
+        let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+        projection
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account")
+            .utxos
+            .insert(funded_outpoint, coin);
+        projection.update_balance();
+        let stored = |transaction: dashcore::Transaction| StoredTransaction {
+            txid: transaction.txid(),
+            transaction,
+            context: TransactionContext::Mempool,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+        let manager = make_history_manager(RecordedHistoryPersister {
+            wallet: ctx.wallet,
+            managed: projection,
+            history: RecordedHistory {
+                transactions: vec![stored(unsafe_spend), stored(funding)],
+                instant_locks: BTreeMap::new(),
+            },
+            asset_locks: BTreeMap::new(),
+        });
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("the loaded wallet must be registered");
+        let balance = wallet.balance();
+        assert_eq!(
+            balance.confirmed() + balance.unconfirmed(),
+            0,
+            "the coin the unsafe record spends must stay reserved"
+        );
+    }
+
     fn make_history_manager(
         persister: RecordedHistoryPersister,
     ) -> Arc<PlatformWalletManager<RecordedHistoryPersister>> {

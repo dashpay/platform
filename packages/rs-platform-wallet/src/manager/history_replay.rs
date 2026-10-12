@@ -13,10 +13,13 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use dashcore::ephemerealdata::instant_lock::InstantLock;
-use dashcore::{OutPoint, TxOut, Txid};
+use dashcore::transaction::TransactionPayload;
+use dashcore::{OutPoint, Transaction, TxOut, Txid};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
+use key_wallet::managed_account::transaction_record::{
+    InputDetail, TransactionDirection, TransactionRecord,
+};
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::transaction_checking::{
     TransactionContext, TransactionType, WalletTransactionChecker,
@@ -45,6 +48,14 @@ use crate::changeset::{RecordedHistory, StoredTransaction};
 ///
 /// A stored transaction that a settled one beats to an input is not replayed,
 /// nor are its unconfirmed descendants, and their persisted outputs are dropped.
+///
+/// A record whose amounts would overflow the checker's signed arithmetic
+/// ([`unsafe_replay_amounts`]) is left out rather than failing the load. No
+/// valid transaction carries such amounts: an unconfirmed one is unverified
+/// peer data, a settled one is store corruption, and this path has no recovery
+/// mode to fall back on. The restored coins it spends stay reserved, and an
+/// unconfirmed one stays on record, unchecked, so that a settled conflict
+/// still sweeps it and releases them.
 ///
 /// Returns how many records were replayed.
 pub async fn replay_recorded_history(
@@ -116,9 +127,20 @@ pub async fn replay_recorded_history(
             context => context.clone(),
         };
     }
+    let operands: Vec<ReplayOperands<'_>> = replay
+        .iter()
+        .map(|stored| {
+            (
+                stored.txid,
+                &stored.transaction,
+                stored.owned_inputs.as_slice(),
+            )
+        })
+        .collect();
+    let unsafe_txids = unsafe_replay_amounts(wallet_info, &operands);
     // Losers leave the replay and the projection; `swept` also keeps their
     // held raw records from coming back as fallbacks.
-    let (mut swept, planned_sweeps) = plan_replay_sweeps(wallet_info, &replay);
+    let (mut swept, planned_sweeps) = plan_replay_sweeps(wallet_info, &replay, &unsafe_txids);
     tracing::debug!(
         wallet_id = %hex::encode(wallet_info.wallet_id),
         planned_sweeps,
@@ -126,6 +148,38 @@ pub async fn replay_recorded_history(
         "load: settled stored transaction conflicts before the history replay"
     );
     replay.retain(|stored| !swept.contains(&stored.txid));
+    let (replay, set_aside): (Vec<_>, Vec<_>) = replay
+        .into_iter()
+        .partition(|stored| !unsafe_txids.contains(&stored.txid));
+    if !set_aside.is_empty() {
+        let settled = set_aside
+            .iter()
+            .filter(|stored| stored.context.block_info().is_some())
+            .count();
+        // Counts only: the txids of unconfirmed records are peer-supplied.
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_info.wallet_id),
+            skipped = set_aside.len(),
+            "stored transaction records with unsafe amounts left out of the shared load replay; the coins they spend stay reserved"
+        );
+        if settled > 0 {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_info.wallet_id),
+                settled,
+                "stored confirmed transaction records carry amounts no valid transaction can; the wallet store is corrupt"
+            );
+        }
+    }
+    // `Some` claimant: a conflict sweep or an abandon of the record releases the coin.
+    let mut reserved: Vec<(OutPoint, Option<Txid>)> = Vec::new();
+    for stored in &set_aside {
+        for input in &stored.transaction.input {
+            if placed.contains_key(&input.previous_output) {
+                reserved.push((input.previous_output, Some(stored.txid)));
+            }
+        }
+    }
+    let reserved_coins: HashSet<OutPoint> = reserved.iter().map(|(coin, _)| *coin).collect();
     for account in wallet_info.accounts.all_funding_accounts_mut() {
         account
             .utxos
@@ -174,6 +228,7 @@ pub async fn replay_recorded_history(
         account.utxos.retain(|outpoint, _| {
             placed.contains_key(outpoint)
                 && !spent.contains(outpoint)
+                && !reserved_coins.contains(outpoint)
                 && !misplaced.contains(&(*outpoint, owner))
         });
     }
@@ -189,6 +244,33 @@ pub async fn replay_recorded_history(
             } else {
                 // Proof lookup can require a record with no currently attributable inputs or outputs.
                 account.transactions_mut().insert(original.txid, original);
+            }
+        }
+    }
+    // An unconfirmed record left out stays on record, as stored, in every
+    // account holding a coin it spends or pays: a settled conflict, stored or
+    // still to come, must find it there to sweep it and release its coins.
+    for stored in &set_aside {
+        if stored.context.block_info().is_some() {
+            continue;
+        }
+        let outputs = (0..stored.transaction.output.len() as u32)
+            .map(|vout| OutPoint::new(stored.txid, vout));
+        let owners: HashSet<AccountType> = stored
+            .transaction
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .chain(outputs)
+            .filter_map(|outpoint| placed.get(&outpoint).copied())
+            .collect();
+        for account in wallet_info.accounts.all_funding_accounts_mut() {
+            let owner = funds_account_type(account);
+            if owners.contains(&owner) {
+                account
+                    .transactions_mut()
+                    .entry(stored.txid)
+                    .or_insert_with(|| raw_record(stored, owner));
             }
         }
     }
@@ -208,8 +290,83 @@ pub async fn replay_recorded_history(
     if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
         wallet_info.apply_chain_lock(chain_lock);
     }
+    // A claim guards a coin only once it has left the UTXO set.
+    wallet_info.restore_spent_outpoints(&reserved);
     wallet_info.update_balance();
     replay.len()
+}
+
+/// One stored transaction as [`unsafe_replay_amounts`] reads it: its txid, its
+/// body and the wallet-owned inputs its store recorded.
+pub type ReplayOperands<'a> = (Txid, &'a Transaction, &'a [InputDetail]);
+
+/// The stored transactions whose amounts the wallet checker cannot take.
+///
+/// The checker casts each unsigned operand to `i64` before a signed
+/// subtraction, so an amount above `i64::MAX`, alone or summed, overflows it:
+/// a panic where overflow is checked, a wrapped net amount where it is not. A
+/// fitting net does not make an overflowing operand safe. Every source of an
+/// operand is covered: the coins restored onto `wallet_info`, the outputs of
+/// the other `records` (asset-lock credit outputs included) and the recorded
+/// owned inputs.
+pub fn unsafe_replay_amounts(
+    wallet_info: &ManagedWalletInfo,
+    records: &[ReplayOperands<'_>],
+) -> HashSet<Txid> {
+    /// Whether every value and their running sum fit `i64`.
+    fn fits(values: impl IntoIterator<Item = u64>) -> bool {
+        let mut sum = 0_u64;
+        values.into_iter().all(|value| {
+            sum = sum.saturating_add(value);
+            sum <= i64::MAX as u64
+        })
+    }
+
+    let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
+    let mut remember = |outpoint: OutPoint, value: u64| {
+        let known = amounts.entry(outpoint).or_insert(value);
+        *known = (*known).max(value);
+    };
+    for account in wallet_info.accounts.all_funding_accounts() {
+        for (outpoint, coin) in &account.utxos {
+            remember(*outpoint, coin.txout.value);
+        }
+    }
+    let mut unsafe_txids = HashSet::new();
+    for (txid, transaction, owned_inputs) in records {
+        let credit_outputs = match &transaction.special_transaction_payload {
+            Some(TransactionPayload::AssetLockPayloadType(payload)) => {
+                payload.credit_outputs.as_slice()
+            }
+            _ => &[],
+        };
+        let outputs = transaction.output.iter().chain(credit_outputs);
+        if !fits(owned_inputs.iter().map(|detail| detail.value))
+            || !fits(outputs.map(|output| output.value))
+        {
+            // A record left out credits nothing, so its outputs are no child's input amount.
+            unsafe_txids.insert(*txid);
+            continue;
+        }
+        for (vout, output) in transaction.output.iter().enumerate() {
+            remember(OutPoint::new(*txid, vout as u32), output.value);
+        }
+        for detail in *owned_inputs {
+            if let Some(input) = transaction.input.get(detail.index as usize) {
+                remember(input.previous_output, detail.value);
+            }
+        }
+    }
+    for (txid, transaction, _) in records {
+        let inputs = transaction
+            .input
+            .iter()
+            .filter_map(|input| amounts.get(&input.previous_output).copied());
+        if !fits(inputs) {
+            unsafe_txids.insert(*txid);
+        }
+    }
+    unsafe_txids
 }
 
 /// Resolve the full history before a defeated lock can sweep another spender.
@@ -219,9 +376,12 @@ pub async fn replay_recorded_history(
 /// out: replayed after its parent was swept, a descendant that pays the wallet
 /// would be recorded again, and no later sweep reaches it without the parent.
 /// Also returns how many conflict sweeps the plan ran.
+///
+/// `unsafe_txids` are planned on their inputs alone, like every other record.
 fn plan_replay_sweeps(
     wallet_info: &ManagedWalletInfo,
     records: &[StoredTransaction],
+    unsafe_txids: &HashSet<Txid>,
 ) -> (HashSet<Txid>, usize) {
     let mut conflicts = wallet_info.clone();
     // A scratch account lets the upstream sweep see descendants across account boundaries.
@@ -250,6 +410,8 @@ fn plan_replay_sweeps(
     let mut winners: Vec<&StoredTransaction> = records
         .iter()
         .filter(|stored| !matches!(stored.context, TransactionContext::Mempool))
+        // A record with unsafe amounts can lose a conflict, never win one.
+        .filter(|stored| !unsafe_txids.contains(&stored.txid))
         .filter(|stored| is_contested(stored, &competitors))
         .collect();
     winners.sort_by_key(|stored| {
@@ -1176,6 +1338,317 @@ mod tests {
         assert_eq!(restored.balance.total(), 0);
     }
 
+    /// Stored amounts no valid transaction can carry must not reach the
+    /// checker's signed arithmetic: the record is left out of the replay, and
+    /// a restored coin it spends stays reserved instead of coming back
+    /// spendable. Only an unconfirmed record holding such a coin stays on
+    /// record, for a later conflict to find.
+    #[tokio::test]
+    async fn should_keep_unsafe_amounts_from_the_checker_and_reserve_the_coins_they_spend() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::managed_account::transaction_record::InputDetail;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        const HALF: u64 = 1 << 62;
+        let block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        for (case, outputs, staged, settled) in [
+            ("single output", vec![2 * HALF], None, false),
+            ("summed outputs", vec![HALF, HALF], None, false),
+            ("staged input", vec![], Some(2 * HALF), false),
+            ("settled record", vec![2 * HALF], None, true),
+        ] {
+            let (mut wallet, mut info, address) = wallet_with_receive_address();
+            let pay = |previous_output: OutPoint, values: &[u64]| Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output,
+                    ..Default::default()
+                }],
+                output: values
+                    .iter()
+                    .map(|value| TxOut {
+                        value: *value,
+                        script_pubkey: address.script_pubkey(),
+                    })
+                    .collect(),
+                special_transaction_payload: None,
+            };
+            let funding = pay(OutPoint::new(Txid::from_byte_array([61; 32]), 0), &[1]);
+            let coin = OutPoint::new(funding.txid(), 0);
+            let funded = info
+                .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+                .await
+                .new_records;
+            // A staged input stands for a funding the store holds no record of.
+            let spent = if staged.is_some() {
+                OutPoint::new(Txid::from_byte_array([62; 32]), 0)
+            } else {
+                coin
+            };
+            let unsafe_spend = pay(spent, &outputs);
+            let mut stored: Vec<StoredTransaction> =
+                funded.into_iter().map(StoredTransaction::from).collect();
+            stored.push(StoredTransaction {
+                txid: unsafe_spend.txid(),
+                transaction: unsafe_spend.clone(),
+                context: if settled {
+                    block(101)
+                } else {
+                    TransactionContext::Mempool
+                },
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: staged
+                    .map(|value| InputDetail {
+                        index: 0,
+                        value,
+                        address: address.clone(),
+                    })
+                    .into_iter()
+                    .collect(),
+            });
+            // An unconfirmed spend never flips the coin's persisted spent flag.
+            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+            restored
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .utxos
+                .insert(
+                    coin,
+                    Utxo::new(coin, funding.output[0].clone(), address.clone(), 100, false),
+                );
+
+            let replayed = replay_recorded_history(
+                &mut restored,
+                &mut wallet,
+                RecordedHistory {
+                    transactions: stored,
+                    instant_locks: BTreeMap::new(),
+                },
+            )
+            .await;
+            restored
+                .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+                .await;
+
+            assert_eq!(replayed, 1, "{case}: only the funding is replayed");
+            let account = &restored.accounts.standard_bip44_accounts[&0];
+            assert_eq!(
+                account.transactions().contains_key(&unsafe_spend.txid()),
+                !settled && staged.is_none(),
+                "{case}: only an unconfirmed record reserving a restored coin stays on record"
+            );
+            assert_eq!(
+                account.utxos.contains_key(&coin),
+                staged.is_some(),
+                "{case}: a coin the unsafe record spends stays reserved"
+            );
+            assert_eq!(
+                restored.balance.total(),
+                u64::from(staged.is_some()),
+                "{case}"
+            );
+        }
+    }
+
+    /// An unconfirmed record with unsafe amounts that spends coins A and B,
+    /// the confirmed winner that beats it on A alone, and B's funding, which
+    /// the store holds no record of. The projection still holds both coins.
+    async fn unsafe_loser_fixture() -> (
+        Wallet,
+        ManagedWalletInfo,
+        Vec<StoredTransaction>,
+        StoredTransaction,
+        dashcore::Transaction,
+        [OutPoint; 2],
+    ) {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let spend = |spends: &[OutPoint], value: u64, script_pubkey| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: spends
+                .iter()
+                .map(|previous_output| TxIn {
+                    previous_output: *previous_output,
+                    ..Default::default()
+                })
+                .collect(),
+            output: vec![TxOut {
+                value,
+                script_pubkey,
+            }],
+            special_transaction_payload: None,
+        };
+        let block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        let fund = |byte, value| {
+            let unknown = OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+            spend(&[unknown], value, address.script_pubkey())
+        };
+        let (funding_a, funding_b) = (fund(71, 10_000), fund(72, 20_000));
+        let coins = [funding_a.txid(), funding_b.txid()].map(|txid| OutPoint::new(txid, 0));
+        let stored = |transaction: Transaction, context| StoredTransaction {
+            txid: transaction.txid(),
+            transaction,
+            context,
+            stored_net_amount: None,
+            stored_direction: None,
+            owned_inputs: Vec::new(),
+        };
+        let mut history: Vec<StoredTransaction> = info
+            .check_core_transaction(&funding_a, block(100), &mut wallet, true, true)
+            .await
+            .new_records
+            .into_iter()
+            .map(StoredTransaction::from)
+            .collect();
+        history.push(stored(
+            spend(&coins, 1 << 63, address.script_pubkey()),
+            TransactionContext::Mempool,
+        ));
+        let winner = stored(
+            spend(&coins[..1], 9_000, dashcore::ScriptBuf::new()),
+            block(101),
+        );
+
+        let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap();
+        for (coin, funding) in coins.iter().zip([&funding_a, &funding_b]) {
+            account.utxos.insert(
+                *coin,
+                Utxo::new(*coin, funding.output[0].clone(), address.clone(), 99, false),
+            );
+        }
+        (wallet, restored, history, winner, funding_b, coins)
+    }
+
+    /// A stored confirmed winner settles an unsafe unconfirmed loser like any
+    /// other: the loser is gone and the coin only the loser spent is free.
+    #[tokio::test]
+    async fn should_release_other_input_of_unsafe_loser_beaten_by_stored_winner() {
+        let (mut wallet, mut restored, mut history, winner, _, [coin_a, coin_b]) =
+            unsafe_loser_fixture().await;
+        let loser = history[1].txid;
+        history.push(winner);
+
+        replay_recorded_history(
+            &mut restored,
+            &mut wallet,
+            RecordedHistory {
+                transactions: history,
+                instant_locks: BTreeMap::new(),
+            },
+        )
+        .await;
+
+        let account = &restored.accounts.standard_bip44_accounts[&0];
+        assert!(!account.transactions().contains_key(&loser));
+        assert!(
+            !account.utxos.contains_key(&coin_a),
+            "the winner spent this coin"
+        );
+        assert!(
+            account.utxos.contains_key(&coin_b),
+            "the coin only the swept loser spent must be spendable again"
+        );
+        assert_eq!(restored.balance.total(), 20_000);
+    }
+
+    /// With no winner stored, the unsafe unconfirmed record keeps both coins
+    /// reserved and stays on record, so a winner delivered after the load
+    /// sweeps it and releases the coin it does not spend itself.
+    #[tokio::test]
+    async fn should_release_other_input_of_unsafe_loser_beaten_after_load() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let (mut wallet, mut restored, history, winner, funding_b, [coin_a, coin_b]) =
+            unsafe_loser_fixture().await;
+        let loser = history[1].txid;
+        let funded_b = TransactionContext::InBlock(BlockInfo::new(
+            99,
+            BlockHash::from_byte_array([99; 32]),
+            99,
+        ));
+
+        replay_recorded_history(
+            &mut restored,
+            &mut wallet,
+            RecordedHistory {
+                transactions: history,
+                instant_locks: BTreeMap::new(),
+            },
+        )
+        .await;
+
+        let account = &restored.accounts.standard_bip44_accounts[&0];
+        assert!(account.transactions().contains_key(&loser));
+        assert!(!account.utxos.contains_key(&coin_a) && !account.utxos.contains_key(&coin_b));
+        assert_eq!(restored.balance.total(), 0);
+        // Control: while the record stands, its reservation holds.
+        let mut reserved = restored.clone();
+        reserved
+            .check_core_transaction(&funding_b, funded_b.clone(), &mut wallet, true, true)
+            .await;
+        assert!(
+            !reserved.accounts.standard_bip44_accounts[&0]
+                .utxos
+                .contains_key(&coin_b),
+            "a coin the unsafe record spends must stay reserved"
+        );
+
+        let settled = restored
+            .check_core_transaction(
+                &winner.transaction,
+                winner.context.clone(),
+                &mut wallet,
+                true,
+                true,
+            )
+            .await;
+        assert_eq!(settled.swept_transactions, vec![loser]);
+        assert_eq!(settled.released_outpoints, vec![coin_b]);
+        restored
+            .check_core_transaction(&funding_b, funded_b, &mut wallet, true, true)
+            .await;
+
+        let account = &restored.accounts.standard_bip44_accounts[&0];
+        assert!(!account.transactions().contains_key(&loser));
+        assert!(
+            !account.utxos.contains_key(&coin_a),
+            "the winner spent this coin"
+        );
+        assert!(
+            account.utxos.contains_key(&coin_b),
+            "the released coin must be credited when its funding is seen"
+        );
+        assert_eq!(restored.balance.total(), 20_000);
+    }
+
     /// Planning must not run one whole-history sweep per settled record that
     /// merely shares an input with an unconfirmed one: a sweep is worth
     /// running only while a competitor it could remove is still there.
@@ -1229,7 +1702,7 @@ mod tests {
         let greedy = stored((0..SPENDERS).collect(), 0, TransactionContext::Mempool);
         let mut records = confirmed.clone();
         records.push(greedy.clone());
-        let (removed, sweeps) = plan_replay_sweeps(&info, &records);
+        let (removed, sweeps) = plan_replay_sweeps(&info, &records, &HashSet::new());
         assert_eq!(removed, HashSet::from([greedy.txid]));
         assert_eq!(sweeps, 1, "the competitor is gone after the first sweep");
 
@@ -1249,7 +1722,7 @@ mod tests {
             .collect();
         let records: Vec<StoredTransaction> =
             [&confirmed[..], &competitors[..], &bystanders[..]].concat();
-        let (removed, sweeps) = plan_replay_sweeps(&info, &records);
+        let (removed, sweeps) = plan_replay_sweeps(&info, &records, &HashSet::new());
         assert_eq!(
             removed,
             competitors.iter().map(|stored| stored.txid).collect()
