@@ -540,20 +540,27 @@ pub fn apply_replay_sweeps(
         .flat_map(|sweep| sweep.released_outpoints.iter().copied())
         .collect();
     let mut held = HashMap::new();
+    // The width gate stays its own statement: SQLite evaluates every result
+    // column before returning a row, so it must run before the payload is read.
+    let mut width_stmt = tx.prepare_cached(
+        "SELECT length(spent_in_txid) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1",
+    )?;
+    let mut claim_stmt = tx.prepare_cached(
+        "SELECT spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+    )?;
     for outpoint in candidates {
         let key = blob::encode_outpoint(&outpoint)?;
-        let length: Option<Option<i64>> = tx.query_row(
-            "SELECT length(spent_in_txid) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1",
-            params![wallet_id.as_slice(), &key[..]], |row| row.get(0),
-        ).optional()?;
+        let length: Option<Option<i64>> = width_stmt
+            .query_row(params![wallet_id.as_slice(), &key[..]], |row| row.get(0))
+            .optional()?;
         let Some(length) = length else { continue };
         if let Some(length) = length {
             blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
         }
-        let (claim, height): (Option<Vec<u8>>, Option<i64>) = tx.query_row(
-            "SELECT spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![wallet_id.as_slice(), &key[..]], |row| Ok((row.get(0)?, row.get(1)?)),
-        )?;
+        let (claim, height): (Option<Vec<u8>>, Option<i64>) = claim_stmt
+            .query_row(params![wallet_id.as_slice(), &key[..]], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?;
         // A NULL claimant is an unknown durable spend, not evidence that the coin is free.
         if claim
             .as_deref()
@@ -579,12 +586,12 @@ pub fn apply_replay_sweeps(
         },
     )?;
     // The generic sweep attributes held inputs to its winner; retain the original provenance.
+    let mut restore_stmt = tx.prepare_cached(
+        "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3, winner_mined_height = ?4 WHERE wallet_id = ?1 AND outpoint = ?2",
+    )?;
     for (outpoint, (claim, height)) in held {
         let key = blob::encode_outpoint(&outpoint)?;
-        tx.execute(
-            "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3, winner_mined_height = ?4 WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![wallet_id.as_slice(), &key[..], claim, height],
-        )?;
+        restore_stmt.execute(params![wallet_id.as_slice(), &key[..], claim, height])?;
     }
     Ok(())
 }
