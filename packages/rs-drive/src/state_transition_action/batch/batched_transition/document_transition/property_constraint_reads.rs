@@ -35,11 +35,15 @@ impl PropertyConstraintReads {
             .and_then(|reads| reads.stored_system_values.as_ref())
     }
 
-    /// Sets the totals an action holding `reads` holds.
+    /// Sets the totals an action holding `reads` holds. An action holding
+    /// nothing, given no totals, is left without a box.
     pub fn set_aggregates(
         reads: &mut Option<Box<Self>>,
         aggregates: BTreeMap<AggregateRead, i128>,
     ) {
+        if reads.is_none() && aggregates.is_empty() {
+            return;
+        }
         Self::update(reads, |held| held.aggregates = aggregates);
     }
 
