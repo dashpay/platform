@@ -22,16 +22,18 @@ pub(crate) fn provider_hash_to_20(bytes: &[u8]) -> [u8; 20] {
     out
 }
 
-/// Rebuild an `"ip:port"` string from a ProUpServTx-style little-endian
-/// IPv6-mapped `u128` address + `port`, collapsing IPv4-mapped addresses
-/// to V4 so a normal masternode renders as `"1.2.3.4:port"`.
-pub fn provider_ip_port(ip_address: u128, port: u16) -> String {
-    let v6 = std::net::Ipv6Addr::from(ip_address.to_le_bytes());
-    let ip = v6
-        .to_ipv4_mapped()
-        .map(std::net::IpAddr::V4)
-        .unwrap_or(std::net::IpAddr::V6(v6));
-    format!("{}:{}", ip, port)
+/// Render a ProUpServTx service address as `"ip:port"`, collapsing an
+/// IPv4-mapped IPv6 address to V4 so a normal masternode renders as
+/// `"1.2.3.4:port"`.
+pub fn provider_ip_port(address: std::net::SocketAddr) -> String {
+    let ip = match address.ip() {
+        std::net::IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map(std::net::IpAddr::V4)
+            .unwrap_or(std::net::IpAddr::V6(v6)),
+        v4 => v4,
+    };
+    format!("{}:{}", ip, address.port())
 }
 
 /// Provider (masternode) special-transaction payload fields lifted for
@@ -56,12 +58,20 @@ pub struct ProviderPayloadFields {
 /// (ProUpServTx) payload fields from a transaction for display. Returns
 /// all-`None` for any other transaction. Pure; the only allocation is
 /// the returned service-address `String`.
+///
+/// TODO(protx-v3-wallet-fields): a version-3 payload is read through its
+/// pre-v3 fields only. Its service address is the primary routable IPv4/IPv6
+/// entry (`None` when it advertises none); the platform ports carried in the
+/// extended address map and the DIP-0026 payout shares are not surfaced.
 pub fn provider_payload_fields(tx: &dashcore::Transaction) -> ProviderPayloadFields {
     use dashcore::transaction::TransactionPayload;
 
     match &tx.special_transaction_payload {
         Some(TransactionPayload::ProviderRegistrationPayloadType(p)) => ProviderPayloadFields {
-            service_address: Some(p.service_address.to_string()),
+            service_address: p
+                .service_address
+                .primary_service_address()
+                .map(|address| address.to_string()),
             pro_tx_hash: None,
             collateral: Some((
                 provider_hash_to_32(p.collateral_outpoint.txid.as_ref()),
@@ -71,7 +81,10 @@ pub fn provider_payload_fields(tx: &dashcore::Transaction) -> ProviderPayloadFie
             voting_key_hash: Some(provider_hash_to_20(p.voting_key_hash.as_ref())),
         },
         Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => ProviderPayloadFields {
-            service_address: Some(provider_ip_port(p.ip_address, p.port)),
+            service_address: p
+                .service_address
+                .primary_service_address()
+                .map(provider_ip_port),
             pro_tx_hash: Some(provider_hash_to_32(p.pro_tx_hash.as_ref())),
             ..Default::default()
         },
@@ -333,7 +346,10 @@ where
                 // Registration seeds the service address and voting key;
                 // treat both as updates observed at this height.
                 if agg.service_address.is_none() || height >= agg.service_height {
-                    agg.service_address = Some(p.service_address.to_string());
+                    agg.service_address = p
+                        .service_address
+                        .primary_service_address()
+                        .map(|address| address.to_string());
                     agg.platform_http_port = p.platform_http_port;
                     agg.service_height = height;
                 }
@@ -360,7 +376,10 @@ where
             }
             Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
                 if agg.service_address.is_none() || height >= agg.service_height {
-                    agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
+                    agg.service_address = p
+                        .service_address
+                        .primary_service_address()
+                        .map(provider_ip_port);
                     agg.platform_http_port = p.platform_http_port;
                     agg.service_height = height;
                 }
@@ -436,6 +455,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
 
     /// ProRegTx provider payload is lifted from the DIP-3 special-tx
     /// body for the UI. Fixture is the testnet
@@ -757,8 +777,10 @@ mod tests {
                 version: 1,
                 mn_type: None,
                 pro_tx_hash,
-                ip_address: 42,
-                port,
+                service_address: MasternodeNetInfo::Legacy(std::net::SocketAddr::new(
+                    std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                    port,
+                )),
                 script_payout: dashcore::ScriptBuf::new(),
                 inputs_hash: [inputs; 32].into(),
                 platform_node_id: None,
@@ -831,8 +853,10 @@ mod tests {
                         version: 2,
                         mn_type: Some(1), // HighPerformance (evonode)
                         pro_tx_hash,
-                        ip_address: 42,
-                        port: 19999,
+                        service_address: MasternodeNetInfo::Legacy(std::net::SocketAddr::new(
+                            std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                            19999,
+                        )),
                         script_payout: dashcore::ScriptBuf::new(),
                         inputs_hash: [7u8; 32].into(),
                         platform_node_id: None,

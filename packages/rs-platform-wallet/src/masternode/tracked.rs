@@ -1090,7 +1090,10 @@ pub fn registration_from_transaction(
         voting_key_hash,
         operator_public_key: *operator,
         payout_script: p.script_payout.as_bytes().to_vec(),
-        service_address: Some(p.service_address.to_string()),
+        service_address: p
+            .service_address
+            .primary_service_address()
+            .map(|address| address.to_string()),
         is_evonode: p.masternode_type == ProviderMasternodeType::HighPerformance,
         platform_node_id: p.platform_node_id.map(|id| id.to_byte_array()),
         platform_http_port: p.platform_http_port,

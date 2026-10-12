@@ -11,9 +11,8 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::{sha256d, Hash};
-use dashcore::secp256k1::ecdsa::RecoverableSignature;
 use dashcore::secp256k1::Message;
-use dashcore::signer::CompactSignature;
+use dashcore::sign_message::MessageSignature;
 use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
@@ -557,15 +556,14 @@ impl PlatformAddress {
                 while sig_idx < valid_signatures.len() && pubkey_idx < pubkeys.len() {
                     signature_verifications += 1;
 
-                    let sig = RecoverableSignature::from_compact_signature(
-                        valid_signatures[sig_idx].as_slice(),
-                    )
-                    .map_err(|e| {
-                        ProtocolError::AddressWitnessError(format!(
-                            "Invalid signature format: {}",
-                            e
-                        ))
-                    })?;
+                    let sig = MessageSignature::from_slice(valid_signatures[sig_idx].as_slice())
+                        .map(|message_signature| message_signature.signature)
+                        .map_err(|e| {
+                            ProtocolError::AddressWitnessError(format!(
+                                "Invalid signature format: {}",
+                                e
+                            ))
+                        })?;
 
                     let pub_key = PublicKey::from_slice(&pubkeys[pubkey_idx]).map_err(|e| {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
