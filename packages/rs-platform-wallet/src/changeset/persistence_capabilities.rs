@@ -124,7 +124,8 @@ impl PersistenceCapabilities {
     /// a frozen watermark would cost the host its durable progress and
     /// recover nothing. Such a store keeps the replaced branch until the
     /// host rescans.
-    pub const CORE_CHAIN_TRUNCATION: Self = Self(1 << 13);
+    // Bit 13 is reserved for `CORE_HISTORY_RESTORE` (dashpay/platform#5220).
+    pub const CORE_CHAIN_TRUNCATION: Self = Self(1 << 14);
 
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
@@ -132,7 +133,7 @@ impl PersistenceCapabilities {
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 13;
+    const HIGHEST_DECLARED_BIT: u32 = 14;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -276,7 +277,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
         assert_eq!(
             PersistenceCapabilities::CORE_CHAIN_TRUNCATION.bits(),
-            0x2000
+            0x4000
         );
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
@@ -311,6 +312,12 @@ mod tests {
         // to prevent. Walking the whole width cannot go stale.
         for shift in 0..=PersistenceCapabilities::HIGHEST_DECLARED_BIT {
             let bit = PersistenceCapabilities::from_bits_retain(1u64 << shift);
+            // Reserved, not declared — see `CORE_CHAIN_TRUNCATION`. Naming
+            // it is what retires this exception.
+            if shift == 13 {
+                assert!(bit.names().is_empty(), "bit 13 is declared; drop this skip");
+                continue;
+            }
             assert_eq!(
                 bit.names().len(),
                 1,
