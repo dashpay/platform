@@ -75,6 +75,10 @@ pub enum LoadSite {
     /// A stored address-pool row sits further above the rest of its pool
     /// than the load will derive to check it, so it is not restored.
     PoolRowBeyondDerivationBudget,
+    /// A stored address reservation was taken back by no restored pool: its
+    /// row matches no account of the wallet, or was left out above. Counted
+    /// per reservation.
+    UnrestoredPoolReservation,
     /// An `identity_keys` row was unreadable or contradicted its columns.
     IdentityKeyRow,
     /// A `contacts` row was unreadable or contradicted its columns.
@@ -126,6 +130,7 @@ impl LoadSite {
             Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
             Self::PoolRowBeyondDerivationBudget => "pool_row_beyond_derivation_budget",
+            Self::UnrestoredPoolReservation => "unrestored_pool_reservation",
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
@@ -176,6 +181,9 @@ impl LoadSite {
             }
             Self::PoolRowBeyondDerivationBudget => {
                 "load degraded: leaving out address-pool rows too far above their pool to be checked"
+            }
+            Self::UnrestoredPoolReservation => {
+                "load degraded: stored address reservations that no restored pool took back"
             }
             // Sites whose site tag plus the logged error already say
             // everything a reader needs, so they share the generic line.

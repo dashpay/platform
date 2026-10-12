@@ -582,6 +582,12 @@ pub(crate) fn restore_pools(
     wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
+    let accounts = wallet_info.accounts.all_accounts_mut();
+    // No account, no pool: there is nothing to restore into, and nothing a
+    // stored reservation could be handed out from, so the store is not asked.
+    if accounts.is_empty() {
+        return Ok(());
+    }
     // Prepared once, and cached like every repeated-shape statement in this
     // module: every account and pool below binds the same three shapes.
     let mut stored_pool_types = conn.prepare_cached(
@@ -602,7 +608,8 @@ pub(crate) fn restore_pools(
            AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
            AND pool_type = ?7 ORDER BY address_index",
     )?;
-    for mut account in wallet_info.accounts.all_accounts_mut() {
+    let mut restored_reservations: i64 = 0;
+    for mut account in accounts {
         let account_type = account.managed_account_type().to_account_type();
         let label = accounts::account_type_db_label(&account_type);
         let (user, friend) = accounts::account_dashpay_ids(&account_type);
@@ -778,6 +785,7 @@ pub(crate) fn restore_pools(
                         "core pool address has multiple derivation indices",
                     ));
                 }
+                let stored_reservation = !used && reserved.is_some();
                 // Chain-derived usage takes precedence over an older pool snapshot.
                 let used = used || previous.is_some_and(|info| info.is_used());
                 let state = if used {
@@ -810,6 +818,7 @@ pub(crate) fn restore_pools(
                 pool.script_pubkey_index
                     .insert(info.script_pubkey.clone(), index);
                 pool.addresses.insert(index, info);
+                restored_reservations += i64::from(stored_reservation);
                 pool.highest_generated =
                     Some(pool.highest_generated.map_or(index, |old| old.max(index)));
                 if used {
@@ -834,6 +843,31 @@ pub(crate) fn restore_pools(
                 );
             }
         }
+    }
+    // Rows are read account by account, so a reservation whose coordinates
+    // match no account restored above was read by nobody. Whether that row is
+    // damaged or belongs to an account this wallet no longer rebuilds cannot
+    // be told from the row, and stores holding the second kind are healthy,
+    // so it is reported under either policy instead of failing the wallet.
+    let stored_reservations: i64 = conn
+        .prepare_cached(
+            "SELECT COUNT(*) FROM core_address_pool \
+             WHERE wallet_id = ?1 AND used = 0 AND reserved_at IS NOT NULL",
+        )?
+        .query_row(params![wallet_id.as_slice()], |row| row.get(0))?;
+    let unrestored = stored_reservations.saturating_sub(restored_reservations);
+    if unrestored > 0 {
+        ctx.note_degraded(
+            LoadSite::UnrestoredPoolReservation,
+            SiteCoords {
+                wallet_id: Some(*wallet_id),
+                account_type: &"wallet",
+                affected: usize::try_from(unrestored).unwrap_or(usize::MAX),
+                detail: None,
+            },
+            "stored address reservations were taken back by no pool this wallet restored, \
+             so those addresses can be handed out again",
+        );
     }
     Ok(())
 }

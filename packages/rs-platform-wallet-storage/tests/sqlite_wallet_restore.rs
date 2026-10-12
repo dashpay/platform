@@ -1143,3 +1143,94 @@ fn should_restore_a_correctly_derived_pool_deeper_than_the_discovery_ceiling() {
         assert_eq!(actual.path, reserved.path);
     });
 }
+
+/// A reserved row whose account coordinates match no account of the wallet
+/// is read by no pool. The row cannot say whether it is damaged or belongs
+/// to an account the wallet no longer rebuilds, so the load keeps the wallet
+/// and reports the reservation it could not take back.
+#[test]
+fn should_report_a_reservation_that_no_restored_pool_takes_back() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use platform_wallet_storage::{LoadPolicy, LoadSite};
+
+    let (persister, _tmp, path) = common::fresh_persister();
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let mut reserved = Vec::new();
+    for account_type in [
+        AccountType::IdentityInvitation,
+        AccountType::IdentityRegistration,
+    ] {
+        let source = account_key_source(&wallet, account_type);
+        reserved.push(with_pool(
+            &mut info,
+            account_type,
+            AddressPoolType::Absent,
+            |pool| {
+                let address = pool.next_unused_and_reserve(&source, 12345).unwrap();
+                pool.address_index[&address]
+            },
+        ));
+    }
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    persister.load().unwrap();
+    assert_eq!(
+        persister
+            .last_load_degradation()
+            .by_site
+            .get(&LoadSite::UnrestoredPoolReservation),
+        None,
+        "every reservation of an intact store is taken back"
+    );
+    // The invitation account's key class is always zero.
+    let rewritten = persister
+        .lock_conn_for_test()
+        .execute(
+            "UPDATE core_address_pool SET key_class = 1 \
+             WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
+               AND reserved_at IS NOT NULL",
+            [wallet.wallet_id.as_slice()],
+        )
+        .unwrap();
+    assert_eq!(rewritten, 1);
+    drop(persister);
+
+    for policy in [LoadPolicy::Strict, LoadPolicy::Recovery] {
+        let persister =
+            SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
+                .unwrap();
+        let mut state = persister
+            .load()
+            .expect("an unmatched reservation must not fail the wallet");
+        assert_eq!(
+            persister
+                .last_load_degradation()
+                .by_site
+                .get(&LoadSite::UnrestoredPoolReservation),
+            Some(&1),
+            "{policy:?}: the lost reservation is counted, the restored one is not"
+        );
+        let restored = &mut state
+            .wallets
+            .get_mut(&wallet.wallet_id)
+            .expect("the wallet still loads")
+            .wallet_info;
+        let state_of = |restored: &mut ManagedWalletInfo, account_type, index| {
+            with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
+                pool.addresses[&index].state
+            })
+        };
+        assert_eq!(
+            state_of(restored, AccountType::IdentityInvitation, reserved[0]),
+            AddressState::Available,
+            "{policy:?}: this is the loss the counter reports"
+        );
+        assert_eq!(
+            state_of(restored, AccountType::IdentityRegistration, reserved[1]),
+            AddressState::Reserved { at: 12345 },
+        );
+    }
+}
