@@ -18,8 +18,8 @@ use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
-    LookupKeySource, PropertyReference, WhereCondition, WhereLiteral, WhereNotEqualBound,
-    WhereOrderingBound,
+    LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound, WhereLiteral,
+    WhereNotEqualBound, WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
@@ -355,7 +355,17 @@ export type DocumentReferenceWhere = Record<string, string | DocumentReferenceWh
  *   integer it must compare with, an integer property path of the referring
  *   type, an integer `{ const }`, or a time or height the referring type
  *   records (`'$createdAt'`; one of the update or transfer is checked on every
- *   replace); it holds only when both sides have a value.
+ *   replace); it holds only when both sides have a value;
+ * - `contains`, of a typed array: a property path of the referring type
+ *   holding one value of the element kind, or `'$ownerId'` (the writer, among
+ *   identifiers, checked on every replace), that an element must equal; a list
+ *   left out holds nothing, and a value left out is in no list;
+ * - `containsAll`, of a typed array: a typed array property path of the
+ *   referring type whose every element it must hold, in any order; every list
+ *   holds all of an empty one.
+ *
+ * An equality between two typed arrays compares them as lists: the same
+ * elements in the same order, a list left out the empty one.
  *
  * An entry that does not hold refuses the write with code 40127.
  */
@@ -366,7 +376,9 @@ export type DocumentReferenceWhereCondition =
   | { greaterThan: string | { const: number | bigint } }
   | { greaterThanOrEqual: string | { const: number | bigint } }
   | { lessThan: string | { const: number | bigint } }
-  | { lessThanOrEqual: string | { const: number | bigint } };
+  | { lessThanOrEqual: string | { const: number | bigint } }
+  | { contains: string }
+  | { containsAll: string };
 
 /**
  * A `findBy` function, for a commit and reveal, keyed by the referenced
@@ -674,6 +686,9 @@ fn where_condition_to_js(condition: &WhereCondition, path: &str) -> WasmDppResul
             }
             values.into()
         }
+        WhereCondition::Contains(WhereContainsBound::Property(property))
+        | WhereCondition::ContainsAll(property) => JsValue::from_str(property),
+        WhereCondition::Contains(WhereContainsBound::Writer) => JsValue::from_str(OWNER_ID),
     };
     let object = Object::new();
     set_field(&object, condition.wire_name(), &value, path)?;

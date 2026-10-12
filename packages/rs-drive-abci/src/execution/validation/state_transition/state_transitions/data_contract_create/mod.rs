@@ -5850,6 +5850,7 @@ mod tests {
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::json_document::json_document_to_json_value;
         use drive::util::test_helpers::setup_contract;
+        use serde_json::json;
 
         const FOREIGN_CONTRACT_PATH: &str =
             "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
@@ -5882,6 +5883,18 @@ mod tests {
             foreign_contract_path: &str,
             config: DataContractConfig,
         ) -> StateTransitionExecutionResult {
+            let contract_json = json_document_to_json_value(fixture_path)
+                .expect("expected to read the fixture contract");
+            run_contract_json_create(contract_json, foreign_contract_path, config).await
+        }
+
+        /// [`run_contract_create_with_foreign_and_config`] for the contract
+        /// `contract_json`, such as a fixture changed by the test.
+        async fn run_contract_json_create(
+            mut contract_json: serde_json::Value,
+            foreign_contract_path: &str,
+            config: DataContractConfig,
+        ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -5903,8 +5916,6 @@ mod tests {
 
             // The config goes in before the parse, since a type may use what it
             // declares (moderation)
-            let mut contract_json = json_document_to_json_value(fixture_path)
-                .expect("expected to read the fixture contract");
             contract_json["config"] =
                 serde_json::to_value(&config).expect("expected the config to serialize");
             let data_contract = DataContract::from_json(
@@ -6322,12 +6333,10 @@ mod tests {
             );
         }
 
-        /// An agreement is checked at write time by comparing single values,
-        /// which a typed array is not, so one between two typed arrays of the
-        /// same element type is refused at registration rather than refusing
-        /// every write that carries them.
+        /// Two typed arrays of one element kind are equal as lists, element by
+        /// element, so an agreement between them registers.
         #[tokio::test]
-        async fn should_reject_agreement_on_typed_array_properties() {
+        async fn should_register_an_agreement_between_typed_arrays_of_one_element_kind() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-typed-array.json",
             )
@@ -6335,12 +6344,230 @@ mod tests {
 
             assert_matches!(
                 result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        const WHERE_TYPED_ARRAYS_CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-where-typed-arrays.json";
+
+        /// Creates the typed array `where` fixture after `change`, under the
+        /// default config, or `config`.
+        async fn run_where_typed_arrays_create(
+            change: impl FnOnce(&mut serde_json::Value),
+            config: Option<DataContractConfig>,
+        ) -> StateTransitionExecutionResult {
+            let mut contract_json = json_document_to_json_value(WHERE_TYPED_ARRAYS_CONTRACT_PATH)
+                .expect("expected to read the fixture contract");
+            change(&mut contract_json);
+            let config = config.unwrap_or_else(|| {
+                DataContractConfig::default_for_version(PlatformVersion::latest())
+                    .expect("default config available")
+            });
+            run_contract_json_create(contract_json, FOREIGN_CONTRACT_PATH, config).await
+        }
+
+        fn assert_where_entry_refused(result: &StateTransitionExecutionResult, reason: &str) {
+            assert_matches!(
+                result,
                 StateTransitionExecutionResult::PaidConsensusError {
                     error: ConsensusError::StateError(
                         StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
                     ),
                     ..
-                } if error.reason().contains("not typed arrays")
+                } if error.reason().contains(reason),
+                "expected the where entry refused for {reason:?}, got {result:?}"
+            );
+        }
+
+        /// The `where` of a document type's `postId` reference.
+        fn post_reference_where<'a>(
+            contract_json: &'a mut serde_json::Value,
+            document_type: &str,
+        ) -> &'a mut serde_json::Value {
+            &mut contract_json["documentSchemas"][document_type]["properties"]["postId"]["refersTo"]
+                ["where"]
+        }
+
+        /// An equality between two typed arrays, a `contains` of a property
+        /// and of the writer, and a `containsAll` register.
+        #[tokio::test]
+        async fn should_register_where_entries_over_typed_arrays() {
+            let result = run_where_typed_arrays_create(|_| {}, None).await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// Lists compare element by element, so the elements must be of one
+        /// value kind a `where` entry compares, and a typed array is equal to
+        /// nothing else.
+        #[tokio::test]
+        async fn should_reject_lists_a_where_equality_can_not_compare() {
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    contract["documentSchemas"]["like"]["properties"]["tags"]["items"] =
+                        json!({ "type": "integer", "minimum": 0, "maximum": 10 });
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "share one value kind");
+
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    *post_reference_where(contract, "like") = json!({ "tags": "note" });
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "equal only to a typed array");
+
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    let ratings = |position: u32| {
+                        json!({
+                            "type": "array",
+                            "items": { "type": "number" },
+                            "maxItems": 4,
+                            "position": position
+                        })
+                    };
+                    contract["documentSchemas"]["post"]["properties"]["ratings"] = ratings(4);
+                    contract["documentSchemas"]["like"]["properties"]["ratings"] = ratings(3);
+                    *post_reference_where(contract, "like") = json!({ "ratings": "ratings" });
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "floats");
+
+            // The list compared is one the referring document stores
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    contract["documentSchemas"]["like"]["transient"] = json!(["tags"]);
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "transient");
+        }
+
+        /// A `contains` reads a list and is bounded by one value of its
+        /// element kind (the writer for identifiers), never by the reference
+        /// itself; a `containsAll` is bounded by a list of the same kind; and
+        /// the conditions comparing one value read no list.
+        #[tokio::test]
+        async fn should_reject_list_conditions_that_can_not_hold() {
+            for (document_type, where_value, reason) in [
+                (
+                    "tagged",
+                    json!({ "tags": { "contains": "count" } }),
+                    "contains reads one value",
+                ),
+                (
+                    "tagged",
+                    json!({ "label": { "contains": "tag" } }),
+                    "the referenced property is none",
+                ),
+                (
+                    "tagged",
+                    json!({ "members": { "contains": "postId" } }),
+                    "the reference property itself",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "contains": "missing" } }),
+                    "does not define the referring property",
+                ),
+                (
+                    "memberNote",
+                    json!({ "tags": { "contains": "$ownerId" } }),
+                    "must hold identifiers",
+                ),
+                (
+                    "subset",
+                    json!({ "tags": { "containsAll": "postId" } }),
+                    "the reference property itself",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "containsAll": "tag" } }),
+                    "containsAll reads a typed array",
+                ),
+                (
+                    "copy",
+                    json!({ "tags": { "containsAll": "members" } }),
+                    "share one value kind",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "const": "news" } }),
+                    "holds no single value",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "notEqual": "tag" } }),
+                    "holds no single value",
+                ),
+            ] {
+                let result = run_where_typed_arrays_create(
+                    |contract| {
+                        *post_reference_where(contract, document_type) = where_value.clone();
+                    },
+                    None,
+                )
+                .await;
+                assert_where_entry_refused(&result, reason);
+            }
+        }
+
+        /// Through a `moderatedDocument` reference, a `contains` of the writer
+        /// is asked about on every replace, so once a moderator removes the
+        /// post it reads the removal record, which must keep the list.
+        #[tokio::test]
+        async fn should_reject_a_moderated_contains_of_the_writer_the_record_does_not_keep() {
+            let moderated = |kept: serde_json::Value| {
+                move |contract: &mut serde_json::Value| {
+                    let post = &mut contract["documentSchemas"]["post"];
+                    post["moderatorAbilities"] =
+                        json!({ "delete": true, "deleteKeepsFields": kept });
+                    contract["documentSchemas"]["memberNote"]["properties"]["postId"]["refersTo"]
+                        ["type"] = json!("moderatedDocument");
+                    // The other references stay permanent, into another post type
+                    let mut permanent_post = contract["documentSchemas"]["post"].clone();
+                    if let Some(schema) = permanent_post.as_object_mut() {
+                        schema.remove("moderatorAbilities");
+                    }
+                    contract["documentSchemas"]["permanentPost"] = permanent_post;
+                    for document_type in ["like", "copy", "tagged", "subset", "scoreSubset"] {
+                        contract["documentSchemas"][document_type]["properties"]["postId"]
+                            ["refersTo"]["documentType"] = json!("permanentPost");
+                    }
+                }
+            };
+            let config = || {
+                Some(
+                    DataContractConfig::default_for_version(PlatformVersion::latest())
+                        .expect("default config available")
+                        .with_moderation(Some(ContractModerationConfig {
+                            banlist: false,
+                            suspensions: false,
+                            moderators: ContractModerators::ContractOwner,
+                            warnings: false,
+                        })),
+                )
+            };
+
+            let result = run_where_typed_arrays_create(moderated(json!(["tags"])), config()).await;
+            assert_where_entry_refused(&result, "checked on every replace");
+
+            let result =
+                run_where_typed_arrays_create(moderated(json!(["members"])), config()).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
 

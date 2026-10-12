@@ -85,6 +85,7 @@ mod referenced_rules;
 mod restore_constraints;
 mod retraction;
 mod seated_team;
+mod typed_array_where;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
@@ -2299,6 +2300,49 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         "additionalProperties": false,
         "moderatorAbilities": { "delete": deletable_by_moderators },
     })
+}
+
+/// A creation by `actor` of a document of `document_type_name` holding exactly
+/// `properties`
+async fn create_with(
+    setup: &Setup,
+    actor: &Actor,
+    document_type_name: &str,
+    properties: Vec<(&str, Value)>,
+) -> (Document, StateTransition) {
+    setup
+        .create_document_of_type_with(actor, document_type_name, |document| {
+            document.properties_mut().clear();
+            for (property, value) in properties {
+                document.set(property, value);
+            }
+        })
+        .await
+}
+
+/// The replacement of `document` by `actor`, its owner, its revision bumped
+async fn replacement(
+    actor: &Actor,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &mut Document,
+) -> StateTransition {
+    document.increment_revision().expect("revision increments");
+    BatchTransition::new_document_replacement_transition_from_document(
+        document.clone(),
+        contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type"),
+        &actor.key,
+        actor.contract_nonce(),
+        0,
+        None,
+        &actor.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the replacement")
 }
 
 fn add_document_type(contract: &mut DataContract, name: &str, schema: Value) {

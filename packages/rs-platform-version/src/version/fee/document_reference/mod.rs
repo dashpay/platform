@@ -14,11 +14,17 @@ pub mod v1;
 /// with: a signer who could not pay for a full scan is kept out of the mempool rather than
 /// refused unpaid in a block, with its nonce left to replay.
 ///
-/// Every earlier schedule carries the same group; it is unread there because `chooseFirst`
-/// does not parse before protocol version 14.
+/// A `where` entry comparing typed arrays (an equality between two of them, `contains` or
+/// `containsAll`) is billed by the list elements it reads, before it compares them.
+///
+/// Every earlier schedule carries the same group; it is unread there because neither
+/// `chooseFirst` nor a `where` entry parses before protocol version 14.
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeDocumentReferenceVersion {
     /// The credits per competitor a `chooseFirst` may read that bound what its scan bills, and
     /// what check tx reserves for it.
     pub choose_first_credits_per_candidate: u64,
+    /// The credits per list element a `where` entry comparing typed arrays reads, on both
+    /// sides, against a document in state or a moderated document's removal record.
+    pub where_list_credits_per_element: u64,
 }
