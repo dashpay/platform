@@ -19,12 +19,12 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// [`teardown_guard`](WalletGeneration::teardown_guard) call abandoned while
 /// it waits.
 #[derive(Debug)]
-struct TeardownRequest(Arc<watch::Sender<usize>>);
+struct TeardownRequest(watch::Sender<usize>);
 
 impl TeardownRequest {
-    fn new(leaving: &Arc<watch::Sender<usize>>) -> Self {
+    fn new(leaving: &watch::Sender<usize>) -> Self {
         leaving.send_modify(|asking| *asking += 1);
-        Self(Arc::clone(leaving))
+        Self(leaving.clone())
     }
 }
 
@@ -98,7 +98,7 @@ pub struct WalletGeneration {
     /// How many teardowns are asking for the gate or hold it (see
     /// [`teardown_requested`](Self::teardown_requested)). Shared with their
     /// guards, which take themselves off it when dropped.
-    leaving: Arc<watch::Sender<usize>>,
+    leaving: watch::Sender<usize>,
     /// Outpoints currently fenced against re-selection because a broadcast
     /// dispatch owns them ([`pin_in_broadcast`](Self::pin_in_broadcast)).
     ///
@@ -427,7 +427,7 @@ impl WalletGeneration {
         Self {
             balance: WalletBalance::new(),
             lifecycle: Arc::new(RwLock::new(())),
-            leaving: Arc::new(watch::Sender::new(0)),
+            leaving: watch::Sender::new(0),
             in_broadcast: fences,
             #[cfg(test)]
             settle_boundary_hook: SettleBoundaryHook::default(),

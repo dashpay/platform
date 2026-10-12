@@ -9,7 +9,7 @@
 //! the verdict; it **changes nothing** in the wallet. A probe resubmits the
 //! signed transaction, so it goes out only under the lifecycle gate of the
 //! registration it was read from: a wallet's removal stops the one in
-//! flight and none goes out after it (see [`gated_probe`]). Verdicts are positive
+//! flight and none is started after it (see [`gated_probe`]). Verdicts are positive
 //! only — accepted or mined — or unresolved: no answer the probe gets proves
 //! that a transaction can never land (see
 //! [`broadcast_probe`](crate::broadcast_probe)).
@@ -973,8 +973,10 @@ pub(crate) trait WalletSource: Send + Sync {
 /// finds the probe inside — which then stops where it is and lets go of the
 /// gate, so the removal waits neither for the wallet-manager lock nor for
 /// any node's answer (a probe is up to eight requests, each with its own
-/// timeout). Stopping the job from the actor is not that barrier: the actor
-/// learns of a removal only after the manager has let the wallet go.
+/// timeout). A request already handed to the transport is not recalled, but
+/// no further one is made. Stopping the job from the actor is not that
+/// barrier: the actor learns of a removal only after the manager has let the
+/// wallet go.
 ///
 /// A removal that is given up leaves the wallet registered: the probe then
 /// starts over — the same signed bytes again.
@@ -996,7 +998,7 @@ async fn gated_probe(
     loop {
         tokio::select! {
             biased;
-            _ = generation.teardown_requested() => {}
+            // First: a probe that has finished keeps its verdict.
             probed = async {
                 let _payment = generation.payment_guard().await;
                 if !source.is_registered(wallet_id, generation).await {
@@ -1004,6 +1006,7 @@ async fn gated_probe(
                 }
                 Some(probe.probe(transaction).await)
             } => return probed,
+            _ = generation.teardown_requested() => {}
         }
         generation.teardown_over().await;
     }
@@ -5597,22 +5600,6 @@ mod tests {
         assert_eq!(rig.sent().len(), 2);
     }
 
-    /// A probe that never ends once started, and says when it was dropped.
-    #[derive(Default)]
-    struct HeldProbe {
-        started: Notify,
-        dropped: Arc<AtomicBool>,
-    }
-
-    #[async_trait]
-    impl AcceptanceProbe for HeldProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeOutcome {
-            let _torn_down = DropFlag(Arc::clone(&self.dropped));
-            self.started.notify_one();
-            std::future::pending().await
-        }
-    }
-
     /// The other order, against the real manager: a probe is out — no node
     /// answering — when its wallet is removed. The removal does not wait for
     /// the nodes: the probe stops there, and only then does the wallet go.
@@ -5622,7 +5609,7 @@ mod tests {
         let platform_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let source = ManagerSource(Arc::clone(platform_wallet.wallet_manager()));
         let generation = Arc::clone(platform_wallet.generation());
-        let probe = Arc::new(HeldProbe::default());
+        let probe = Arc::new(HangingProbe::default());
         let job = {
             let probe = Arc::clone(&probe);
             let generation = Arc::clone(&generation);
