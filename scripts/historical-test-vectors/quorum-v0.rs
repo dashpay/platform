@@ -1,4 +1,4 @@
-//! Run as a drive-abci example at the pre-migration revision documented in README.md.
+//! Historical fixture generator, invoked by scripts/generate_historical_test_vectors.sh.
 
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
@@ -35,7 +35,9 @@ fn quorums(entries: &[(u8, usize, Option<u32>)]) -> Quorums<VerificationQuorum> 
         .collect()
 }
 
-fn main() {
+#[test]
+#[ignore = "run through scripts/generate_historical_test_vectors.sh on the pinned revision"]
+fn generate() {
     let mut runtime = SignatureVerificationQuorumSetV0::new(&ChainLockConfig {
         quorum_type: QuorumType::Llmq400_60,
         quorum_size: 400,
@@ -55,6 +57,6 @@ fn main() {
             .with_no_limit(),
     )
     .unwrap();
-    let destination = std::env::args().nth(1).expect("fixture output path");
+    let destination = super::output_dir("quorum").join("quorum-storage-v0.hex");
     std::fs::write(destination, format!("{}\n", hex::encode(bytes))).unwrap();
 }
