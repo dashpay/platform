@@ -16,7 +16,7 @@ use dashcore::hashes::Hash;
 use dashcore::{Address, Network, OutPoint, Transaction, TxIn, TxOut, Txid};
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
-use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
 use key_wallet::Utxo;
 use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::CoreChangeSet;
@@ -3822,4 +3822,128 @@ fn should_remove_a_swept_height_only_transaction_and_its_outputs() {
         )
         .unwrap();
     assert_eq!(count, 0);
+}
+
+/// A held input the winner does not spend belongs to the stored transaction
+/// that still spends it. Its placeholder carries no stamp, so neither the
+/// finality boundary passing the winner's height nor that spender confirming
+/// drops the claim; only removing the spender does.
+#[test]
+fn should_hold_an_unfunded_extra_input_for_its_surviving_spender_until_that_spender_is_removed() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE4);
+    ensure_wallet_meta(&persister, &w);
+    let mut conn = persister.lock_conn_for_test();
+    let [shared, extra, other] = [0x61, 0x62, 0x63].map(|b| OutPoint::new(txid(b), 0));
+    let [loser, survivor, winner, later_winner] = [0x64, 0x65, 0x66, 0x67].map(txid);
+    let confirmed = |txid, inputs, height| {
+        let mut record = tx_record(txid, inputs, vec![]);
+        record.context = TransactionContext::InBlock(BlockInfo::new(
+            height,
+            dashcore::BlockHash::all_zeros(),
+            0,
+        ));
+        record
+    };
+    let round = |conn: &mut rusqlite::Connection, cs: CoreChangeSet| {
+        let tx = conn.transaction().unwrap();
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    };
+    // `(spent, is_sweep_placeholder, winner_mined_height, claimant)` of a row.
+    let held = |conn: &rusqlite::Connection, outpoint: &OutPoint| {
+        let claimant: Option<Option<Vec<u8>>> = conn
+            .query_row(
+                "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![w.as_slice(), &blob::encode_outpoint(outpoint).unwrap()[..]],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        utxo_row_state(conn, &w, outpoint)
+            .zip(claimant)
+            .map(|((spent, placeholder, stamp), claimant)| (spent, placeholder, stamp, claimant))
+    };
+    let claimed_by = |txid: Txid| Some(txid.to_byte_array().to_vec());
+
+    round(
+        &mut conn,
+        CoreChangeSet {
+            records: vec![
+                tx_record(loser, vec![shared, extra], vec![]),
+                tx_record(survivor, vec![extra, other], vec![]),
+            ],
+            ..Default::default()
+        },
+    );
+    round(
+        &mut conn,
+        CoreChangeSet {
+            records: vec![confirmed(winner, vec![shared], WINNER_HEIGHT)],
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+            }],
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        held(&conn, &shared),
+        Some((
+            true,
+            true,
+            Some(i64::from(WINNER_HEIGHT)),
+            claimed_by(winner)
+        )),
+        "the winner claims the input it spends, stamped with its height"
+    );
+    let survivors_hold = Some((true, true, None, claimed_by(survivor)));
+    assert_eq!(
+        held(&conn, &extra),
+        survivors_hold,
+        "the extra input belongs to its surviving spender, unstamped"
+    );
+
+    round(
+        &mut conn,
+        CoreChangeSet {
+            records: vec![confirmed(survivor, vec![extra, other], WINNER_HEIGHT + 1)],
+            ..Default::default()
+        },
+    );
+    apply_heights(&mut conn, &w, WINNER_HEIGHT + 10);
+    assert_eq!(
+        held(&conn, &shared),
+        None,
+        "the winner's own placeholder is collected at finality"
+    );
+    assert_eq!(
+        held(&conn, &extra),
+        survivors_hold,
+        "a claim whose spender still spends the coin outlives finality and that spender confirming"
+    );
+
+    round(
+        &mut conn,
+        CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![survivor],
+                superseded_by: later_winner,
+                winner_mined_height: Some(WINNER_HEIGHT + 20),
+                released_outpoints: vec![extra],
+            }],
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        held(&conn, &extra),
+        None,
+        "removing the surviving spender releases the unfunded claim"
+    );
+}
+
+fn txid(byte: u8) -> Txid {
+    Txid::from_byte_array([byte; 32])
 }

@@ -1,9 +1,9 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, document_takes_part_in_index,
-    index_level_tree_types_with_continuation_demotion, level_counts_continuations,
-    level_reaches_entry,
+    index_level_tree_types_with_continuation_demotion, level_reaches_entry,
 };
+use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -160,20 +160,23 @@ impl Drive {
         // when the parent value tree aggregates anything (count, sum, or
         // both) — `continuation_contributes_zero`, shared with the
         // preallocation path and `drive::document::layout`.
-        // A prefix-ranking chain level (`rankedCountable: { at }`) inverts
-        // that choice for its CHAIN continuation: the value trees count the
-        // continuation's subtree — the total the grouping secondary ranks
-        // by — so it is inserted unwrapped and CONTRIBUTES its count
-        // instead of being zero-wrapped. A plain sibling's branch sharing
-        // such a level (stamped `count_exempt_branch` by the IndexLevel
-        // derivation) re-inverts per child: it is zero-wrapped
-        // (`Element::NonCounted`) so its entries never pollute the subtree
+        // A prefix-ranking chain level (a grouping or propagating level of a
+        // count, sum or average chain) inverts that choice for its CHAIN
+        // continuation: the value trees aggregate the continuation's
+        // subtree — the total the grouping secondary ranks by — so it is
+        // inserted unwrapped and CONTRIBUTES its count or sum instead of
+        // being zero-wrapped. A plain sibling's branch sharing such a level
+        // (stamped `count_exempt_branch` by the IndexLevel derivation)
+        // re-inverts per child: it is wrapped to contribute zero, as the
+        // parent needs (`zero_contribution_wrapper`: `Element::NonCounted`
+        // under a count tree, not summed or not counted or summed under a
+        // sum-bearing one), so its entries never pollute the subtree
         // totals — the same demotion range-countable value trees apply to
         // their sibling continuations. Contract validation guarantees every
         // admitted sibling is flag-free at and below the shared levels, so
         // nothing under a wrapped branch needs the counts the wrapper
         // suppresses.
-        let continuations_contribute = level_counts_continuations(index_level);
+        let continuations_contribute = index_level.is_ranked_chain_level();
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -251,7 +254,7 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if continuation_contributes_zero(
+            let property_name_tree_created = if continuation_contributes_zero(
                 parent_value_tree_type,
                 continuations_contribute,
                 sub_level,
@@ -275,7 +278,7 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
+                )?
             } else {
                 self.batch_insert_empty_index_tree_if_not_exists(
                     path_key_info.clone(),
@@ -287,10 +290,43 @@ impl Drive {
                     previous_batch_operations,
                     batch_operations,
                     &platform_version.drive,
-                )?;
-            }
+                )?
+            };
 
             sub_level_index_path_info.push(index_property_key)?;
+
+            // A summableOffCountIndex index ending at this sub-level keeps one counter
+            // per group at the value position, where another index grows a
+            // value tree: the counter stands for the value tree, its `0`
+            // bucket and every member entry, and nothing continues below it
+            // (registration refuses an index that would).
+            if sub_level.summable_off_count_index_info().is_some() {
+                self.add_summable_off_count_counter_operations(
+                    sub_level_index_path_info,
+                    document_index_field,
+                    property_name_tree_type,
+                    CounterChange::Increment {
+                        parent_created: property_name_tree_created,
+                    },
+                    *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                continue;
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

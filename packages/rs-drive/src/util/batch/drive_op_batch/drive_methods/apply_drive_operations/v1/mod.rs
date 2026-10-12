@@ -88,6 +88,7 @@ impl Drive {
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
+        self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
         let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());

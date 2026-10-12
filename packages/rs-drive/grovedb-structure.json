@@ -3015,13 +3015,15 @@
                           "Tree",
                           "CountTree",
                           "ProvableCountTree",
+                          "SumTree",
                           "ProvableSumTree",
+                          "CountSumTree",
                           "ProvableCountProvableSumTree",
                           "ProvableCountIndexedTree",
                           "ProvableSumIndexedTree",
                           "ProvableCountProvableSumIndexedTree"
                         ],
-                        "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                        "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                         "flags": [
                           "EpochOwned",
                           "None"
@@ -3050,9 +3052,10 @@
                               "SumTree",
                               "CountSumTree",
                               "ProvableCountSumTree",
-                              "ProvableCountProvableSumTree"
+                              "ProvableCountProvableSumTree",
+                              "SumItem"
                             ],
-                            "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum.",
+                            "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum. At the last property of a summableOffCountIndex index, a sum item counting the source index's entries for the value, in place of the tree.",
                             "flags": [
                               "EpochOwned",
                               "None"
@@ -3144,13 +3147,15 @@
                                   "Tree",
                                   "CountTree",
                                   "ProvableCountTree",
+                                  "SumTree",
                                   "ProvableSumTree",
+                                  "CountSumTree",
                                   "ProvableCountProvableSumTree",
                                   "ProvableCountIndexedTree",
                                   "ProvableSumIndexedTree",
                                   "ProvableCountProvableSumIndexedTree"
                                 ],
-                                "kinds_note": "A plain tree unless the index is range countable, range summable or ranked; see ranked_index_tree_type.rs.",
+                                "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                                 "flags": [
                                   "EpochOwned",
                                   "None"
@@ -4026,6 +4031,46 @@
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
                 "description": "Credits that entered Platform at that time.",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "withdrawals.core_credit_pool_balances",
+            "key": {
+              "type": "fixed",
+              "hex": "06",
+              "label": "CoreCreditPoolBalances",
+              "constant": "WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY"
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+            "description": "Core's credit pool balance after each Core block read, for the Core-anchored withdrawal limit.",
+            "children": [
+              {
+                "id": "withdrawals.core_credit_pool_balances.balance",
+                "key": {
+                  "type": "dynamic",
+                  "name": "core_height",
+                  "matcher": {
+                    "type": "len",
+                    "len": 4
+                  },
+                  "encoding": "u32_be",
+                  "description": "The Core block height"
+                },
+                "kinds": [
+                  "Item"
+                ],
+                "value": "credits, u64 big endian",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/identity/withdrawals/paths.rs",
+                "description": "The credit pool balance after that Core block.",
                 "children": []
               }
             ]
@@ -6224,20 +6269,23 @@
     "withdrawals": {
       "origin": "genesis@15",
       "tree": {
-        "hex": "03",
+        "hex": "02",
         "left": {
           "hex": "01",
           "left": {
             "hex": "00"
-          },
-          "right": {
-            "hex": "02"
           }
         },
         "right": {
-          "hex": "05",
+          "hex": "04",
           "left": {
-            "hex": "04"
+            "hex": "03"
+          },
+          "right": {
+            "hex": "05",
+            "right": {
+              "hex": "06"
+            }
           }
         }
       }

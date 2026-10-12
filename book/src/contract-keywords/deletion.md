@@ -4,16 +4,16 @@ A document can leave the state three ways: its owner deletes it, the contract's 
 
 ## `canBeDeleted`
 
-Whether a document's owner may delete it. Set it to `false` for records that other documents or other people rely on staying put.
+Whether a document's owner may delete it. Set it to `false` for records that other documents or other people rely on staying put, and to `"onlyWhenConsumed"` for records only a create that consumes them may remove.
 
 | | |
 |---|---|
 | **Where** | document type |
-| **Value** | boolean |
+| **Value** | boolean, or `"onlyWhenConsumed"` |
 | **Default** | the contract config's `documentsCanBeDeletedContractDefault`, which is `true` unless the contract says otherwise |
-| **Since** | protocol version 1 |
+| **Since** | protocol version 1; `"onlyWhenConsumed"` protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212), except that a type which keeps history before and after the update may change it from `true` to `false`. Adding or removing the key without changing its value is refused too, as a schema change (`IncompatibleDocumentTypeSchemaError`, 10246). |
-| **Errors** | `InvalidDocumentTransitionActionError` (10404) for a delete of a type set to `false`, or, from protocol version 14, of a type that keeps history; `DocumentOwnerIdMismatchError` (40102) for a delete by anyone but the owner |
+| **Errors** | `InvalidDocumentTransitionActionError` (10404) for a delete of a type set to `false` or `"onlyWhenConsumed"`, or, from protocol version 14, of a type that keeps history; `DocumentOwnerIdMismatchError` (40102) for a delete by anyone but the owner |
 
 ### Example
 
@@ -46,6 +46,7 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 - A delete may carry a token cost or an action fee, like any document action. See [Token Costs](token-cost.md) and [Action Fees](action-fees.md).
 - An identity that is banned or suspended on a moderated contract may still delete its own documents. See [Contract Moderation](../data-model/contract-moderation.md#the-model). On a type set to `false` it can retract them instead, when the type declares [`retractedWhen`](#retractedwhen).
 - `false` binds only the owner. The contract's moderators, when the type allows them, and the platform, when the type has a `ttl`, still delete such documents.
+- `"onlyWhenConsumed"` binds the owner as `false` does, and lets a create consume the document (see [below](#deleted-only-when-consumed)).
 - Drive never deletes a document whose type keeps history (`documentsKeepHistory`). From protocol version 14 a delete of such a document is refused with 10404 whatever `canBeDeleted` says; before it, the delete failed inside Drive as an internal error.
 - Documents of an `indexOnly` type are deleted with an index-only delete transition that carries their values, since there is no stored row to name by id. A delete by id of such a document is refused (10404). See [Index-Only Types](index-only.md).
 
@@ -53,6 +54,37 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 
 - From protocol version 14, a type with `documentsKeepHistory: true` must set `canBeDeleted: false` (`InvalidContractStructure`, 10231). The default is `true`, so it has to be written out. A contract registered earlier with both flags on stays readable, but its next update is checked like a new contract, so that update must turn `canBeDeleted` off on the type. That is the one change to `canBeDeleted` an update may make.
 - For references, a type whose owner may delete its documents is deletable: a `permanentDocument` reference, `inList` included, may not point at it (`ReferencedDocumentTypeDeletableError`, 40122), and a `deletableDocument` reference may. See [References](refers-to.md).
+- `"onlyWhenConsumed"` is refused on a type that keeps history or is `indexOnly` (`InvalidContractStructure`, 10231): the storage layer never deletes a document that keeps history, and an `indexOnly` type has no stored row a reference finds, so nothing could consume either.
+
+### Deleted only when consumed
+
+`"onlyWhenConsumed"` says the owner can not delete a document, as `false` does, but a create of the same contract whose `refersTo` declares [`consume`](refers-to-lookup.md#commit-and-reveal) can. Its owner never removes it: it leaves state when a create consumes it, or, as with `false`, when the contract's moderators delete it where the type allows them (`moderatorAbilities.delete`) or the platform deletes it when its `ttl` passes.
+
+```json
+"preorder": {
+  "type": "object",
+  "documentsMutable": false,
+  "canBeDeleted": "onlyWhenConsumed",
+  "indices": [
+    { "name": "saltedHash", "properties": [{ "saltedDomainHash": "asc" }], "unique": true }
+  ],
+  "properties": {
+    "saltedDomainHash": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0
+    }
+  },
+  "required": ["$createdAtBlockHeight", "saltedDomainHash"],
+  "additionalProperties": false
+}
+```
+
+A preorder stays until the name registration that reveals it consumes it (the `preorderSalt` declaration in [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). Its owner can not take it back with a delete.
+
+- A delete transition of such a document is refused (`InvalidDocumentTransitionActionError`, 10404), as for `false`.
+- A consume deletes it as a delete by its owner would, its storage refunded to the owner.
+- For references the type is deletable, as with `true`: its documents can leave state without a record. A `permanentDocument` reference to it is refused (40122), and so is a `moderatedDocument` one (40143), even when the type also lets its moderators delete with records; a `deletableDocument` reference is the one that points at it.
+- Fixed on update: an update may neither set nor remove it (`DocumentTypeUpdateError`, 40212). Setting it would let documents leave state under the `permanentDocument` references made to a type that promised they never would; removing it would leave the references that consume its documents nothing to delete.
+- Before protocol version 14 the meta-schemas accept only a boolean, so a contract carrying the string is refused (`JsonSchemaError`, 10101).
 
 ## `retractedWhen`
 

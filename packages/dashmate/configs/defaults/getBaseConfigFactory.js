@@ -94,6 +94,7 @@ export default function getBaseConfigFactory() {
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
                 'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
                 'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
+                'getspecialtxes',
               ],
               lowPriority: false,
             },

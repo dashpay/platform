@@ -51,9 +51,8 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 /// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
 ///   maximum derives from the total credits Platform held a day ago (the
 ///   relative daily withdrawal limit) instead of the current total. The
-///   `max_daily_withdrawal_amount` cap applies to that day-old base; credit
-///   inflows from the active window are added after the cap so matching
-///   deposit-withdraw cycles do not consume the capped budget.
+///   credit inflows from the active window are added on top so matching
+///   deposit-withdraw cycles do not consume the budget of others.
 /// * `withdrawals.record_total_credits_history` and
 ///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
 ///   the per-block total credits history under the withdrawals tree that the
@@ -64,6 +63,13 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   tree so the daily withdrawal limit counts net outflow instead of gross —
 ///   a deposit -> withdraw cycle no longer consumes the budget of other users.
 ///   The subtree does not exist before v14, so V1 keeps the slot `None`.
+/// * `withdrawals.record_core_credit_pool_blocks`,
+///   `withdrawals.fetch_core_credit_pool_balances` and
+///   `withdrawals.fetch_in_flight_withdrawal_amount` `None -> Some(0)`: the
+///   Core-anchored withdrawal limit, which reads Core's credit pool balance as
+///   recorded per Core block and what pooled withdrawals take out of the pool
+///   once mined. The subtree does not exist before v14, so V1 keeps the slots
+///   `None`.
 pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
     DriveIdentityMethodVersions {
         fetch: DriveIdentityFetchMethodVersions {
@@ -222,5 +228,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
             fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
             record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
+            record_core_credit_pool_blocks: Some(0), // new in v14: Core credit pool balances for the Core-anchored withdrawal limit
+            fetch_core_credit_pool_balances: Some(0), // new in v14
+            fetch_in_flight_withdrawal_amount: Some(0), // new in v14
         },
     };

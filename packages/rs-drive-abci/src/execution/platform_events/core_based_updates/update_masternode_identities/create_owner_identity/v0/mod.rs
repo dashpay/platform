@@ -1,5 +1,5 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::masternode::v0::required_legacy_address;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
@@ -16,10 +16,16 @@ where
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<Identity, Error> {
+        let payout_address = masternode.state.payout_address.ok_or_else(|| {
+            Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                "masternode {} has no payout address",
+                masternode.pro_tx_hash
+            )))
+        })?;
         let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Identity::create_basic_identity(owner_identifier, platform_version)?;
         identity.add_public_keys([Self::get_owner_identity_withdrawal_key(
-            required_legacy_address(masternode.state.payout_address, "payoutAddress")?,
+            payout_address,
             0,
             platform_version,
         )?]);
@@ -35,7 +41,6 @@ where
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
@@ -65,12 +70,14 @@ mod tests {
                 owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
                 payout_address: Some(payout_address),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         }

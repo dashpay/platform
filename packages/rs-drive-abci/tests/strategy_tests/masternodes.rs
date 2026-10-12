@@ -1,7 +1,5 @@
-#![allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
-
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+use dpp::bls::SecretKey as BlsPrivateKey;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash, Txid};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
@@ -235,11 +233,13 @@ pub fn generate_test_masternodes(
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
@@ -258,12 +258,14 @@ pub fn generate_test_masternodes(
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
                 payout_address: Some(generate_payout_address(rng, add_payout_keys_to_signer)),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         };
@@ -375,11 +377,13 @@ pub fn generate_test_masternodes(
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Evo,
             pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),
@@ -397,12 +401,14 @@ pub fn generate_test_masternodes(
                 owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
                 payout_address: Some(generate_payout_address(rng, add_payout_keys_to_signer)),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: Some(3010),
+                #[allow(deprecated)]
                 legacy_platform_http_port: Some(8080),
-                payouts: None,
                 addresses: None,
             },
         };
@@ -536,11 +542,13 @@ pub fn generate_test_masternodes(
                         SocketAddr::new(IpAddr::V4(random_ip), old_port);
                 }
                 if update.p2p_port {
+                    #[allow(deprecated)]
                     if let Some(port) = hpmn_list_item_b.state.legacy_platform_p2p_port.as_mut() {
                         *port += 1
                     }
                 }
                 if update.http_port {
+                    #[allow(deprecated)]
                     if let Some(port) = hpmn_list_item_b.state.legacy_platform_http_port.as_mut() {
                         *port += 1
                     }

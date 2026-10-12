@@ -57,7 +57,7 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationListSta
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, statuses) = Drive::verify_contract_moderation_status(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             identity_id,
             &lists,
@@ -66,7 +66,7 @@ impl FromProof<GetContractModerationStatusRequest> for ContractModerationListSta
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // An absent entry is a status too: the identity is not on that list. Only the lists
         // queried were proved, and the verifier reports only those.
@@ -108,14 +108,14 @@ impl FromProof<GetContractModerationEntriesRequest> for ContractModerationEntrie
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, entries) = Drive::verify_contract_moderation_entries(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             &query,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // An empty list proves as an empty page, so the page itself is always the answer.
         Ok((Some(ContractModerationEntries(entries)), metadata, proof))
@@ -150,7 +150,7 @@ impl FromProof<GetContractFeePotsRequest> for ContractFeePots {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, pots) = Drive::verify_contract_fee_pots(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             &CONTRACT_FEE_POTS_QUERIED,
             false,
@@ -158,7 +158,7 @@ impl FromProof<GetContractFeePotsRequest> for ContractFeePots {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // A pot nothing was ever paid into proves as absent and reads as zero credits, so the
         // pots themselves are always the answer. The proof says nothing about the contract: a
@@ -197,7 +197,7 @@ impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals 
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, removals) = Drive::verify_contract_document_removals(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             &query,
             false,
@@ -205,7 +205,7 @@ impl FromProof<GetContractDocumentRemovalsRequest> for ContractDocumentRemovals 
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // A document type nobody moderated proves as no records at all, and an id with no
         // record is proved absent rather than missing, so the records are always the answer.
@@ -247,7 +247,7 @@ impl FromProof<GetContractTeamActionsRequest> for ContractTeamActions {
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, actions) = Drive::verify_contract_team_actions(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             &query,
             false,
@@ -255,7 +255,7 @@ impl FromProof<GetContractTeamActionsRequest> for ContractTeamActions {
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // A page past the last action proves as no actions at all, so the actions are always
         // the answer.
@@ -293,7 +293,7 @@ impl FromProof<GetContractTeamActionSignersRequest> for ContractTeamActionSigner
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, signers) = Drive::verify_contract_team_action_signers(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             status,
             action_id,
@@ -302,7 +302,7 @@ impl FromProof<GetContractTeamActionSignersRequest> for ContractTeamActionSigner
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // An action that is not there with that status proves as no approvals, so the approvals
         // are always the answer.
@@ -338,14 +338,14 @@ impl FromProof<GetContractModerationActionCountsRequest> for ContractModerationA
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, counts) = Drive::verify_contract_moderation_action_counts(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             false,
             platform_version,
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         // No member acted since the last payout proves as no counts, so the counts are always
         // the answer.

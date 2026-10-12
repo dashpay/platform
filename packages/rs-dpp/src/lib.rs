@@ -48,7 +48,7 @@ pub mod validation;
 #[cfg(feature = "client")]
 pub mod dash_platform_protocol;
 
-mod bls;
+pub mod bls;
 
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
@@ -86,7 +86,9 @@ pub mod withdrawal;
 
 pub use async_trait;
 
-pub use bls::*;
+#[cfg(feature = "bls-signatures")]
+pub use bls::native_bls;
+pub use bls::BlsModule;
 
 pub mod prelude {
 
@@ -141,8 +143,6 @@ pub mod prelude {
 
 pub use bincode;
 pub use bincode::enc::Encode;
-#[cfg(feature = "bls-signatures")]
-pub use blsful as bls_signatures;
 #[cfg(feature = "data-contracts")]
 pub use data_contracts;
 #[cfg(feature = "ed25519-dalek")]

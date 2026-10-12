@@ -47,12 +47,12 @@ pub fn verify_point_lookup_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, entries) = query
         .verify_point_lookup_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(entries)
 }
@@ -78,14 +78,14 @@ pub fn verify_distinct_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, entries) = query
         .verify_distinct_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             limit,
             left_to_right,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(entries)
 }
@@ -149,12 +149,12 @@ pub fn verify_aggregate_count_and_sum_proof(
 ) -> Result<(u64, i64), Error> {
     let (root_hash, count, sum) = query
         .verify_aggregate_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok((count, sum))
 }
@@ -180,14 +180,14 @@ pub fn verify_primary_key_count_sum_tree_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(u64, i64), Error> {
     let (root_hash, count, sum) = DriveDocumentSumQuery::verify_primary_key_count_sum_tree_proof(
-        supported_grovedb_proof_bytes(proof, platform_version)?,
+        supported_grovedb_proof_bytes(proof)?,
         contract_id,
         document_type_name,
         platform_version,
     )
     .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok((count, sum))
 }
@@ -222,14 +222,14 @@ pub fn verify_carrier_aggregate_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, per_key_count_sum) = query
         .verify_carrier_aggregate_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             limit,
             left_to_right,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     let entries = per_key_count_sum
         .into_iter()

@@ -61,6 +61,13 @@ pub struct DriveAbciValidationConstants {
     /// (Merk node framing, dense path records, the amortized chunk-blob
     /// framing).
     pub shielded_storage_bytes_per_action: u64,
+    /// Effective bytes per action added by `compute_shielded_identity_balance_write_fee_v0`
+    /// to cover the estimated processing of identity-paid note and nullifier writes.
+    /// This is an admission allowance, not a physical payload size or a charged fee.
+    pub shielded_identity_action_write_storage_bytes: u64,
+    /// Flat effective-byte allowance read by `compute_shielded_identity_balance_write_fee_v0`
+    /// for estimated identity nonce/balance writes and the complete validation context.
+    pub shielded_identity_balance_write_storage_bytes: u64,
     /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
     /// donate to the fee pools when no `surplus_output` address is set. Above this
     /// cap the transition is rejected so a client cannot accidentally forfeit a
